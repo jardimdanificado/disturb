@@ -1,0 +1,34 @@
+# Basic objects
+char greeting "hello world"
+byte payload 222 173 190 239
+number nums 1 2 3
+any bag [greeting nums payload]
+
+# Natives
+native println println
+native len len
+native append append
+
+# Print greeting
+push greeting
+call println
+
+# Print greeting length (len pushes __len)
+call len
+call println
+pop
+pop
+
+# Append to greeting
+char suffix "!!!"
+push greeting
+push suffix
+call append
+call println
+pop
+
+# Show byte payload in hex
+push payload
+call println
+
+dump
