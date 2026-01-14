@@ -49,7 +49,7 @@ static void native_len(List *stack, List *global)
 
     Int length = urb_value_len(target->obj);
     urb_number_set_single(len_entry->obj, (Float)length);
-    urb_any_add(stack, len_entry);
+    urb_object_add(stack, len_entry);
 }
 
 static void native_append(List *stack, List *global)

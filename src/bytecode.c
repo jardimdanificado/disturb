@@ -1,0 +1,105 @@
+#include "bytecode.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+static int bc_grow(Bytecode *bc, size_t add)
+{
+    if (bc->len + add <= bc->cap) return 1;
+    size_t new_cap = bc->cap == 0 ? 64 : bc->cap;
+    while (new_cap < bc->len + add) {
+        new_cap *= 2;
+    }
+    unsigned char *next = (unsigned char*)realloc(bc->data, new_cap);
+    if (!next) return 0;
+    bc->data = next;
+    bc->cap = new_cap;
+    return 1;
+}
+
+void bc_init(Bytecode *bc)
+{
+    bc->data = NULL;
+    bc->len = 0;
+    bc->cap = 0;
+}
+
+void bc_free(Bytecode *bc)
+{
+    free(bc->data);
+    bc->data = NULL;
+    bc->len = 0;
+    bc->cap = 0;
+}
+
+int bc_emit_u8(Bytecode *bc, uint8_t v)
+{
+    if (!bc_grow(bc, 1)) return 0;
+    bc->data[bc->len++] = (unsigned char)v;
+    return 1;
+}
+
+int bc_emit_u32(Bytecode *bc, uint32_t v)
+{
+    if (!bc_grow(bc, 4)) return 0;
+    bc->data[bc->len++] = (unsigned char)(v & 0xFF);
+    bc->data[bc->len++] = (unsigned char)((v >> 8) & 0xFF);
+    bc->data[bc->len++] = (unsigned char)((v >> 16) & 0xFF);
+    bc->data[bc->len++] = (unsigned char)((v >> 24) & 0xFF);
+    return 1;
+}
+
+int bc_emit_f64(Bytecode *bc, double v)
+{
+    if (!bc_grow(bc, 8)) return 0;
+    union {
+        double d;
+        unsigned char b[8];
+    } u;
+    u.d = v;
+    for (int i = 0; i < 8; i++) {
+        bc->data[bc->len++] = u.b[i];
+    }
+    return 1;
+}
+
+int bc_emit_bytes(Bytecode *bc, const unsigned char *bytes, size_t len)
+{
+    if (!bc_grow(bc, len)) return 0;
+    if (len) {
+        memcpy(bc->data + bc->len, bytes, len);
+        bc->len += len;
+    }
+    return 1;
+}
+
+int bc_emit_string(Bytecode *bc, const char *s, size_t len)
+{
+    if (len > 0xFFFFFFFFu) return 0;
+    if (!bc_emit_u32(bc, (uint32_t)len)) return 0;
+    return bc_emit_bytes(bc, (const unsigned char*)s, len);
+}
+
+const char *bc_opcode_name(uint8_t op)
+{
+    switch (op) {
+    case BC_PUSH_NUM: return "PUSH_NUM";
+    case BC_PUSH_CHAR: return "PUSH_CHAR";
+    case BC_PUSH_STRING: return "PUSH_STRING";
+    case BC_PUSH_BYTE: return "PUSH_BYTE";
+    case BC_BUILD_NUMBER: return "BUILD_NUMBER";
+    case BC_BUILD_BYTE: return "BUILD_BYTE";
+    case BC_BUILD_OBJECT: return "BUILD_OBJECT";
+    case BC_INDEX: return "INDEX";
+    case BC_STORE_INDEX: return "STORE_INDEX";
+    case BC_LOAD_ROOT: return "LOAD_ROOT";
+    case BC_LOAD_GLOBAL: return "LOAD_GLOBAL";
+    case BC_STORE_GLOBAL: return "STORE_GLOBAL";
+    case BC_CALL: return "CALL";
+    case BC_POP: return "POP";
+    case BC_DUP: return "DUP";
+    case BC_GC: return "GC";
+    case BC_DUMP: return "DUMP";
+    default: return "UNKNOWN";
+    }
+}

@@ -1,0 +1,12 @@
+n = (number){1, 2, 3};
+
+println(n.size);
+println(n.capacity);
+
+n.size = 5;
+println(n.size);
+println(n.capacity);
+
+n.capacity = 8;
+println(n.size);
+println(n.capacity);

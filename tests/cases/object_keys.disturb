@@ -1,0 +1,7 @@
+o = (object){a = 1};
+
+println(o.a);
+println(o["a"]);
+
+k = "a";
+println(o[k]);

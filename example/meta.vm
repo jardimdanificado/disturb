@@ -1,0 +1,9 @@
+obj = (object){alpha = "test", beta = (number){1, 2, 3}};
+
+println(obj.name);
+println(obj.type);
+println(obj.size);
+println(obj.capacity);
+
+obj.size = 1;
+println(obj.size);

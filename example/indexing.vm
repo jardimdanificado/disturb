@@ -1,0 +1,7 @@
+data = (object){a = (number){10, 20, 30}, b = (object){c = "hi"}};
+
+x = data.a[1];
+y = data.b.c[0];
+
+println(x);
+println(y);

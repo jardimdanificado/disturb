@@ -1,234 +1,843 @@
 #include "vm.h"
-#include "papagaio.h"
+#include "bytecode.h"
 
 #include <ctype.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+typedef enum {
+    TOK_EOF = 0,
+    TOK_IDENT,
+    TOK_NUMBER,
+    TOK_STRING,
+    TOK_CHAR,
+    TOK_LPAREN,
+    TOK_RPAREN,
+    TOK_LBRACE,
+    TOK_RBRACE,
+    TOK_LBRACKET,
+    TOK_RBRACKET,
+    TOK_DOT,
+    TOK_COMMA,
+    TOK_SEMI,
+    TOK_EQ
+} TokenKind;
+
 typedef struct {
-    char **items;
-    int count;
-    int cap;
-} Tokens;
+    TokenKind kind;
+    const char *start;
+    size_t len;
+    double number;
+    char *str;
+    size_t str_len;
+    int line;
+    int col;
+} Token;
 
-static void tokens_push(Tokens *t, const char *start, size_t len)
+typedef struct Expr Expr;
+
+typedef enum {
+    EXPR_LITERAL_NUM,
+    EXPR_LITERAL_STRING,
+    EXPR_LITERAL_CHAR,
+    EXPR_NAME,
+    EXPR_MEMBER,
+    EXPR_INDEX,
+    EXPR_CAST_LIST,
+    EXPR_OBJECT_LITERAL
+} ExprKind;
+
+typedef enum {
+    CAST_NUMBER,
+    CAST_BYTE,
+    CAST_OBJECT
+} CastKind;
+
+typedef struct {
+    char *name;
+    size_t name_len;
+    Expr *value;
+} ObjPair;
+
+struct Expr {
+    ExprKind kind;
+    int line;
+    int col;
+    union {
+        struct {
+            double number;
+        } lit_num;
+        struct {
+            char *data;
+            size_t len;
+        } lit_str;
+        struct {
+            char *name;
+            size_t len;
+        } name;
+        struct {
+            Expr *base;
+            char *name;
+            size_t len;
+        } member;
+        struct {
+            Expr *base;
+            Expr *index;
+        } index;
+        struct {
+            CastKind kind;
+            Expr **items;
+            int count;
+        } cast_list;
+        struct {
+            ObjPair *pairs;
+            int count;
+        } obj;
+    } as;
+};
+
+typedef struct {
+    void **items;
+    size_t count;
+    size_t cap;
+} Arena;
+
+typedef struct {
+    const char *src;
+    size_t pos;
+    int line;
+    int col;
+    Token current;
+    int had_error;
+    char err[256];
+    Arena arena;
+} Parser;
+
+static void arena_init(Arena *a)
 {
-    if (t->count == t->cap) {
-        t->cap = t->cap == 0 ? 8 : t->cap * 2;
-        t->items = (char**)realloc(t->items, (size_t)t->cap * sizeof(char*));
-    }
-    char *s = (char*)malloc(len + 1);
-    memcpy(s, start, len);
-    s[len] = 0;
-    t->items[t->count++] = s;
+    a->items = NULL;
+    a->count = 0;
+    a->cap = 0;
 }
 
-static void tokens_free(Tokens *t)
+static void *arena_alloc(Arena *a, size_t size)
 {
-    for (int i = 0; i < t->count; i++) {
-        free(t->items[i]);
-    }
-    free(t->items);
-    t->items = NULL;
-    t->count = 0;
-    t->cap = 0;
-}
-
-static char *normalize_line(const char *line)
-{
-    return papagaio_process(
-        line,
-        "char $key ${\"}{\"}str", "char $key @str{$str}",
-        "char _ ${\"}{\"}str", "char _ @str{$str}",
-        "char ${\"}{\"}str", "char _ @str{$str}",
-        "any $key ${[}{]}items", "any $key $items",
-        "any _ ${[}{]}items", "any _ $items",
-        "any ${[}{]}items", "any _ $items"
-    );
-}
-
-static Tokens tokenize_line(const char *line)
-{
-    Tokens t;
-    t.items = NULL;
-    t.count = 0;
-    t.cap = 0;
-
-    const char *p = line;
-    while (*p) {
-        while (*p && isspace((unsigned char)*p)) p++;
-        if (!*p) break;
-
-        if (strncmp(p, "@str{", 5) == 0) {
-            p += 5;
-            const char *start = p;
-            while (*p && *p != '}') p++;
-            tokens_push(&t, start, (size_t)(p - start));
-            if (*p == '}') p++;
-            continue;
+    void *p = calloc(1, size);
+    if (!p) return NULL;
+    if (a->count == a->cap) {
+        size_t next = a->cap == 0 ? 16 : a->cap * 2;
+        void **items = (void**)realloc(a->items, next * sizeof(void*));
+        if (!items) {
+            free(p);
+            return NULL;
         }
+        a->items = items;
+        a->cap = next;
+    }
+    a->items[a->count++] = p;
+    return p;
+}
 
-        const char *start = p;
-        while (*p && !isspace((unsigned char)*p)) p++;
-        tokens_push(&t, start, (size_t)(p - start));
+static int arena_track(Arena *a, void *p)
+{
+    if (!p) return 0;
+    if (a->count == a->cap) {
+        size_t next = a->cap == 0 ? 16 : a->cap * 2;
+        void **items = (void**)realloc(a->items, next * sizeof(void*));
+        if (!items) return 0;
+        a->items = items;
+        a->cap = next;
+    }
+    a->items[a->count++] = p;
+    return 1;
+}
+
+static char *arena_strndup(Arena *a, const char *s, size_t len)
+{
+    char *buf = (char*)arena_alloc(a, len + 1);
+    if (!buf) return NULL;
+    memcpy(buf, s, len);
+    buf[len] = 0;
+    return buf;
+}
+
+static void arena_free(Arena *a)
+{
+    for (size_t i = 0; i < a->count; i++) {
+        free(a->items[i]);
+    }
+    free(a->items);
+    a->items = NULL;
+    a->count = 0;
+    a->cap = 0;
+}
+
+static void parser_error(Parser *p, const char *fmt, ...)
+{
+    if (p->had_error) return;
+    va_list args;
+    va_start(args, fmt);
+    char msg[200];
+    vsnprintf(msg, sizeof(msg), fmt, args);
+    va_end(args);
+    snprintf(p->err, sizeof(p->err), "parse error at line %d, col %d: %s", p->current.line, p->current.col, msg);
+    p->had_error = 1;
+}
+
+static void token_free(Token *t)
+{
+    free(t->str);
+    t->str = NULL;
+    t->str_len = 0;
+}
+
+static int peek_char(Parser *p)
+{
+    return p->src[p->pos];
+}
+
+static int next_char(Parser *p)
+{
+    int c = p->src[p->pos];
+    if (c == 0) return 0;
+    p->pos++;
+    if (c == '\n') {
+        p->line++;
+        p->col = 1;
+    } else {
+        p->col++;
+    }
+    return c;
+}
+
+static void skip_ws(Parser *p)
+{
+    int c = peek_char(p);
+    while (c && isspace((unsigned char)c)) {
+        next_char(p);
+        c = peek_char(p);
+    }
+}
+
+static int parse_escape(Parser *p, int *out)
+{
+    int c = next_char(p);
+    if (!c) return 0;
+    switch (c) {
+    case 'n': *out = '\n'; return 1;
+    case 'r': *out = '\r'; return 1;
+    case 't': *out = '\t'; return 1;
+    case '\\': *out = '\\'; return 1;
+    case '\'': *out = '\''; return 1;
+    case '"': *out = '"'; return 1;
+    default: return 0;
+    }
+}
+
+static Token next_token(Parser *p)
+{
+    Token t;
+    memset(&t, 0, sizeof(t));
+
+    skip_ws(p);
+    t.start = p->src + p->pos;
+    t.line = p->line;
+    t.col = p->col;
+
+    int c = peek_char(p);
+    if (!c) {
+        t.kind = TOK_EOF;
+        return t;
     }
 
+    if (isalpha((unsigned char)c) || c == '_') {
+        next_char(p);
+        while (isalnum((unsigned char)peek_char(p)) || peek_char(p) == '_') {
+            next_char(p);
+        }
+        t.kind = TOK_IDENT;
+        t.len = (size_t)(p->src + p->pos - t.start);
+        return t;
+    }
+
+    if (isdigit((unsigned char)c) || (c == '.' && isdigit((unsigned char)p->src[p->pos + 1]))) {
+        char *end = NULL;
+        double v = strtod(p->src + p->pos, &end);
+        if (end == p->src + p->pos) {
+            t.kind = TOK_EOF;
+            return t;
+        }
+        size_t len = (size_t)(end - (p->src + p->pos));
+        for (size_t i = 0; i < len; i++) next_char(p);
+        t.kind = TOK_NUMBER;
+        t.number = v;
+        t.len = len;
+        return t;
+    }
+
+    if (c == '"' || c == '\'') {
+        int quote = next_char(p);
+        size_t cap = 16;
+        size_t len = 0;
+        char *buf = (char*)malloc(cap);
+        if (!buf) {
+            parser_error(p, "out of memory");
+            t.kind = TOK_EOF;
+            return t;
+        }
+        while ((c = peek_char(p)) && c != quote) {
+            int out = 0;
+            if (c == '\\') {
+                next_char(p);
+                if (!parse_escape(p, &out)) {
+                    free(buf);
+                    parser_error(p, "invalid escape sequence");
+                    t.kind = TOK_EOF;
+                    return t;
+                }
+            } else {
+                out = next_char(p);
+            }
+            if (len + 1 > cap) {
+                cap *= 2;
+                char *next = (char*)realloc(buf, cap);
+                if (!next) {
+                    free(buf);
+                    parser_error(p, "out of memory");
+                    t.kind = TOK_EOF;
+                    return t;
+                }
+                buf = next;
+            }
+            buf[len++] = (char)out;
+        }
+        if (peek_char(p) != quote) {
+            free(buf);
+            parser_error(p, "unterminated string");
+            t.kind = TOK_EOF;
+            return t;
+        }
+        next_char(p);
+        t.kind = quote == '\'' ? TOK_CHAR : TOK_STRING;
+        t.str = buf;
+        t.str_len = len;
+        return t;
+    }
+
+    next_char(p);
+    switch (c) {
+    case '(': t.kind = TOK_LPAREN; break;
+    case ')': t.kind = TOK_RPAREN; break;
+    case '{': t.kind = TOK_LBRACE; break;
+    case '}': t.kind = TOK_RBRACE; break;
+    case '[': t.kind = TOK_LBRACKET; break;
+    case ']': t.kind = TOK_RBRACKET; break;
+    case '.': t.kind = TOK_DOT; break;
+    case ',': t.kind = TOK_COMMA; break;
+    case ';': t.kind = TOK_SEMI; break;
+    case '=': t.kind = TOK_EQ; break;
+    default: t.kind = TOK_EOF; break;
+    }
     return t;
 }
 
-static int is_null_key(const char *s)
+static void advance(Parser *p)
 {
-    return strcmp(s, "_") == 0 || strcmp(s, "null") == 0 || strcmp(s, "nil") == 0;
+    token_free(&p->current);
+    p->current = next_token(p);
 }
 
-static int is_number_token(const char *s)
+static int match(Parser *p, TokenKind kind)
 {
-    if (!*s) return 0;
-    if (*s == '+' || *s == '-') s++;
-    if (!*s) return 0;
-    if (*s == '.') s++;
-    if (!*s) return 0;
-    return isdigit((unsigned char)*s);
+    if (p->current.kind != kind) return 0;
+    advance(p);
+    return 1;
 }
 
-static void vm_exec_tokens(VM *vm, Tokens *t)
+static int expect(Parser *p, TokenKind kind, const char *msg)
 {
-    if (t->count == 0) return;
-    const char *cmd = t->items[0];
+    if (p->current.kind == kind) {
+        advance(p);
+        return 1;
+    }
+    parser_error(p, "%s", msg);
+    return 0;
+}
 
-    if (strcmp(cmd, "char") == 0) {
-        if (t->count < 2) {
-            fprintf(stderr, "char expects a string\n");
-            return;
+static Expr *expr_new(Parser *p, ExprKind kind)
+{
+    Expr *e = (Expr*)arena_alloc(&p->arena, sizeof(Expr));
+    if (!e) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+    e->kind = kind;
+    e->line = p->current.line;
+    e->col = p->current.col;
+    return e;
+}
+
+static Expr *parse_expr(Parser *p);
+
+static Expr *parse_primary(Parser *p)
+{
+    if (p->current.kind == TOK_NUMBER) {
+        Expr *e = expr_new(p, EXPR_LITERAL_NUM);
+        if (!e) return NULL;
+        e->as.lit_num.number = p->current.number;
+        advance(p);
+        return e;
+    }
+
+    if (p->current.kind == TOK_STRING || p->current.kind == TOK_CHAR) {
+        if (p->current.kind == TOK_CHAR && p->current.str_len != 1) {
+            parser_error(p, "char literal must be a single byte");
+            return NULL;
         }
-        if (t->count == 2) {
-            vm_define_char(vm, NULL, t->items[1]);
-            return;
+        Expr *e = expr_new(p, p->current.kind == TOK_CHAR ? EXPR_LITERAL_CHAR : EXPR_LITERAL_STRING);
+        if (!e) return NULL;
+        e->as.lit_str.data = arena_strndup(&p->arena, p->current.str, p->current.str_len);
+        e->as.lit_str.len = p->current.str_len;
+        advance(p);
+        return e;
+    }
+
+    if (p->current.kind == TOK_IDENT) {
+        Expr *e = expr_new(p, EXPR_NAME);
+        if (!e) return NULL;
+        e->as.name.name = arena_strndup(&p->arena, p->current.start, p->current.len);
+        e->as.name.len = p->current.len;
+        advance(p);
+        return e;
+    }
+
+    if (p->current.kind == TOK_LPAREN) {
+        advance(p);
+        if (p->current.kind != TOK_IDENT) {
+            parser_error(p, "expected type name after '('");
+            return NULL;
         }
-        if (is_null_key(t->items[1])) {
-            if (t->count < 3) {
-                fprintf(stderr, "char expects a string\n");
-                return;
+        char *type = arena_strndup(&p->arena, p->current.start, p->current.len);
+        advance(p);
+        if (!expect(p, TOK_RPAREN, "expected ')' after type")) return NULL;
+        if (!expect(p, TOK_LBRACE, "expected '{' to start literal")) return NULL;
+
+        if (strcmp(type, "object") == 0) {
+            Expr *e = expr_new(p, EXPR_OBJECT_LITERAL);
+            if (!e) return NULL;
+            ObjPair *pairs = NULL;
+            int count = 0;
+            int cap = 0;
+
+            if (p->current.kind != TOK_RBRACE) {
+                for (;;) {
+                    if (p->current.kind != TOK_IDENT) {
+                        parser_error(p, "object key must be an identifier");
+                        return NULL;
+                    }
+                    char *key = arena_strndup(&p->arena, p->current.start, p->current.len);
+                    size_t key_len = p->current.len;
+                    advance(p);
+                    if (!expect(p, TOK_EQ, "expected '=' after object key")) return NULL;
+                    Expr *value = parse_expr(p);
+                    if (!value) return NULL;
+
+                    if (count == cap) {
+                        int next = cap == 0 ? 4 : cap * 2;
+                        ObjPair *tmp = (ObjPair*)realloc(pairs, (size_t)next * sizeof(ObjPair));
+                        if (!tmp) {
+                            parser_error(p, "out of memory");
+                            return NULL;
+                        }
+                        pairs = tmp;
+                        cap = next;
+                    }
+                    pairs[count].name = key;
+                    pairs[count].name_len = key_len;
+                    pairs[count].value = value;
+                    count++;
+
+                    if (match(p, TOK_COMMA)) continue;
+                    break;
+                }
             }
-            vm_define_char(vm, NULL, t->items[2]);
-            return;
-        }
-        vm_define_char(vm, t->items[1], t->items[2]);
-        return;
-    }
 
-    if (strcmp(cmd, "byte") == 0) {
-        if (t->count < 2) {
-            fprintf(stderr, "byte expects uint8 values\n");
-            return;
-        }
-        if (is_null_key(t->items[1])) {
-            vm_define_byte(vm, NULL, t->items, t->count, 2);
-            return;
-        }
-        vm_define_byte(vm, t->items[1], t->items, t->count, 2);
-        return;
-    }
-
-    if (strcmp(cmd, "number") == 0) {
-        if (t->count < 2) {
-            fprintf(stderr, "number expects values\n");
-            return;
-        }
-        if (is_null_key(t->items[1]) || is_number_token(t->items[1])) {
-            vm_define_number(vm, NULL, t->items, t->count, 1);
-            return;
-        }
-        vm_define_number(vm, t->items[1], t->items, t->count, 2);
-        return;
-    }
-
-    if (strcmp(cmd, "any") == 0) {
-        if (t->count < 2) {
-            fprintf(stderr, "any expects members\n");
-            return;
-        }
-        if (is_null_key(t->items[1])) {
-            vm_define_any(vm, NULL, t->items, t->count, 2);
-            return;
-        }
-        vm_define_any(vm, t->items[1], t->items, t->count, 2);
-        return;
-    }
-
-    if (strcmp(cmd, "native") == 0) {
-        if (t->count < 2) {
-            fprintf(stderr, "native expects a function name\n");
-            return;
-        }
-        if (is_null_key(t->items[1])) {
-            if (t->count < 3) {
-                fprintf(stderr, "native expects a function name\n");
-                return;
+            if (!expect(p, TOK_RBRACE, "expected '}' to end object literal")) return NULL;
+            if (pairs && !arena_track(&p->arena, pairs)) {
+                parser_error(p, "out of memory");
+                return NULL;
             }
-            vm_define_native(vm, NULL, t->items[2]);
-            return;
+            e->as.obj.pairs = pairs;
+            e->as.obj.count = count;
+            return e;
         }
-        if (t->count < 3) {
-            fprintf(stderr, "native expects key and function name\n");
-            return;
+
+        CastKind cast;
+        if (strcmp(type, "number") == 0) {
+            cast = CAST_NUMBER;
+        } else if (strcmp(type, "byte") == 0) {
+            cast = CAST_BYTE;
+        } else {
+            parser_error(p, "unknown literal type '%s'", type);
+            return NULL;
         }
-        vm_define_native(vm, t->items[1], t->items[2]);
-        return;
-    }
 
-    if (strcmp(cmd, "push") == 0) {
-        if (t->count < 2) {
-            fprintf(stderr, "push expects a key\n");
-            return;
+        Expr *e = expr_new(p, EXPR_CAST_LIST);
+        if (!e) return NULL;
+        e->as.cast_list.kind = cast;
+        Expr **items = NULL;
+        int count = 0;
+        int cap = 0;
+
+        if (p->current.kind != TOK_RBRACE) {
+            for (;;) {
+                Expr *item = parse_expr(p);
+                if (!item) return NULL;
+                if (count == cap) {
+                    int next = cap == 0 ? 4 : cap * 2;
+                    Expr **tmp = (Expr**)realloc(items, (size_t)next * sizeof(Expr*));
+                    if (!tmp) {
+                        parser_error(p, "out of memory");
+                        return NULL;
+                    }
+                    items = tmp;
+                    cap = next;
+                }
+                items[count++] = item;
+
+                if (match(p, TOK_COMMA)) continue;
+                break;
+            }
         }
-        vm_push_stack(vm, t->items[1]);
-        return;
-    }
 
-    if (strcmp(cmd, "pop") == 0) {
-        vm_pop_stack(vm);
-        return;
-    }
-
-    if (strcmp(cmd, "call") == 0) {
-        if (t->count < 2) {
-            fprintf(stderr, "call expects a key\n");
-            return;
+        if (!expect(p, TOK_RBRACE, "expected '}' to end list")) return NULL;
+        if (items && !arena_track(&p->arena, items)) {
+            parser_error(p, "out of memory");
+            return NULL;
         }
-        vm_call_native(vm, t->items[1]);
-        return;
+        e->as.cast_list.items = items;
+        e->as.cast_list.count = count;
+        return e;
     }
 
-    if (strcmp(cmd, "drop") == 0) {
-        if (t->count < 2) {
-            fprintf(stderr, "drop expects a key\n");
-            return;
+    parser_error(p, "unexpected token");
+    return NULL;
+}
+
+static Expr *parse_postfix(Parser *p)
+{
+    Expr *expr = parse_primary(p);
+    if (!expr) return NULL;
+
+    for (;;) {
+        if (match(p, TOK_DOT)) {
+            if (p->current.kind != TOK_IDENT) {
+                parser_error(p, "expected identifier after '.'");
+                return NULL;
+            }
+            Expr *e = expr_new(p, EXPR_MEMBER);
+            if (!e) return NULL;
+            e->as.member.base = expr;
+            e->as.member.name = arena_strndup(&p->arena, p->current.start, p->current.len);
+            e->as.member.len = p->current.len;
+            advance(p);
+            expr = e;
+            continue;
         }
-        if (!vm_global_remove_by_key(vm, t->items[1])) {
-            fprintf(stderr, "key not in global: %s\n", t->items[1]);
+        if (match(p, TOK_LBRACKET)) {
+            Expr *index = parse_expr(p);
+            if (!index) return NULL;
+            if (!expect(p, TOK_RBRACKET, "expected ']'")) return NULL;
+            Expr *e = expr_new(p, EXPR_INDEX);
+            if (!e) return NULL;
+            e->as.index.base = expr;
+            e->as.index.index = index;
+            expr = e;
+            continue;
         }
-        return;
+        break;
     }
 
-    if (strcmp(cmd, "gc") == 0) {
-        vm_gc(vm);
-        return;
+    return expr;
+}
+
+static Expr *parse_expr(Parser *p)
+{
+    return parse_postfix(p);
+}
+
+static int expr_is_lvalue(const Expr *e)
+{
+    if (!e) return 0;
+    if (e->kind == EXPR_NAME) return 1;
+    if (e->kind == EXPR_MEMBER || e->kind == EXPR_INDEX) return 1;
+    return 0;
+}
+
+static int emit_expr(Bytecode *bc, Parser *p, Expr *e);
+
+static int emit_key(Bytecode *bc, Parser *p, const char *name, size_t len)
+{
+    if (!bc_emit_u8(bc, BC_PUSH_STRING) || !bc_emit_string(bc, name, len)) {
+        parser_error(p, "failed to emit key string");
+        return 0;
+    }
+    return 1;
+}
+
+static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
+{
+    if (!e) return 0;
+    switch (e->kind) {
+    case EXPR_LITERAL_NUM:
+        if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, e->as.lit_num.number)) {
+            parser_error(p, "failed to emit number literal");
+            return 0;
+        }
+        return 1;
+    case EXPR_LITERAL_STRING:
+        if (!bc_emit_u8(bc, BC_PUSH_STRING) ||
+            !bc_emit_string(bc, e->as.lit_str.data, e->as.lit_str.len)) {
+            parser_error(p, "failed to emit string literal");
+            return 0;
+        }
+        return 1;
+    case EXPR_LITERAL_CHAR:
+        if (!bc_emit_u8(bc, BC_PUSH_CHAR) ||
+            !bc_emit_string(bc, e->as.lit_str.data, e->as.lit_str.len)) {
+            parser_error(p, "failed to emit char literal");
+            return 0;
+        }
+        return 1;
+    case EXPR_NAME:
+        if (e->as.name.len == 6 && strncmp(e->as.name.name, "global", 6) == 0) {
+            if (!bc_emit_u8(bc, BC_LOAD_ROOT)) {
+                parser_error(p, "failed to emit LOAD_ROOT");
+                return 0;
+            }
+            return 1;
+        }
+        if (!bc_emit_u8(bc, BC_LOAD_GLOBAL) || !bc_emit_string(bc, e->as.name.name, e->as.name.len)) {
+            parser_error(p, "failed to emit LOAD_GLOBAL");
+            return 0;
+        }
+        return 1;
+    case EXPR_MEMBER:
+        if (!emit_expr(bc, p, e->as.member.base)) return 0;
+        if (!emit_key(bc, p, e->as.member.name, e->as.member.len)) return 0;
+        if (!bc_emit_u8(bc, BC_INDEX)) {
+            parser_error(p, "failed to emit INDEX");
+            return 0;
+        }
+        return 1;
+    case EXPR_INDEX:
+        if (!emit_expr(bc, p, e->as.index.base)) return 0;
+        if (!emit_expr(bc, p, e->as.index.index)) return 0;
+        if (!bc_emit_u8(bc, BC_INDEX)) {
+            parser_error(p, "failed to emit INDEX");
+            return 0;
+        }
+        return 1;
+    case EXPR_CAST_LIST: {
+        int count = e->as.cast_list.count;
+        if (e->as.cast_list.kind == CAST_BYTE) {
+            for (int i = 0; i < count; i++) {
+                Expr *item = e->as.cast_list.items[i];
+                if (item->kind == EXPR_LITERAL_NUM) {
+                    double v = item->as.lit_num.number;
+                    if (v < 0 || v > 255 || (double)(int)v != v) {
+                        parser_error(p, "byte literal out of range (0-255)");
+                        return 0;
+                    }
+                    if (!bc_emit_u8(bc, BC_PUSH_BYTE) || !bc_emit_u8(bc, (uint8_t)v)) {
+                        parser_error(p, "failed to emit byte literal");
+                        return 0;
+                    }
+                    continue;
+                }
+                if (!emit_expr(bc, p, item)) return 0;
+            }
+            if (!bc_emit_u8(bc, BC_BUILD_BYTE) || !bc_emit_u32(bc, (uint32_t)count)) {
+                parser_error(p, "failed to emit BUILD_BYTE");
+                return 0;
+            }
+            return 1;
+        }
+
+        for (int i = 0; i < count; i++) {
+            if (!emit_expr(bc, p, e->as.cast_list.items[i])) return 0;
+        }
+        if (!bc_emit_u8(bc, BC_BUILD_NUMBER) || !bc_emit_u32(bc, (uint32_t)count)) {
+            parser_error(p, "failed to emit BUILD_NUMBER");
+            return 0;
+        }
+        return 1;
+    }
+    case EXPR_OBJECT_LITERAL: {
+        int count = e->as.obj.count;
+        for (int i = 0; i < count; i++) {
+            if (!emit_key(bc, p, e->as.obj.pairs[i].name, e->as.obj.pairs[i].name_len)) return 0;
+            if (!emit_expr(bc, p, e->as.obj.pairs[i].value)) return 0;
+        }
+        if (!bc_emit_u8(bc, BC_BUILD_OBJECT) || !bc_emit_u32(bc, (uint32_t)count)) {
+            parser_error(p, "failed to emit BUILD_OBJECT");
+            return 0;
+        }
+        return 1;
+    }
+    default:
+        parser_error(p, "unsupported expression");
+        return 0;
+    }
+}
+
+static int is_global_name(const Expr *e)
+{
+    return e && e->kind == EXPR_NAME && e->as.name.len == 6 && strncmp(e->as.name.name, "global", 6) == 0;
+}
+
+static int emit_store(Bytecode *bc, Parser *p, Expr *lhs, Expr *rhs)
+{
+    if (!lhs || !rhs) return 0;
+
+    if (lhs->kind == EXPR_NAME && !is_global_name(lhs)) {
+        if (!emit_expr(bc, p, rhs)) return 0;
+        if (!bc_emit_u8(bc, BC_STORE_GLOBAL) || !bc_emit_string(bc, lhs->as.name.name, lhs->as.name.len)) {
+            parser_error(p, "failed to emit STORE_GLOBAL");
+            return 0;
+        }
+        return 1;
     }
 
-    if (strcmp(cmd, "dump") == 0) {
-        vm_dump_global(vm);
-        return;
+    if (lhs->kind == EXPR_MEMBER && is_global_name(lhs->as.member.base)) {
+        if (!emit_expr(bc, p, rhs)) return 0;
+        if (!bc_emit_u8(bc, BC_STORE_GLOBAL) || !bc_emit_string(bc, lhs->as.member.name, lhs->as.member.len)) {
+            parser_error(p, "failed to emit STORE_GLOBAL");
+            return 0;
+        }
+        return 1;
     }
 
-    fprintf(stderr, "unknown command: %s\n", cmd);
+    if (lhs->kind == EXPR_MEMBER || lhs->kind == EXPR_INDEX) {
+        Expr *base = lhs->kind == EXPR_MEMBER ? lhs->as.member.base : lhs->as.index.base;
+        if (!emit_expr(bc, p, base)) return 0;
+        if (lhs->kind == EXPR_MEMBER) {
+            if (!emit_key(bc, p, lhs->as.member.name, lhs->as.member.len)) return 0;
+        } else {
+            if (!emit_expr(bc, p, lhs->as.index.index)) return 0;
+        }
+        if (!emit_expr(bc, p, rhs)) return 0;
+        if (!bc_emit_u8(bc, BC_STORE_INDEX)) {
+            parser_error(p, "failed to emit STORE_INDEX");
+            return 0;
+        }
+        return 1;
+    }
+
+    parser_error(p, "invalid assignment target");
+    return 0;
+}
+
+static int parse_call(Parser *p, Expr *callee, Bytecode *bc)
+{
+    if (!expect(p, TOK_LPAREN, "expected '(' after function name")) return 0;
+
+    if (callee->kind != EXPR_NAME &&
+        !(callee->kind == EXPR_MEMBER && is_global_name(callee->as.member.base))) {
+        parser_error(p, "call target must be a global name");
+        return 0;
+    }
+
+    if (p->current.kind != TOK_RPAREN) {
+        for (;;) {
+            Expr *arg = parse_expr(p);
+            if (!arg) return 0;
+            if (!emit_expr(bc, p, arg)) return 0;
+            if (match(p, TOK_COMMA)) continue;
+            break;
+        }
+    }
+
+    if (!expect(p, TOK_RPAREN, "expected ')' after arguments")) return 0;
+
+    const char *name = callee->kind == EXPR_NAME ? callee->as.name.name : callee->as.member.name;
+    size_t len = callee->kind == EXPR_NAME ? callee->as.name.len : callee->as.member.len;
+
+    if (!bc_emit_u8(bc, BC_CALL) || !bc_emit_string(bc, name, len)) {
+        parser_error(p, "failed to emit CALL");
+        return 0;
+    }
+
+    return 1;
+}
+
+static int parse_statement(Parser *p, Bytecode *bc)
+{
+    Expr *expr = parse_expr(p);
+    if (!expr) return 0;
+
+    if (p->current.kind == TOK_LPAREN) {
+        if (!parse_call(p, expr, bc)) return 0;
+        if (!expect(p, TOK_SEMI, "expected ';' after call")) return 0;
+        return 1;
+    }
+
+    if (match(p, TOK_EQ)) {
+        if (!expr_is_lvalue(expr)) {
+            parser_error(p, "left side is not assignable");
+            return 0;
+        }
+        Expr *rhs = parse_expr(p);
+        if (!rhs) return 0;
+        if (!expect(p, TOK_SEMI, "expected ';' after assignment")) return 0;
+        return emit_store(bc, p, expr, rhs);
+    }
+
+    parser_error(p, "expected assignment or call");
+    return 0;
+}
+
+static int parse_program(Parser *p, Bytecode *bc)
+{
+    while (p->current.kind != TOK_EOF) {
+        if (!parse_statement(p, bc)) return 0;
+    }
+    return 1;
 }
 
 void vm_exec_line(VM *vm, const char *line)
 {
-    char *normalized = normalize_line(line);
-    Tokens t = tokenize_line(normalized);
-    vm_exec_tokens(vm, &t);
-    tokens_free(&t);
-    free(normalized);
+    Parser p;
+    memset(&p, 0, sizeof(p));
+    p.src = line;
+    p.pos = 0;
+    p.line = 1;
+    p.col = 1;
+    arena_init(&p.arena);
+    p.current = next_token(&p);
+
+    Bytecode bc;
+    bc_init(&bc);
+
+    int ok = parse_program(&p, &bc);
+    if (p.had_error || !ok) {
+        fprintf(stderr, "%s\n", p.err[0] ? p.err : "parse error");
+        bc_free(&bc);
+        arena_free(&p.arena);
+        token_free(&p.current);
+        return;
+    }
+
+    if (!vm_exec_bytecode(vm, bc.data, bc.len)) {
+        bc_free(&bc);
+        arena_free(&p.arena);
+        token_free(&p.current);
+        return;
+    }
+
+    bc_free(&bc);
+    arena_free(&p.arena);
+    token_free(&p.current);
 }

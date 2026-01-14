@@ -2,18 +2,18 @@ CC = cc
 CFLAGS = -std=c99 -Wall -Wextra -pedantic -Iinclude
 LDFLAGS =
 
-SRC = src/vm.c src/syntax.c src/functions.c src/cli.c
+SRC = src/vm.c src/bytecode.c src/asm.c src/syntax.c src/functions.c src/cli.c
 OBJ = $(SRC:.c=.o)
 
-all: vm
+all: disturb
 
-vm: $(OBJ)
+disturb: $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
 
-%.o: %.c include/vm.h include/urb.h include/papagaio.h
+%.o: %.c include/vm.h include/urb.h include/papagaio.h include/bytecode.h include/asm.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) vm
+	rm -f $(OBJ) disturb
 
 .PHONY: all clean

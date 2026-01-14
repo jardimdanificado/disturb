@@ -1,0 +1,4 @@
+println(nope);
+
+n = nope;
+println(n.name);
