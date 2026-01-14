@@ -29,6 +29,39 @@ run_case meta
 run_case null
 run_case object_keys
 run_case resize
+run_case stress_deep
+run_case stress_large_list
+
+run_negative() {
+  name=$1
+  src="tests/negative/${name}.disturb"
+  expect="tests/negative/${name}.err"
+  actual_out="tests/negative/${name}.out.actual"
+  actual_err="tests/negative/${name}.err.actual"
+
+  "$BIN" "$src" > "$actual_out" 2> "$actual_err" || true
+  if [ -s "$actual_out" ]; then
+    echo "negative test produced stdout: $name" >&2
+    cat "$actual_out" >&2
+    exit 1
+  fi
+  if ! grep -F -q "$(cat "$expect")" "$actual_err"; then
+    echo "negative test failed (stderr mismatch): $name" >&2
+    echo "expected to find: $(cat "$expect")" >&2
+    cat "$actual_err" >&2
+    exit 1
+  fi
+  rm -f "$actual_out" "$actual_err"
+}
+
+run_negative assign_invalid
+run_negative char_len
+run_negative key_on_non_object
+run_negative oob_index
+run_negative meta_readonly
+run_negative meta_size_float
+run_negative meta_capacity_string
+run_negative byte_range
 
 asm_out="tests/asm/out.bin"
 asm_dis="tests/asm/out.asm"

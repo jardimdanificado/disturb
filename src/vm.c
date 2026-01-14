@@ -134,14 +134,14 @@ static void vm_reg_init(VM *vm)
 {
     vm->reg_cap = 64;
     vm->reg_count = 0;
-    vm->reg = (ObjEntry*)calloc((size_t)vm->reg_cap, sizeof(ObjEntry));
+    vm->reg = (ObjEntry**)calloc((size_t)vm->reg_cap, sizeof(ObjEntry*));
 }
 
 static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
 {
     for (Int i = 0; i < vm->reg_count; i++) {
-        ObjEntry *entry = &vm->reg[i];
-        if (!entry->in_use) {
+        ObjEntry *entry = vm->reg[i];
+        if (entry && !entry->in_use) {
             entry->obj = obj;
             entry->in_use = 1;
             entry->mark = 0;
@@ -151,11 +151,15 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
 
     if (vm->reg_count == vm->reg_cap) {
         vm->reg_cap = vm->reg_cap == 0 ? 64 : vm->reg_cap * 2;
-        vm->reg = (ObjEntry*)realloc(vm->reg, (size_t)vm->reg_cap * sizeof(ObjEntry));
-        memset(vm->reg + vm->reg_count, 0, (size_t)(vm->reg_cap - vm->reg_count) * sizeof(ObjEntry));
+        ObjEntry **next = (ObjEntry**)realloc(vm->reg, (size_t)vm->reg_cap * sizeof(ObjEntry*));
+        if (!next) return NULL;
+        vm->reg = next;
+        memset(vm->reg + vm->reg_count, 0, (size_t)(vm->reg_cap - vm->reg_count) * sizeof(ObjEntry*));
     }
 
-    ObjEntry *entry = &vm->reg[vm->reg_count++];
+    ObjEntry *entry = (ObjEntry*)calloc(1, sizeof(ObjEntry));
+    if (!entry) return NULL;
+    vm->reg[vm->reg_count++] = entry;
     entry->obj = obj;
     entry->in_use = 1;
     entry->mark = 0;
@@ -177,8 +181,8 @@ static ObjEntry *vm_make_key_len(VM *vm, const char *name, size_t len)
 static ObjEntry *vm_find_by_key(VM *vm, const char *name)
 {
     for (Int i = 0; i < vm->reg_count; i++) {
-        ObjEntry *entry = &vm->reg[i];
-        if (!entry->in_use) continue;
+        ObjEntry *entry = vm->reg[i];
+        if (!entry || !entry->in_use) continue;
         ObjEntry *key = urb_obj_key(entry->obj);
         if (!key) continue;
         if (urb_obj_type(key->obj) != URB_T_CHAR) continue;
@@ -229,8 +233,8 @@ void vm_gc(VM *vm)
 {
     vm_mark_entry(vm->global_entry);
     for (Int i = 0; i < vm->reg_count; i++) {
-        ObjEntry *entry = &vm->reg[i];
-        if (!entry->in_use) continue;
+        ObjEntry *entry = vm->reg[i];
+        if (!entry || !entry->in_use) continue;
         if (!entry->mark) {
             urb_obj_free(entry->obj);
             entry->obj = NULL;
@@ -465,9 +469,12 @@ void vm_init(VM *vm)
 void vm_free(VM *vm)
 {
     for (Int i = 0; i < vm->reg_count; i++) {
-        if (vm->reg[i].in_use) {
-            urb_obj_free(vm->reg[i].obj);
+        ObjEntry *entry = vm->reg[i];
+        if (!entry) continue;
+        if (entry->in_use) {
+            urb_obj_free(entry->obj);
         }
+        free(entry);
     }
     free(vm->reg);
 }

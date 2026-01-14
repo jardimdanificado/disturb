@@ -25,7 +25,7 @@ struct ObjEntry {
 };
 
 struct VM {
-    ObjEntry *reg;
+    ObjEntry **reg;
     Int reg_count;
     Int reg_cap;
     ObjEntry *global_entry;
