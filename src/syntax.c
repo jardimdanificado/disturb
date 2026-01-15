@@ -46,6 +46,7 @@ typedef enum {
     EXPR_MEMBER,
     EXPR_INDEX,
     EXPR_CAST_LIST,
+    EXPR_LITERAL_NUMBER_LIST,
     EXPR_OBJECT_LITERAL
 } ExprKind;
 
@@ -91,6 +92,10 @@ struct Expr {
             Expr **items;
             int count;
         } cast_list;
+        struct {
+            double *items;
+            int count;
+        } num_list;
         struct {
             ObjPair *pairs;
             int count;
@@ -380,6 +385,7 @@ static Expr *expr_new(Parser *p, ExprKind kind)
 }
 
 static Expr *parse_expr(Parser *p);
+static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count);
 
 static Expr *parse_primary(Parser *p)
 {
@@ -484,6 +490,26 @@ static Expr *parse_primary(Parser *p)
             return NULL;
         }
 
+        if (cast == CAST_NUMBER) {
+            double *vals = NULL;
+            int count = 0;
+            if (parse_number_list_fast(p, &vals, &count)) {
+                Expr *e = expr_new(p, EXPR_LITERAL_NUMBER_LIST);
+                if (!e) {
+                    free(vals);
+                    return NULL;
+                }
+                if (vals && !arena_track(&p->arena, vals)) {
+                    parser_error(p, "out of memory");
+                    free(vals);
+                    return NULL;
+                }
+                e->as.num_list.items = vals;
+                e->as.num_list.count = count;
+                return e;
+            }
+        }
+
         Expr *e = expr_new(p, EXPR_CAST_LIST);
         if (!e) return NULL;
         e->as.cast_list.kind = cast;
@@ -524,6 +550,83 @@ static Expr *parse_primary(Parser *p)
 
     parser_error(p, "unexpected token");
     return NULL;
+}
+
+static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count)
+{
+    Parser probe = *p;
+    probe.current.str = NULL;
+    probe.current.str_len = 0;
+
+    double *vals = NULL;
+    int count = 0;
+    int cap = 0;
+    Token tok = probe.current;
+
+    if (tok.kind == TOK_RBRACE) {
+        *out_vals = NULL;
+        *out_count = 0;
+        return 1;
+    }
+
+    for (;;) {
+        if (tok.kind != TOK_NUMBER) {
+            token_free(&probe.current);
+            free(vals);
+            return 0;
+        }
+        if (count == cap) {
+            int next = cap == 0 ? 16 : cap * 2;
+            double *tmp = (double*)realloc(vals, (size_t)next * sizeof(double));
+            if (!tmp) {
+                token_free(&probe.current);
+                free(vals);
+                return 0;
+            }
+            vals = tmp;
+            cap = next;
+        }
+        vals[count++] = tok.number;
+        advance(&probe);
+        tok = probe.current;
+        if (tok.kind == TOK_COMMA) {
+            advance(&probe);
+            tok = probe.current;
+            continue;
+        }
+        if (tok.kind == TOK_RBRACE) break;
+        token_free(&probe.current);
+        free(vals);
+        return 0;
+    }
+
+    if (p->current.kind == TOK_RBRACE) {
+        if (!expect(p, TOK_RBRACE, "expected '}' to end list")) {
+            free(vals);
+            return 0;
+        }
+    } else {
+        for (int i = 0; i < count; i++) {
+            if (p->current.kind != TOK_NUMBER) {
+                free(vals);
+                return 0;
+            }
+            advance(p);
+            if (i + 1 < count && !match(p, TOK_COMMA)) {
+                parser_error(p, "expected ',' between list items");
+                free(vals);
+                return 0;
+            }
+        }
+        if (!expect(p, TOK_RBRACE, "expected '}' to end list")) {
+            free(vals);
+            return 0;
+        }
+    }
+
+    *out_vals = vals;
+    *out_count = count;
+    return 1;
 }
 
 static Expr *parse_postfix(Parser *p)
@@ -666,12 +769,48 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
             return 1;
         }
 
+        int all_literal = 1;
+        for (int i = 0; i < count; i++) {
+            if (e->as.cast_list.items[i]->kind != EXPR_LITERAL_NUM) {
+                all_literal = 0;
+                break;
+            }
+        }
+        if (all_literal) {
+            if (!bc_emit_u8(bc, BC_BUILD_NUMBER_LIT) || !bc_emit_u32(bc, (uint32_t)count)) {
+                parser_error(p, "failed to emit BUILD_NUMBER_LIT");
+                return 0;
+            }
+            for (int i = 0; i < count; i++) {
+                double v = e->as.cast_list.items[i]->as.lit_num.number;
+                if (!bc_emit_f64(bc, v)) {
+                    parser_error(p, "failed to emit BUILD_NUMBER_LIT value");
+                    return 0;
+                }
+            }
+            return 1;
+        }
+
         for (int i = 0; i < count; i++) {
             if (!emit_expr(bc, p, e->as.cast_list.items[i])) return 0;
         }
         if (!bc_emit_u8(bc, BC_BUILD_NUMBER) || !bc_emit_u32(bc, (uint32_t)count)) {
             parser_error(p, "failed to emit BUILD_NUMBER");
             return 0;
+        }
+        return 1;
+    }
+    case EXPR_LITERAL_NUMBER_LIST: {
+        int count = e->as.num_list.count;
+        if (!bc_emit_u8(bc, BC_BUILD_NUMBER_LIT) || !bc_emit_u32(bc, (uint32_t)count)) {
+            parser_error(p, "failed to emit BUILD_NUMBER_LIT");
+            return 0;
+        }
+        for (int i = 0; i < count; i++) {
+            if (!bc_emit_f64(bc, e->as.num_list.items[i])) {
+                parser_error(p, "failed to emit BUILD_NUMBER_LIT value");
+                return 0;
+            }
         }
         return 1;
     }

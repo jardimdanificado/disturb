@@ -27,7 +27,8 @@ enum {
     BC_POP,
     BC_DUP,
     BC_GC,
-    BC_DUMP
+    BC_DUMP,
+    BC_BUILD_NUMBER_LIT
 };
 
 void bc_init(Bytecode *bc);

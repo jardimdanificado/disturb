@@ -175,6 +175,32 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                 bc_free(out);
                 return 0;
             }
+        } else if (strcmp(ident, "BUILD_NUMBER_LIT") == 0) {
+            uint32_t count = 0;
+            if (!parse_u32(&s, &count)) {
+                err_set(err_buf, err_cap, "BUILD_NUMBER_LIT expects a count");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_BUILD_NUMBER_LIT) || !bc_emit_u32(out, count)) {
+                err_set(err_buf, err_cap, "failed to emit BUILD_NUMBER_LIT");
+                bc_free(out);
+                return 0;
+            }
+            for (uint32_t i = 0; i < count; i++) {
+                double v = 0.0;
+                s = skip_ws(s);
+                if (!parse_double(&s, &v)) {
+                    err_set(err_buf, err_cap, "BUILD_NUMBER_LIT expects values");
+                    bc_free(out);
+                    return 0;
+                }
+                if (!bc_emit_f64(out, v)) {
+                    err_set(err_buf, err_cap, "failed to emit BUILD_NUMBER_LIT value");
+                    bc_free(out);
+                    return 0;
+                }
+            }
         } else if (strcmp(ident, "BUILD_NUMBER") == 0 || strcmp(ident, "BUILD_BYTE") == 0 ||
                    strcmp(ident, "BUILD_OBJECT") == 0) {
             uint32_t count = 0;
@@ -345,6 +371,18 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
             const char *name = op == BC_BUILD_NUMBER ? "BUILD_NUMBER" :
                                op == BC_BUILD_BYTE ? "BUILD_BYTE" : "BUILD_OBJECT";
             fprintf(out, "%s %u\n", name, (unsigned)count);
+            break;
+        }
+        case BC_BUILD_NUMBER_LIT: {
+            uint32_t count = 0;
+            if (!read_u32(data, len, &pc, &count)) return 0;
+            fprintf(out, "BUILD_NUMBER_LIT %u", (unsigned)count);
+            for (uint32_t i = 0; i < count; i++) {
+                double v = 0.0;
+                if (!read_f64(data, len, &pc, &v)) return 0;
+                fprintf(out, " %.17g", v);
+            }
+            fputc('\n', out);
             break;
         }
         case BC_LOAD_GLOBAL:

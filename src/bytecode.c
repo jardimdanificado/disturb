@@ -100,6 +100,7 @@ const char *bc_opcode_name(uint8_t op)
     case BC_DUP: return "DUP";
     case BC_GC: return "GC";
     case BC_DUMP: return "DUMP";
+    case BC_BUILD_NUMBER_LIT: return "BUILD_NUMBER_LIT";
     default: return "UNKNOWN";
     }
 }

@@ -1233,6 +1233,26 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
+        case BC_BUILD_NUMBER_LIT: {
+            uint32_t count = 0;
+            if (!bc_read_u32(data, len, &pc, &count)) {
+                fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_NUMBER_LIT\n", pc);
+                return 0;
+            }
+            List *obj = urb_obj_new_list(URB_T_NUMBER, NULL, (Int)count);
+            for (uint32_t i = 0; i < count; i++) {
+                double v = 0.0;
+                if (!bc_read_f64(data, len, &pc, &v)) {
+                    fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_NUMBER_LIT value\n", pc);
+                    return 0;
+                }
+                Value val;
+                val.f = (Float)v;
+                urb_push(obj, val);
+            }
+            vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
+            break;
+        }
         case BC_BUILD_BYTE: {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
