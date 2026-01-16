@@ -9,4 +9,3 @@ println(global.e.a);
 x = global.e.b[1];
 println(x);
 
-dump;

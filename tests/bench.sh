@@ -43,50 +43,115 @@ bench_cmd() {
   printf "%-28s %s ms\n" "$name" "$(ns_to_ms "$avg")"
 }
 
-printf "Disturb benchmarks (runs=%s)\n" "$RUNS"
-bench_cmd "startup" "$BIN" tests/bench/empty.disturb
-bench_cmd "compile bytecode" "$BIN" --asm tests/bench/big.asm tests/bench/big.bin
-bench_cmd "disassemble" "$BIN" --disasm tests/bench/big.bin tests/bench/out.asm
-bench_cmd "interpret big file" "$BIN" tests/bench/big.disturb
-rm -f tests/bench/big.bin tests/bench/out.asm
+printf "Comparative benchmarks (runs=%s)\n" "$RUNS"
 
 echo ""
-
-echo "Cross-language (if available)"
-bench_cmd "disturb literal list" "$BIN" tests/bench/literal.disturb
+echo "Literal list"
+bench_cmd "disturb" "$BIN" tests/bench/literal.disturb
 if command -v lua >/dev/null 2>&1; then
-  bench_cmd "lua sum loop" lua tests/bench/loop.lua
-  bench_cmd "lua literal list" lua tests/bench/literal.lua
+  bench_cmd "lua" lua tests/bench/literal.lua
 else
   echo "lua not found"
 fi
-
 if command -v node >/dev/null 2>&1; then
-  bench_cmd "node sum loop" node tests/bench/loop.js
-  bench_cmd "node literal list" node tests/bench/literal.js
+  bench_cmd "node" node tests/bench/literal.js
 else
   echo "node not found"
 fi
-
+if command -v python3 >/dev/null 2>&1; then
+  bench_cmd "python" python3 tests/bench/literal.py
+elif command -v python >/dev/null 2>&1; then
+  bench_cmd "python" python tests/bench/literal.py
+else
+  echo "python not found"
+fi
 if command -v cc >/dev/null 2>&1; then
-  c_bin=tests/bench/loop_c
   c_lit_bin=tests/bench/literal_c
-  if [ ! -x "$c_bin" ] || [ tests/bench/loop.c -nt "$c_bin" ]; then
-    cc -O2 tests/bench/loop.c -o "$c_bin" >/dev/null 2>&1 || true
-  fi
-  if [ -x "$c_bin" ]; then
-    bench_cmd "c sum loop" "$c_bin"
-  else
-    echo "c compiler found but build failed"
-  fi
   if [ ! -x "$c_lit_bin" ] || [ tests/bench/literal.c -nt "$c_lit_bin" ]; then
     cc -O2 tests/bench/literal.c -o "$c_lit_bin" >/dev/null 2>&1 || true
   fi
   if [ -x "$c_lit_bin" ]; then
-    bench_cmd "c literal list" "$c_lit_bin"
+    bench_cmd "c" "$c_lit_bin"
   else
     echo "c literal list build failed"
   fi
 else
   echo "c compiler not found"
 fi
+
+echo ""
+echo "Deep access"
+bench_cmd "disturb" "$BIN" tests/bench/deep.disturb
+if command -v lua >/dev/null 2>&1; then
+  bench_cmd "lua" lua tests/bench/deep.lua
+else
+  echo "lua not found"
+fi
+if command -v node >/dev/null 2>&1; then
+  bench_cmd "node" node tests/bench/deep.js
+else
+  echo "node not found"
+fi
+if command -v python3 >/dev/null 2>&1; then
+  bench_cmd "python" python3 tests/bench/deep.py
+elif command -v python >/dev/null 2>&1; then
+  bench_cmd "python" python tests/bench/deep.py
+else
+  echo "python not found"
+fi
+if command -v cc >/dev/null 2>&1; then
+  c_deep_bin=tests/bench/deep_c
+  if [ ! -x "$c_deep_bin" ] || [ tests/bench/deep.c -nt "$c_deep_bin" ]; then
+    cc -O2 tests/bench/deep.c -o "$c_deep_bin" >/dev/null 2>&1 || true
+  fi
+  if [ -x "$c_deep_bin" ]; then
+    bench_cmd "c" "$c_deep_bin"
+  else
+    echo "c deep access build failed"
+  fi
+else
+  echo "c compiler not found"
+fi
+
+echo ""
+echo "String length"
+bench_cmd "disturb" "$BIN" tests/bench/string.disturb
+if command -v lua >/dev/null 2>&1; then
+  bench_cmd "lua" lua tests/bench/string.lua
+else
+  echo "lua not found"
+fi
+if command -v node >/dev/null 2>&1; then
+  bench_cmd "node" node tests/bench/string.js
+else
+  echo "node not found"
+fi
+if command -v python3 >/dev/null 2>&1; then
+  bench_cmd "python" python3 tests/bench/string.py
+elif command -v python >/dev/null 2>&1; then
+  bench_cmd "python" python tests/bench/string.py
+else
+  echo "python not found"
+fi
+if command -v cc >/dev/null 2>&1; then
+  c_str_bin=tests/bench/string_c
+  if [ ! -x "$c_str_bin" ] || [ tests/bench/string.c -nt "$c_str_bin" ]; then
+    cc -O2 tests/bench/string.c -o "$c_str_bin" >/dev/null 2>&1 || true
+  fi
+  if [ -x "$c_str_bin" ]; then
+    bench_cmd "c" "$c_str_bin"
+  else
+    echo "c string length build failed"
+  fi
+else
+  echo "c compiler not found"
+fi
+
+echo ""
+echo "Empty program"
+bench_cmd "disturb" "$BIN" tests/bench/empty.disturb
+
+echo ""
+echo "Big program"
+bench_cmd "disturb" "$BIN" tests/bench/big.disturb
+bench_cmd "disturb --asm" "$BIN" --asm tests/bench/big.asm

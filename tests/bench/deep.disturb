@@ -1,0 +1,3 @@
+deep = (object){a = (object){a = (object){a = (object){a = (object){a = (object){a = (object){a = (object){a = 12345}}}}}}}};
+x = deep.a.a.a.a.a.a.a;
+println(x);

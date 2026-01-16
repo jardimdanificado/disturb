@@ -1,2 +1,5 @@
 *.o
 disturb
+tests/bench/*_c
+tests/asm/out.bin
+tests/asm/out.asm
