@@ -10,3 +10,18 @@ obj(9);
 
 obj2 = (object){a = 3, foo = (x){ println(this.a + x); }};
 obj2.foo(4);
+
+adder = (a, b = 2){ return a + b; };
+println(adder(3));
+println(adder(3, 4));
+
+noop = (){ return; };
+n = noop();
+println(n);
+
+show = (a, b = "x"){ println(a); println(b); };
+show(1);
+
+opt = (a, b){ println(a); println(b); };
+opt(1);
+opt(1, 2);

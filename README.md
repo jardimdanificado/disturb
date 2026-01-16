@@ -8,6 +8,8 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | --- | --- |
 | `make` | Build `disturb` |
 | `./disturb file.disturb` | Run source |
+| `./disturb` | Interactive REPL |
+| `./disturb --repl` | Interactive REPL |
 | `./disturb --asm input.asm output.bin` | Assemble to bytecode |
 | `./disturb --disasm input.bin output.asm` | Disassemble bytecode |
 
@@ -30,7 +32,7 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | byte | `(byte){9, 1, 2}` | Byte list, values 0–255 |
 | char | `'c'` | Single byte |
 | string | `"abc"` | Char object with length > 1 |
-| object | `(object){a = 1}` | Keyed container |
+| object | `{a = 1}` | Keyed container |
 
 ## Construction
 
@@ -38,7 +40,8 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | --- | --- |
 | `(number){1, 2}` | Number list |
 | `(byte){9, 1}` | Byte list |
-| `(object){a = b}` | Object with keys |
+| `{a = b}` | Object with keys |
+| `(object){a = b}` | Explicit object cast |
 
 ## Expressions and Operators
 
@@ -52,19 +55,37 @@ Operators follow standard precedence with parentheses support:
 
 Notes:
 - Logical and comparison operators return numbers (`1` or `0`).
-- `null` is false; everything else is true.
+- `null` and numeric `0` are false; everything else is true.
 - `+` concatenates when either side is a string/char; non-strings stringify to Disturb literals.
+- `a ?= b` assigns `b` only when `a` is `null`.
+
+## Control Flow
+
+Supported control flow forms:
+- `if (cond) { ... } else { ... }`
+- `if (cond) { ... } else if (cond) { ... }`
+- `while (cond) { ... }`
+- `for (init; cond; step) { ... }`
+- `each(value in expr) { ... }`
+- `break;` and `continue;`
+
+Notes:
+- `each` iterates in index order. For objects, the entry key is available via `value.name`.
 
 ## User Functions
 
 Define functions by assigning a parameter list and body:
 - `name = (a, b, rest...){ println(a + b); }`
+- `name = (a = 1, b = "x"){ println(a + b); }`
 
 Rules:
 - Parameters are identifiers only.
 - `...` marks the last parameter as a vararg list (stored as an object list).
+- Missing arguments default to `null` unless a default value is provided.
+- `return expr;` exits a function and returns a value. `return;` returns `null`.
 - Calls bind `this` to the call target (`obj.method()` sets `this` to `obj`).
 - Calling an object by name (e.g. `obj()`) uses a method with the same name inside that object.
+- Calls can be used inside expressions (`x = add(1, 2);`).
 
 ## Indexing
 
@@ -117,6 +138,9 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 | `STORE_GLOBAL` | `val --` | Store in global |
 | `SET_THIS` | `val --` | Set current `this` |
 | `CALL` | `args --` | Call native |
+| `JMP` | `--` | Unconditional jump |
+| `JMP_IF_FALSE` | `cond --` | Jump if false |
+| `RETURN` | `val? --` | Return from function |
 | `POP` | `val --` | Drop |
 | `DUP` | `val -- val val` | Duplicate |
 | `GC` | `--` | Collect |
@@ -161,6 +185,9 @@ Strings:
 Objects/Arrays:
 - `keys`, `values`, `has`, `delete`
 - `push`, `pop`, `shift`, `unshift`, `insert`, `remove`
+
+Formatting:
+- `pretty`
 
 `replace` uses Papagaio-style patterns:
 - `"hello $name".replace("$name", "world")`

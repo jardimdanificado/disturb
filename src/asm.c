@@ -259,10 +259,24 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                     return 0;
                 }
             }
+        } else if (strcmp(ident, "JMP") == 0 || strcmp(ident, "JMP_IF_FALSE") == 0) {
+            uint32_t target = 0;
+            if (!parse_u32(&s, &target)) {
+                err_set(err_buf, err_cap, "JMP expects a target");
+                bc_free(out);
+                return 0;
+            }
+            uint8_t op = strcmp(ident, "JMP") == 0 ? BC_JMP : BC_JMP_IF_FALSE;
+            if (!bc_emit_u8(out, op) || !bc_emit_u32(out, target)) {
+                err_set(err_buf, err_cap, "failed to emit JMP");
+                bc_free(out);
+                return 0;
+            }
         } else if (strcmp(ident, "INDEX") == 0 || strcmp(ident, "STORE_INDEX") == 0 ||
                    strcmp(ident, "POP") == 0 || strcmp(ident, "DUP") == 0 ||
                    strcmp(ident, "GC") == 0 || strcmp(ident, "DUMP") == 0 ||
                    strcmp(ident, "LOAD_THIS") == 0 || strcmp(ident, "SET_THIS") == 0 ||
+                   strcmp(ident, "RETURN") == 0 ||
                    strcmp(ident, "ADD") == 0 || strcmp(ident, "SUB") == 0 ||
                    strcmp(ident, "MUL") == 0 || strcmp(ident, "DIV") == 0 ||
                    strcmp(ident, "MOD") == 0 || strcmp(ident, "NEG") == 0 ||
@@ -279,6 +293,7 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
             else if (strcmp(ident, "DUMP") == 0) op = BC_DUMP;
             else if (strcmp(ident, "LOAD_THIS") == 0) op = BC_LOAD_THIS;
             else if (strcmp(ident, "SET_THIS") == 0) op = BC_SET_THIS;
+            else if (strcmp(ident, "RETURN") == 0) op = BC_RETURN;
             else if (strcmp(ident, "ADD") == 0) op = BC_ADD;
             else if (strcmp(ident, "SUB") == 0) op = BC_SUB;
             else if (strcmp(ident, "MUL") == 0) op = BC_MUL;
@@ -433,8 +448,15 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
                 unsigned char *buf = NULL;
                 size_t slen = 0;
                 if (!read_string(data, len, &pc, &buf, &slen)) return 0;
-                fprintf(out, " %s", buf);
+                uint32_t def_len = 0;
+                if (!read_u32(data, len, &pc, &def_len)) {
+                    free(buf);
+                    return 0;
+                }
+                fprintf(out, " %s %u", buf, (unsigned)def_len);
                 free(buf);
+                if (pc + def_len > len) return 0;
+                pc += def_len;
             }
             fputc('\n', out);
             break;
@@ -486,6 +508,16 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
             break;
         case BC_SET_THIS:
             fputs("SET_THIS\n", out);
+            break;
+        case BC_JMP:
+        case BC_JMP_IF_FALSE: {
+            uint32_t target = 0;
+            if (!read_u32(data, len, &pc, &target)) return 0;
+            fprintf(out, "%s %u\n", op == BC_JMP ? "JMP" : "JMP_IF_FALSE", (unsigned)target);
+            break;
+        }
+        case BC_RETURN:
+            fputs("RETURN\n", out);
             break;
         case BC_POP:
             fputs("POP\n", out);

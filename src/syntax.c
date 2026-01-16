@@ -10,6 +10,15 @@
 typedef enum {
     TOK_EOF = 0,
     TOK_IDENT,
+    TOK_IF,
+    TOK_ELSE,
+    TOK_FOR,
+    TOK_WHILE,
+    TOK_EACH,
+    TOK_IN,
+    TOK_RETURN,
+    TOK_BREAK,
+    TOK_CONTINUE,
     TOK_NUMBER,
     TOK_STRING,
     TOK_CHAR,
@@ -23,6 +32,7 @@ typedef enum {
     TOK_COMMA,
     TOK_SEMI,
     TOK_EQ,
+    TOK_QEQ,
     TOK_PLUS,
     TOK_MINUS,
     TOK_STAR,
@@ -65,6 +75,7 @@ typedef enum {
     EXPR_OBJECT_LITERAL,
     EXPR_UNARY,
     EXPR_BINARY,
+    EXPR_CALL,
     EXPR_FUNC_LITERAL
 } ExprKind;
 
@@ -128,10 +139,17 @@ struct Expr {
             Expr *right;
         } binary;
         struct {
+            Expr *callee;
+            Expr **args;
+            int argc;
+        } call;
+        struct {
             char **args;
             size_t *arg_lens;
             int argc;
             int has_vararg;
+            Bytecode *defaults;
+            uint8_t *has_default;
             Bytecode bc;
         } func;
     } as;
@@ -152,7 +170,22 @@ typedef struct {
     int had_error;
     char err[256];
     Arena arena;
+    int temp_id;
+    struct LoopContext *loops;
+    int loop_count;
+    int loop_cap;
 } Parser;
+
+typedef struct LoopContext {
+    size_t *breaks;
+    int break_count;
+    int break_cap;
+    size_t *continues;
+    int cont_count;
+    int cont_cap;
+    size_t continue_target;
+    int has_continue_target;
+} LoopContext;
 
 static void arena_init(Arena *a)
 {
@@ -211,6 +244,77 @@ static void arena_free(Arena *a)
     a->items = NULL;
     a->count = 0;
     a->cap = 0;
+}
+
+static void loop_free(Parser *p)
+{
+    for (int i = 0; i < p->loop_count; i++) {
+        free(p->loops[i].breaks);
+        free(p->loops[i].continues);
+    }
+    free(p->loops);
+    p->loops = NULL;
+    p->loop_count = 0;
+    p->loop_cap = 0;
+}
+
+static LoopContext *loop_current(Parser *p)
+{
+    if (!p || p->loop_count <= 0) return NULL;
+    return &p->loops[p->loop_count - 1];
+}
+
+static int loop_push(Parser *p)
+{
+    if (p->loop_count == p->loop_cap) {
+        int next = p->loop_cap == 0 ? 4 : p->loop_cap * 2;
+        LoopContext *tmp = (LoopContext*)realloc(p->loops, (size_t)next * sizeof(LoopContext));
+        if (!tmp) return 0;
+        p->loops = tmp;
+        p->loop_cap = next;
+    }
+    LoopContext *ctx = &p->loops[p->loop_count++];
+    memset(ctx, 0, sizeof(*ctx));
+    return 1;
+}
+
+static void loop_pop(Parser *p)
+{
+    if (!p || p->loop_count <= 0) return;
+    LoopContext *ctx = &p->loops[p->loop_count - 1];
+    free(ctx->breaks);
+    free(ctx->continues);
+    p->loop_count--;
+}
+
+static int loop_add_break(Parser *p, size_t pos)
+{
+    LoopContext *ctx = loop_current(p);
+    if (!ctx) return 0;
+    if (ctx->break_count == ctx->break_cap) {
+        int next = ctx->break_cap == 0 ? 4 : ctx->break_cap * 2;
+        size_t *tmp = (size_t*)realloc(ctx->breaks, (size_t)next * sizeof(size_t));
+        if (!tmp) return 0;
+        ctx->breaks = tmp;
+        ctx->break_cap = next;
+    }
+    ctx->breaks[ctx->break_count++] = pos;
+    return 1;
+}
+
+static int loop_add_continue(Parser *p, size_t pos)
+{
+    LoopContext *ctx = loop_current(p);
+    if (!ctx) return 0;
+    if (ctx->cont_count == ctx->cont_cap) {
+        int next = ctx->cont_cap == 0 ? 4 : ctx->cont_cap * 2;
+        size_t *tmp = (size_t*)realloc(ctx->continues, (size_t)next * sizeof(size_t));
+        if (!tmp) return 0;
+        ctx->continues = tmp;
+        ctx->cont_cap = next;
+    }
+    ctx->continues[ctx->cont_count++] = pos;
+    return 1;
 }
 
 static void parser_error(Parser *p, const char *fmt, ...)
@@ -296,8 +400,28 @@ static Token next_token(Parser *p)
         while (isalnum((unsigned char)peek_char(p)) || peek_char(p) == '_') {
             next_char(p);
         }
-        t.kind = TOK_IDENT;
         t.len = (size_t)(p->src + p->pos - t.start);
+        if (t.len == 2 && strncmp(t.start, "if", 2) == 0) {
+            t.kind = TOK_IF;
+        } else if (t.len == 4 && strncmp(t.start, "else", 4) == 0) {
+            t.kind = TOK_ELSE;
+        } else if (t.len == 3 && strncmp(t.start, "for", 3) == 0) {
+            t.kind = TOK_FOR;
+        } else if (t.len == 5 && strncmp(t.start, "while", 5) == 0) {
+            t.kind = TOK_WHILE;
+        } else if (t.len == 4 && strncmp(t.start, "each", 4) == 0) {
+            t.kind = TOK_EACH;
+        } else if (t.len == 2 && strncmp(t.start, "in", 2) == 0) {
+            t.kind = TOK_IN;
+        } else if (t.len == 6 && strncmp(t.start, "return", 6) == 0) {
+            t.kind = TOK_RETURN;
+        } else if (t.len == 5 && strncmp(t.start, "break", 5) == 0) {
+            t.kind = TOK_BREAK;
+        } else if (t.len == 8 && strncmp(t.start, "continue", 8) == 0) {
+            t.kind = TOK_CONTINUE;
+        } else {
+            t.kind = TOK_IDENT;
+        }
         return t;
     }
 
@@ -403,6 +527,14 @@ static Token next_token(Parser *p)
             t.kind = TOK_EQEQ;
         } else {
             t.kind = TOK_EQ;
+        }
+        break;
+    case '?':
+        if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_QEQ;
+        } else {
+            t.kind = TOK_EOF;
         }
         break;
     case '<':
@@ -530,6 +662,42 @@ static int peek_is_func_literal(Parser *p)
             return tok.kind == TOK_LBRACE;
         }
 
+        if (tok.kind == TOK_EQ) {
+            int depth = 0;
+            for (;;) {
+                token_free(&tok);
+                tok = next_token(&probe);
+                if (tok.kind == TOK_EOF) {
+                    token_free(&tok);
+                    return 0;
+                }
+                if (tok.kind == TOK_LPAREN || tok.kind == TOK_LBRACE || tok.kind == TOK_LBRACKET) {
+                    depth++;
+                    continue;
+                }
+                if (tok.kind == TOK_RPAREN) {
+                    if (depth == 0) {
+                        token_free(&tok);
+                        tok = next_token(&probe);
+                        token_free(&tok);
+                        return tok.kind == TOK_LBRACE;
+                    }
+                    depth--;
+                    continue;
+                }
+                if (tok.kind == TOK_RBRACE || tok.kind == TOK_RBRACKET) {
+                    if (depth > 0) depth--;
+                    continue;
+                }
+                if (tok.kind == TOK_COMMA && depth == 0) {
+                    token_free(&tok);
+                    tok = next_token(&probe);
+                    break;
+                }
+            }
+            continue;
+        }
+
         if (tok.kind == TOK_RPAREN) {
             token_free(&tok);
             tok = next_token(&probe);
@@ -565,9 +733,61 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count);
 static int parse_statement(Parser *p, Bytecode *bc);
 static Expr *parse_func_literal(Parser *p);
 static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len);
+static int emit_expr(Bytecode *bc, Parser *p, Expr *e);
 
 static Expr *parse_primary(Parser *p)
 {
+    if (p->current.kind == TOK_LBRACE) {
+        advance(p);
+        Expr *e = expr_new(p, EXPR_OBJECT_LITERAL);
+        if (!e) return NULL;
+        ObjPair *pairs = NULL;
+        int count = 0;
+        int cap = 0;
+
+        if (p->current.kind != TOK_RBRACE) {
+            for (;;) {
+                if (p->current.kind != TOK_IDENT) {
+                    parser_error(p, "object key must be an identifier");
+                    return NULL;
+                }
+                char *key = arena_strndup(&p->arena, p->current.start, p->current.len);
+                size_t key_len = p->current.len;
+                advance(p);
+                if (!expect(p, TOK_EQ, "expected '=' after object key")) return NULL;
+                Expr *value = parse_expr(p);
+                if (!value) return NULL;
+
+                if (count == cap) {
+                    int next = cap == 0 ? 4 : cap * 2;
+                    ObjPair *tmp = (ObjPair*)realloc(pairs, (size_t)next * sizeof(ObjPair));
+                    if (!tmp) {
+                        parser_error(p, "out of memory");
+                        return NULL;
+                    }
+                    pairs = tmp;
+                    cap = next;
+                }
+                pairs[count].name = key;
+                pairs[count].name_len = key_len;
+                pairs[count].value = value;
+                count++;
+
+                if (match(p, TOK_COMMA)) continue;
+                break;
+            }
+        }
+
+        if (!expect(p, TOK_RBRACE, "expected '}' to end object literal")) return NULL;
+        if (pairs && !arena_track(&p->arena, pairs)) {
+            parser_error(p, "out of memory");
+            return NULL;
+        }
+        e->as.obj.pairs = pairs;
+        e->as.obj.count = count;
+        return e;
+    }
+
     if (p->current.kind == TOK_NUMBER) {
         Expr *e = expr_new(p, EXPR_LITERAL_NUM);
         if (!e) return NULL;
@@ -824,11 +1044,11 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count)
 
 static int parse_block(Parser *p, Bytecode *bc)
 {
-    if (!expect(p, TOK_LBRACE, "expected '{' to start function body")) return 0;
+    if (!expect(p, TOK_LBRACE, "expected '{' to start block")) return 0;
     while (p->current.kind != TOK_RBRACE && p->current.kind != TOK_EOF) {
         if (!parse_statement(p, bc)) return 0;
     }
-    if (!expect(p, TOK_RBRACE, "expected '}' after function body")) return 0;
+    if (!expect(p, TOK_RBRACE, "expected '}' after block")) return 0;
     return 1;
 }
 
@@ -839,6 +1059,8 @@ static Expr *parse_func_literal(Parser *p)
 
     char **args = NULL;
     size_t *arg_lens = NULL;
+    Bytecode *defaults = NULL;
+    uint8_t *has_default = NULL;
     int argc = 0;
     int cap = 0;
     int has_vararg = 0;
@@ -863,16 +1085,24 @@ static Expr *parse_func_literal(Parser *p)
                 int next = cap == 0 ? 4 : cap * 2;
                 char **tmp = (char**)realloc(args, (size_t)next * sizeof(char*));
                 size_t *ltmp = (size_t*)realloc(arg_lens, (size_t)next * sizeof(size_t));
-                if (!tmp || !ltmp) {
+                Bytecode *dtmp = (Bytecode*)realloc(defaults, (size_t)next * sizeof(Bytecode));
+                uint8_t *htmp = (uint8_t*)realloc(has_default, (size_t)next * sizeof(uint8_t));
+                if (!tmp || !ltmp || !dtmp || !htmp) {
                     parser_error(p, "out of memory");
                     return NULL;
                 }
                 args = tmp;
                 arg_lens = ltmp;
+                defaults = dtmp;
+                has_default = htmp;
                 cap = next;
             }
             args[argc] = name;
             arg_lens[argc] = len;
+            defaults[argc].data = NULL;
+            defaults[argc].len = 0;
+            defaults[argc].cap = 0;
+            has_default[argc] = 0;
             argc++;
 
             if (is_vararg) {
@@ -881,6 +1111,20 @@ static Expr *parse_func_literal(Parser *p)
                     return NULL;
                 }
                 break;
+            }
+
+            if (match(p, TOK_EQ)) {
+                if (is_vararg) {
+                    parser_error(p, "vararg cannot have default value");
+                    return NULL;
+                }
+                Expr *def = parse_expr(p);
+                if (!def) return NULL;
+                Bytecode def_bc;
+                bc_init(&def_bc);
+                if (!emit_expr(&def_bc, p, def)) return NULL;
+                defaults[argc - 1] = def_bc;
+                has_default[argc - 1] = 1;
             }
 
             if (match(p, TOK_COMMA)) continue;
@@ -906,11 +1150,21 @@ static Expr *parse_func_literal(Parser *p)
         parser_error(p, "out of memory");
         return NULL;
     }
+    if (defaults && !arena_track(&p->arena, defaults)) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+    if (has_default && !arena_track(&p->arena, has_default)) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
 
     e->as.func.args = args;
     e->as.func.arg_lens = arg_lens;
     e->as.func.argc = argc;
     e->as.func.has_vararg = has_vararg;
+    e->as.func.defaults = defaults;
+    e->as.func.has_default = has_default;
     e->as.func.bc = *body;
     return e;
 }
@@ -922,12 +1176,18 @@ static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len
 
     char **args = (char**)realloc(NULL, sizeof(char*));
     size_t *arg_lens = (size_t*)realloc(NULL, sizeof(size_t));
-    if (!args || !arg_lens) {
+    Bytecode *defaults = (Bytecode*)realloc(NULL, sizeof(Bytecode));
+    uint8_t *has_default = (uint8_t*)realloc(NULL, sizeof(uint8_t));
+    if (!args || !arg_lens || !defaults || !has_default) {
         parser_error(p, "out of memory");
         return NULL;
     }
     args[0] = name;
     arg_lens[0] = len;
+    defaults[0].data = NULL;
+    defaults[0].len = 0;
+    defaults[0].cap = 0;
+    has_default[0] = 0;
 
     Bytecode *body = (Bytecode*)arena_alloc(&p->arena, sizeof(Bytecode));
     if (!body) {
@@ -937,7 +1197,8 @@ static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len
     bc_init(body);
     if (!parse_block(p, body)) return NULL;
 
-    if (!arena_track(&p->arena, args) || !arena_track(&p->arena, arg_lens)) {
+    if (!arena_track(&p->arena, args) || !arena_track(&p->arena, arg_lens) ||
+        !arena_track(&p->arena, defaults) || !arena_track(&p->arena, has_default)) {
         parser_error(p, "out of memory");
         return NULL;
     }
@@ -946,6 +1207,8 @@ static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len
     e->as.func.arg_lens = arg_lens;
     e->as.func.argc = 1;
     e->as.func.has_vararg = 0;
+    e->as.func.defaults = defaults;
+    e->as.func.has_default = has_default;
     e->as.func.bc = *body;
     return e;
 }
@@ -979,6 +1242,46 @@ static Expr *parse_postfix(Parser *p)
             e->as.index.base = expr;
             e->as.index.index = index;
             expr = e;
+            continue;
+        }
+        if (match(p, TOK_LPAREN)) {
+            if (expr->kind != EXPR_NAME && expr->kind != EXPR_MEMBER) {
+                parser_error(p, "call target must be a name or member");
+                return NULL;
+            }
+            Expr **args = NULL;
+            int argc = 0;
+            int cap = 0;
+            if (p->current.kind != TOK_RPAREN) {
+                for (;;) {
+                    Expr *arg = parse_expr(p);
+                    if (!arg) return NULL;
+                    if (argc == cap) {
+                        int next = cap == 0 ? 4 : cap * 2;
+                        Expr **tmp = (Expr**)realloc(args, (size_t)next * sizeof(Expr*));
+                        if (!tmp) {
+                            parser_error(p, "out of memory");
+                            return NULL;
+                        }
+                        args = tmp;
+                        cap = next;
+                    }
+                    args[argc++] = arg;
+                    if (match(p, TOK_COMMA)) continue;
+                    break;
+                }
+            }
+            if (!expect(p, TOK_RPAREN, "expected ')' after arguments")) return NULL;
+            if (args && !arena_track(&p->arena, args)) {
+                parser_error(p, "out of memory");
+                return NULL;
+            }
+            Expr *call = expr_new(p, EXPR_CALL);
+            if (!call) return NULL;
+            call->as.call.callee = expr;
+            call->as.call.args = args;
+            call->as.call.argc = argc;
+            expr = call;
             continue;
         }
         break;
@@ -1138,6 +1441,67 @@ static int emit_key(Bytecode *bc, Parser *p, const char *name, size_t len)
         return 0;
     }
     return 1;
+}
+
+static int emit_load_global_name(Bytecode *bc, Parser *p, const char *name, size_t len)
+{
+    if (!bc_emit_u8(bc, BC_LOAD_GLOBAL) || !bc_emit_string(bc, name, len)) {
+        parser_error(p, "failed to emit LOAD_GLOBAL");
+        return 0;
+    }
+    return 1;
+}
+
+static int emit_store_global_name(Bytecode *bc, Parser *p, const char *name, size_t len)
+{
+    if (!bc_emit_u8(bc, BC_STORE_GLOBAL) || !bc_emit_string(bc, name, len)) {
+        parser_error(p, "failed to emit STORE_GLOBAL");
+        return 0;
+    }
+    return 1;
+}
+
+static size_t emit_jump(Bytecode *bc, Parser *p, uint8_t op)
+{
+    if (!bc_emit_u8(bc, op)) {
+        parser_error(p, "failed to emit jump");
+        return 0;
+    }
+    size_t pos = bc->len;
+    if (!bc_emit_u32(bc, 0)) {
+        parser_error(p, "failed to emit jump target");
+        return 0;
+    }
+    return pos;
+}
+
+static int patch_jump(Bytecode *bc, Parser *p, size_t pos, size_t target)
+{
+    if (target > 0xFFFFFFFFu) {
+        parser_error(p, "jump target too large");
+        return 0;
+    }
+    if (pos + 4 > bc->len) {
+        parser_error(p, "invalid jump patch");
+        return 0;
+    }
+    uint32_t v = (uint32_t)target;
+    bc->data[pos] = (unsigned char)(v & 0xFF);
+    bc->data[pos + 1] = (unsigned char)((v >> 8) & 0xFF);
+    bc->data[pos + 2] = (unsigned char)((v >> 16) & 0xFF);
+    bc->data[pos + 3] = (unsigned char)((v >> 24) & 0xFF);
+    return 1;
+}
+
+static char *arena_format_temp(Arena *a, const char *prefix, int id)
+{
+    char buf[64];
+    int len = snprintf(buf, sizeof(buf), "%s%d", prefix, id);
+    if (len < 0) return NULL;
+    char *out = (char*)arena_alloc(a, (size_t)len + 1);
+    if (!out) return NULL;
+    memcpy(out, buf, (size_t)len + 1);
+    return out;
 }
 
 static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
@@ -1320,6 +1684,43 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         }
         return 1;
     }
+    case EXPR_CALL: {
+        uint32_t argc = 0;
+        for (int i = 0; i < e->as.call.argc; i++) {
+            if (!emit_expr(bc, p, e->as.call.args[i])) return 0;
+            argc++;
+        }
+        Expr *callee = e->as.call.callee;
+        if (callee->kind == EXPR_NAME) {
+            if (!bc_emit_u8(bc, BC_LOAD_GLOBAL) ||
+                !bc_emit_string(bc, callee->as.name.name, callee->as.name.len)) {
+                parser_error(p, "failed to load call target");
+                return 0;
+            }
+            if (!bc_emit_u8(bc, BC_SET_THIS)) {
+                parser_error(p, "failed to set this");
+                return 0;
+            }
+        } else if (callee->kind == EXPR_MEMBER) {
+            if (!emit_expr(bc, p, callee->as.member.base)) return 0;
+            if (!bc_emit_u8(bc, BC_SET_THIS)) {
+                parser_error(p, "failed to set this");
+                return 0;
+            }
+        } else {
+            parser_error(p, "call target must be a name or member");
+            return 0;
+        }
+        const char *name = callee->kind == EXPR_NAME ? callee->as.name.name : callee->as.member.name;
+        size_t len = callee->kind == EXPR_NAME ? callee->as.name.len : callee->as.member.len;
+        if (!bc_emit_u8(bc, BC_CALL) ||
+            !bc_emit_string(bc, name, len) ||
+            !bc_emit_u32(bc, argc)) {
+            parser_error(p, "failed to emit CALL");
+            return 0;
+        }
+        return 1;
+    }
     case EXPR_FUNC_LITERAL: {
         Bytecode *body = &e->as.func.bc;
         if (body->len > 0xFFFFFFFFu) {
@@ -1339,11 +1740,41 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
                 parser_error(p, "failed to emit function arg name");
                 return 0;
             }
+            uint32_t def_len = 0;
+            if (e->as.func.has_default && e->as.func.has_default[i]) {
+                Bytecode *def_bc = &e->as.func.defaults[i];
+                if (def_bc->len > 0xFFFFFFFFu) {
+                    parser_error(p, "default bytecode too large");
+                    return 0;
+                }
+                def_len = (uint32_t)def_bc->len;
+            }
+            if (!bc_emit_u32(bc, def_len)) {
+                parser_error(p, "failed to emit default length");
+                return 0;
+            }
+            if (def_len) {
+                Bytecode *def_bc = &e->as.func.defaults[i];
+                if (!bc_emit_bytes(bc, def_bc->data, def_bc->len)) {
+                    parser_error(p, "failed to emit default bytecode");
+                    return 0;
+                }
+            }
         }
         bc_free(body);
         body->data = NULL;
         body->len = 0;
         body->cap = 0;
+        if (e->as.func.has_default && e->as.func.defaults) {
+            for (int i = 0; i < e->as.func.argc; i++) {
+                if (e->as.func.has_default[i]) {
+                    bc_free(&e->as.func.defaults[i]);
+                }
+                e->as.func.defaults[i].data = NULL;
+                e->as.func.defaults[i].len = 0;
+                e->as.func.defaults[i].cap = 0;
+            }
+        }
         return 1;
     }
     default:
@@ -1399,70 +1830,55 @@ static int emit_store(Bytecode *bc, Parser *p, Expr *lhs, Expr *rhs)
     return 0;
 }
 
-static int parse_call(Parser *p, Expr *callee, Bytecode *bc)
+static int emit_default_store(Bytecode *bc, Parser *p, Expr *lhs, Expr *rhs)
 {
-    if (!expect(p, TOK_LPAREN, "expected '(' after function name")) return 0;
-
-    if (callee->kind != EXPR_NAME && callee->kind != EXPR_MEMBER) {
-        parser_error(p, "call target must be a name or member");
+    if (!emit_expr(bc, p, lhs)) return 0;
+    if (!emit_load_global_name(bc, p, "null", 4)) return 0;
+    if (!bc_emit_u8(bc, BC_EQ)) {
+        parser_error(p, "failed to emit default compare");
         return 0;
     }
-
-    uint32_t argc = 0;
-    if (p->current.kind != TOK_RPAREN) {
-        for (;;) {
-            Expr *arg = parse_expr(p);
-            if (!arg) return 0;
-            if (!emit_expr(bc, p, arg)) return 0;
-            argc++;
-            if (match(p, TOK_COMMA)) continue;
-            break;
-        }
-    }
-
-    if (!expect(p, TOK_RPAREN, "expected ')' after arguments")) return 0;
-
-    if (callee->kind == EXPR_NAME) {
-        if (!bc_emit_u8(bc, BC_LOAD_GLOBAL) ||
-            !bc_emit_string(bc, callee->as.name.name, callee->as.name.len)) {
-            parser_error(p, "failed to load call target");
-            return 0;
-        }
-        if (!bc_emit_u8(bc, BC_SET_THIS)) {
-            parser_error(p, "failed to set this");
-            return 0;
-        }
-    } else {
-        if (!emit_expr(bc, p, callee->as.member.base)) return 0;
-        if (!bc_emit_u8(bc, BC_SET_THIS)) {
-            parser_error(p, "failed to set this");
-            return 0;
-        }
-    }
-
-    const char *name = callee->kind == EXPR_NAME ? callee->as.name.name : callee->as.member.name;
-    size_t len = callee->kind == EXPR_NAME ? callee->as.name.len : callee->as.member.len;
-
-    if (!bc_emit_u8(bc, BC_CALL) ||
-        !bc_emit_string(bc, name, len) ||
-        !bc_emit_u32(bc, argc)) {
-        parser_error(p, "failed to emit CALL");
-        return 0;
-    }
-
+    size_t jmp_skip = emit_jump(bc, p, BC_JMP_IF_FALSE);
+    if (!jmp_skip) return 0;
+    if (!emit_store(bc, p, lhs, rhs)) return 0;
+    if (!patch_jump(bc, p, jmp_skip, bc->len)) return 0;
     return 1;
 }
 
-static int parse_statement(Parser *p, Bytecode *bc)
+static int emit_loop_break(Parser *p, Bytecode *bc)
+{
+    if (!loop_current(p)) {
+        parser_error(p, "break outside loop");
+        return 0;
+    }
+    size_t pos = emit_jump(bc, p, BC_JMP);
+    if (!pos) return 0;
+    if (!loop_add_break(p, pos)) {
+        parser_error(p, "out of memory");
+        return 0;
+    }
+    return 1;
+}
+
+static int emit_loop_continue(Parser *p, Bytecode *bc)
+{
+    if (!loop_current(p)) {
+        parser_error(p, "continue outside loop");
+        return 0;
+    }
+    size_t pos = emit_jump(bc, p, BC_JMP);
+    if (!pos) return 0;
+    if (!loop_add_continue(p, pos)) {
+        parser_error(p, "out of memory");
+        return 0;
+    }
+    return 1;
+}
+
+static int parse_simple_statement(Parser *p, Bytecode *bc, int require_semi)
 {
     Expr *expr = parse_expr(p);
     if (!expr) return 0;
-
-    if (p->current.kind == TOK_LPAREN) {
-        if (!parse_call(p, expr, bc)) return 0;
-        if (!expect(p, TOK_SEMI, "expected ';' after call")) return 0;
-        return 1;
-    }
 
     if (match(p, TOK_EQ)) {
         if (!expr_is_lvalue(expr)) {
@@ -1471,12 +1887,355 @@ static int parse_statement(Parser *p, Bytecode *bc)
         }
         Expr *rhs = parse_expr(p);
         if (!rhs) return 0;
-        if (!expect(p, TOK_SEMI, "expected ';' after assignment")) return 0;
+        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after assignment")) return 0;
         return emit_store(bc, p, expr, rhs);
+    }
+
+    if (match(p, TOK_QEQ)) {
+        if (!expr_is_lvalue(expr)) {
+            parser_error(p, "left side is not assignable");
+            return 0;
+        }
+        Expr *rhs = parse_expr(p);
+        if (!rhs) return 0;
+        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after assignment")) return 0;
+        return emit_default_store(bc, p, expr, rhs);
+    }
+
+    if (expr->kind == EXPR_CALL) {
+        if (!emit_expr(bc, p, expr)) return 0;
+        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after call")) return 0;
+        if (!bc_emit_u8(bc, BC_POP)) {
+            parser_error(p, "failed to emit POP");
+            return 0;
+        }
+        return 1;
     }
 
     parser_error(p, "expected assignment or call");
     return 0;
+}
+
+static int parse_if_statement(Parser *p, Bytecode *bc)
+{
+    if (!expect(p, TOK_LPAREN, "expected '(' after if")) return 0;
+    Expr *cond = parse_expr(p);
+    if (!cond) return 0;
+    if (!expect(p, TOK_RPAREN, "expected ')' after condition")) return 0;
+    if (!emit_expr(bc, p, cond)) return 0;
+
+    size_t jmp_false = emit_jump(bc, p, BC_JMP_IF_FALSE);
+    if (!jmp_false) return 0;
+    if (!parse_block(p, bc)) return 0;
+
+    if (match(p, TOK_ELSE)) {
+        size_t jmp_end = emit_jump(bc, p, BC_JMP);
+        if (!jmp_end) return 0;
+        if (!patch_jump(bc, p, jmp_false, bc->len)) return 0;
+        if (match(p, TOK_IF)) {
+            if (!parse_if_statement(p, bc)) return 0;
+        } else {
+            if (!parse_block(p, bc)) return 0;
+        }
+        if (!patch_jump(bc, p, jmp_end, bc->len)) return 0;
+    } else {
+        if (!patch_jump(bc, p, jmp_false, bc->len)) return 0;
+    }
+
+    return 1;
+}
+
+static int parse_while_statement(Parser *p, Bytecode *bc)
+{
+    if (!expect(p, TOK_LPAREN, "expected '(' after while")) return 0;
+    if (!loop_push(p)) {
+        parser_error(p, "out of memory");
+        return 0;
+    }
+    size_t loop_start = bc->len;
+    Expr *cond = parse_expr(p);
+    if (!cond) { loop_pop(p); return 0; }
+    if (!expect(p, TOK_RPAREN, "expected ')' after condition")) { loop_pop(p); return 0; }
+    if (!emit_expr(bc, p, cond)) { loop_pop(p); return 0; }
+    size_t jmp_out = emit_jump(bc, p, BC_JMP_IF_FALSE);
+    if (!jmp_out) { loop_pop(p); return 0; }
+    LoopContext *ctx = loop_current(p);
+    if (ctx) {
+        ctx->continue_target = loop_start;
+        ctx->has_continue_target = 1;
+    }
+    if (!parse_block(p, bc)) { loop_pop(p); return 0; }
+    if (ctx && ctx->has_continue_target) {
+        for (int i = 0; i < ctx->cont_count; i++) {
+            if (!patch_jump(bc, p, ctx->continues[i], ctx->continue_target)) { loop_pop(p); return 0; }
+        }
+    }
+    if (!bc_emit_u8(bc, BC_JMP) || !bc_emit_u32(bc, (uint32_t)loop_start)) {
+        parser_error(p, "failed to emit loop jump");
+        loop_pop(p);
+        return 0;
+    }
+    if (!patch_jump(bc, p, jmp_out, bc->len)) { loop_pop(p); return 0; }
+    if (ctx) {
+        size_t break_target = bc->len;
+        for (int i = 0; i < ctx->break_count; i++) {
+            if (!patch_jump(bc, p, ctx->breaks[i], break_target)) { loop_pop(p); return 0; }
+        }
+    }
+    loop_pop(p);
+    return 1;
+}
+
+static int parse_for_statement(Parser *p, Bytecode *bc)
+{
+    if (!expect(p, TOK_LPAREN, "expected '(' after for")) return 0;
+    if (!loop_push(p)) {
+        parser_error(p, "out of memory");
+        return 0;
+    }
+
+    if (p->current.kind != TOK_SEMI) {
+        if (!parse_simple_statement(p, bc, 0)) { loop_pop(p); return 0; }
+    }
+    if (!expect(p, TOK_SEMI, "expected ';' after for init")) { loop_pop(p); return 0; }
+
+    size_t loop_start = bc->len;
+    int has_cond = 0;
+    size_t jmp_out = 0;
+    if (p->current.kind != TOK_SEMI) {
+        Expr *cond = parse_expr(p);
+        if (!cond) { loop_pop(p); return 0; }
+        if (!emit_expr(bc, p, cond)) { loop_pop(p); return 0; }
+        jmp_out = emit_jump(bc, p, BC_JMP_IF_FALSE);
+        if (!jmp_out) { loop_pop(p); return 0; }
+        has_cond = 1;
+    }
+    if (!expect(p, TOK_SEMI, "expected ';' after for condition")) { loop_pop(p); return 0; }
+
+    Bytecode step;
+    bc_init(&step);
+    if (p->current.kind != TOK_RPAREN) {
+        if (!parse_simple_statement(p, &step, 0)) {
+            bc_free(&step);
+            loop_pop(p);
+            return 0;
+        }
+    }
+    if (!expect(p, TOK_RPAREN, "expected ')' after for clauses")) {
+        bc_free(&step);
+        loop_pop(p);
+        return 0;
+    }
+
+    if (!parse_block(p, bc)) {
+        bc_free(&step);
+        loop_pop(p);
+        return 0;
+    }
+
+    LoopContext *ctx = loop_current(p);
+    size_t step_start = bc->len;
+    if (ctx) {
+        ctx->continue_target = step_start;
+        ctx->has_continue_target = 1;
+        for (int i = 0; i < ctx->cont_count; i++) {
+            if (!patch_jump(bc, p, ctx->continues[i], ctx->continue_target)) { loop_pop(p); return 0; }
+        }
+    }
+    if (step.len > 0 && !bc_emit_bytes(bc, step.data, step.len)) {
+        parser_error(p, "failed to emit for step");
+        bc_free(&step);
+        loop_pop(p);
+        return 0;
+    }
+    bc_free(&step);
+
+    if (!bc_emit_u8(bc, BC_JMP) || !bc_emit_u32(bc, (uint32_t)loop_start)) {
+        parser_error(p, "failed to emit for loop jump");
+        loop_pop(p);
+        return 0;
+    }
+    if (has_cond && !patch_jump(bc, p, jmp_out, bc->len)) { loop_pop(p); return 0; }
+    if (ctx) {
+        size_t break_target = bc->len;
+        for (int i = 0; i < ctx->break_count; i++) {
+            if (!patch_jump(bc, p, ctx->breaks[i], break_target)) { loop_pop(p); return 0; }
+        }
+    }
+    loop_pop(p);
+    return 1;
+}
+
+static int parse_each_statement(Parser *p, Bytecode *bc)
+{
+    if (!expect(p, TOK_LPAREN, "expected '(' after each")) return 0;
+    if (!loop_push(p)) {
+        parser_error(p, "out of memory");
+        return 0;
+    }
+    if (p->current.kind != TOK_IDENT) {
+        parser_error(p, "expected identifier after each(");
+        loop_pop(p);
+        return 0;
+    }
+    char *value_name = arena_strndup(&p->arena, p->current.start, p->current.len);
+    size_t value_len = p->current.len;
+    advance(p);
+    if (!expect(p, TOK_IN, "expected 'in' after each value")) { loop_pop(p); return 0; }
+
+    Expr *iter = parse_expr(p);
+    if (!iter) { loop_pop(p); return 0; }
+    if (!expect(p, TOK_RPAREN, "expected ')' after each expression")) { loop_pop(p); return 0; }
+
+    int id = p->temp_id++;
+    char *iter_name = arena_format_temp(&p->arena, "__each_iter_", id);
+    char *len_name = arena_format_temp(&p->arena, "__each_len_", id);
+    char *idx_name = arena_format_temp(&p->arena, "__each_idx_", id);
+    if (!iter_name || !len_name || !idx_name) {
+        parser_error(p, "out of memory");
+        return 0;
+    }
+    size_t iter_len = strlen(iter_name);
+    size_t len_len = strlen(len_name);
+    size_t idx_len = strlen(idx_name);
+
+    if (!emit_expr(bc, p, iter)) { loop_pop(p); return 0; }
+    if (!emit_store_global_name(bc, p, iter_name, iter_len)) { loop_pop(p); return 0; }
+
+    if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 0.0)) {
+        parser_error(p, "failed to emit each index");
+        loop_pop(p);
+        return 0;
+    }
+    if (!emit_store_global_name(bc, p, idx_name, idx_len)) { loop_pop(p); return 0; }
+
+    if (!emit_load_global_name(bc, p, iter_name, iter_len)) { loop_pop(p); return 0; }
+    if (!bc_emit_u8(bc, BC_SET_THIS)) {
+        parser_error(p, "failed to set each this");
+        loop_pop(p);
+        return 0;
+    }
+    if (!bc_emit_u8(bc, BC_CALL) ||
+        !bc_emit_string(bc, "len", 3) ||
+        !bc_emit_u32(bc, 0)) {
+        parser_error(p, "failed to emit each len call");
+        loop_pop(p);
+        return 0;
+    }
+    if (!emit_store_global_name(bc, p, len_name, len_len)) { loop_pop(p); return 0; }
+
+    size_t loop_start = bc->len;
+    if (!emit_load_global_name(bc, p, idx_name, idx_len)) { loop_pop(p); return 0; }
+    if (!emit_load_global_name(bc, p, len_name, len_len)) { loop_pop(p); return 0; }
+    if (!bc_emit_u8(bc, BC_LT)) {
+        parser_error(p, "failed to emit each compare");
+        loop_pop(p);
+        return 0;
+    }
+    size_t jmp_out = emit_jump(bc, p, BC_JMP_IF_FALSE);
+    if (!jmp_out) { loop_pop(p); return 0; }
+
+    if (!emit_load_global_name(bc, p, iter_name, iter_len)) { loop_pop(p); return 0; }
+    if (!emit_load_global_name(bc, p, idx_name, idx_len)) { loop_pop(p); return 0; }
+    if (!bc_emit_u8(bc, BC_INDEX)) {
+        parser_error(p, "failed to emit each index");
+        loop_pop(p);
+        return 0;
+    }
+    if (!emit_store_global_name(bc, p, value_name, value_len)) { loop_pop(p); return 0; }
+
+    if (!parse_block(p, bc)) { loop_pop(p); return 0; }
+
+    LoopContext *ctx = loop_current(p);
+    size_t continue_target = bc->len;
+    if (ctx) {
+        ctx->continue_target = continue_target;
+        ctx->has_continue_target = 1;
+        for (int i = 0; i < ctx->cont_count; i++) {
+            if (!patch_jump(bc, p, ctx->continues[i], ctx->continue_target)) { loop_pop(p); return 0; }
+        }
+    }
+    if (!emit_load_global_name(bc, p, idx_name, idx_len)) { loop_pop(p); return 0; }
+    if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {
+        parser_error(p, "failed to emit each increment");
+        loop_pop(p);
+        return 0;
+    }
+    if (!bc_emit_u8(bc, BC_ADD)) {
+        parser_error(p, "failed to emit each increment add");
+        loop_pop(p);
+        return 0;
+    }
+    if (!emit_store_global_name(bc, p, idx_name, idx_len)) { loop_pop(p); return 0; }
+
+    if (!bc_emit_u8(bc, BC_JMP) || !bc_emit_u32(bc, (uint32_t)loop_start)) {
+        parser_error(p, "failed to emit each loop jump");
+        loop_pop(p);
+        return 0;
+    }
+    if (!patch_jump(bc, p, jmp_out, bc->len)) { loop_pop(p); return 0; }
+    if (ctx) {
+        size_t break_target = bc->len;
+        for (int i = 0; i < ctx->break_count; i++) {
+            if (!patch_jump(bc, p, ctx->breaks[i], break_target)) { loop_pop(p); return 0; }
+        }
+    }
+    loop_pop(p);
+
+    if (!emit_load_global_name(bc, p, "null", 4)) return 0;
+    if (!emit_store_global_name(bc, p, iter_name, iter_len)) return 0;
+    if (!emit_load_global_name(bc, p, "null", 4)) return 0;
+    if (!emit_store_global_name(bc, p, len_name, len_len)) return 0;
+    if (!emit_load_global_name(bc, p, "null", 4)) return 0;
+    if (!emit_store_global_name(bc, p, idx_name, idx_len)) return 0;
+
+    return 1;
+}
+
+static int parse_statement(Parser *p, Bytecode *bc)
+{
+    if (match(p, TOK_IF)) {
+        return parse_if_statement(p, bc);
+    }
+    if (match(p, TOK_WHILE)) {
+        return parse_while_statement(p, bc);
+    }
+    if (match(p, TOK_FOR)) {
+        return parse_for_statement(p, bc);
+    }
+    if (match(p, TOK_EACH)) {
+        return parse_each_statement(p, bc);
+    }
+    if (match(p, TOK_RETURN)) {
+        if (p->current.kind == TOK_SEMI) {
+            if (!emit_load_global_name(bc, p, "null", 4)) return 0;
+            advance(p);
+        } else {
+            Expr *value = parse_expr(p);
+            if (!value) return 0;
+            if (!emit_expr(bc, p, value)) return 0;
+            if (!expect(p, TOK_SEMI, "expected ';' after return")) return 0;
+        }
+        if (!bc_emit_u8(bc, BC_RETURN)) {
+            parser_error(p, "failed to emit RETURN");
+            return 0;
+        }
+        return 1;
+    }
+    if (match(p, TOK_BREAK)) {
+        if (!emit_loop_break(p, bc)) return 0;
+        if (!expect(p, TOK_SEMI, "expected ';' after break")) return 0;
+        return 1;
+    }
+    if (match(p, TOK_CONTINUE)) {
+        if (!emit_loop_continue(p, bc)) return 0;
+        if (!expect(p, TOK_SEMI, "expected ';' after continue")) return 0;
+        return 1;
+    }
+    if (p->current.kind == TOK_LBRACE) {
+        return parse_block(p, bc);
+    }
+    return parse_simple_statement(p, bc, 1);
 }
 
 static int parse_program(Parser *p, Bytecode *bc)
@@ -1495,6 +2254,10 @@ void vm_exec_line(VM *vm, const char *line)
     p.pos = 0;
     p.line = 1;
     p.col = 1;
+    p.temp_id = 0;
+    p.loops = NULL;
+    p.loop_count = 0;
+    p.loop_cap = 0;
     arena_init(&p.arena);
     p.current = next_token(&p);
 
@@ -1505,6 +2268,7 @@ void vm_exec_line(VM *vm, const char *line)
     if (p.had_error || !ok) {
         fprintf(stderr, "%s\n", p.err[0] ? p.err : "parse error");
         bc_free(&bc);
+        loop_free(&p);
         arena_free(&p.arena);
         token_free(&p.current);
         return;
@@ -1518,6 +2282,7 @@ void vm_exec_line(VM *vm, const char *line)
     }
 
     bc_free(&bc);
+    loop_free(&p);
     arena_free(&p.arena);
     token_free(&p.current);
 }

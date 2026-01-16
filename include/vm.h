@@ -57,6 +57,7 @@ ObjEntry *vm_make_char_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_object_value(VM *vm, Int reserve);
 ObjEntry *vm_stringify_value(VM *vm, ObjEntry *entry, int raw_string);
+ObjEntry *vm_pretty_value(VM *vm, ObjEntry *entry);
 
 void vm_init(VM *vm);
 void vm_free(VM *vm);

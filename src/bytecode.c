@@ -99,6 +99,9 @@ const char *bc_opcode_name(uint8_t op)
     case BC_STORE_GLOBAL: return "STORE_GLOBAL";
     case BC_SET_THIS: return "SET_THIS";
     case BC_CALL: return "CALL";
+    case BC_JMP: return "JMP";
+    case BC_JMP_IF_FALSE: return "JMP_IF_FALSE";
+    case BC_RETURN: return "RETURN";
     case BC_POP: return "POP";
     case BC_DUP: return "DUP";
     case BC_GC: return "GC";

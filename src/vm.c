@@ -16,6 +16,9 @@ typedef struct {
     int has_vararg;
     char **arg_names;
     size_t *arg_lens;
+    unsigned char **default_code;
+    size_t *default_lens;
+    uint8_t *has_default;
 } FunctionBox;
 
 typedef struct {
@@ -163,9 +166,15 @@ static void urb_obj_free(List *obj)
             free(box->code);
             for (uint32_t i = 0; i < box->argc; i++) {
                 free(box->arg_names[i]);
+                if (box->has_default && box->has_default[i]) {
+                    free(box->default_code[i]);
+                }
             }
             free(box->arg_names);
             free(box->arg_lens);
+            free(box->default_code);
+            free(box->default_lens);
+            free(box->has_default);
             free(box);
         }
     }
@@ -391,7 +400,10 @@ void urb_number_set_single(List *obj, Float value)
 static int vm_entry_truthy(const ObjEntry *entry)
 {
     if (!entry || !entry->in_use) return 0;
-    return urb_obj_type(entry->obj) != URB_T_NULL;
+    Int type = urb_obj_type(entry->obj);
+    if (type == URB_T_NULL) return 0;
+    if (type == URB_T_NUMBER && entry->obj->size == 3 && entry->obj->data[2].f == 0) return 0;
+    return 1;
 }
 
 static int vm_entry_number(const ObjEntry *entry, Float *out, const char *op, size_t pc)
@@ -540,6 +552,160 @@ ObjEntry *vm_stringify_value(VM *vm, ObjEntry *entry, int raw_string)
     StrBuf buf;
     sb_init(&buf);
     vm_append_value_text(vm, entry, &buf, raw_string);
+    ObjEntry *out = vm_make_char_value(vm, buf.data, buf.len);
+    sb_free(&buf);
+    return out;
+}
+
+typedef struct {
+    const List **items;
+    size_t count;
+    size_t cap;
+} PrettySeen;
+
+static int pretty_seen_has(const PrettySeen *seen, const List *obj)
+{
+    for (size_t i = 0; i < seen->count; i++) {
+        if (seen->items[i] == obj) return 1;
+    }
+    return 0;
+}
+
+static int pretty_seen_push(PrettySeen *seen, const List *obj)
+{
+    if (seen->count == seen->cap) {
+        size_t next = seen->cap == 0 ? 8 : seen->cap * 2;
+        const List **tmp = (const List**)realloc(seen->items, next * sizeof(List*));
+        if (!tmp) return 0;
+        seen->items = tmp;
+        seen->cap = next;
+    }
+    seen->items[seen->count++] = obj;
+    return 1;
+}
+
+static void pretty_seen_pop(PrettySeen *seen)
+{
+    if (seen->count > 0) seen->count--;
+}
+
+static void sb_append_indent(StrBuf *b, int depth, int indent)
+{
+    int total = depth * indent;
+    for (int i = 0; i < total; i++) {
+        sb_append_char(b, ' ');
+    }
+}
+
+static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int indent, int depth, PrettySeen *seen)
+{
+    if (!entry || !entry->in_use) {
+        sb_append_n(b, "null", 4);
+        return;
+    }
+
+    List *obj = entry->obj;
+    Int type = urb_obj_type(obj);
+    switch (type) {
+    case URB_T_NULL:
+        sb_append_n(b, "null", 4);
+        break;
+    case URB_T_CHAR:
+    case URB_T_BYTE:
+    case URB_T_NUMBER: {
+        if (type == URB_T_CHAR) {
+            vm_append_value_text(vm, entry, b, 0);
+            break;
+        }
+        if (type == URB_T_BYTE) {
+            size_t len = urb_char_len(obj);
+            if (len == 0) {
+                sb_append_n(b, "(byte){}", 8);
+                break;
+            }
+            sb_append_n(b, "(byte){\n", 8);
+            for (size_t i = 0; i < len; i++) {
+                sb_append_indent(b, depth + 1, indent);
+                sb_append_number(b, (Float)(unsigned char)urb_char_data(obj)[i]);
+                if (i + 1 < len) sb_append_char(b, ',');
+                sb_append_char(b, '\n');
+            }
+            sb_append_indent(b, depth, indent);
+            sb_append_char(b, '}');
+            break;
+        }
+        Int count = obj->size - 2;
+        if (count <= 1) {
+            vm_append_value_text(vm, entry, b, 0);
+            break;
+        }
+        sb_append_n(b, "(number){\n", 10);
+        for (Int i = 0; i < count; i++) {
+            sb_append_indent(b, depth + 1, indent);
+            sb_append_number(b, obj->data[i + 2].f);
+            if (i + 1 < count) sb_append_char(b, ',');
+            sb_append_char(b, '\n');
+        }
+        sb_append_indent(b, depth, indent);
+        sb_append_char(b, '}');
+        break;
+    }
+    case URB_T_OBJECT: {
+        if (pretty_seen_has(seen, obj)) {
+            sb_append_n(b, "<cycle>", 7);
+            break;
+        }
+        if (!pretty_seen_push(seen, obj)) {
+            sb_append_n(b, "<oom>", 5);
+            break;
+        }
+        Int count = 0;
+        for (Int i = 2; i < obj->size; i++) {
+            if (obj->data[i].p) count++;
+        }
+        if (count <= 0) {
+            sb_append_n(b, "(object){}", 10);
+            pretty_seen_pop(seen);
+            break;
+        }
+        sb_append_n(b, "(object){\n", 10);
+        Int printed = 0;
+        for (Int i = 2; i < obj->size; i++) {
+            ObjEntry *child = (ObjEntry*)obj->data[i].p;
+            if (!child) continue;
+            sb_append_indent(b, depth + 1, indent);
+            vm_append_key_text(b, child);
+            sb_append_n(b, " = ", 3);
+            vm_append_pretty_value(vm, child, b, indent, depth + 1, seen);
+            printed++;
+            if (printed < count) sb_append_char(b, ',');
+            sb_append_char(b, '\n');
+        }
+        sb_append_indent(b, depth, indent);
+        sb_append_char(b, '}');
+        pretty_seen_pop(seen);
+        break;
+    }
+    case URB_T_NATIVE:
+        sb_append_n(b, "<native>", 8);
+        break;
+    case URB_T_FUNCTION:
+        sb_append_n(b, "<function>", 10);
+        break;
+    default:
+        sb_append_n(b, "<data>", 6);
+        break;
+    }
+}
+
+ObjEntry *vm_pretty_value(VM *vm, ObjEntry *entry)
+{
+    StrBuf buf;
+    sb_init(&buf);
+    PrettySeen seen;
+    memset(&seen, 0, sizeof(seen));
+    vm_append_pretty_value(vm, entry, &buf, 2, 0, &seen);
+    free(seen.items);
     ObjEntry *out = vm_make_char_value(vm, buf.data, buf.len);
     sb_free(&buf);
     return out;
@@ -776,6 +942,8 @@ void vm_init(VM *vm)
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
     entry = vm_define_native(vm, "len", "len");
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
+    entry = vm_define_native(vm, "pretty", "pretty");
+    if (entry) urb_object_add(vm->prototype_entry->obj, entry);
     entry = vm_define_native(vm, "append", "append");
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
     entry = vm_define_native(vm, "add", "add");
@@ -955,12 +1123,23 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
             if (box->argc) {
                 box->arg_names = (char**)calloc(box->argc, sizeof(char*));
                 box->arg_lens = (size_t*)calloc(box->argc, sizeof(size_t));
+                box->default_code = (unsigned char**)calloc(box->argc, sizeof(unsigned char*));
+                box->default_lens = (size_t*)calloc(box->argc, sizeof(size_t));
+                box->has_default = (uint8_t*)calloc(box->argc, sizeof(uint8_t));
                 for (uint32_t i = 0; i < box->argc; i++) {
                     size_t len = src_box->arg_lens[i];
                     box->arg_lens[i] = len;
                     box->arg_names[i] = (char*)malloc(len + 1);
                     memcpy(box->arg_names[i], src_box->arg_names[i], len);
                     box->arg_names[i][len] = 0;
+                    if (src_box->has_default && src_box->has_default[i]) {
+                        box->has_default[i] = 1;
+                        box->default_lens[i] = src_box->default_lens[i];
+                        if (box->default_lens[i]) {
+                            box->default_code[i] = (unsigned char*)malloc(box->default_lens[i]);
+                            memcpy(box->default_code[i], src_box->default_code[i], box->default_lens[i]);
+                        }
+                    }
                 }
             }
         }
@@ -1433,6 +1612,21 @@ static void vm_set_argc(VM *vm, uint32_t argc)
     urb_number_set_single(vm->argc_entry->obj, (Float)argc);
 }
 
+static ObjEntry *vm_eval_default(VM *vm, List *stack, unsigned char *code, size_t len)
+{
+    if (!vm || !stack) return NULL;
+    Int stack_before = stack->size;
+    if (!vm_exec_bytecode(vm, code, len)) return NULL;
+    ObjEntry *val = NULL;
+    if (stack->size > stack_before) {
+        val = (ObjEntry*)stack->data[stack->size - 1].p;
+    }
+    if (stack->size > stack_before) {
+        vm_stack_remove_range(stack, stack_before, stack->size - stack_before);
+    }
+    return val ? val : (vm ? vm->null_entry : NULL);
+}
+
 static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc)
 {
     if (!vm || !box) return 0;
@@ -1440,7 +1634,12 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc)
     if (box->has_vararg && fixed > 0) fixed--;
     for (uint32_t i = 0; i < fixed; i++) {
         ObjEntry *arg = vm_stack_arg(stack, argc, i);
-        if (!arg) arg = vm->null_entry;
+        if (!arg) {
+            if (box->has_default && box->has_default[i]) {
+                arg = vm_eval_default(vm, stack, box->default_code[i], box->default_lens[i]);
+            }
+            if (!arg) arg = vm->null_entry;
+        }
         if (!vm_object_set_by_key_len(vm, vm->global_entry->obj,
                                       box->arg_names[i], box->arg_lens[i],
                                       arg, 0)) {
@@ -1852,14 +2051,23 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             pc += code_len;
             char **arg_names = NULL;
             size_t *arg_lens = NULL;
+            unsigned char **default_code = NULL;
+            size_t *default_lens = NULL;
+            uint8_t *has_default = NULL;
             if (argc > 0) {
                 arg_names = (char**)calloc(argc, sizeof(char*));
                 arg_lens = (size_t*)calloc(argc, sizeof(size_t));
-                if (!arg_names || !arg_lens) {
+                default_code = (unsigned char**)calloc(argc, sizeof(unsigned char*));
+                default_lens = (size_t*)calloc(argc, sizeof(size_t));
+                has_default = (uint8_t*)calloc(argc, sizeof(uint8_t));
+                if (!arg_names || !arg_lens || !default_code || !default_lens || !has_default) {
                     fprintf(stderr, "bytecode error at pc %zu: BUILD_FUNCTION alloc failed\n", pc);
                     free(code);
                     free(arg_names);
                     free(arg_lens);
+                    free(default_code);
+                    free(default_lens);
+                    free(has_default);
                     return 0;
                 }
             }
@@ -1872,10 +2080,59 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     for (uint32_t j = 0; j < i; j++) free(arg_names[j]);
                     free(arg_names);
                     free(arg_lens);
+                    for (uint32_t j = 0; j < i; j++) free(default_code[j]);
+                    free(default_code);
+                    free(default_lens);
+                    free(has_default);
                     return 0;
                 }
                 arg_names[i] = (char*)name;
                 arg_lens[i] = name_len;
+                uint32_t def_len = 0;
+                if (!bc_read_u32(data, len, &pc, &def_len)) {
+                    fprintf(stderr, "bytecode error at pc %zu: BUILD_FUNCTION default truncated\n", pc);
+                    free(code);
+                    for (uint32_t j = 0; j <= i; j++) free(arg_names[j]);
+                    free(arg_names);
+                    free(arg_lens);
+                    for (uint32_t j = 0; j < i; j++) free(default_code[j]);
+                    free(default_code);
+                    free(default_lens);
+                    free(has_default);
+                    return 0;
+                }
+                if (def_len > 0) {
+                    if (pc + def_len > len) {
+                        fprintf(stderr, "bytecode error at pc %zu: BUILD_FUNCTION default out of bounds\n", pc);
+                        free(code);
+                        for (uint32_t j = 0; j <= i; j++) free(arg_names[j]);
+                        free(arg_names);
+                        free(arg_lens);
+                        for (uint32_t j = 0; j < i; j++) free(default_code[j]);
+                        free(default_code);
+                        free(default_lens);
+                        free(has_default);
+                        return 0;
+                    }
+                    unsigned char *def_code = (unsigned char*)malloc(def_len);
+                    if (!def_code) {
+                        fprintf(stderr, "bytecode error at pc %zu: BUILD_FUNCTION default alloc failed\n", pc);
+                        free(code);
+                        for (uint32_t j = 0; j <= i; j++) free(arg_names[j]);
+                        free(arg_names);
+                        free(arg_lens);
+                        for (uint32_t j = 0; j < i; j++) free(default_code[j]);
+                        free(default_code);
+                        free(default_lens);
+                        free(has_default);
+                        return 0;
+                    }
+                    memcpy(def_code, data + pc, def_len);
+                    pc += def_len;
+                    default_code[i] = def_code;
+                    default_lens[i] = def_len;
+                    has_default[i] = 1;
+                }
             }
             FunctionBox *box = (FunctionBox*)malloc(sizeof(FunctionBox));
             box->code = code;
@@ -1884,6 +2141,9 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             box->has_vararg = vararg ? 1 : 0;
             box->arg_names = arg_names;
             box->arg_lens = arg_lens;
+            box->default_code = default_code;
+            box->default_lens = default_lens;
+            box->has_default = has_default;
             List *obj = urb_obj_new_list(URB_T_FUNCTION, NULL, 1);
             Value v;
             v.p = box;
@@ -2085,9 +2345,13 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 fprintf(stderr, "bytecode error at pc %zu: CALL target not callable\n", pc);
                 return 0;
             }
+            int has_return = vm->stack_entry->obj->size > stack_before;
             if (argc > 0 && vm->stack_entry->obj->size >= stack_before) {
                 Int start = (Int)stack_before - (Int)argc;
                 vm_stack_remove_range(vm->stack_entry->obj, start, (Int)argc);
+            }
+            if (!has_return) {
+                vm_stack_push_entry(vm, vm->null_entry);
             }
             vm->this_entry = old_this;
             if (vm->argc_entry && vm->argc_entry->obj->size >= 3) {
@@ -2095,6 +2359,38 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             }
             break;
         }
+        case BC_JMP: {
+            uint32_t target = 0;
+            if (!bc_read_u32(data, len, &pc, &target)) {
+                fprintf(stderr, "bytecode error at pc %zu: truncated JMP\n", pc);
+                return 0;
+            }
+            if (target > len) {
+                fprintf(stderr, "bytecode error at pc %zu: JMP out of bounds\n", pc);
+                return 0;
+            }
+            pc = target;
+            break;
+        }
+        case BC_JMP_IF_FALSE: {
+            uint32_t target = 0;
+            if (!bc_read_u32(data, len, &pc, &target)) {
+                fprintf(stderr, "bytecode error at pc %zu: truncated JMP_IF_FALSE\n", pc);
+                return 0;
+            }
+            if (target > len) {
+                fprintf(stderr, "bytecode error at pc %zu: JMP_IF_FALSE out of bounds\n", pc);
+                return 0;
+            }
+            ObjEntry *value = vm_stack_pop_entry(vm, "JMP_IF_FALSE", pc);
+            if (!value) return 0;
+            if (!vm_entry_truthy(value)) {
+                pc = target;
+            }
+            break;
+        }
+        case BC_RETURN:
+            return 1;
         case BC_ADD:
         case BC_SUB:
         case BC_MUL:

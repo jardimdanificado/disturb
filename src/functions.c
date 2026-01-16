@@ -136,6 +136,18 @@ static void native_len(VM *vm, List *stack, List *global)
     push_number(vm, stack, (Float)length);
 }
 
+static void native_pretty(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    if (!target) {
+        fprintf(stderr, "pretty expects a value\n");
+        return;
+    }
+    ObjEntry *out = vm_pretty_value(vm, target);
+    urb_object_add(stack, out);
+}
+
 static void native_append(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -1268,6 +1280,7 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "print") == 0) return native_print;
     if (strcmp(name, "println") == 0) return native_println;
     if (strcmp(name, "len") == 0) return native_len;
+    if (strcmp(name, "pretty") == 0) return native_pretty;
     if (strcmp(name, "append") == 0) return native_append;
     if (strcmp(name, "add") == 0) return native_add;
     if (strcmp(name, "sub") == 0) return native_sub;

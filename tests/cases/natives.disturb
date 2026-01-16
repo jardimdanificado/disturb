@@ -1,60 +1,45 @@
 x = 5;
-x.add(2, 3);
-println();
+println(x.add(2, 3));
 
-x.mul(2);
-println();
+println(x.mul(2));
 
 s = "ab";
-s.upper();
-println();
+println(s.upper());
 
-"hi,there".split(",");
-println();
+println("hi,there".split(","));
 
 arr = (object){a = "hi", b = "there"};
-arr.join("-");
-println();
+println(arr.join("-"));
 
-"  trim  ".trim();
-println();
+println("  trim  ".trim());
 
-"hello".replace("hello", "hi");
-println();
+println("hello".replace("hello", "hi"));
 
 o = (object){a = 1, b = 2};
-o.keys();
-println();
+println(o.keys());
 
-o.values();
-println();
+println(o.values());
 
-o.has("a");
-println();
+println(o.has("a"));
 
-o.delete("a");
-println();
+println(o.delete("a"));
 
-o.has("a");
-println();
+println(o.has("a"));
 
 n = (number){1, 2};
 n.push(3);
 println(n);
 
-n.pop();
-println();
+println(n.pop());
 
 n.insert(1, 9);
 println(n);
 
-n.remove(1);
-println();
+println(n.remove(1));
 
 str = "ab";
 str.push("c");
 println(str);
 
-str.remove(1);
-println();
+println(str.remove(1));
 println(str);
