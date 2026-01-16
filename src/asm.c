@@ -202,10 +202,15 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                 }
             }
         } else if (strcmp(ident, "BUILD_NUMBER") == 0 || strcmp(ident, "BUILD_BYTE") == 0 ||
-                   strcmp(ident, "BUILD_OBJECT") == 0) {
+                   strcmp(ident, "BUILD_OBJECT") == 0 || strcmp(ident, "BUILD_FUNCTION") == 0) {
             uint32_t count = 0;
             if (!parse_u32(&s, &count)) {
                 err_set(err_buf, err_cap, "BUILD_* expects a count");
+                bc_free(out);
+                return 0;
+            }
+            if (strcmp(ident, "BUILD_FUNCTION") == 0) {
+                err_set(err_buf, err_cap, "BUILD_FUNCTION not supported in asm yet");
                 bc_free(out);
                 return 0;
             }
@@ -412,6 +417,26 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
             const char *name = op == BC_BUILD_NUMBER ? "BUILD_NUMBER" :
                                op == BC_BUILD_BYTE ? "BUILD_BYTE" : "BUILD_OBJECT";
             fprintf(out, "%s %u\n", name, (unsigned)count);
+            break;
+        }
+        case BC_BUILD_FUNCTION: {
+            uint32_t argc = 0;
+            uint32_t vararg = 0;
+            uint32_t code_len = 0;
+            if (!read_u32(data, len, &pc, &argc)) return 0;
+            if (!read_u32(data, len, &pc, &vararg)) return 0;
+            if (!read_u32(data, len, &pc, &code_len)) return 0;
+            if (pc + code_len > len) return 0;
+            pc += code_len;
+            fprintf(out, "BUILD_FUNCTION %u %u %u", (unsigned)argc, (unsigned)vararg, (unsigned)code_len);
+            for (uint32_t i = 0; i < argc; i++) {
+                unsigned char *buf = NULL;
+                size_t slen = 0;
+                if (!read_string(data, len, &pc, &buf, &slen)) return 0;
+                fprintf(out, " %s", buf);
+                free(buf);
+            }
+            fputc('\n', out);
             break;
         }
         case BC_BUILD_NUMBER_LIT: {

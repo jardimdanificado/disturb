@@ -55,6 +55,17 @@ Notes:
 - `null` is false; everything else is true.
 - `+` concatenates when either side is a string/char; non-strings stringify to Disturb literals.
 
+## User Functions
+
+Define functions by assigning a parameter list and body:
+- `name = (a, b, rest...){ println(a + b); }`
+
+Rules:
+- Parameters are identifiers only.
+- `...` marks the last parameter as a vararg list (stored as an object list).
+- Calls bind `this` to the call target (`obj.method()` sets `this` to `obj`).
+- Calling an object by name (e.g. `obj()`) uses a method with the same name inside that object.
+
 ## Indexing
 
 | Syntax | Meaning |

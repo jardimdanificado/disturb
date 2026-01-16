@@ -90,6 +90,7 @@ const char *bc_opcode_name(uint8_t op)
     case BC_BUILD_NUMBER: return "BUILD_NUMBER";
     case BC_BUILD_BYTE: return "BUILD_BYTE";
     case BC_BUILD_OBJECT: return "BUILD_OBJECT";
+    case BC_BUILD_FUNCTION: return "BUILD_FUNCTION";
     case BC_INDEX: return "INDEX";
     case BC_STORE_INDEX: return "STORE_INDEX";
     case BC_LOAD_ROOT: return "LOAD_ROOT";

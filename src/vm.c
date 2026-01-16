@@ -10,6 +10,15 @@ typedef struct {
 } NativeBox;
 
 typedef struct {
+    unsigned char *code;
+    size_t len;
+    uint32_t argc;
+    int has_vararg;
+    char **arg_names;
+    size_t *arg_lens;
+} FunctionBox;
+
+typedef struct {
     char *data;
     size_t len;
     size_t cap;
@@ -147,6 +156,18 @@ static void urb_obj_free(List *obj)
     if (urb_obj_type(obj) == URB_T_NATIVE && obj->size >= 3) {
         NativeBox *box = (NativeBox*)obj->data[2].p;
         free(box);
+    }
+    if (urb_obj_type(obj) == URB_T_FUNCTION && obj->size >= 3) {
+        FunctionBox *box = (FunctionBox*)obj->data[2].p;
+        if (box) {
+            free(box->code);
+            for (uint32_t i = 0; i < box->argc; i++) {
+                free(box->arg_names[i]);
+            }
+            free(box->arg_names);
+            free(box->arg_lens);
+            free(box);
+        }
     }
     free(obj->data);
     free(obj);
@@ -918,6 +939,36 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         urb_push(copy, v);
         break;
     }
+    case URB_T_FUNCTION: {
+        copy = urb_obj_new_list(URB_T_FUNCTION, key_entry, 1);
+        FunctionBox *src_box = obj->size >= 3 ? (FunctionBox*)obj->data[2].p : NULL;
+        FunctionBox *box = (FunctionBox*)malloc(sizeof(FunctionBox));
+        memset(box, 0, sizeof(*box));
+        if (src_box) {
+            box->len = src_box->len;
+            box->argc = src_box->argc;
+            box->has_vararg = src_box->has_vararg;
+            if (box->len) {
+                box->code = (unsigned char*)malloc(box->len);
+                memcpy(box->code, src_box->code, box->len);
+            }
+            if (box->argc) {
+                box->arg_names = (char**)calloc(box->argc, sizeof(char*));
+                box->arg_lens = (size_t*)calloc(box->argc, sizeof(size_t));
+                for (uint32_t i = 0; i < box->argc; i++) {
+                    size_t len = src_box->arg_lens[i];
+                    box->arg_lens[i] = len;
+                    box->arg_names[i] = (char*)malloc(len + 1);
+                    memcpy(box->arg_names[i], src_box->arg_names[i], len);
+                    box->arg_names[i][len] = 0;
+                }
+            }
+        }
+        Value v;
+        v.p = box;
+        urb_push(copy, v);
+        break;
+    }
     default:
         copy = urb_obj_new_list(type, key_entry, (Int)(obj->size - 2));
         for (Int i = 2; i < obj->size; i++) {
@@ -1363,10 +1414,54 @@ static void vm_stack_remove_range(List *stack, Int start, Int count)
     stack->size -= (UHalf)(end - start);
 }
 
+static int vm_object_set_by_key_len(VM *vm, List *obj, const char *name, size_t len,
+                                    ObjEntry *value, size_t pc);
+
+static ObjEntry *vm_stack_arg(List *stack, uint32_t argc, uint32_t idx)
+{
+    if (!stack || idx >= argc) return NULL;
+    Int base = stack->size - (Int)argc;
+    if (base < 2) return NULL;
+    Int pos = base + (Int)idx;
+    if (pos < 2 || pos >= stack->size) return NULL;
+    return (ObjEntry*)stack->data[pos].p;
+}
+
 static void vm_set_argc(VM *vm, uint32_t argc)
 {
     if (!vm || !vm->argc_entry) return;
     urb_number_set_single(vm->argc_entry->obj, (Float)argc);
+}
+
+static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc)
+{
+    if (!vm || !box) return 0;
+    uint32_t fixed = box->argc;
+    if (box->has_vararg && fixed > 0) fixed--;
+    for (uint32_t i = 0; i < fixed; i++) {
+        ObjEntry *arg = vm_stack_arg(stack, argc, i);
+        if (!arg) arg = vm->null_entry;
+        if (!vm_object_set_by_key_len(vm, vm->global_entry->obj,
+                                      box->arg_names[i], box->arg_lens[i],
+                                      arg, 0)) {
+            return 0;
+        }
+    }
+    if (box->has_vararg) {
+        ObjEntry *list = vm_make_object_value(vm, (Int)(argc > fixed ? argc - fixed : 0));
+        for (uint32_t i = fixed; i < argc; i++) {
+            ObjEntry *arg = vm_stack_arg(stack, argc, i);
+            if (!arg) arg = vm->null_entry;
+            urb_object_add(list->obj, arg);
+        }
+        if (!vm_object_set_by_key_len(vm, vm->global_entry->obj,
+                                      box->arg_names[box->argc - 1],
+                                      box->arg_lens[box->argc - 1],
+                                      list, 0)) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static int vm_number_to_index(ObjEntry *entry, Int *out, const char *op, size_t pc)
@@ -1738,6 +1833,64 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
+        case BC_BUILD_FUNCTION: {
+            uint32_t argc = 0;
+            uint32_t vararg = 0;
+            uint32_t code_len = 0;
+            if (!bc_read_u32(data, len, &pc, &argc) ||
+                !bc_read_u32(data, len, &pc, &vararg) ||
+                !bc_read_u32(data, len, &pc, &code_len)) {
+                fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_FUNCTION\n", pc);
+                return 0;
+            }
+            if (pc + code_len > len) {
+                fprintf(stderr, "bytecode error at pc %zu: BUILD_FUNCTION code out of bounds\n", pc);
+                return 0;
+            }
+            unsigned char *code = (unsigned char*)malloc(code_len);
+            if (code_len) memcpy(code, data + pc, code_len);
+            pc += code_len;
+            char **arg_names = NULL;
+            size_t *arg_lens = NULL;
+            if (argc > 0) {
+                arg_names = (char**)calloc(argc, sizeof(char*));
+                arg_lens = (size_t*)calloc(argc, sizeof(size_t));
+                if (!arg_names || !arg_lens) {
+                    fprintf(stderr, "bytecode error at pc %zu: BUILD_FUNCTION alloc failed\n", pc);
+                    free(code);
+                    free(arg_names);
+                    free(arg_lens);
+                    return 0;
+                }
+            }
+            for (uint32_t i = 0; i < argc; i++) {
+                unsigned char *name = NULL;
+                size_t name_len = 0;
+                if (!bc_read_string(data, len, &pc, &name, &name_len)) {
+                    fprintf(stderr, "bytecode error at pc %zu: BUILD_FUNCTION arg name truncated\n", pc);
+                    free(code);
+                    for (uint32_t j = 0; j < i; j++) free(arg_names[j]);
+                    free(arg_names);
+                    free(arg_lens);
+                    return 0;
+                }
+                arg_names[i] = (char*)name;
+                arg_lens[i] = name_len;
+            }
+            FunctionBox *box = (FunctionBox*)malloc(sizeof(FunctionBox));
+            box->code = code;
+            box->len = code_len;
+            box->argc = argc;
+            box->has_vararg = vararg ? 1 : 0;
+            box->arg_names = arg_names;
+            box->arg_lens = arg_lens;
+            List *obj = urb_obj_new_list(URB_T_FUNCTION, NULL, 1);
+            Value v;
+            v.p = box;
+            urb_push(obj, v);
+            vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
+            break;
+        }
         case BC_INDEX: {
             ObjEntry *index = vm_stack_pop_entry(vm, "INDEX", pc);
             ObjEntry *target = vm_stack_pop_entry(vm, "INDEX", pc);
@@ -1871,6 +2024,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 free(name);
                 return 0;
             }
+            ObjEntry *old_this = vm->this_entry;
+            Float old_argc = 0;
+            if (vm->argc_entry && vm->argc_entry->obj->size >= 3) {
+                old_argc = vm->argc_entry->obj->data[2].f;
+            }
             vm_set_argc(vm, argc);
             Int stack_before = vm->stack_entry->obj->size;
             ObjEntry *target = NULL;
@@ -1894,24 +2052,46 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 return 0;
             }
             free(name);
-            if (urb_obj_type(target->obj) != URB_T_NATIVE) {
-                fprintf(stderr, "bytecode error at pc %zu: CALL target not native\n", pc);
+            if (urb_obj_type(target->obj) == URB_T_NATIVE) {
+                if (target->obj->size < 3) {
+                    fprintf(stderr, "bytecode error at pc %zu: CALL missing function\n", pc);
+                    return 0;
+                }
+                NativeBox *box = (NativeBox*)target->obj->data[2].p;
+                NativeFn fn = box ? box->fn : NULL;
+                if (!fn) {
+                    fprintf(stderr, "bytecode error at pc %zu: CALL null function\n", pc);
+                    return 0;
+                }
+                fn(vm, vm->stack_entry->obj, vm->global_entry->obj);
+            } else if (urb_obj_type(target->obj) == URB_T_FUNCTION) {
+                if (target->obj->size < 3) {
+                    fprintf(stderr, "bytecode error at pc %zu: CALL missing function\n", pc);
+                    return 0;
+                }
+                FunctionBox *box = (FunctionBox*)target->obj->data[2].p;
+                if (!box) {
+                    fprintf(stderr, "bytecode error at pc %zu: CALL null function\n", pc);
+                    return 0;
+                }
+                if (!vm_bind_args(vm, box, vm->stack_entry->obj, argc)) {
+                    fprintf(stderr, "bytecode error at pc %zu: CALL arg bind failed\n", pc);
+                    return 0;
+                }
+                if (!vm_exec_bytecode(vm, box->code, box->len)) {
+                    return 0;
+                }
+            } else {
+                fprintf(stderr, "bytecode error at pc %zu: CALL target not callable\n", pc);
                 return 0;
             }
-            if (target->obj->size < 3) {
-                fprintf(stderr, "bytecode error at pc %zu: CALL missing function\n", pc);
-                return 0;
-            }
-            NativeBox *box = (NativeBox*)target->obj->data[2].p;
-            NativeFn fn = box ? box->fn : NULL;
-            if (!fn) {
-                fprintf(stderr, "bytecode error at pc %zu: CALL null function\n", pc);
-                return 0;
-            }
-            fn(vm, vm->stack_entry->obj, vm->global_entry->obj);
             if (argc > 0 && vm->stack_entry->obj->size >= stack_before) {
                 Int start = (Int)stack_before - (Int)argc;
                 vm_stack_remove_range(vm->stack_entry->obj, start, (Int)argc);
+            }
+            vm->this_entry = old_this;
+            if (vm->argc_entry && vm->argc_entry->obj->size >= 3) {
+                vm->argc_entry->obj->data[2].f = old_argc;
             }
             break;
         }

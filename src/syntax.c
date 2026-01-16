@@ -36,7 +36,8 @@ typedef enum {
     TOK_GT,
     TOK_GTE,
     TOK_AND,
-    TOK_OR
+    TOK_OR,
+    TOK_ELLIPSIS
 } TokenKind;
 
 typedef struct {
@@ -63,7 +64,8 @@ typedef enum {
     EXPR_LITERAL_NUMBER_LIST,
     EXPR_OBJECT_LITERAL,
     EXPR_UNARY,
-    EXPR_BINARY
+    EXPR_BINARY,
+    EXPR_FUNC_LITERAL
 } ExprKind;
 
 typedef enum {
@@ -125,6 +127,13 @@ struct Expr {
             Expr *left;
             Expr *right;
         } binary;
+        struct {
+            char **args;
+            size_t *arg_lens;
+            int argc;
+            int has_vararg;
+            Bytecode bc;
+        } func;
     } as;
 };
 
@@ -364,7 +373,15 @@ static Token next_token(Parser *p)
     case '}': t.kind = TOK_RBRACE; break;
     case '[': t.kind = TOK_LBRACKET; break;
     case ']': t.kind = TOK_RBRACKET; break;
-    case '.': t.kind = TOK_DOT; break;
+    case '.':
+        if (peek_char(p) == '.' && p->src[p->pos + 1] == '.') {
+            next_char(p);
+            next_char(p);
+            t.kind = TOK_ELLIPSIS;
+        } else {
+            t.kind = TOK_DOT;
+        }
+        break;
     case ',': t.kind = TOK_COMMA; break;
     case ';': t.kind = TOK_SEMI; break;
     case '+': t.kind = TOK_PLUS; break;
@@ -461,6 +478,75 @@ static TokenKind peek_kind(Parser *p, int n)
     return kind;
 }
 
+static int peek_ident_is_type(Parser *p)
+{
+    Parser probe = *p;
+    Token tok = {0};
+    token_free(&tok);
+    tok = next_token(&probe);
+    if (tok.kind != TOK_IDENT) {
+        token_free(&tok);
+        return 0;
+    }
+    int ok = (tok.len == 6 && strncmp(tok.start, "object", 6) == 0) ||
+             (tok.len == 6 && strncmp(tok.start, "number", 6) == 0) ||
+             (tok.len == 4 && strncmp(tok.start, "byte", 4) == 0);
+    token_free(&tok);
+    return ok;
+}
+
+static int peek_is_func_literal(Parser *p)
+{
+    Parser probe = *p;
+    Token tok = {0};
+
+    token_free(&tok);
+    tok = next_token(&probe);
+    if (tok.kind == TOK_RPAREN) {
+        token_free(&tok);
+        tok = next_token(&probe);
+        token_free(&tok);
+        return tok.kind == TOK_LBRACE;
+    }
+
+    for (;;) {
+        if (tok.kind != TOK_IDENT) {
+            token_free(&tok);
+            return 0;
+        }
+
+        token_free(&tok);
+        tok = next_token(&probe);
+        if (tok.kind == TOK_ELLIPSIS) {
+            token_free(&tok);
+            tok = next_token(&probe);
+            if (tok.kind != TOK_RPAREN) {
+                token_free(&tok);
+                return 0;
+            }
+            token_free(&tok);
+            tok = next_token(&probe);
+            token_free(&tok);
+            return tok.kind == TOK_LBRACE;
+        }
+
+        if (tok.kind == TOK_RPAREN) {
+            token_free(&tok);
+            tok = next_token(&probe);
+            token_free(&tok);
+            return tok.kind == TOK_LBRACE;
+        }
+
+        if (tok.kind != TOK_COMMA) {
+            token_free(&tok);
+            return 0;
+        }
+
+        token_free(&tok);
+        tok = next_token(&probe);
+    }
+}
+
 static Expr *expr_new(Parser *p, ExprKind kind)
 {
     Expr *e = (Expr*)arena_alloc(&p->arena, sizeof(Expr));
@@ -476,6 +562,9 @@ static Expr *expr_new(Parser *p, ExprKind kind)
 
 static Expr *parse_expr(Parser *p);
 static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count);
+static int parse_statement(Parser *p, Bytecode *bc);
+static Expr *parse_func_literal(Parser *p);
+static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len);
 
 static Expr *parse_primary(Parser *p)
 {
@@ -510,10 +599,14 @@ static Expr *parse_primary(Parser *p)
     }
 
     if (p->current.kind == TOK_LPAREN) {
-        int is_cast = peek_kind(p, 1) == TOK_IDENT &&
+        int is_cast = peek_kind(p, 1) == TOK_IDENT && peek_ident_is_type(p) &&
                       peek_kind(p, 2) == TOK_RPAREN &&
                       peek_kind(p, 3) == TOK_LBRACE;
+        int is_func = !is_cast && peek_is_func_literal(p);
         advance(p);
+        if (is_func) {
+            return parse_func_literal(p);
+        }
         if (!is_cast) {
             Expr *inner = parse_expr(p);
             if (!inner) return NULL;
@@ -527,9 +620,9 @@ static Expr *parse_primary(Parser *p)
         char *type = arena_strndup(&p->arena, p->current.start, p->current.len);
         advance(p);
         if (!expect(p, TOK_RPAREN, "expected ')' after type")) return NULL;
-        if (!expect(p, TOK_LBRACE, "expected '{' to start literal")) return NULL;
 
         if (strcmp(type, "object") == 0) {
+            if (!expect(p, TOK_LBRACE, "expected '{' to start literal")) return NULL;
             Expr *e = expr_new(p, EXPR_OBJECT_LITERAL);
             if (!e) return NULL;
             ObjPair *pairs = NULL;
@@ -585,9 +678,10 @@ static Expr *parse_primary(Parser *p)
         } else if (strcmp(type, "byte") == 0) {
             cast = CAST_BYTE;
         } else {
-            parser_error(p, "unknown literal type '%s'", type);
-            return NULL;
+            return parse_func_literal_with_first_arg(p, type, strlen(type));
         }
+
+        if (!expect(p, TOK_LBRACE, "expected '{' to start literal")) return NULL;
 
         if (cast == CAST_NUMBER) {
             double *vals = NULL;
@@ -726,6 +820,134 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count)
     *out_vals = vals;
     *out_count = count;
     return 1;
+}
+
+static int parse_block(Parser *p, Bytecode *bc)
+{
+    if (!expect(p, TOK_LBRACE, "expected '{' to start function body")) return 0;
+    while (p->current.kind != TOK_RBRACE && p->current.kind != TOK_EOF) {
+        if (!parse_statement(p, bc)) return 0;
+    }
+    if (!expect(p, TOK_RBRACE, "expected '}' after function body")) return 0;
+    return 1;
+}
+
+static Expr *parse_func_literal(Parser *p)
+{
+    Expr *e = expr_new(p, EXPR_FUNC_LITERAL);
+    if (!e) return NULL;
+
+    char **args = NULL;
+    size_t *arg_lens = NULL;
+    int argc = 0;
+    int cap = 0;
+    int has_vararg = 0;
+
+    if (p->current.kind != TOK_RPAREN) {
+        for (;;) {
+            if (p->current.kind != TOK_IDENT) {
+                parser_error(p, "expected parameter name");
+                return NULL;
+            }
+            char *name = arena_strndup(&p->arena, p->current.start, p->current.len);
+            size_t len = p->current.len;
+            advance(p);
+
+            int is_vararg = 0;
+            if (match(p, TOK_ELLIPSIS)) {
+                is_vararg = 1;
+                has_vararg = 1;
+            }
+
+            if (argc == cap) {
+                int next = cap == 0 ? 4 : cap * 2;
+                char **tmp = (char**)realloc(args, (size_t)next * sizeof(char*));
+                size_t *ltmp = (size_t*)realloc(arg_lens, (size_t)next * sizeof(size_t));
+                if (!tmp || !ltmp) {
+                    parser_error(p, "out of memory");
+                    return NULL;
+                }
+                args = tmp;
+                arg_lens = ltmp;
+                cap = next;
+            }
+            args[argc] = name;
+            arg_lens[argc] = len;
+            argc++;
+
+            if (is_vararg) {
+                if (p->current.kind != TOK_RPAREN) {
+                    parser_error(p, "varargs must be last");
+                    return NULL;
+                }
+                break;
+            }
+
+            if (match(p, TOK_COMMA)) continue;
+            break;
+        }
+    }
+
+    if (!expect(p, TOK_RPAREN, "expected ')' after parameters")) return NULL;
+
+    Bytecode *body = (Bytecode*)arena_alloc(&p->arena, sizeof(Bytecode));
+    if (!body) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+    bc_init(body);
+    if (!parse_block(p, body)) return NULL;
+
+    if (args && !arena_track(&p->arena, args)) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+    if (arg_lens && !arena_track(&p->arena, arg_lens)) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+
+    e->as.func.args = args;
+    e->as.func.arg_lens = arg_lens;
+    e->as.func.argc = argc;
+    e->as.func.has_vararg = has_vararg;
+    e->as.func.bc = *body;
+    return e;
+}
+
+static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len)
+{
+    Expr *e = expr_new(p, EXPR_FUNC_LITERAL);
+    if (!e) return NULL;
+
+    char **args = (char**)realloc(NULL, sizeof(char*));
+    size_t *arg_lens = (size_t*)realloc(NULL, sizeof(size_t));
+    if (!args || !arg_lens) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+    args[0] = name;
+    arg_lens[0] = len;
+
+    Bytecode *body = (Bytecode*)arena_alloc(&p->arena, sizeof(Bytecode));
+    if (!body) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+    bc_init(body);
+    if (!parse_block(p, body)) return NULL;
+
+    if (!arena_track(&p->arena, args) || !arena_track(&p->arena, arg_lens)) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+
+    e->as.func.args = args;
+    e->as.func.arg_lens = arg_lens;
+    e->as.func.argc = 1;
+    e->as.func.has_vararg = 0;
+    e->as.func.bc = *body;
+    return e;
 }
 
 static Expr *parse_postfix(Parser *p)
@@ -1098,6 +1320,32 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         }
         return 1;
     }
+    case EXPR_FUNC_LITERAL: {
+        Bytecode *body = &e->as.func.bc;
+        if (body->len > 0xFFFFFFFFu) {
+            parser_error(p, "function bytecode too large");
+            return 0;
+        }
+        if (!bc_emit_u8(bc, BC_BUILD_FUNCTION) ||
+            !bc_emit_u32(bc, (uint32_t)e->as.func.argc) ||
+            !bc_emit_u32(bc, (uint32_t)(e->as.func.has_vararg ? 1 : 0)) ||
+            !bc_emit_u32(bc, (uint32_t)body->len) ||
+            !bc_emit_bytes(bc, body->data, body->len)) {
+            parser_error(p, "failed to emit BUILD_FUNCTION");
+            return 0;
+        }
+        for (int i = 0; i < e->as.func.argc; i++) {
+            if (!bc_emit_string(bc, e->as.func.args[i], e->as.func.arg_lens[i])) {
+                parser_error(p, "failed to emit function arg name");
+                return 0;
+            }
+        }
+        bc_free(body);
+        body->data = NULL;
+        body->len = 0;
+        body->cap = 0;
+        return 1;
+    }
     default:
         parser_error(p, "unsupported expression");
         return 0;
@@ -1160,6 +1408,20 @@ static int parse_call(Parser *p, Expr *callee, Bytecode *bc)
         return 0;
     }
 
+    uint32_t argc = 0;
+    if (p->current.kind != TOK_RPAREN) {
+        for (;;) {
+            Expr *arg = parse_expr(p);
+            if (!arg) return 0;
+            if (!emit_expr(bc, p, arg)) return 0;
+            argc++;
+            if (match(p, TOK_COMMA)) continue;
+            break;
+        }
+    }
+
+    if (!expect(p, TOK_RPAREN, "expected ')' after arguments")) return 0;
+
     if (callee->kind == EXPR_NAME) {
         if (!bc_emit_u8(bc, BC_LOAD_GLOBAL) ||
             !bc_emit_string(bc, callee->as.name.name, callee->as.name.len)) {
@@ -1177,20 +1439,6 @@ static int parse_call(Parser *p, Expr *callee, Bytecode *bc)
             return 0;
         }
     }
-
-    uint32_t argc = 0;
-    if (p->current.kind != TOK_RPAREN) {
-        for (;;) {
-            Expr *arg = parse_expr(p);
-            if (!arg) return 0;
-            if (!emit_expr(bc, p, arg)) return 0;
-            argc++;
-            if (match(p, TOK_COMMA)) continue;
-            break;
-        }
-    }
-
-    if (!expect(p, TOK_RPAREN, "expected ')' after arguments")) return 0;
 
     const char *name = callee->kind == EXPR_NAME ? callee->as.name.name : callee->as.member.name;
     size_t len = callee->kind == EXPR_NAME ? callee->as.name.len : callee->as.member.len;
