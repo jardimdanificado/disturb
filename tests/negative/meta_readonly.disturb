@@ -1,2 +1,2 @@
 n = (number){1};
-n.name = "x";
+n.name = 1;

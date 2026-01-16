@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.12.4
+- Add `gc()` plus `global.gc.rate` and `global.gc.collect()` for GC control.
+
 ## 0.12.3
 - Add language comment support (`//` and `/* ... */`).
 - Add annotated guide examples under `example/guide`.

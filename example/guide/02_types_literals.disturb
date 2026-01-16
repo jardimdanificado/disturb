@@ -20,6 +20,11 @@ println(obj.type);
 println(obj.size);
 println(obj.capacity);
 
+// type can be reassigned within compatible layouts (list <-> list or byte <-> string).
+obj.type = "number";
+println(obj.type);
+obj.type = "object";
+
 // name is the key name inside its parent.
 global.sample = obj;
 println(global.sample.name);

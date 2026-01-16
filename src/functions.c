@@ -278,6 +278,24 @@ static void native_eval(VM *vm, List *stack, List *global)
     urb_object_add(stack, vm->null_entry);
 }
 
+static void native_gc(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    if (vm) vm_gc(vm);
+    if (vm) {
+        urb_object_add(stack, vm->null_entry);
+    }
+}
+
+static void native_gc_collect(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    if (vm) vm_gc(vm);
+    if (vm) {
+        urb_object_add(stack, vm->null_entry);
+    }
+}
+
 static void native_append(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -1405,6 +1423,8 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "read") == 0) return native_read;
     if (strcmp(name, "write") == 0) return native_write;
     if (strcmp(name, "eval") == 0) return native_eval;
+    if (strcmp(name, "gc") == 0) return native_gc;
+    if (strcmp(name, "gc_collect") == 0) return native_gc_collect;
     if (strcmp(name, "append") == 0) return native_append;
     if (strcmp(name, "add") == 0) return native_add;
     if (strcmp(name, "sub") == 0) return native_sub;

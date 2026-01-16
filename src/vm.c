@@ -27,6 +27,10 @@ typedef struct {
     size_t cap;
 } StrBuf;
 
+static int vm_object_set_by_key_len(VM *vm, List *obj, const char *name, size_t len,
+                                    ObjEntry *value, size_t pc);
+
+
 static void sb_init(StrBuf *b)
 {
     b->cap = 256;
@@ -249,6 +253,23 @@ static ObjEntry *vm_make_key(VM *vm, const char *name)
 {
     List *key_obj = urb_obj_new_char(NULL, name, strlen(name));
     return vm_reg_alloc(vm, key_obj);
+}
+
+static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_name)
+{
+    ObjEntry *key_entry = key ? vm_make_key(vm, key) : NULL;
+    NativeFn fn = vm_lookup_native(fn_name);
+    if (!fn) {
+        fprintf(stderr, "unknown native: %s\n", fn_name);
+        return NULL;
+    }
+    List *obj = urb_obj_new_list(URB_T_NATIVE, key_entry, 1);
+    NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
+    box->fn = fn;
+    Value v;
+    v.p = box;
+    urb_push(obj, v);
+    return vm_reg_alloc(vm, obj);
 }
 
 static ObjEntry *vm_make_key_len(VM *vm, const char *name, size_t len)
@@ -875,6 +896,8 @@ void vm_init(VM *vm)
 {
     memset(vm, 0, sizeof(*vm));
     vm_reg_init(vm);
+    vm->gc_tick = 0;
+    vm->gc_entry = NULL;
 
     ObjEntry *global_key = vm_make_key(vm, "global");
     List *global_obj = urb_obj_new_list(URB_T_OBJECT, global_key, 8);
@@ -913,6 +936,16 @@ void vm_init(VM *vm)
     ObjEntry *len_entry = vm_reg_alloc(vm, len_obj);
     vm_global_add(vm, len_entry);
 
+    ObjEntry *gc_key = vm_make_key(vm, "gc");
+    List *gc_obj = urb_obj_new_list(URB_T_OBJECT, gc_key, 4);
+    vm->gc_entry = vm_reg_alloc(vm, gc_obj);
+    vm_global_add(vm, vm->gc_entry);
+
+    ObjEntry *rate_val = vm_make_number_value(vm, 0);
+    vm_object_set_by_key_len(vm, gc_obj, "rate", 4, rate_val, 0);
+    ObjEntry *collect_entry = vm_make_native_entry(vm, "collect", "gc_collect");
+    if (collect_entry) urb_object_add(gc_obj, collect_entry);
+
     ObjEntry *entry = NULL;
     entry = vm_define_native(vm, "print", "print");
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
@@ -921,6 +954,8 @@ void vm_init(VM *vm)
     entry = vm_define_native(vm, "len", "len");
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
     entry = vm_define_native(vm, "pretty", "pretty");
+    if (entry) urb_object_add(vm->prototype_entry->obj, entry);
+    entry = vm_define_native(vm, "gc", "gc");
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
     entry = vm_define_native(vm, "read", "read");
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
@@ -1577,9 +1612,6 @@ static void vm_stack_remove_range(List *stack, Int start, Int count)
     stack->size -= (UHalf)(end - start);
 }
 
-static int vm_object_set_by_key_len(VM *vm, List *obj, const char *name, size_t len,
-                                    ObjEntry *value, size_t pc);
-
 static ObjEntry *vm_stack_arg(List *stack, uint32_t argc, uint32_t idx)
 {
     if (!stack || idx >= argc) return NULL;
@@ -1765,6 +1797,42 @@ static int vm_object_set_by_key_len(VM *vm, List *obj, const char *name, size_t 
 static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc)
 {
     if (!target || !index || urb_obj_type(index->obj) != URB_T_CHAR) return 0;
+    if (vm_key_is(index, "name")) {
+        if (!value || urb_obj_type(value->obj) == URB_T_NULL) {
+            target->obj->data[1].p = NULL;
+            return 1;
+        }
+        if (urb_obj_type(value->obj) != URB_T_CHAR && urb_obj_type(value->obj) != URB_T_BYTE) {
+            fprintf(stderr, "bytecode error at pc %zu: name expects string or null\n", pc);
+            return -1;
+        }
+        ObjEntry *key_entry = vm_make_key_len(vm, urb_char_data(value->obj), urb_char_len(value->obj));
+        target->obj->data[1].p = key_entry;
+        return 1;
+    }
+    if (vm_key_is(index, "type")) {
+        if (!value || (urb_obj_type(value->obj) != URB_T_CHAR && urb_obj_type(value->obj) != URB_T_BYTE)) {
+            fprintf(stderr, "bytecode error at pc %zu: type expects string\n", pc);
+            return -1;
+        }
+        const char *name = urb_char_data(value->obj);
+        size_t len = urb_char_len(value->obj);
+        Int next = -1;
+        if (len == 4 && strncmp(name, "null", 4) == 0) next = URB_T_NULL;
+        else if (len == 6 && strncmp(name, "number", 6) == 0) next = URB_T_NUMBER;
+        else if (len == 6 && strncmp(name, "object", 6) == 0) next = URB_T_OBJECT;
+        else if (len == 4 && strncmp(name, "char", 4) == 0) next = URB_T_CHAR;
+        else if (len == 6 && strncmp(name, "string", 6) == 0) next = URB_T_CHAR;
+        else if (len == 4 && strncmp(name, "byte", 4) == 0) next = URB_T_BYTE;
+        else if (len == 6 && strncmp(name, "native", 6) == 0) next = URB_T_NATIVE;
+        else if (len == 8 && strncmp(name, "function", 8) == 0) next = URB_T_FUNCTION;
+        else {
+            fprintf(stderr, "bytecode error at pc %zu: unknown type '%.*s'\n", pc, (int)len, name);
+            return -1;
+        }
+        target->obj->data[0].i = next;
+        return 1;
+    }
     if (vm_key_is(index, "size")) {
         if (urb_obj_type(value->obj) != URB_T_NUMBER || value->obj->size < 3) {
             fprintf(stderr, "bytecode error at pc %zu: size expects number\n", pc);
@@ -1843,12 +1911,18 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         fprintf(stderr, "bytecode error at pc %zu: capacity not supported on %s\n", pc, urb_type_name(type));
         return -1;
     }
-    if (vm_key_is(index, "name") || vm_key_is(index, "type")) {
-        fprintf(stderr, "bytecode error at pc %zu: %.*s is read-only\n", pc,
-                (int)urb_char_len(index->obj), urb_char_data(index->obj));
-        return -1;
-    }
     return 0;
+}
+
+static Int vm_gc_frequency(VM *vm)
+{
+    if (!vm || !vm->gc_entry) return 0;
+    ObjEntry *freq = vm_object_find_by_key_len(vm, vm->gc_entry->obj, "rate", 4);
+    if (!freq || urb_obj_type(freq->obj) != URB_T_NUMBER || freq->obj->size < 3) return 0;
+    Float v = freq->obj->data[2].f;
+    Int iv = (Int)v;
+    if ((Float)iv != v) return 0;
+    return iv;
 }
 
 int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
@@ -2487,6 +2561,14 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         default:
             fprintf(stderr, "bytecode error at pc %zu: unknown opcode %u\n", pc, (unsigned)op);
             return 0;
+        }
+        Int freq = vm_gc_frequency(vm);
+        if (freq > 0) {
+            vm->gc_tick++;
+            if ((Int)vm->gc_tick >= freq) {
+                vm_gc(vm);
+                vm->gc_tick = 0;
+            }
         }
     }
     return 1;

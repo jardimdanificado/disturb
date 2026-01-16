@@ -34,6 +34,8 @@ struct VM {
     ObjEntry *prototype_entry;
     ObjEntry *argc_entry;
     ObjEntry *this_entry;
+    size_t gc_tick;
+    ObjEntry *gc_entry;
 };
 
 const char *urb_type_name(Int type);

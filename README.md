@@ -113,7 +113,7 @@ Every entry exposes meta properties via string keys:
 | `.capacity` | number | Allocated slots (`list.capacity - 2`) |
 
 Notes:
-- `.name` and `.type` are read-only.
+- `.name` and `.type` are writable. `.name = null` clears the key. `.type` is pure type punning (no conversion).
 - Setting `.size` changes used slots; if larger than capacity it reallocates.
 - Setting `.capacity` reallocates; the object remains in the same entry slot.
 
@@ -191,11 +191,16 @@ Formatting:
 
 IO + Eval:
 - `read`, `write`, `eval`
+GC:
+- `gc`, `global.gc`
 
 Notes:
 - `read(path)` returns a string with file contents.
 - `write(path, data)` writes a stringified value and returns `1` on success.
 - `eval(code)` executes code in the current VM and returns `null`.
+- `gc()` runs a collection.
+- `global.gc.rate` controls automatic GC (0 or less disables).
+- `global.gc.collect()` runs a collection.
 - Comments are supported via `//` and `/* ... */`.
 
 `replace` uses Papagaio-style patterns:
