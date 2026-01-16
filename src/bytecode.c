@@ -94,13 +94,30 @@ const char *bc_opcode_name(uint8_t op)
     case BC_STORE_INDEX: return "STORE_INDEX";
     case BC_LOAD_ROOT: return "LOAD_ROOT";
     case BC_LOAD_GLOBAL: return "LOAD_GLOBAL";
+    case BC_LOAD_THIS: return "LOAD_THIS";
     case BC_STORE_GLOBAL: return "STORE_GLOBAL";
+    case BC_SET_THIS: return "SET_THIS";
     case BC_CALL: return "CALL";
     case BC_POP: return "POP";
     case BC_DUP: return "DUP";
     case BC_GC: return "GC";
     case BC_DUMP: return "DUMP";
     case BC_BUILD_NUMBER_LIT: return "BUILD_NUMBER_LIT";
+    case BC_ADD: return "ADD";
+    case BC_SUB: return "SUB";
+    case BC_MUL: return "MUL";
+    case BC_DIV: return "DIV";
+    case BC_MOD: return "MOD";
+    case BC_NEG: return "NEG";
+    case BC_NOT: return "NOT";
+    case BC_EQ: return "EQ";
+    case BC_NEQ: return "NEQ";
+    case BC_LT: return "LT";
+    case BC_LTE: return "LTE";
+    case BC_GT: return "GT";
+    case BC_GTE: return "GTE";
+    case BC_AND: return "AND";
+    case BC_OR: return "OR";
     default: return "UNKNOWN";
     }
 }

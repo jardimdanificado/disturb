@@ -6,7 +6,7 @@
 typedef struct ObjEntry ObjEntry;
 typedef struct VM VM;
 
-typedef void (*NativeFn)(List *stack, List *global);
+typedef void (*NativeFn)(VM *vm, List *stack, List *global);
 
 enum {
     URB_T_NULL = 0,
@@ -31,6 +31,9 @@ struct VM {
     ObjEntry *global_entry;
     ObjEntry *stack_entry;
     ObjEntry *null_entry;
+    ObjEntry *prototype_entry;
+    ObjEntry *argc_entry;
+    ObjEntry *this_entry;
 };
 
 const char *urb_type_name(Int type);
@@ -48,6 +51,12 @@ ObjEntry *vm_global_find_by_key(List *global, const char *name);
 
 void print_entry(FILE *out, ObjEntry *entry);
 void print_plain_entry(FILE *out, ObjEntry *entry);
+
+ObjEntry *vm_make_number_value(VM *vm, Float value);
+ObjEntry *vm_make_char_value(VM *vm, const char *s, size_t len);
+ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len);
+ObjEntry *vm_make_object_value(VM *vm, Int reserve);
+ObjEntry *vm_stringify_value(VM *vm, ObjEntry *entry, int raw_string);
 
 void vm_init(VM *vm);
 void vm_free(VM *vm);

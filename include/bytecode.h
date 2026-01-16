@@ -22,13 +22,30 @@ enum {
     BC_STORE_INDEX,
     BC_LOAD_ROOT,
     BC_LOAD_GLOBAL,
+    BC_LOAD_THIS,
     BC_STORE_GLOBAL,
+    BC_SET_THIS,
     BC_CALL,
     BC_POP,
     BC_DUP,
     BC_GC,
     BC_DUMP,
-    BC_BUILD_NUMBER_LIT
+    BC_BUILD_NUMBER_LIT,
+    BC_ADD,
+    BC_SUB,
+    BC_MUL,
+    BC_DIV,
+    BC_MOD,
+    BC_NEG,
+    BC_NOT,
+    BC_EQ,
+    BC_NEQ,
+    BC_LT,
+    BC_LTE,
+    BC_GT,
+    BC_GTE,
+    BC_AND,
+    BC_OR
 };
 
 void bc_init(Bytecode *bc);

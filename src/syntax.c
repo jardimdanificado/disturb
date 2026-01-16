@@ -22,7 +22,21 @@ typedef enum {
     TOK_DOT,
     TOK_COMMA,
     TOK_SEMI,
-    TOK_EQ
+    TOK_EQ,
+    TOK_PLUS,
+    TOK_MINUS,
+    TOK_STAR,
+    TOK_SLASH,
+    TOK_PERCENT,
+    TOK_BANG,
+    TOK_EQEQ,
+    TOK_NEQ,
+    TOK_LT,
+    TOK_LTE,
+    TOK_GT,
+    TOK_GTE,
+    TOK_AND,
+    TOK_OR
 } TokenKind;
 
 typedef struct {
@@ -47,7 +61,9 @@ typedef enum {
     EXPR_INDEX,
     EXPR_CAST_LIST,
     EXPR_LITERAL_NUMBER_LIST,
-    EXPR_OBJECT_LITERAL
+    EXPR_OBJECT_LITERAL,
+    EXPR_UNARY,
+    EXPR_BINARY
 } ExprKind;
 
 typedef enum {
@@ -100,6 +116,15 @@ struct Expr {
             ObjPair *pairs;
             int count;
         } obj;
+        struct {
+            TokenKind op;
+            Expr *expr;
+        } unary;
+        struct {
+            TokenKind op;
+            Expr *left;
+            Expr *right;
+        } binary;
     } as;
 };
 
@@ -342,7 +367,59 @@ static Token next_token(Parser *p)
     case '.': t.kind = TOK_DOT; break;
     case ',': t.kind = TOK_COMMA; break;
     case ';': t.kind = TOK_SEMI; break;
-    case '=': t.kind = TOK_EQ; break;
+    case '+': t.kind = TOK_PLUS; break;
+    case '-': t.kind = TOK_MINUS; break;
+    case '*': t.kind = TOK_STAR; break;
+    case '/': t.kind = TOK_SLASH; break;
+    case '%': t.kind = TOK_PERCENT; break;
+    case '!':
+        if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_NEQ;
+        } else {
+            t.kind = TOK_BANG;
+        }
+        break;
+    case '=':
+        if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_EQEQ;
+        } else {
+            t.kind = TOK_EQ;
+        }
+        break;
+    case '<':
+        if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_LTE;
+        } else {
+            t.kind = TOK_LT;
+        }
+        break;
+    case '>':
+        if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_GTE;
+        } else {
+            t.kind = TOK_GT;
+        }
+        break;
+    case '&':
+        if (peek_char(p) == '&') {
+            next_char(p);
+            t.kind = TOK_AND;
+        } else {
+            t.kind = TOK_EOF;
+        }
+        break;
+    case '|':
+        if (peek_char(p) == '|') {
+            next_char(p);
+            t.kind = TOK_OR;
+        } else {
+            t.kind = TOK_EOF;
+        }
+        break;
     default: t.kind = TOK_EOF; break;
     }
     return t;
@@ -369,6 +446,19 @@ static int expect(Parser *p, TokenKind kind, const char *msg)
     }
     parser_error(p, "%s", msg);
     return 0;
+}
+
+static TokenKind peek_kind(Parser *p, int n)
+{
+    Parser probe = *p;
+    Token tok = {0};
+    for (int i = 0; i < n; i++) {
+        token_free(&tok);
+        tok = next_token(&probe);
+    }
+    TokenKind kind = tok.kind;
+    token_free(&tok);
+    return kind;
 }
 
 static Expr *expr_new(Parser *p, ExprKind kind)
@@ -420,7 +510,16 @@ static Expr *parse_primary(Parser *p)
     }
 
     if (p->current.kind == TOK_LPAREN) {
+        int is_cast = peek_kind(p, 1) == TOK_IDENT &&
+                      peek_kind(p, 2) == TOK_RPAREN &&
+                      peek_kind(p, 3) == TOK_LBRACE;
         advance(p);
+        if (!is_cast) {
+            Expr *inner = parse_expr(p);
+            if (!inner) return NULL;
+            if (!expect(p, TOK_RPAREN, "expected ')' after expression")) return NULL;
+            return inner;
+        }
         if (p->current.kind != TOK_IDENT) {
             parser_error(p, "expected type name after '('");
             return NULL;
@@ -666,9 +765,138 @@ static Expr *parse_postfix(Parser *p)
     return expr;
 }
 
+static Expr *parse_unary(Parser *p)
+{
+    if (p->current.kind == TOK_BANG || p->current.kind == TOK_MINUS) {
+        TokenKind op = p->current.kind;
+        advance(p);
+        Expr *e = expr_new(p, EXPR_UNARY);
+        if (!e) return NULL;
+        e->as.unary.op = op;
+        e->as.unary.expr = parse_unary(p);
+        if (!e->as.unary.expr) return NULL;
+        return e;
+    }
+    return parse_postfix(p);
+}
+
+static Expr *parse_factor(Parser *p)
+{
+    Expr *expr = parse_unary(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_STAR || p->current.kind == TOK_SLASH ||
+           p->current.kind == TOK_PERCENT) {
+        TokenKind op = p->current.kind;
+        advance(p);
+        Expr *right = parse_unary(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = op;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
+static Expr *parse_term(Parser *p)
+{
+    Expr *expr = parse_factor(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_PLUS || p->current.kind == TOK_MINUS) {
+        TokenKind op = p->current.kind;
+        advance(p);
+        Expr *right = parse_factor(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = op;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
+static Expr *parse_compare(Parser *p)
+{
+    Expr *expr = parse_term(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_LT || p->current.kind == TOK_LTE ||
+           p->current.kind == TOK_GT || p->current.kind == TOK_GTE) {
+        TokenKind op = p->current.kind;
+        advance(p);
+        Expr *right = parse_term(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = op;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
+static Expr *parse_equality(Parser *p)
+{
+    Expr *expr = parse_compare(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_EQEQ || p->current.kind == TOK_NEQ) {
+        TokenKind op = p->current.kind;
+        advance(p);
+        Expr *right = parse_compare(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = op;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
+static Expr *parse_and(Parser *p)
+{
+    Expr *expr = parse_equality(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_AND) {
+        advance(p);
+        Expr *right = parse_equality(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = TOK_AND;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
+static Expr *parse_or(Parser *p)
+{
+    Expr *expr = parse_and(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_OR) {
+        advance(p);
+        Expr *right = parse_and(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = TOK_OR;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
 static Expr *parse_expr(Parser *p)
 {
-    return parse_postfix(p);
+    return parse_or(p);
 }
 
 static int expr_is_lvalue(const Expr *e)
@@ -715,6 +943,13 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         }
         return 1;
     case EXPR_NAME:
+        if (e->as.name.len == 4 && strncmp(e->as.name.name, "this", 4) == 0) {
+            if (!bc_emit_u8(bc, BC_LOAD_THIS)) {
+                parser_error(p, "failed to emit LOAD_THIS");
+                return 0;
+            }
+            return 1;
+        }
         if (e->as.name.len == 6 && strncmp(e->as.name.name, "global", 6) == 0) {
             if (!bc_emit_u8(bc, BC_LOAD_ROOT)) {
                 parser_error(p, "failed to emit LOAD_ROOT");
@@ -826,6 +1061,43 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         }
         return 1;
     }
+    case EXPR_UNARY: {
+        if (!emit_expr(bc, p, e->as.unary.expr)) return 0;
+        uint8_t op = e->as.unary.op == TOK_MINUS ? BC_NEG : BC_NOT;
+        if (!bc_emit_u8(bc, op)) {
+            parser_error(p, "failed to emit unary op");
+            return 0;
+        }
+        return 1;
+    }
+    case EXPR_BINARY: {
+        if (!emit_expr(bc, p, e->as.binary.left)) return 0;
+        if (!emit_expr(bc, p, e->as.binary.right)) return 0;
+        uint8_t op = 0;
+        switch (e->as.binary.op) {
+        case TOK_PLUS: op = BC_ADD; break;
+        case TOK_MINUS: op = BC_SUB; break;
+        case TOK_STAR: op = BC_MUL; break;
+        case TOK_SLASH: op = BC_DIV; break;
+        case TOK_PERCENT: op = BC_MOD; break;
+        case TOK_EQEQ: op = BC_EQ; break;
+        case TOK_NEQ: op = BC_NEQ; break;
+        case TOK_LT: op = BC_LT; break;
+        case TOK_LTE: op = BC_LTE; break;
+        case TOK_GT: op = BC_GT; break;
+        case TOK_GTE: op = BC_GTE; break;
+        case TOK_AND: op = BC_AND; break;
+        case TOK_OR: op = BC_OR; break;
+        default:
+            parser_error(p, "unsupported binary operator");
+            return 0;
+        }
+        if (!bc_emit_u8(bc, op)) {
+            parser_error(p, "failed to emit binary op");
+            return 0;
+        }
+        return 1;
+    }
     default:
         parser_error(p, "unsupported expression");
         return 0;
@@ -883,17 +1155,36 @@ static int parse_call(Parser *p, Expr *callee, Bytecode *bc)
 {
     if (!expect(p, TOK_LPAREN, "expected '(' after function name")) return 0;
 
-    if (callee->kind != EXPR_NAME &&
-        !(callee->kind == EXPR_MEMBER && is_global_name(callee->as.member.base))) {
-        parser_error(p, "call target must be a global name");
+    if (callee->kind != EXPR_NAME && callee->kind != EXPR_MEMBER) {
+        parser_error(p, "call target must be a name or member");
         return 0;
     }
 
+    if (callee->kind == EXPR_NAME) {
+        if (!bc_emit_u8(bc, BC_LOAD_GLOBAL) ||
+            !bc_emit_string(bc, callee->as.name.name, callee->as.name.len)) {
+            parser_error(p, "failed to load call target");
+            return 0;
+        }
+        if (!bc_emit_u8(bc, BC_SET_THIS)) {
+            parser_error(p, "failed to set this");
+            return 0;
+        }
+    } else {
+        if (!emit_expr(bc, p, callee->as.member.base)) return 0;
+        if (!bc_emit_u8(bc, BC_SET_THIS)) {
+            parser_error(p, "failed to set this");
+            return 0;
+        }
+    }
+
+    uint32_t argc = 0;
     if (p->current.kind != TOK_RPAREN) {
         for (;;) {
             Expr *arg = parse_expr(p);
             if (!arg) return 0;
             if (!emit_expr(bc, p, arg)) return 0;
+            argc++;
             if (match(p, TOK_COMMA)) continue;
             break;
         }
@@ -904,7 +1195,9 @@ static int parse_call(Parser *p, Expr *callee, Bytecode *bc)
     const char *name = callee->kind == EXPR_NAME ? callee->as.name.name : callee->as.member.name;
     size_t len = callee->kind == EXPR_NAME ? callee->as.name.len : callee->as.member.len;
 
-    if (!bc_emit_u8(bc, BC_CALL) || !bc_emit_string(bc, name, len)) {
+    if (!bc_emit_u8(bc, BC_CALL) ||
+        !bc_emit_string(bc, name, len) ||
+        !bc_emit_u32(bc, argc)) {
         parser_error(p, "failed to emit CALL");
         return 0;
     }

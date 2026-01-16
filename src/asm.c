@@ -232,22 +232,63 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                 bc_free(out);
                 return 0;
             }
-            uint8_t op = strcmp(ident, "LOAD_GLOBAL") == 0 ? BC_LOAD_GLOBAL :
-                         strcmp(ident, "STORE_GLOBAL") == 0 ? BC_STORE_GLOBAL : BC_CALL;
-            if (!bc_emit_u8(out, op) || !bc_emit_string(out, name, strlen(name))) {
-                err_set(err_buf, err_cap, "failed to emit name");
-                bc_free(out);
-                return 0;
+            if (strcmp(ident, "CALL") == 0) {
+                uint32_t argc = 0;
+                if (!parse_u32(&s, &argc)) {
+                    err_set(err_buf, err_cap, "CALL expects arg count");
+                    bc_free(out);
+                    return 0;
+                }
+                if (!bc_emit_u8(out, BC_CALL) ||
+                    !bc_emit_string(out, name, strlen(name)) ||
+                    !bc_emit_u32(out, argc)) {
+                    err_set(err_buf, err_cap, "failed to emit CALL");
+                    bc_free(out);
+                    return 0;
+                }
+            } else {
+                uint8_t op = strcmp(ident, "LOAD_GLOBAL") == 0 ? BC_LOAD_GLOBAL : BC_STORE_GLOBAL;
+                if (!bc_emit_u8(out, op) || !bc_emit_string(out, name, strlen(name))) {
+                    err_set(err_buf, err_cap, "failed to emit name");
+                    bc_free(out);
+                    return 0;
+                }
             }
         } else if (strcmp(ident, "INDEX") == 0 || strcmp(ident, "STORE_INDEX") == 0 ||
                    strcmp(ident, "POP") == 0 || strcmp(ident, "DUP") == 0 ||
-                   strcmp(ident, "GC") == 0 || strcmp(ident, "DUMP") == 0) {
+                   strcmp(ident, "GC") == 0 || strcmp(ident, "DUMP") == 0 ||
+                   strcmp(ident, "LOAD_THIS") == 0 || strcmp(ident, "SET_THIS") == 0 ||
+                   strcmp(ident, "ADD") == 0 || strcmp(ident, "SUB") == 0 ||
+                   strcmp(ident, "MUL") == 0 || strcmp(ident, "DIV") == 0 ||
+                   strcmp(ident, "MOD") == 0 || strcmp(ident, "NEG") == 0 ||
+                   strcmp(ident, "NOT") == 0 || strcmp(ident, "EQ") == 0 ||
+                   strcmp(ident, "NEQ") == 0 || strcmp(ident, "LT") == 0 ||
+                   strcmp(ident, "LTE") == 0 || strcmp(ident, "GT") == 0 ||
+                   strcmp(ident, "GTE") == 0 || strcmp(ident, "AND") == 0 ||
+                   strcmp(ident, "OR") == 0) {
             uint8_t op = BC_INDEX;
             if (strcmp(ident, "STORE_INDEX") == 0) op = BC_STORE_INDEX;
             else if (strcmp(ident, "POP") == 0) op = BC_POP;
             else if (strcmp(ident, "DUP") == 0) op = BC_DUP;
             else if (strcmp(ident, "GC") == 0) op = BC_GC;
             else if (strcmp(ident, "DUMP") == 0) op = BC_DUMP;
+            else if (strcmp(ident, "LOAD_THIS") == 0) op = BC_LOAD_THIS;
+            else if (strcmp(ident, "SET_THIS") == 0) op = BC_SET_THIS;
+            else if (strcmp(ident, "ADD") == 0) op = BC_ADD;
+            else if (strcmp(ident, "SUB") == 0) op = BC_SUB;
+            else if (strcmp(ident, "MUL") == 0) op = BC_MUL;
+            else if (strcmp(ident, "DIV") == 0) op = BC_DIV;
+            else if (strcmp(ident, "MOD") == 0) op = BC_MOD;
+            else if (strcmp(ident, "NEG") == 0) op = BC_NEG;
+            else if (strcmp(ident, "NOT") == 0) op = BC_NOT;
+            else if (strcmp(ident, "EQ") == 0) op = BC_EQ;
+            else if (strcmp(ident, "NEQ") == 0) op = BC_NEQ;
+            else if (strcmp(ident, "LT") == 0) op = BC_LT;
+            else if (strcmp(ident, "LTE") == 0) op = BC_LTE;
+            else if (strcmp(ident, "GT") == 0) op = BC_GT;
+            else if (strcmp(ident, "GTE") == 0) op = BC_GTE;
+            else if (strcmp(ident, "AND") == 0) op = BC_AND;
+            else if (strcmp(ident, "OR") == 0) op = BC_OR;
             if (!bc_emit_u8(out, op)) {
                 err_set(err_buf, err_cap, "failed to emit opcode");
                 bc_free(out);
@@ -393,18 +434,33 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
             if (!read_string(data, len, &pc, &buf, &slen)) return 0;
             const char *name = op == BC_LOAD_GLOBAL ? "LOAD_GLOBAL" :
                                op == BC_STORE_GLOBAL ? "STORE_GLOBAL" : "CALL";
-            fprintf(out, "%s %s\n", name, buf);
+            if (op == BC_CALL) {
+                uint32_t argc = 0;
+                if (!read_u32(data, len, &pc, &argc)) {
+                    free(buf);
+                    return 0;
+                }
+                fprintf(out, "%s %s %u\n", name, buf, (unsigned)argc);
+            } else {
+                fprintf(out, "%s %s\n", name, buf);
+            }
             free(buf);
             break;
         }
         case BC_LOAD_ROOT:
             fputs("LOAD_ROOT\n", out);
             break;
+        case BC_LOAD_THIS:
+            fputs("LOAD_THIS\n", out);
+            break;
         case BC_INDEX:
             fputs("INDEX\n", out);
             break;
         case BC_STORE_INDEX:
             fputs("STORE_INDEX\n", out);
+            break;
+        case BC_SET_THIS:
+            fputs("SET_THIS\n", out);
             break;
         case BC_POP:
             fputs("POP\n", out);
@@ -417,6 +473,51 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
             break;
         case BC_DUMP:
             fputs("DUMP\n", out);
+            break;
+        case BC_ADD:
+            fputs("ADD\n", out);
+            break;
+        case BC_SUB:
+            fputs("SUB\n", out);
+            break;
+        case BC_MUL:
+            fputs("MUL\n", out);
+            break;
+        case BC_DIV:
+            fputs("DIV\n", out);
+            break;
+        case BC_MOD:
+            fputs("MOD\n", out);
+            break;
+        case BC_NEG:
+            fputs("NEG\n", out);
+            break;
+        case BC_NOT:
+            fputs("NOT\n", out);
+            break;
+        case BC_EQ:
+            fputs("EQ\n", out);
+            break;
+        case BC_NEQ:
+            fputs("NEQ\n", out);
+            break;
+        case BC_LT:
+            fputs("LT\n", out);
+            break;
+        case BC_LTE:
+            fputs("LTE\n", out);
+            break;
+        case BC_GT:
+            fputs("GT\n", out);
+            break;
+        case BC_GTE:
+            fputs("GTE\n", out);
+            break;
+        case BC_AND:
+            fputs("AND\n", out);
+            break;
+        case BC_OR:
+            fputs("OR\n", out);
             break;
         default:
             return 0;

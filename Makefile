@@ -1,6 +1,6 @@
 CC = cc
 CFLAGS = -std=c99 -Wall -Wextra -pedantic -Iinclude
-LDFLAGS =
+LDFLAGS = -lm
 
 SRC = src/vm.c src/bytecode.c src/asm.c src/syntax.c src/functions.c src/cli.c
 OBJ = $(SRC:.c=.o)

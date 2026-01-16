@@ -19,6 +19,8 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | Object type | `object` (formerly `any`) is the generic container |
 | Null | Missing globals/keys return `null` |
 | Natives | Built-in and stored in `global` as objects |
+| Prototype | Shared methods live on `global.prototype` |
+| this | Method calls bind `this` to the call target |
 
 ## Types and Literals
 
@@ -37,6 +39,21 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | `(number){1, 2}` | Number list |
 | `(byte){9, 1}` | Byte list |
 | `(object){a = b}` | Object with keys |
+
+## Expressions and Operators
+
+Operators follow standard precedence with parentheses support:
+- Unary: `!`, unary `-`
+- Multiplicative: `*`, `/`, `%`
+- Additive: `+`, `-`
+- Comparisons: `<`, `<=`, `>`, `>=`
+- Equality: `==`, `!=`
+- Logical: `&&`, `||`
+
+Notes:
+- Logical and comparison operators return numbers (`1` or `0`).
+- `null` is false; everything else is true.
+- `+` concatenates when either side is a string/char; non-strings stringify to Disturb literals.
 
 ## Indexing
 
@@ -85,12 +102,29 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 | `STORE_INDEX` | `obj idx val --` | Assign by index/key |
 | `LOAD_ROOT` | `-- global` | Push global root |
 | `LOAD_GLOBAL` | `-- value` | Lookup in global |
+| `LOAD_THIS` | `-- this` | Load current `this` |
 | `STORE_GLOBAL` | `val --` | Store in global |
+| `SET_THIS` | `val --` | Set current `this` |
 | `CALL` | `args --` | Call native |
 | `POP` | `val --` | Drop |
 | `DUP` | `val -- val val` | Duplicate |
 | `GC` | `--` | Collect |
 | `DUMP` | `--` | Dump global |
+| `ADD` | `a b -- out` | Add/concat |
+| `SUB` | `a b -- out` | Subtract |
+| `MUL` | `a b -- out` | Multiply |
+| `DIV` | `a b -- out` | Divide |
+| `MOD` | `a b -- out` | Modulo |
+| `NEG` | `a -- out` | Unary minus |
+| `NOT` | `a -- out` | Logical not |
+| `EQ` | `a b -- out` | Equality |
+| `NEQ` | `a b -- out` | Inequality |
+| `LT` | `a b -- out` | Less than |
+| `LTE` | `a b -- out` | Less or equal |
+| `GT` | `a b -- out` | Greater than |
+| `GTE` | `a b -- out` | Greater or equal |
+| `AND` | `a b -- out` | Logical and |
+| `OR` | `a b -- out` | Logical or |
 
 ## Safety Notes and Oddities
 
@@ -98,6 +132,29 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 - `global` is a real object; `global.name[0]` is valid.
 - Strings are `char` objects; `char` vs `string` is decided by length.
 - Resizing always keeps the same object entry slot to preserve references.
+- Object stringification uses Disturb literals like `(object){a = 1, b = "x"}`.
+
+## Built-in Methods
+
+All objects share methods from `global.prototype` and can be called as `obj.method(...)`.
+
+Math:
+- `add`, `sub`, `mul`, `div`, `mod`, `pow`, `min`, `max`
+- `abs`, `floor`, `ceil`, `round`, `sqrt`
+- `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `log`, `exp`
+
+Strings:
+- `slice`, `substr`, `split`, `join`, `upper`, `lower`, `trim`
+- `startsWith`, `endsWith`, `replace`
+
+Objects/Arrays:
+- `keys`, `values`, `has`, `delete`
+- `push`, `pop`, `shift`, `unshift`, `insert`, `remove`
+
+`replace` uses Papagaio-style patterns:
+- `"hello $name".replace("$name", "world")`
+
+`print`/`println` with no arguments prints the top of the stack if present.
 
 ## Tests
 

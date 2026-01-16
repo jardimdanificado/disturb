@@ -1,0 +1,60 @@
+x = 5;
+x.add(2, 3);
+println();
+
+x.mul(2);
+println();
+
+s = "ab";
+s.upper();
+println();
+
+"hi,there".split(",");
+println();
+
+arr = (object){a = "hi", b = "there"};
+arr.join("-");
+println();
+
+"  trim  ".trim();
+println();
+
+"hello".replace("hello", "hi");
+println();
+
+o = (object){a = 1, b = 2};
+o.keys();
+println();
+
+o.values();
+println();
+
+o.has("a");
+println();
+
+o.delete("a");
+println();
+
+o.has("a");
+println();
+
+n = (number){1, 2};
+n.push(3);
+println(n);
+
+n.pop();
+println();
+
+n.insert(1, 9);
+println(n);
+
+n.remove(1);
+println();
+
+str = "ab";
+str.push("c");
+println(str);
+
+str.remove(1);
+println();
+println(str);
