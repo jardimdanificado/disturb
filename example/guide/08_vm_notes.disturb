@@ -1,0 +1,21 @@
+// 08_vm_notes.disturb
+// VM-level behaviors and "oddities".
+
+// global is a real object and holds builtins and your globals.
+println(global.name);
+
+// prototype is the global fallback for method lookup.
+println(global.prototype.type);
+
+// this is set by method calls.
+obj = {a = 1, show = (){ println(this.a); }};
+obj.show();
+
+// Stringification uses Disturb literal style.
+println({a = 1, b = "x"});
+
+// pretty gives a multiline formatted object.
+println({a = 1, b = {c = 2}}.pretty());
+
+// __argc is updated for native/user calls.
+println(__argc);

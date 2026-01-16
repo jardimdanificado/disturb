@@ -1,0 +1,9 @@
+// Byte literals behave like strings for printing and string ops.
+b = (byte){65, 66, 67};
+
+// Indexing yields a single-byte string.
+println(b[2]);
+
+// Assigning a single byte updates the string in-place.
+b[1] = (byte){68};
+println(b);

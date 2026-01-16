@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.3
+- Add language comment support (`//` and `/* ... */`).
+- Add annotated guide examples under `example/guide`.
+
 ## 0.12.2
 - Treat byte values like strings for printing and string operations.
 - Add `read`, `write`, and `eval` natives (text/binary unified).

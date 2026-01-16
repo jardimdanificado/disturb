@@ -1,0 +1,10 @@
+// Nested indexing on lists and objects.
+data = (object){a = (number){10, 20, 30}, b = (object){c = "hi"}};
+
+// Numeric indexing uses 0-based positions.
+x = data.a[1];
+// Strings can be indexed to single-byte strings.
+y = data.b.c[0];
+
+println(x);
+println(y);

@@ -1,0 +1,18 @@
+// 07_strings_bytes_io_eval.disturb
+// Strings, bytes, and IO/eval.
+
+// Byte literal yields a string (bytes are treated as strings).
+bytes = (byte){72, 105, 33};
+println(bytes);
+
+// String helpers work on bytes too.
+println(bytes.lower());
+
+// read/write are plain bytes with no mode.
+path = "tmp_guide.txt";
+write(path, "file data");
+content = read(path);
+println(content);
+
+// eval executes code in the current VM.
+eval("x = 10; println(x);");

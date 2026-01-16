@@ -1,0 +1,27 @@
+// 03_indexing_objects.disturb
+// Indexing, object keys, and array-like behavior.
+
+data = {nums = (number){10, 20, 30}, msg = "hi"};
+
+// Numeric indexing (0-based) for number lists and strings.
+println(data.nums[1]);
+println(data.msg[0]);
+
+// Key indexing for objects (string keys only).
+println(data["nums"]);
+println(data.msg);
+
+// Objects are array-like; you can push/remove entries.
+data.push({k = "x"});
+println(data.size);
+
+// Object helpers return list-like objects.
+keys = data.keys();
+vals = data.values();
+println(keys.size);
+println(vals.size);
+
+// has/delete work for keys or numeric index.
+println(data.has("msg"));
+println(data.delete("msg"));
+println(data.has("msg"));

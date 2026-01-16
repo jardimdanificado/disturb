@@ -1,0 +1,27 @@
+// 05_functions_methods.disturb
+// User functions, defaults, varargs, returns, and method calls.
+
+// Function literal assigned to a name.
+add = (a, b){ return a + b; };
+println(add(2, 3));
+
+// Default arguments and optional args.
+greet = (name = "world"){ return "hi " + name; };
+println(greet());
+println(greet("disturb"));
+
+// Varargs must be named and come last.
+sum = (head, rest...){
+  total = head;
+  each(v in rest) { total = total + v; }
+  return total;
+};
+println(sum(1, 2, 3, 4));
+
+// Object methods use this binding.
+obj = {x = 5, add = (v){ return this.x + v; }};
+println(obj.add(7));
+
+// Calling an object by name invokes a method with the same name.
+fn = {fn = (a){ return a + 1; }};
+println(fn(9));

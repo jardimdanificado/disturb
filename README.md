@@ -212,6 +212,18 @@ Notes:
 
 Test sources live in `tests/cases`, expected outputs in `tests/expected`.
 
+## Guide Examples
+
+The tutorial-style examples live in `example/guide` and are numbered:
+- `example/guide/01_intro.disturb`
+- `example/guide/02_types_literals.disturb`
+- `example/guide/03_indexing_objects.disturb`
+- `example/guide/04_operators_truthiness.disturb`
+- `example/guide/05_functions_methods.disturb`
+- `example/guide/06_control_flow.disturb`
+- `example/guide/07_strings_bytes_io_eval.disturb`
+- `example/guide/08_vm_notes.disturb`
+
 ### Negative and Stress Tests
 
 | Folder | Purpose |

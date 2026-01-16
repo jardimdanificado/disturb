@@ -1,12 +1,16 @@
+// User-defined function with positional args.
 sum = (a, b){ println(a + b); };
 sum(2, 3);
 
+// Varargs must be named and come last.
 var = (a, rest...){ println(a); println(rest.size); };
 var(1);
 var(1, 2, 3);
 
+// Calling an object uses a method with the same name inside it.
 obj = (object){a = 7, obj = (a){ println(this.a); println(a); }};
 obj(9);
 
+// Method calls bind this to the target object.
 obj2 = (object){a = 3, foo = (x){ println(this.a + x); }};
 obj2.foo(4);

@@ -1,6 +1,8 @@
+// eval runs code in the current VM (returns null).
 code = "x = 2; println(x);";
 eval(code);
 
+// read/write work on plain bytes, treated as strings.
 path = "tmp_eval.txt";
 write(path, "hello");
 content = read(path);

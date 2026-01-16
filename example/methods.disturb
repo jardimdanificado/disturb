@@ -1,0 +1,23 @@
+// Methods are looked up on the object, then global.prototype.
+x = 5;
+x.add(2, 3);
+println();
+
+// Strings expose built-in string methods.
+s = "ab";
+s.upper();
+println();
+
+// Methods work on literals as well.
+"hi,there".split(",");
+println();
+
+// Object methods can act on object/array-like values.
+arr = (object){a = "hi", b = "there"};
+arr.join("-");
+println();
+
+// Object key helpers.
+o = (object){a = 1, b = 2};
+o.keys();
+println();

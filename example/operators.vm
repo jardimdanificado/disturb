@@ -1,9 +1,0 @@
-a = (1 + 2) * 3;
-b = "hello " + 123;
-c = "obj=" + (object){a = 1, b = "x"};
-d = (1 < 2) && (2 > 1);
-
-println(a);
-println(b);
-println(c);
-println(d);

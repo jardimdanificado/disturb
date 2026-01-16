@@ -1,0 +1,20 @@
+// 01_intro.disturb
+// Basic syntax, globals, and output.
+
+// Assignment puts values in the global object by default.
+greeting = "hello";
+count = 3;
+
+// You can also address global explicitly.
+global.title = "Disturb";
+
+// print prints entries with type info; println prints plain values.
+print(greeting);
+println();
+println("hello world");
+
+// Missing keys resolve to null (no exception).
+println(global.missing);
+
+// Global is a real object.
+println(global.title);
