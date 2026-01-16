@@ -29,9 +29,9 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | Type | Literal | Notes |
 | --- | --- | --- |
 | number | `1`, `3.14` | Always floating point |
-| byte | `(byte){9, 1, 2}` | Byte list, values 0–255 |
-| char | `'c'` | Single byte |
-| string | `"abc"` | Char object with length > 1 |
+| byte | `(byte){9, 1, 2}` | String literal from byte values (0–255) |
+| char | `'c'` | Single-byte string |
+| string | `"abc"` | String with length > 1 |
 | object | `{a = 1}` | Keyed container |
 
 ## Construction
@@ -39,7 +39,7 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | Form | Result |
 | --- | --- |
 | `(number){1, 2}` | Number list |
-| `(byte){9, 1}` | Byte list |
+| `(byte){9, 1}` | String from byte values |
 | `{a = b}` | Object with keys |
 | `(object){a = b}` | Explicit object cast |
 
@@ -56,7 +56,7 @@ Operators follow standard precedence with parentheses support:
 Notes:
 - Logical and comparison operators return numbers (`1` or `0`).
 - `null` and numeric `0` are false; everything else is true.
-- `+` concatenates when either side is a string/char; non-strings stringify to Disturb literals.
+- `+` concatenates when either side is a string/char/byte; non-strings stringify to Disturb literals.
 - `a ?= b` assigns `b` only when `a` is `null`.
 
 ## Control Flow
@@ -98,7 +98,7 @@ Rules:
 
 Rules:
 - Only `object` supports string/key indexing.
-- Indexing bytes/chars yields a single byte/char object.
+- Indexing strings/bytes yields a single-byte string.
 - Indexing supports infinite nesting.
 
 ## Meta Properties
@@ -188,6 +188,15 @@ Objects/Arrays:
 
 Formatting:
 - `pretty`
+
+IO + Eval:
+- `read`, `write`, `eval`
+
+Notes:
+- `read(path)` returns a string with file contents.
+- `write(path, data)` writes a stringified value and returns `1` on success.
+- `eval(code)` executes code in the current VM and returns `null`.
+- Comments are supported via `//` and `/* ... */`.
 
 `replace` uses Papagaio-style patterns:
 - `"hello $name".replace("$name", "world")`

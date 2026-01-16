@@ -357,10 +357,39 @@ static int next_char(Parser *p)
 
 static void skip_ws(Parser *p)
 {
-    int c = peek_char(p);
-    while (c && isspace((unsigned char)c)) {
-        next_char(p);
-        c = peek_char(p);
+    for (;;) {
+        int c = peek_char(p);
+        while (c && isspace((unsigned char)c)) {
+            next_char(p);
+            c = peek_char(p);
+        }
+        if (c == '/' && p->src[p->pos + 1] == '/') {
+            while (c && c != '\n') {
+                next_char(p);
+                c = peek_char(p);
+            }
+            continue;
+        }
+        if (c == '/' && p->src[p->pos + 1] == '*') {
+            next_char(p);
+            next_char(p);
+            c = peek_char(p);
+            while (c) {
+                if (c == '*' && p->src[p->pos + 1] == '/') {
+                    next_char(p);
+                    next_char(p);
+                    break;
+                }
+                next_char(p);
+                c = peek_char(p);
+            }
+            if (!c) {
+                parser_error(p, "unterminated block comment");
+                return;
+            }
+            continue;
+        }
+        break;
     }
 }
 

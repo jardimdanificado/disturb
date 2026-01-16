@@ -57,7 +57,9 @@ static int entry_as_number(ObjEntry *entry, Float *out)
 
 static int entry_as_string(ObjEntry *entry, const char **out, size_t *len)
 {
-    if (!entry || urb_obj_type(entry->obj) != URB_T_CHAR) return 0;
+    if (!entry) return 0;
+    Int type = urb_obj_type(entry->obj);
+    if (type != URB_T_CHAR && type != URB_T_BYTE) return 0;
     *out = urb_char_data(entry->obj);
     *len = urb_char_len(entry->obj);
     return 1;
@@ -79,6 +81,46 @@ static void sb_free(StrBuf *b)
     b->data = NULL;
     b->len = 0;
     b->cap = 0;
+}
+
+static char *read_file_bytes(const char *path, size_t *out_len)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) return NULL;
+    size_t cap = 4096;
+    size_t len = 0;
+    char *buf = (char*)malloc(cap);
+    if (!buf) {
+        fclose(fp);
+        return NULL;
+    }
+    int c;
+    while ((c = fgetc(fp)) != EOF) {
+        if (len + 1 > cap) {
+            size_t next = cap * 2;
+            char *tmp = (char*)realloc(buf, next);
+            if (!tmp) {
+                free(buf);
+                fclose(fp);
+                return NULL;
+            }
+            buf = tmp;
+            cap = next;
+        }
+        buf[len++] = (char)c;
+    }
+    fclose(fp);
+    *out_len = len;
+    return buf;
+}
+
+static int write_file_bytes(const char *path, const char *data, size_t len)
+{
+    FILE *fp = fopen(path, "wb");
+    if (!fp) return 0;
+    size_t wrote = fwrite(data, 1, len, fp);
+    fclose(fp);
+    return wrote == len;
 }
 
 static void native_print(VM *vm, List *stack, List *global)
@@ -148,6 +190,94 @@ static void native_pretty(VM *vm, List *stack, List *global)
     urb_object_add(stack, out);
 }
 
+static void native_read(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *arg0 = native_arg(stack, argc, 0);
+    const char *path = NULL;
+    size_t path_len = 0;
+    if (!entry_as_string(arg0, &path, &path_len)) {
+        fprintf(stderr, "read expects a string path\n");
+        return;
+    }
+    char *path_buf = (char*)malloc(path_len + 1);
+    if (!path_buf) {
+        fprintf(stderr, "read out of memory\n");
+        return;
+    }
+    memcpy(path_buf, path, path_len);
+    path_buf[path_len] = 0;
+    size_t len = 0;
+    char *data = read_file_bytes(path_buf, &len);
+    free(path_buf);
+    if (!data && len == 0) {
+        fprintf(stderr, "read failed\n");
+        urb_object_add(stack, vm->null_entry);
+        return;
+    }
+    ObjEntry *out = vm_make_char_value(vm, data ? data : "", len);
+    free(data);
+    urb_object_add(stack, out);
+}
+
+static void native_write(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *arg0 = native_arg(stack, argc, 0);
+    ObjEntry *arg1 = native_arg(stack, argc, 1);
+    const char *path = NULL;
+    size_t path_len = 0;
+    if (!entry_as_string(arg0, &path, &path_len)) {
+        fprintf(stderr, "write expects a string path\n");
+        return;
+    }
+    ObjEntry *data_entry = arg1;
+    if (!data_entry) {
+        fprintf(stderr, "write expects data\n");
+        return;
+    }
+    ObjEntry *string_entry = NULL;
+    const char *data = NULL;
+    size_t data_len = 0;
+    if (!entry_as_string(data_entry, &data, &data_len)) {
+        string_entry = vm_stringify_value(vm, data_entry, 1);
+        data = urb_char_data(string_entry->obj);
+        data_len = urb_char_len(string_entry->obj);
+    }
+    char *path_buf = (char*)malloc(path_len + 1);
+    if (!path_buf) {
+        fprintf(stderr, "write out of memory\n");
+        return;
+    }
+    memcpy(path_buf, path, path_len);
+    path_buf[path_len] = 0;
+    int ok = write_file_bytes(path_buf, data, data_len);
+    free(path_buf);
+    push_number(vm, stack, ok ? 1.0f : 0.0f);
+}
+
+static void native_eval(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    const char *src = NULL;
+    size_t len = 0;
+    if (!entry_as_string(target, &src, &len)) {
+        fprintf(stderr, "eval expects a string\n");
+        return;
+    }
+    char *buf = (char*)malloc(len + 1);
+    if (!buf) {
+        fprintf(stderr, "eval out of memory\n");
+        return;
+    }
+    memcpy(buf, src, len);
+    buf[len] = 0;
+    vm_exec_line(vm, buf);
+    free(buf);
+    urb_object_add(stack, vm->null_entry);
+}
+
 static void native_append(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -168,9 +298,9 @@ static void native_append(VM *vm, List *stack, List *global)
 
     Int dst_type = urb_obj_type(dst->obj);
     Int src_type = urb_obj_type(src->obj);
-    if (!((dst_type == URB_T_CHAR && src_type == URB_T_CHAR) ||
-          (dst_type == URB_T_BYTE && src_type == URB_T_BYTE))) {
-        fprintf(stderr, "append expects matching char or byte types\n");
+    if (!((dst_type == URB_T_CHAR || dst_type == URB_T_BYTE) &&
+          (src_type == URB_T_CHAR || src_type == URB_T_BYTE))) {
+        fprintf(stderr, "append expects string values\n");
         return;
     }
 
@@ -506,9 +636,9 @@ static void native_exp(VM *vm, List *stack, List *global)
 static ObjEntry *native_string_target(VM *vm, List *stack, uint32_t argc)
 {
     ObjEntry *self = native_this(vm);
-    if (self && urb_obj_type(self->obj) == URB_T_CHAR) return self;
+    if (self && (urb_obj_type(self->obj) == URB_T_CHAR || urb_obj_type(self->obj) == URB_T_BYTE)) return self;
     ObjEntry *arg0 = native_arg(stack, argc, 0);
-    if (arg0 && urb_obj_type(arg0->obj) == URB_T_CHAR) return arg0;
+    if (arg0 && (urb_obj_type(arg0->obj) == URB_T_CHAR || urb_obj_type(arg0->obj) == URB_T_BYTE)) return arg0;
     return NULL;
 }
 
@@ -1048,8 +1178,9 @@ static void native_push(VM *vm, List *stack, List *global)
             val.f = v;
             urb_push(target->obj, val);
         } else if (type == URB_T_CHAR || type == URB_T_BYTE) {
-            if (urb_obj_type(arg->obj) != type) {
-                fprintf(stderr, "push expects matching char/byte\n");
+            Int at = urb_obj_type(arg->obj);
+            if (at != URB_T_CHAR && at != URB_T_BYTE) {
+                fprintf(stderr, "push expects string values\n");
                 return;
             }
             urb_bytes_append(target->obj, urb_char_data(arg->obj), urb_char_len(arg->obj));
@@ -1085,11 +1216,7 @@ static void native_pop(VM *vm, List *stack, List *global)
         char c = urb_char_data(target->obj)[len - 1];
         target->obj->size = (UHalf)(target->obj->size - 1);
         target->obj->capacity = target->obj->size;
-        if (type == URB_T_CHAR) {
-            push_string(vm, stack, &c, 1);
-        } else {
-            urb_object_add(stack, vm_make_byte_value(vm, &c, 1));
-        }
+        push_string(vm, stack, &c, 1);
         return;
     }
 }
@@ -1123,11 +1250,7 @@ static void native_shift(VM *vm, List *stack, List *global)
         memmove(urb_char_data(target->obj), urb_char_data(target->obj) + 1, len - 1);
         target->obj->size = (UHalf)(target->obj->size - 1);
         target->obj->capacity = target->obj->size;
-        if (type == URB_T_CHAR) {
-            push_string(vm, stack, &c, 1);
-        } else {
-            urb_object_add(stack, vm_make_byte_value(vm, &c, 1));
-        }
+        push_string(vm, stack, &c, 1);
         return;
     }
 }
@@ -1159,8 +1282,9 @@ static void native_unshift(VM *vm, List *stack, List *global)
             val.f = v;
             urb_insert(target->obj, 2, val);
         } else if (type == URB_T_CHAR || type == URB_T_BYTE) {
-            if (urb_obj_type(arg->obj) != type) {
-                fprintf(stderr, "unshift expects matching char/byte\n");
+            Int at = urb_obj_type(arg->obj);
+            if (at != URB_T_CHAR && at != URB_T_BYTE) {
+                fprintf(stderr, "unshift expects string values\n");
                 return;
             }
             size_t len = urb_char_len(target->obj);
@@ -1208,8 +1332,9 @@ static void native_insert(VM *vm, List *stack, List *global)
         return;
     }
     if (type == URB_T_CHAR || type == URB_T_BYTE) {
-        if (urb_obj_type(val->obj) != type) {
-            fprintf(stderr, "insert expects matching char/byte\n");
+        Int vt = urb_obj_type(val->obj);
+        if (vt != URB_T_CHAR && vt != URB_T_BYTE) {
+            fprintf(stderr, "insert expects string value\n");
             return;
         }
         size_t len = urb_char_len(target->obj);
@@ -1266,11 +1391,7 @@ static void native_remove(VM *vm, List *stack, List *global)
                 len - (size_t)index - 1);
         target->obj->size = (UHalf)(target->obj->size - 1);
         target->obj->capacity = target->obj->size;
-        if (type == URB_T_CHAR) {
-            push_string(vm, stack, &c, 1);
-        } else {
-            urb_object_add(stack, vm_make_byte_value(vm, &c, 1));
-        }
+        push_string(vm, stack, &c, 1);
         return;
     }
 }
@@ -1281,6 +1402,9 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "println") == 0) return native_println;
     if (strcmp(name, "len") == 0) return native_len;
     if (strcmp(name, "pretty") == 0) return native_pretty;
+    if (strcmp(name, "read") == 0) return native_read;
+    if (strcmp(name, "write") == 0) return native_write;
+    if (strcmp(name, "eval") == 0) return native_eval;
     if (strcmp(name, "append") == 0) return native_append;
     if (strcmp(name, "add") == 0) return native_add;
     if (strcmp(name, "sub") == 0) return native_sub;

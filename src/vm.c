@@ -475,7 +475,8 @@ static void vm_append_value_text(VM *vm, ObjEntry *entry, StrBuf *b, int raw_str
     case URB_T_NULL:
         sb_append_n(b, "null", 4);
         break;
-    case URB_T_CHAR: {
+    case URB_T_CHAR:
+    case URB_T_BYTE: {
         size_t len = urb_char_len(obj);
         if (raw_string) {
             sb_append_n(b, urb_char_data(obj), len);
@@ -490,16 +491,6 @@ static void vm_append_value_text(VM *vm, ObjEntry *entry, StrBuf *b, int raw_str
             sb_append_escaped(b, urb_char_data(obj), len);
             sb_append_char(b, '"');
         }
-        break;
-    }
-    case URB_T_BYTE: {
-        sb_append_n(b, "(byte){", 7);
-        size_t len = urb_char_len(obj);
-        for (size_t i = 0; i < len; i++) {
-            if (i) sb_append_n(b, ", ", 2);
-            sb_append_number(b, (Float)(unsigned char)urb_char_data(obj)[i]);
-        }
-        sb_append_char(b, '}');
         break;
     }
     case URB_T_NUMBER: {
@@ -613,25 +604,8 @@ static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int inden
     case URB_T_CHAR:
     case URB_T_BYTE:
     case URB_T_NUMBER: {
-        if (type == URB_T_CHAR) {
+        if (type == URB_T_CHAR || type == URB_T_BYTE) {
             vm_append_value_text(vm, entry, b, 0);
-            break;
-        }
-        if (type == URB_T_BYTE) {
-            size_t len = urb_char_len(obj);
-            if (len == 0) {
-                sb_append_n(b, "(byte){}", 8);
-                break;
-            }
-            sb_append_n(b, "(byte){\n", 8);
-            for (size_t i = 0; i < len; i++) {
-                sb_append_indent(b, depth + 1, indent);
-                sb_append_number(b, (Float)(unsigned char)urb_char_data(obj)[i]);
-                if (i + 1 < len) sb_append_char(b, ',');
-                sb_append_char(b, '\n');
-            }
-            sb_append_indent(b, depth, indent);
-            sb_append_char(b, '}');
             break;
         }
         Int count = obj->size - 2;
@@ -717,8 +691,12 @@ static int vm_entry_equal(ObjEntry *a, ObjEntry *b)
     if (!a || !b || !a->in_use || !b->in_use) return 0;
     Int at = urb_obj_type(a->obj);
     Int bt = urb_obj_type(b->obj);
-    if (at != bt) return 0;
-    if (at == URB_T_NUMBER) {
+    if (at != bt) {
+        int a_str = (at == URB_T_CHAR || at == URB_T_BYTE);
+        int b_str = (bt == URB_T_CHAR || bt == URB_T_BYTE);
+        if (!a_str || !b_str) return 0;
+    }
+    if (at == URB_T_NUMBER && bt == URB_T_NUMBER) {
         Int ac = a->obj->size - 2;
         Int bc = b->obj->size - 2;
         if (ac != bc) return 0;
@@ -727,7 +705,8 @@ static int vm_entry_equal(ObjEntry *a, ObjEntry *b)
         }
         return 1;
     }
-    if (at == URB_T_CHAR || at == URB_T_BYTE) {
+    if ((at == URB_T_CHAR || at == URB_T_BYTE) &&
+        (bt == URB_T_CHAR || bt == URB_T_BYTE)) {
         size_t al = urb_char_len(a->obj);
         size_t bl = urb_char_len(b->obj);
         if (al != bl) return 0;
@@ -742,8 +721,12 @@ static int vm_entry_compare(ObjEntry *a, ObjEntry *b, int *out)
     if (!a || !b || !a->in_use || !b->in_use) return 0;
     Int at = urb_obj_type(a->obj);
     Int bt = urb_obj_type(b->obj);
-    if (at != bt) return 0;
-    if (at == URB_T_NUMBER) {
+    if (at != bt) {
+        int a_str = (at == URB_T_CHAR || at == URB_T_BYTE);
+        int b_str = (bt == URB_T_CHAR || bt == URB_T_BYTE);
+        if (!a_str || !b_str) return 0;
+    }
+    if (at == URB_T_NUMBER && bt == URB_T_NUMBER) {
         double av = a->obj->size >= 3 ? a->obj->data[2].f : 0.0;
         double bv = b->obj->size >= 3 ? b->obj->data[2].f : 0.0;
         if (av < bv) *out = -1;
@@ -751,7 +734,8 @@ static int vm_entry_compare(ObjEntry *a, ObjEntry *b, int *out)
         else *out = 0;
         return 1;
     }
-    if (at == URB_T_CHAR || at == URB_T_BYTE) {
+    if ((at == URB_T_CHAR || at == URB_T_BYTE) &&
+        (bt == URB_T_CHAR || bt == URB_T_BYTE)) {
         size_t al = urb_char_len(a->obj);
         size_t bl = urb_char_len(b->obj);
         size_t min = al < bl ? al : bl;
@@ -764,14 +748,6 @@ static int vm_entry_compare(ObjEntry *a, ObjEntry *b, int *out)
         return 1;
     }
     return 0;
-}
-
-static void print_bytes_hex(FILE *out, const unsigned char *data, size_t len)
-{
-    fputs("0x", out);
-    for (size_t i = 0; i < len; i++) {
-        fprintf(out, "%02X", (unsigned)data[i]);
-    }
 }
 
 static void print_key(FILE *out, ObjEntry *entry)
@@ -807,7 +783,7 @@ void print_plain_entry(FILE *out, ObjEntry *entry)
         fwrite(urb_char_data(obj), 1, urb_char_len(obj), out);
         break;
     case URB_T_BYTE:
-        print_bytes_hex(out, (unsigned char*)urb_char_data(obj), urb_char_len(obj));
+        fwrite(urb_char_data(obj), 1, urb_char_len(obj), out);
         break;
     case URB_T_NUMBER:
         for (Int i = 2; i < obj->size; i++) {
@@ -861,7 +837,9 @@ void print_entry(FILE *out, ObjEntry *entry)
         fputs("\"", out);
         break;
     case URB_T_BYTE:
-        print_bytes_hex(out, (unsigned char*)urb_char_data(obj), urb_char_len(obj));
+        fputs("\"", out);
+        fwrite(urb_char_data(obj), 1, urb_char_len(obj), out);
+        fputs("\"", out);
         break;
     case URB_T_NUMBER:
         fputs("[", out);
@@ -943,6 +921,12 @@ void vm_init(VM *vm)
     entry = vm_define_native(vm, "len", "len");
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
     entry = vm_define_native(vm, "pretty", "pretty");
+    if (entry) urb_object_add(vm->prototype_entry->obj, entry);
+    entry = vm_define_native(vm, "read", "read");
+    if (entry) urb_object_add(vm->prototype_entry->obj, entry);
+    entry = vm_define_native(vm, "write", "write");
+    if (entry) urb_object_add(vm->prototype_entry->obj, entry);
+    entry = vm_define_native(vm, "eval", "eval");
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
     entry = vm_define_native(vm, "append", "append");
     if (entry) urb_object_add(vm->prototype_entry->obj, entry);
@@ -1733,7 +1717,7 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
             return vm->null_entry;
         }
         char c = urb_char_data(target->obj)[idx];
-        ObjEntry *entry = vm_reg_alloc(vm, urb_obj_new_bytes(type, NULL, &c, 1));
+        ObjEntry *entry = vm_reg_alloc(vm, urb_obj_new_bytes(URB_T_CHAR, NULL, &c, 1));
         return entry;
     }
 
@@ -2204,8 +2188,10 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
                     return 0;
                 }
-                if (urb_obj_type(value->obj) != type || urb_char_len(value->obj) != 1) {
-                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects single element\n", pc);
+                Int vtype = urb_obj_type(value->obj);
+                if (!((vtype == URB_T_CHAR || vtype == URB_T_BYTE) &&
+                      urb_char_len(value->obj) == 1)) {
+                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects single string element\n", pc);
                     return 0;
                 }
                 urb_char_data(target->obj)[idx] = urb_char_data(value->obj)[0];
@@ -2409,7 +2395,9 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             if (!left || !right) return 0;
             Int lt = urb_obj_type(left->obj);
             Int rt = urb_obj_type(right->obj);
-            if (op == BC_ADD && (lt == URB_T_CHAR || rt == URB_T_CHAR)) {
+            if (op == BC_ADD &&
+                ((lt == URB_T_CHAR || lt == URB_T_BYTE) ||
+                 (rt == URB_T_CHAR || rt == URB_T_BYTE))) {
                 StrBuf buf;
                 sb_init(&buf);
                 vm_append_value_text(vm, left, &buf, 1);

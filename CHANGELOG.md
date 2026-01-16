@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.2
+- Treat byte values like strings for printing and string operations.
+- Add `read`, `write`, and `eval` natives (text/binary unified).
+
 ## 0.12.1
 - Add interactive REPL (`--repl`, default when no args).
 

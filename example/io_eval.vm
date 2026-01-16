@@ -1,0 +1,7 @@
+code = "x = 2; println(x);";
+eval(code);
+
+path = "tmp_eval.txt";
+write(path, "hello");
+content = read(path);
+println(content);
