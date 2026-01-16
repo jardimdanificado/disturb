@@ -1,0 +1,21 @@
+// 09_metaprogramming.disturb
+// Bytecode AST and bytecode evaluation.
+
+// parse() compiles source into a bytecode AST.
+code = "println(1 + 2);";
+ast = parse(code);
+println(ast.type);
+println(len(ast.ops));
+
+// ast_to_source() renders a disassembly-like view.
+println(ast_to_source(ast));
+
+// emit() produces bytecode bytes from the AST.
+bytecode = emit(ast);
+
+// eval_bytecode() executes bytecode bytes.
+eval_bytecode(bytecode);
+
+// bytecode_to_ast() decodes raw bytecode.
+ast2 = bytecode_to_ast(bytecode);
+println(ast2.type);

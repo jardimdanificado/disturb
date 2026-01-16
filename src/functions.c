@@ -75,6 +75,795 @@ static void push_string(VM *vm, List *stack, const char *s, size_t len)
     urb_object_add(stack, vm_make_char_value(vm, s, len));
 }
 
+static int number_to_int(ObjEntry *entry, Int *out);
+
+static ObjEntry *object_find_by_key_len(List *obj, const char *name, size_t len)
+{
+    if (!obj || urb_obj_type(obj) != URB_T_OBJECT) return NULL;
+    for (Int i = 2; i < obj->size; i++) {
+        ObjEntry *entry = (ObjEntry*)obj->data[i].p;
+        if (!entry) continue;
+        ObjEntry *key = urb_obj_key(entry->obj);
+        if (!key || urb_obj_type(key->obj) != URB_T_CHAR) continue;
+        if (urb_char_len(key->obj) == len &&
+            memcmp(urb_char_data(key->obj), name, len) == 0) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
+static ObjEntry *object_find_by_key(List *obj, const char *name)
+{
+    return object_find_by_key_len(obj, name, strlen(name));
+}
+
+static int entry_as_u32(ObjEntry *entry, uint32_t *out)
+{
+    Int iv = 0;
+    if (!entry || urb_obj_type(entry->obj) != URB_T_NUMBER || entry->obj->size < 3) return 0;
+    if (!number_to_int(entry, &iv)) return 0;
+    if (iv < 0 || (UInt)iv > 0xFFFFFFFFu) return 0;
+    *out = (uint32_t)iv;
+    return 1;
+}
+
+static int entry_as_u8(ObjEntry *entry, uint8_t *out)
+{
+    uint32_t v = 0;
+    if (!entry_as_u32(entry, &v) || v > 255) return 0;
+    *out = (uint8_t)v;
+    return 1;
+}
+
+static void ast_err(char *err, size_t cap, const char *msg)
+{
+    if (!err || cap == 0) return;
+    snprintf(err, cap, "%s", msg);
+}
+
+static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size_t err_cap)
+{
+    if (!vm || !ast || !out) {
+        ast_err(err, err_cap, "emit expects an AST object");
+        return 0;
+    }
+    if (urb_obj_type(ast->obj) != URB_T_OBJECT) {
+        ast_err(err, err_cap, "emit expects an AST object");
+        return 0;
+    }
+
+    ObjEntry *type_entry = object_find_by_key(ast->obj, "type");
+    if (type_entry) {
+        const char *type = NULL;
+        size_t type_len = 0;
+        if (!entry_as_string(type_entry, &type, &type_len) ||
+            type_len != 8 || memcmp(type, "bytecode", 8) != 0) {
+            ast_err(err, err_cap, "emit expects bytecode AST");
+            return 0;
+        }
+    }
+
+    ObjEntry *ops_entry = object_find_by_key(ast->obj, "ops");
+    if (!ops_entry || urb_obj_type(ops_entry->obj) != URB_T_OBJECT) {
+        ast_err(err, err_cap, "emit expects ops array");
+        return 0;
+    }
+
+    bc_init(out);
+
+    List *ops = ops_entry->obj;
+    for (Int i = 2; i < ops->size; i++) {
+        ObjEntry *op_entry = (ObjEntry*)ops->data[i].p;
+        if (!op_entry || urb_obj_type(op_entry->obj) != URB_T_OBJECT) {
+            ast_err(err, err_cap, "emit expects op objects");
+            bc_free(out);
+            return 0;
+        }
+        ObjEntry *op_name_entry = object_find_by_key(op_entry->obj, "op");
+        const char *op_name = NULL;
+        size_t op_len = 0;
+        if (!op_name_entry || !entry_as_string(op_name_entry, &op_name, &op_len)) {
+            ast_err(err, err_cap, "emit expects op name");
+            bc_free(out);
+            return 0;
+        }
+
+        if (op_len == 8 && memcmp(op_name, "PUSH_NUM", 8) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            if (!val || urb_obj_type(val->obj) != URB_T_NUMBER || val->obj->size < 3) {
+                ast_err(err, err_cap, "PUSH_NUM expects value");
+                bc_free(out);
+                return 0;
+            }
+            double v = (double)val->obj->data[2].f;
+            if (!bc_emit_u8(out, BC_PUSH_NUM) || !bc_emit_f64(out, v)) {
+                ast_err(err, err_cap, "failed to emit PUSH_NUM");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 9 && memcmp(op_name, "PUSH_CHAR", 9) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!val || !entry_as_string(val, &s, &slen) || slen != 1) {
+                ast_err(err, err_cap, "PUSH_CHAR expects single character");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_PUSH_CHAR) || !bc_emit_string(out, s, slen)) {
+                ast_err(err, err_cap, "failed to emit PUSH_CHAR");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 11 && memcmp(op_name, "PUSH_STRING", 11) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!val || !entry_as_string(val, &s, &slen)) {
+                ast_err(err, err_cap, "PUSH_STRING expects value");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_PUSH_STRING) || !bc_emit_string(out, s, slen)) {
+                ast_err(err, err_cap, "failed to emit PUSH_STRING");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 9 && memcmp(op_name, "PUSH_BYTE", 9) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            uint8_t v = 0;
+            if (!val || !entry_as_u8(val, &v)) {
+                ast_err(err, err_cap, "PUSH_BYTE expects 0-255");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_PUSH_BYTE) || !bc_emit_u8(out, v)) {
+                ast_err(err, err_cap, "failed to emit PUSH_BYTE");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 12 && memcmp(op_name, "BUILD_NUMBER", 12) == 0) {
+            ObjEntry *count_entry = object_find_by_key(op_entry->obj, "count");
+            uint32_t count = 0;
+            if (!count_entry || !entry_as_u32(count_entry, &count)) {
+                ast_err(err, err_cap, "BUILD_NUMBER expects count");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_BUILD_NUMBER) || !bc_emit_u32(out, count)) {
+                ast_err(err, err_cap, "failed to emit BUILD_NUMBER");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 10 && memcmp(op_name, "BUILD_BYTE", 10) == 0) {
+            ObjEntry *count_entry = object_find_by_key(op_entry->obj, "count");
+            uint32_t count = 0;
+            if (!count_entry || !entry_as_u32(count_entry, &count)) {
+                ast_err(err, err_cap, "BUILD_BYTE expects count");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_BUILD_BYTE) || !bc_emit_u32(out, count)) {
+                ast_err(err, err_cap, "failed to emit BUILD_BYTE");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 12 && memcmp(op_name, "BUILD_OBJECT", 12) == 0) {
+            ObjEntry *count_entry = object_find_by_key(op_entry->obj, "count");
+            uint32_t count = 0;
+            if (!count_entry || !entry_as_u32(count_entry, &count)) {
+                ast_err(err, err_cap, "BUILD_OBJECT expects count");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_BUILD_OBJECT) || !bc_emit_u32(out, count)) {
+                ast_err(err, err_cap, "failed to emit BUILD_OBJECT");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 16 && memcmp(op_name, "BUILD_NUMBER_LIT", 16) == 0) {
+            ObjEntry *values_entry = object_find_by_key(op_entry->obj, "values");
+            if (!values_entry || urb_obj_type(values_entry->obj) != URB_T_OBJECT) {
+                ast_err(err, err_cap, "BUILD_NUMBER_LIT expects values");
+                bc_free(out);
+                return 0;
+            }
+            List *vals = values_entry->obj;
+            uint32_t count = (uint32_t)(vals->size - 2);
+            if (!bc_emit_u8(out, BC_BUILD_NUMBER_LIT) || !bc_emit_u32(out, count)) {
+                ast_err(err, err_cap, "failed to emit BUILD_NUMBER_LIT");
+                bc_free(out);
+                return 0;
+            }
+            for (Int j = 2; j < vals->size; j++) {
+                ObjEntry *v = (ObjEntry*)vals->data[j].p;
+                if (!v || urb_obj_type(v->obj) != URB_T_NUMBER || v->obj->size < 3) {
+                    ast_err(err, err_cap, "BUILD_NUMBER_LIT values must be numbers");
+                    bc_free(out);
+                    return 0;
+                }
+                if (!bc_emit_f64(out, (double)v->obj->data[2].f)) {
+                    ast_err(err, err_cap, "failed to emit BUILD_NUMBER_LIT value");
+                    bc_free(out);
+                    return 0;
+                }
+            }
+        } else if (op_len == 13 && memcmp(op_name, "BUILD_FUNCTION", 13) == 0) {
+            ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
+            ObjEntry *vararg_entry = object_find_by_key(op_entry->obj, "vararg");
+            ObjEntry *code_entry = object_find_by_key(op_entry->obj, "code");
+            ObjEntry *args_entry = object_find_by_key(op_entry->obj, "args");
+            uint32_t argc = 0;
+            uint32_t vararg = 0;
+            if (!argc_entry || !vararg_entry || !code_entry || !args_entry ||
+                !entry_as_u32(argc_entry, &argc) || !entry_as_u32(vararg_entry, &vararg)) {
+                ast_err(err, err_cap, "BUILD_FUNCTION expects argc, vararg, code, args");
+                bc_free(out);
+                return 0;
+            }
+            const char *code = NULL;
+            size_t code_len = 0;
+            if (!entry_as_string(code_entry, &code, &code_len)) {
+                ast_err(err, err_cap, "BUILD_FUNCTION expects code bytes");
+                bc_free(out);
+                return 0;
+            }
+            if (code_len > 0xFFFFFFFFu) {
+                ast_err(err, err_cap, "BUILD_FUNCTION code too large");
+                bc_free(out);
+                return 0;
+            }
+            if (urb_obj_type(args_entry->obj) != URB_T_OBJECT) {
+                ast_err(err, err_cap, "BUILD_FUNCTION expects args array");
+                bc_free(out);
+                return 0;
+            }
+            List *args = args_entry->obj;
+            if ((uint32_t)(args->size - 2) < argc) {
+                ast_err(err, err_cap, "BUILD_FUNCTION args count mismatch");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_BUILD_FUNCTION) ||
+                !bc_emit_u32(out, argc) ||
+                !bc_emit_u32(out, vararg) ||
+                !bc_emit_u32(out, (uint32_t)code_len) ||
+                !bc_emit_bytes(out, (const unsigned char*)code, code_len)) {
+                ast_err(err, err_cap, "failed to emit BUILD_FUNCTION");
+                bc_free(out);
+                return 0;
+            }
+            for (uint32_t j = 0; j < argc; j++) {
+                ObjEntry *arg = (ObjEntry*)args->data[2 + j].p;
+                if (!arg || urb_obj_type(arg->obj) != URB_T_OBJECT) {
+                    ast_err(err, err_cap, "BUILD_FUNCTION arg must be object");
+                    bc_free(out);
+                    return 0;
+                }
+                ObjEntry *name_entry = object_find_by_key(arg->obj, "name");
+                const char *name = NULL;
+                size_t name_len = 0;
+                if (!name_entry || !entry_as_string(name_entry, &name, &name_len)) {
+                    ast_err(err, err_cap, "BUILD_FUNCTION arg expects name");
+                    bc_free(out);
+                    return 0;
+                }
+                ObjEntry *def_entry = object_find_by_key(arg->obj, "default");
+                const char *def = NULL;
+                size_t def_len = 0;
+                if (def_entry && urb_obj_type(def_entry->obj) != URB_T_NULL) {
+                    if (!entry_as_string(def_entry, &def, &def_len)) {
+                        ast_err(err, err_cap, "BUILD_FUNCTION default must be bytes");
+                        bc_free(out);
+                        return 0;
+                    }
+                }
+                if (def_len > 0xFFFFFFFFu) {
+                    ast_err(err, err_cap, "BUILD_FUNCTION default too large");
+                    bc_free(out);
+                    return 0;
+                }
+                if (!bc_emit_string(out, name, name_len) ||
+                    !bc_emit_u32(out, (uint32_t)def_len)) {
+                    ast_err(err, err_cap, "failed to emit BUILD_FUNCTION arg");
+                    bc_free(out);
+                    return 0;
+                }
+                if (def_len > 0) {
+                    if (!bc_emit_bytes(out, (const unsigned char*)def, def_len)) {
+                        ast_err(err, err_cap, "failed to emit BUILD_FUNCTION default");
+                        bc_free(out);
+                        return 0;
+                    }
+                }
+            }
+        } else if (op_len == 11 && memcmp(op_name, "LOAD_GLOBAL", 11) == 0) {
+            ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
+            const char *name = NULL;
+            size_t name_len = 0;
+            if (!name_entry || !entry_as_string(name_entry, &name, &name_len)) {
+                ast_err(err, err_cap, "LOAD_GLOBAL expects name");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_LOAD_GLOBAL) || !bc_emit_string(out, name, name_len)) {
+                ast_err(err, err_cap, "failed to emit LOAD_GLOBAL");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 12 && memcmp(op_name, "STORE_GLOBAL", 12) == 0) {
+            ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
+            const char *name = NULL;
+            size_t name_len = 0;
+            if (!name_entry || !entry_as_string(name_entry, &name, &name_len)) {
+                ast_err(err, err_cap, "STORE_GLOBAL expects name");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_STORE_GLOBAL) || !bc_emit_string(out, name, name_len)) {
+                ast_err(err, err_cap, "failed to emit STORE_GLOBAL");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 4 && memcmp(op_name, "CALL", 4) == 0) {
+            ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
+            ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
+            const char *name = NULL;
+            size_t name_len = 0;
+            uint32_t argc = 0;
+            if (!name_entry || !argc_entry ||
+                !entry_as_string(name_entry, &name, &name_len) ||
+                !entry_as_u32(argc_entry, &argc)) {
+                ast_err(err, err_cap, "CALL expects name and argc");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_CALL) ||
+                !bc_emit_string(out, name, name_len) ||
+                !bc_emit_u32(out, argc)) {
+                ast_err(err, err_cap, "failed to emit CALL");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "JMP", 3) == 0) {
+            ObjEntry *target_entry = object_find_by_key(op_entry->obj, "target");
+            uint32_t target = 0;
+            if (!target_entry || !entry_as_u32(target_entry, &target)) {
+                ast_err(err, err_cap, "JMP expects target");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_JMP) || !bc_emit_u32(out, target)) {
+                ast_err(err, err_cap, "failed to emit JMP");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 12 && memcmp(op_name, "JMP_IF_FALSE", 12) == 0) {
+            ObjEntry *target_entry = object_find_by_key(op_entry->obj, "target");
+            uint32_t target = 0;
+            if (!target_entry || !entry_as_u32(target_entry, &target)) {
+                ast_err(err, err_cap, "JMP_IF_FALSE expects target");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_JMP_IF_FALSE) || !bc_emit_u32(out, target)) {
+                ast_err(err, err_cap, "failed to emit JMP_IF_FALSE");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 8 && memcmp(op_name, "LOAD_ROOT", 8) == 0) {
+            if (!bc_emit_u8(out, BC_LOAD_ROOT)) {
+                ast_err(err, err_cap, "failed to emit LOAD_ROOT");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 9 && memcmp(op_name, "LOAD_THIS", 9) == 0) {
+            if (!bc_emit_u8(out, BC_LOAD_THIS)) {
+                ast_err(err, err_cap, "failed to emit LOAD_THIS");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 8 && memcmp(op_name, "SET_THIS", 8) == 0) {
+            if (!bc_emit_u8(out, BC_SET_THIS)) {
+                ast_err(err, err_cap, "failed to emit SET_THIS");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 5 && memcmp(op_name, "INDEX", 5) == 0) {
+            if (!bc_emit_u8(out, BC_INDEX)) {
+                ast_err(err, err_cap, "failed to emit INDEX");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 11 && memcmp(op_name, "STORE_INDEX", 11) == 0) {
+            if (!bc_emit_u8(out, BC_STORE_INDEX)) {
+                ast_err(err, err_cap, "failed to emit STORE_INDEX");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 6 && memcmp(op_name, "RETURN", 6) == 0) {
+            if (!bc_emit_u8(out, BC_RETURN)) {
+                ast_err(err, err_cap, "failed to emit RETURN");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "POP", 3) == 0) {
+            if (!bc_emit_u8(out, BC_POP)) {
+                ast_err(err, err_cap, "failed to emit POP");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "DUP", 3) == 0) {
+            if (!bc_emit_u8(out, BC_DUP)) {
+                ast_err(err, err_cap, "failed to emit DUP");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 2 && memcmp(op_name, "GC", 2) == 0) {
+            if (!bc_emit_u8(out, BC_GC)) {
+                ast_err(err, err_cap, "failed to emit GC");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 4 && memcmp(op_name, "DUMP", 4) == 0) {
+            if (!bc_emit_u8(out, BC_DUMP)) {
+                ast_err(err, err_cap, "failed to emit DUMP");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "ADD", 3) == 0) {
+            if (!bc_emit_u8(out, BC_ADD)) {
+                ast_err(err, err_cap, "failed to emit ADD");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "SUB", 3) == 0) {
+            if (!bc_emit_u8(out, BC_SUB)) {
+                ast_err(err, err_cap, "failed to emit SUB");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "MUL", 3) == 0) {
+            if (!bc_emit_u8(out, BC_MUL)) {
+                ast_err(err, err_cap, "failed to emit MUL");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "DIV", 3) == 0) {
+            if (!bc_emit_u8(out, BC_DIV)) {
+                ast_err(err, err_cap, "failed to emit DIV");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "MOD", 3) == 0) {
+            if (!bc_emit_u8(out, BC_MOD)) {
+                ast_err(err, err_cap, "failed to emit MOD");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "NEG", 3) == 0) {
+            if (!bc_emit_u8(out, BC_NEG)) {
+                ast_err(err, err_cap, "failed to emit NEG");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "NOT", 3) == 0) {
+            if (!bc_emit_u8(out, BC_NOT)) {
+                ast_err(err, err_cap, "failed to emit NOT");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 2 && memcmp(op_name, "EQ", 2) == 0) {
+            if (!bc_emit_u8(out, BC_EQ)) {
+                ast_err(err, err_cap, "failed to emit EQ");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "NEQ", 3) == 0) {
+            if (!bc_emit_u8(out, BC_NEQ)) {
+                ast_err(err, err_cap, "failed to emit NEQ");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 2 && memcmp(op_name, "LT", 2) == 0) {
+            if (!bc_emit_u8(out, BC_LT)) {
+                ast_err(err, err_cap, "failed to emit LT");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "LTE", 3) == 0) {
+            if (!bc_emit_u8(out, BC_LTE)) {
+                ast_err(err, err_cap, "failed to emit LTE");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 2 && memcmp(op_name, "GT", 2) == 0) {
+            if (!bc_emit_u8(out, BC_GT)) {
+                ast_err(err, err_cap, "failed to emit GT");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "GTE", 3) == 0) {
+            if (!bc_emit_u8(out, BC_GTE)) {
+                ast_err(err, err_cap, "failed to emit GTE");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "AND", 3) == 0) {
+            if (!bc_emit_u8(out, BC_AND)) {
+                ast_err(err, err_cap, "failed to emit AND");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 2 && memcmp(op_name, "OR", 2) == 0) {
+            if (!bc_emit_u8(out, BC_OR)) {
+                ast_err(err, err_cap, "failed to emit OR");
+                bc_free(out);
+                return 0;
+            }
+        } else {
+            ast_err(err, err_cap, "unknown opcode in AST");
+            bc_free(out);
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static void sb_append_escaped(StrBuf *b, const char *s, size_t len, char quote)
+{
+    sb_append_char(b, quote);
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        switch (c) {
+        case '\n': sb_append_n(b, "\\n", 2); break;
+        case '\r': sb_append_n(b, "\\r", 2); break;
+        case '\t': sb_append_n(b, "\\t", 2); break;
+        case '\\': sb_append_n(b, "\\\\", 2); break;
+        case '"': sb_append_n(b, "\\\"", 2); break;
+        case '\'': sb_append_n(b, "\\'", 2); break;
+        default: sb_append_char(b, (char)c); break;
+        }
+    }
+    sb_append_char(b, quote);
+}
+
+static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t err_cap)
+{
+    if (!vm || !ast || urb_obj_type(ast->obj) != URB_T_OBJECT) {
+        ast_err(err, err_cap, "ast_to_source expects AST object");
+        return 0;
+    }
+    ObjEntry *ops_entry = object_find_by_key(ast->obj, "ops");
+    if (!ops_entry || urb_obj_type(ops_entry->obj) != URB_T_OBJECT) {
+        ast_err(err, err_cap, "ast_to_source expects ops array");
+        return 0;
+    }
+    List *ops = ops_entry->obj;
+    for (Int i = 2; i < ops->size; i++) {
+        ObjEntry *op_entry = (ObjEntry*)ops->data[i].p;
+        if (!op_entry || urb_obj_type(op_entry->obj) != URB_T_OBJECT) {
+            ast_err(err, err_cap, "ast_to_source expects op objects");
+            return 0;
+        }
+        ObjEntry *op_name_entry = object_find_by_key(op_entry->obj, "op");
+        const char *op_name = NULL;
+        size_t op_len = 0;
+        if (!op_name_entry || !entry_as_string(op_name_entry, &op_name, &op_len)) {
+            ast_err(err, err_cap, "ast_to_source expects op name");
+            return 0;
+        }
+        sb_append_n(out, op_name, op_len);
+
+        if (op_len == 8 && memcmp(op_name, "PUSH_NUM", 8) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            if (!val || urb_obj_type(val->obj) != URB_T_NUMBER || val->obj->size < 3) {
+                ast_err(err, err_cap, "PUSH_NUM expects value");
+                return 0;
+            }
+            char buf[64];
+            snprintf(buf, sizeof(buf), " %.17g", (double)val->obj->data[2].f);
+            sb_append_n(out, buf, strlen(buf));
+        } else if (op_len == 9 && memcmp(op_name, "PUSH_CHAR", 9) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!val || !entry_as_string(val, &s, &slen) || slen != 1) {
+                ast_err(err, err_cap, "PUSH_CHAR expects single character");
+                return 0;
+            }
+            sb_append_char(out, ' ');
+            sb_append_escaped(out, s, slen, '\'');
+        } else if (op_len == 11 && memcmp(op_name, "PUSH_STRING", 11) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!val || !entry_as_string(val, &s, &slen)) {
+                ast_err(err, err_cap, "PUSH_STRING expects value");
+                return 0;
+            }
+            sb_append_char(out, ' ');
+            sb_append_escaped(out, s, slen, '"');
+        } else if (op_len == 9 && memcmp(op_name, "PUSH_BYTE", 9) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            uint32_t v = 0;
+            if (!val || !entry_as_u32(val, &v)) {
+                ast_err(err, err_cap, "PUSH_BYTE expects value");
+                return 0;
+            }
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %u", (unsigned)v);
+            sb_append_n(out, buf, strlen(buf));
+        } else if (op_len == 12 && memcmp(op_name, "BUILD_NUMBER", 12) == 0) {
+            ObjEntry *count_entry = object_find_by_key(op_entry->obj, "count");
+            uint32_t count = 0;
+            if (!count_entry || !entry_as_u32(count_entry, &count)) {
+                ast_err(err, err_cap, "BUILD_NUMBER expects count");
+                return 0;
+            }
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %u", (unsigned)count);
+            sb_append_n(out, buf, strlen(buf));
+        } else if (op_len == 10 && memcmp(op_name, "BUILD_BYTE", 10) == 0) {
+            ObjEntry *count_entry = object_find_by_key(op_entry->obj, "count");
+            uint32_t count = 0;
+            if (!count_entry || !entry_as_u32(count_entry, &count)) {
+                ast_err(err, err_cap, "BUILD_BYTE expects count");
+                return 0;
+            }
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %u", (unsigned)count);
+            sb_append_n(out, buf, strlen(buf));
+        } else if (op_len == 12 && memcmp(op_name, "BUILD_OBJECT", 12) == 0) {
+            ObjEntry *count_entry = object_find_by_key(op_entry->obj, "count");
+            uint32_t count = 0;
+            if (!count_entry || !entry_as_u32(count_entry, &count)) {
+                ast_err(err, err_cap, "BUILD_OBJECT expects count");
+                return 0;
+            }
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %u", (unsigned)count);
+            sb_append_n(out, buf, strlen(buf));
+        } else if (op_len == 16 && memcmp(op_name, "BUILD_NUMBER_LIT", 16) == 0) {
+            ObjEntry *values_entry = object_find_by_key(op_entry->obj, "values");
+            if (!values_entry || urb_obj_type(values_entry->obj) != URB_T_OBJECT) {
+                ast_err(err, err_cap, "BUILD_NUMBER_LIT expects values");
+                return 0;
+            }
+            List *vals = values_entry->obj;
+            uint32_t count = (uint32_t)(vals->size - 2);
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %u", (unsigned)count);
+            sb_append_n(out, buf, strlen(buf));
+            for (Int j = 2; j < vals->size; j++) {
+                ObjEntry *v = (ObjEntry*)vals->data[j].p;
+                if (!v || urb_obj_type(v->obj) != URB_T_NUMBER || v->obj->size < 3) {
+                    ast_err(err, err_cap, "BUILD_NUMBER_LIT values must be numbers");
+                    return 0;
+                }
+                char num_buf[64];
+                snprintf(num_buf, sizeof(num_buf), " %.17g", (double)v->obj->data[2].f);
+                sb_append_n(out, num_buf, strlen(num_buf));
+            }
+        } else if (op_len == 13 && memcmp(op_name, "BUILD_FUNCTION", 13) == 0) {
+            ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
+            ObjEntry *vararg_entry = object_find_by_key(op_entry->obj, "vararg");
+            ObjEntry *code_entry = object_find_by_key(op_entry->obj, "code");
+            ObjEntry *args_entry = object_find_by_key(op_entry->obj, "args");
+            uint32_t argc = 0;
+            uint32_t vararg = 0;
+            const char *code = NULL;
+            size_t code_len = 0;
+            if (!argc_entry || !vararg_entry || !code_entry || !args_entry ||
+                !entry_as_u32(argc_entry, &argc) || !entry_as_u32(vararg_entry, &vararg) ||
+                !entry_as_string(code_entry, &code, &code_len)) {
+                ast_err(err, err_cap, "BUILD_FUNCTION expects argc, vararg, code, args");
+                return 0;
+            }
+            char head[96];
+            snprintf(head, sizeof(head), " %u %u %u", (unsigned)argc, (unsigned)vararg, (unsigned)code_len);
+            sb_append_n(out, head, strlen(head));
+
+            if (urb_obj_type(args_entry->obj) != URB_T_OBJECT) {
+                ast_err(err, err_cap, "BUILD_FUNCTION expects args array");
+                return 0;
+            }
+            List *args = args_entry->obj;
+            for (uint32_t j = 0; j < argc; j++) {
+                ObjEntry *arg = (ObjEntry*)args->data[2 + j].p;
+                if (!arg || urb_obj_type(arg->obj) != URB_T_OBJECT) {
+                    ast_err(err, err_cap, "BUILD_FUNCTION arg must be object");
+                    return 0;
+                }
+                ObjEntry *name_entry = object_find_by_key(arg->obj, "name");
+                const char *name = NULL;
+                size_t name_len = 0;
+                if (!name_entry || !entry_as_string(name_entry, &name, &name_len)) {
+                    ast_err(err, err_cap, "BUILD_FUNCTION arg expects name");
+                    return 0;
+                }
+                ObjEntry *def_entry = object_find_by_key(arg->obj, "default");
+                size_t def_len = 0;
+                if (def_entry && urb_obj_type(def_entry->obj) != URB_T_NULL) {
+                    const char *def = NULL;
+                    if (!entry_as_string(def_entry, &def, &def_len)) {
+                        ast_err(err, err_cap, "BUILD_FUNCTION default must be bytes");
+                        return 0;
+                    }
+                }
+                sb_append_char(out, ' ');
+                sb_append_n(out, name, name_len);
+                char def_buf[32];
+                snprintf(def_buf, sizeof(def_buf), " %u", (unsigned)def_len);
+                sb_append_n(out, def_buf, strlen(def_buf));
+            }
+        } else if (op_len == 11 && memcmp(op_name, "LOAD_GLOBAL", 11) == 0) {
+            ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
+            const char *name = NULL;
+            size_t name_len = 0;
+            if (!name_entry || !entry_as_string(name_entry, &name, &name_len)) {
+                ast_err(err, err_cap, "LOAD_GLOBAL expects name");
+                return 0;
+            }
+            sb_append_char(out, ' ');
+            sb_append_n(out, name, name_len);
+        } else if (op_len == 12 && memcmp(op_name, "STORE_GLOBAL", 12) == 0) {
+            ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
+            const char *name = NULL;
+            size_t name_len = 0;
+            if (!name_entry || !entry_as_string(name_entry, &name, &name_len)) {
+                ast_err(err, err_cap, "STORE_GLOBAL expects name");
+                return 0;
+            }
+            sb_append_char(out, ' ');
+            sb_append_n(out, name, name_len);
+        } else if (op_len == 4 && memcmp(op_name, "CALL", 4) == 0) {
+            ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
+            ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
+            const char *name = NULL;
+            size_t name_len = 0;
+            uint32_t argc = 0;
+            if (!name_entry || !argc_entry ||
+                !entry_as_string(name_entry, &name, &name_len) ||
+                !entry_as_u32(argc_entry, &argc)) {
+                ast_err(err, err_cap, "CALL expects name and argc");
+                return 0;
+            }
+            sb_append_char(out, ' ');
+            sb_append_n(out, name, name_len);
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %u", (unsigned)argc);
+            sb_append_n(out, buf, strlen(buf));
+        } else if (op_len == 3 && memcmp(op_name, "JMP", 3) == 0) {
+            ObjEntry *target_entry = object_find_by_key(op_entry->obj, "target");
+            uint32_t target = 0;
+            if (!target_entry || !entry_as_u32(target_entry, &target)) {
+                ast_err(err, err_cap, "JMP expects target");
+                return 0;
+            }
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %u", (unsigned)target);
+            sb_append_n(out, buf, strlen(buf));
+        } else if (op_len == 12 && memcmp(op_name, "JMP_IF_FALSE", 12) == 0) {
+            ObjEntry *target_entry = object_find_by_key(op_entry->obj, "target");
+            uint32_t target = 0;
+            if (!target_entry || !entry_as_u32(target_entry, &target)) {
+                ast_err(err, err_cap, "JMP_IF_FALSE expects target");
+                return 0;
+            }
+            char buf[32];
+            snprintf(buf, sizeof(buf), " %u", (unsigned)target);
+            sb_append_n(out, buf, strlen(buf));
+        }
+
+        sb_append_char(out, '\n');
+    }
+
+    return 1;
+}
+
 static void sb_free(StrBuf *b)
 {
     free(b->data);
@@ -276,6 +1065,108 @@ static void native_eval(VM *vm, List *stack, List *global)
     vm_exec_line(vm, buf);
     free(buf);
     urb_object_add(stack, vm->null_entry);
+}
+
+static void native_parse(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    const char *src = NULL;
+    size_t len = 0;
+    if (!entry_as_string(target, &src, &len)) {
+        fprintf(stderr, "parse expects a string\n");
+        return;
+    }
+    char *buf = (char*)malloc(len + 1);
+    if (!buf) {
+        fprintf(stderr, "parse out of memory\n");
+        return;
+    }
+    memcpy(buf, src, len);
+    buf[len] = 0;
+
+    Bytecode bc;
+    char err[256];
+    err[0] = 0;
+    if (!vm_compile_source(buf, &bc, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "parse error");
+        free(buf);
+        return;
+    }
+    free(buf);
+
+    ObjEntry *ast = vm_bytecode_to_ast(vm, bc.data, bc.len);
+    bc_free(&bc);
+    if (!ast) {
+        fprintf(stderr, "parse failed to build AST\n");
+        return;
+    }
+    urb_object_add(stack, ast);
+}
+
+static void native_emit(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    Bytecode bc;
+    char err[256];
+    err[0] = 0;
+    if (!ast_to_bytecode(vm, target, &bc, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "emit failed");
+        return;
+    }
+    ObjEntry *bytes = vm_make_byte_value(vm, (const char*)bc.data, bc.len);
+    bc_free(&bc);
+    urb_object_add(stack, bytes);
+}
+
+static void native_eval_bytecode(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    const char *data = NULL;
+    size_t len = 0;
+    if (!entry_as_string(target, &data, &len)) {
+        fprintf(stderr, "eval_bytecode expects byte/string data\n");
+        return;
+    }
+    vm_exec_bytecode(vm, (const unsigned char*)data, len);
+    urb_object_add(stack, vm->null_entry);
+}
+
+static void native_bytecode_to_ast(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    const char *data = NULL;
+    size_t len = 0;
+    if (!entry_as_string(target, &data, &len)) {
+        fprintf(stderr, "bytecode_to_ast expects byte/string data\n");
+        return;
+    }
+    ObjEntry *ast = vm_bytecode_to_ast(vm, (const unsigned char*)data, len);
+    if (!ast) {
+        fprintf(stderr, "bytecode_to_ast failed\n");
+        return;
+    }
+    urb_object_add(stack, ast);
+}
+
+static void native_ast_to_source(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    StrBuf out;
+    sb_init(&out);
+    char err[256];
+    err[0] = 0;
+    if (!ast_to_source(vm, target, &out, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ast_to_source failed");
+        sb_free(&out);
+        return;
+    }
+    push_string(vm, stack, out.data, out.len);
+    sb_free(&out);
 }
 
 static void native_gc(VM *vm, List *stack, List *global)
@@ -1423,6 +2314,11 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "read") == 0) return native_read;
     if (strcmp(name, "write") == 0) return native_write;
     if (strcmp(name, "eval") == 0) return native_eval;
+    if (strcmp(name, "parse") == 0) return native_parse;
+    if (strcmp(name, "emit") == 0) return native_emit;
+    if (strcmp(name, "eval_bytecode") == 0) return native_eval_bytecode;
+    if (strcmp(name, "bytecode_to_ast") == 0) return native_bytecode_to_ast;
+    if (strcmp(name, "ast_to_source") == 0) return native_ast_to_source;
     if (strcmp(name, "gc") == 0) return native_gc;
     if (strcmp(name, "gc_collect") == 0) return native_gc_collect;
     if (strcmp(name, "append") == 0) return native_append;

@@ -191,6 +191,8 @@ Formatting:
 
 IO + Eval:
 - `read`, `write`, `eval`
+Metaprogramming:
+- `parse`, `emit`, `eval_bytecode`, `bytecode_to_ast`, `ast_to_source`
 GC:
 - `gc`, `global.gc`
 
@@ -198,6 +200,33 @@ Notes:
 - `read(path)` returns a string with file contents.
 - `write(path, data)` writes a stringified value and returns `1` on success.
 - `eval(code)` executes code in the current VM and returns `null`.
+- `parse(source)` compiles source into a bytecode AST (see below).
+- `emit(ast)` produces bytecode bytes from a bytecode AST.
+- `eval_bytecode(bytes)` executes bytecode and returns `null`.
+- `bytecode_to_ast(bytes)` decodes bytecode bytes into a bytecode AST.
+- `ast_to_source(ast)` returns a disassembly-style text view of the bytecode AST.
+
+## Bytecode AST
+
+Metaprogramming functions use a bytecode-level AST, not a syntax AST.
+
+Top-level shape:
+- `(object){type = "bytecode", ops = (object){...}}`
+
+Each `ops` item is an object with `op` and optional fields:
+- `PUSH_NUM`: `value` (number)
+- `PUSH_CHAR`/`PUSH_STRING`: `value` (string)
+- `PUSH_BYTE`: `value` (0-255)
+- `BUILD_NUMBER`/`BUILD_BYTE`/`BUILD_OBJECT`: `count` (number)
+- `BUILD_NUMBER_LIT`: `values` (array of numbers)
+- `BUILD_FUNCTION`: `argc`, `vararg`, `code` (byte string), `args` (array of `{name, default}`)
+- `LOAD_GLOBAL`/`STORE_GLOBAL`: `name` (string)
+- `CALL`: `name` (string), `argc` (number)
+- `JMP`/`JMP_IF_FALSE`: `target` (number)
+
+Notes:
+- `ast_to_source` follows the disassembler format; `BUILD_FUNCTION` shows lengths, not raw bytes.
+- `emit` consumes AST objects directly, so include `code`/`default` byte strings in `BUILD_FUNCTION`.
 - `gc()` runs a collection.
 - `global.gc.rate` controls automatic GC (0 or less disables).
 - `global.gc.collect()` runs a collection.
@@ -228,6 +257,7 @@ The tutorial-style examples live in `example/guide` and are numbered:
 - `example/guide/06_control_flow.disturb`
 - `example/guide/07_strings_bytes_io_eval.disturb`
 - `example/guide/08_vm_notes.disturb`
+- `example/guide/09_metaprogramming.disturb`
 
 ### Negative and Stress Tests
 

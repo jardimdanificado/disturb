@@ -2315,3 +2315,40 @@ void vm_exec_line(VM *vm, const char *line)
     arena_free(&p.arena);
     token_free(&p.current);
 }
+
+int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap)
+{
+    if (!src || !out) return 0;
+
+    Parser p;
+    memset(&p, 0, sizeof(p));
+    p.src = src;
+    p.pos = 0;
+    p.line = 1;
+    p.col = 1;
+    p.temp_id = 0;
+    p.loops = NULL;
+    p.loop_count = 0;
+    p.loop_cap = 0;
+    arena_init(&p.arena);
+    p.current = next_token(&p);
+
+    bc_init(out);
+
+    int ok = parse_program(&p, out);
+    if (p.had_error || !ok) {
+        if (err && err_cap > 0) {
+            snprintf(err, err_cap, "%s", p.err[0] ? p.err : "parse error");
+        }
+        bc_free(out);
+        loop_free(&p);
+        arena_free(&p.arena);
+        token_free(&p.current);
+        return 0;
+    }
+
+    loop_free(&p);
+    arena_free(&p.arena);
+    token_free(&p.current);
+    return 1;
+}

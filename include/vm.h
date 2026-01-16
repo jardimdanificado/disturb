@@ -2,6 +2,7 @@
 #define VM_H 1
 
 #include "urb.h"
+#include "bytecode.h"
 
 typedef struct ObjEntry ObjEntry;
 typedef struct VM VM;
@@ -80,5 +81,8 @@ int vm_global_remove_by_key(VM *vm, const char *name);
 int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len);
 
 NativeFn vm_lookup_native(const char *name);
+
+int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap);
+ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len);
 
 #endif
