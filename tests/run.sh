@@ -14,12 +14,14 @@ run_case() {
   expected="tests/expected/${name}.out"
   actual="tests/expected/${name}.actual"
 
+  echo "case: $name"
   "$BIN" "$src" > "$actual"
   if ! diff -u "$expected" "$actual"; then
     echo "test failed: $name" >&2
     exit 1
   fi
   rm -f "$actual"
+  echo "case: $name ok"
 }
 
 run_case basic
@@ -39,6 +41,7 @@ run_negative() {
   actual_out="tests/negative/${name}.out.actual"
   actual_err="tests/negative/${name}.err.actual"
 
+  echo "negative: $name"
   "$BIN" "$src" > "$actual_out" 2> "$actual_err" || true
   if [ -s "$actual_out" ]; then
     echo "negative test produced stdout: $name" >&2
@@ -52,6 +55,7 @@ run_negative() {
     exit 1
   fi
   rm -f "$actual_out" "$actual_err"
+  echo "negative: $name ok"
 }
 
 run_negative assign_invalid
@@ -65,6 +69,7 @@ run_negative byte_range
 
 asm_out="tests/asm/out.bin"
 asm_dis="tests/asm/out.asm"
+echo "asm: assemble/disassemble"
 "$BIN" --asm tests/asm/input.asm "$asm_out"
 "$BIN" --disasm "$asm_out" "$asm_dis"
 if ! diff -u tests/asm/expected.asm "$asm_dis"; then
@@ -72,5 +77,14 @@ if ! diff -u tests/asm/expected.asm "$asm_dis"; then
   exit 1
 fi
 rm -f "$asm_out" "$asm_dis"
+echo "asm: ok"
+
+if command -v valgrind >/dev/null 2>&1; then
+  echo "valgrind: leak check (tests/cases/basic.disturb)"
+  valgrind --leak-check=full --error-exitcode=1 \
+    "$BIN" tests/cases/basic.disturb >/dev/null
+else
+  echo "valgrind not found; skipping leak check"
+fi
 
 echo "all tests passed"
