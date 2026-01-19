@@ -189,10 +189,12 @@ Objects/Arrays:
 Formatting:
 - `pretty`
 
-IO + Eval:
-- `read`, `write`, `eval`
+IO(might not be available in all environments):
+- `read`, `write`
+
 Metaprogramming:
-- `parse`, `emit`, `eval_bytecode`, `bytecode_to_ast`, `ast_to_source`
+- `parse`, `emit`, `eval_bytecode`, `bytecode_to_ast`, `ast_to_source`, `eval`
+
 GC:
 - `gc`, `global.gc`
 
