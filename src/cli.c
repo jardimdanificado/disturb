@@ -101,10 +101,48 @@ static void repl_update_state(const char *line, int *depth, int *in_single, int 
     }
 }
 
-static int repl_run(void)
+// Função para adicionar os argumentos como um objeto na VM
+static void vm_add_args(VM *vm, int argc, char **argv)
+{
+    // Primeiro, define cada argumento como uma variável global
+    // arg_0, arg_1, arg_2, etc.
+    for (int i = 0; i < argc; i++) {
+        char var_name[32];
+        snprintf(var_name, sizeof(var_name), "arg_%d", i);
+        vm_define_char(vm, var_name, argv[i]);
+    }
+    
+    // Cria um array apenas com as referências às variáveis (sem chaves)
+    char **items = (char**)malloc(sizeof(char*) * argc);
+    
+    for (int i = 0; i < argc; i++) {
+        // Aloca a referência à variável
+        items[i] = (char*)malloc(32);
+        snprintf(items[i], 32, "arg_%d", i);
+    }
+    
+    // Define o objeto args sem chaves (passa apenas valores)
+    vm_define_object(vm, "args", items, argc, 0);
+    
+    // Libera a memória alocada
+    for (int i = 0; i < argc; i++) {
+        free(items[i]);
+    }
+    free(items);
+    
+    // Define argc
+    char argc_str[32];
+    snprintf(argc_str, sizeof(argc_str), "%d", argc);
+    vm_define_char(vm, "argc", argc_str);
+}
+
+static int repl_run(int argc, char **argv)
 {
     VM vm;
     vm_init(&vm);
+    
+    // Adiciona os argumentos na VM
+    vm_add_args(&vm, argc, argv);
 
     size_t cap = 0;
     size_t len = 0;
@@ -156,7 +194,7 @@ int main(int argc, char **argv)
 {
     if (argc > 1) {
         if (strcmp(argv[1], "--repl") == 0) {
-            return repl_run();
+            return repl_run(argc, argv);
         }
         if (strcmp(argv[1], "--asm") == 0) {
             if (argc < 3) {
@@ -239,6 +277,10 @@ int main(int argc, char **argv)
 
         VM vm;
         vm_init(&vm);
+        
+        // Adiciona os argumentos na VM
+        vm_add_args(&vm, argc, argv);
+        
         FILE *fp = fopen(argv[1], "r");
         if (!fp) {
             perror("open");
@@ -257,7 +299,7 @@ int main(int argc, char **argv)
         fclose(fp);
         vm_free(&vm);
     } else {
-        return repl_run();
+        return repl_run(argc, argv);
     }
 
     return 0;
