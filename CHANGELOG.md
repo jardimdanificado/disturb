@@ -1,7 +1,10 @@
 # Changelog
 
+## 0.12.7
+- New string methods: find, rfind, contains;
+
 ## 0.12.6
-- args are now supported by the cli.
+- Args are now supported by the cli.
 
 ## 0.12.5
 - Add bytecode metaprogramming natives (`parse`, `emit`, `eval_bytecode`, `bytecode_to_ast`, `ast_to_source`).
