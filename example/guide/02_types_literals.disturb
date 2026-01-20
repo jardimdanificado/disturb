@@ -9,8 +9,8 @@ list = [1, 2, 3];
 s = "text";
 c = 'x';
 
-// Byte literal creates a string from numeric byte values.
-b = byte{65, 66, 67};
+// Convert number arrays into byte strings with `.toByte()`.
+b = [65, 66, 67].toByte();
 
 // Tables are key/value pairs; values can be any type.
 obj = {a = 1, b = "hi", c = [9, 8]};

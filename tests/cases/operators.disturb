@@ -47,3 +47,24 @@ println(u);
 println(v);
 println(w);
 println(x);
+
+acc = 5;
+acc += 3;
+println(acc);
+acc -= 2;
+println(acc);
+acc *= 4;
+println(acc);
+acc /= 3;
+println(acc);
+acc %= 5;
+println(acc);
+
+++acc;
+println(acc);
+acc++;
+println(acc);
+--acc;
+println(acc);
+acc--;
+println(acc);

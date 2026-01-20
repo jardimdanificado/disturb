@@ -47,6 +47,13 @@ typedef enum {
     TOK_GTE,
     TOK_AND,
     TOK_OR,
+    TOK_PLUSPLUS,
+    TOK_MINUSMINUS,
+    TOK_PLUS_EQ,
+    TOK_MINUS_EQ,
+    TOK_STAR_EQ,
+    TOK_SLASH_EQ,
+    TOK_PERCENT_EQ,
     TOK_ELLIPSIS
 } TokenKind;
 
@@ -78,12 +85,6 @@ typedef enum {
     EXPR_CALL,
     EXPR_FUNC_LITERAL
 } ExprKind;
-
-typedef enum {
-    CAST_NUMBER,
-    CAST_BYTE,
-    CAST_OBJECT
-} CastKind;
 
 typedef struct {
     char *name;
@@ -117,7 +118,6 @@ struct Expr {
             Expr *index;
         } index;
         struct {
-            CastKind kind;
             Expr **items;
             int count;
         } cast_list;
@@ -537,11 +537,52 @@ static Token next_token(Parser *p)
         break;
     case ',': t.kind = TOK_COMMA; break;
     case ';': t.kind = TOK_SEMI; break;
-    case '+': t.kind = TOK_PLUS; break;
-    case '-': t.kind = TOK_MINUS; break;
-    case '*': t.kind = TOK_STAR; break;
-    case '/': t.kind = TOK_SLASH; break;
-    case '%': t.kind = TOK_PERCENT; break;
+    case '+':
+        if (peek_char(p) == '+') {
+            next_char(p);
+            t.kind = TOK_PLUSPLUS;
+        } else if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_PLUS_EQ;
+        } else {
+            t.kind = TOK_PLUS;
+        }
+        break;
+    case '-':
+        if (peek_char(p) == '-') {
+            next_char(p);
+            t.kind = TOK_MINUSMINUS;
+        } else if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_MINUS_EQ;
+        } else {
+            t.kind = TOK_MINUS;
+        }
+        break;
+    case '*':
+        if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_STAR_EQ;
+        } else {
+            t.kind = TOK_STAR;
+        }
+        break;
+    case '/':
+        if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_SLASH_EQ;
+        } else {
+            t.kind = TOK_SLASH;
+        }
+        break;
+    case '%':
+        if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_PERCENT_EQ;
+        } else {
+            t.kind = TOK_PERCENT;
+        }
+        break;
     case '!':
         if (peek_char(p) == '=') {
             next_char(p);
@@ -746,7 +787,10 @@ static int parse_statement(Parser *p, Bytecode *bc);
 static Expr *parse_func_literal(Parser *p);
 static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len);
 static int emit_expr(Bytecode *bc, Parser *p, Expr *e);
-static Expr *parse_cast_list(Parser *p, CastKind cast, TokenKind closing, const char *close_msg);
+static Expr *expr_new_number_literal(Parser *p, double value);
+static int emit_compound_assign_statement(Bytecode *bc, Parser *p, Expr *lhs, TokenKind bin_op, Expr *rhs);
+static int emit_adjust_statement(Bytecode *bc, Parser *p, Expr *lhs, TokenKind bin_op, double delta);
+static Expr *parse_cast_list(Parser *p, TokenKind closing, const char *close_msg);
 
 static Expr *parse_object_literal(Parser *p)
 {
@@ -800,11 +844,6 @@ static Expr *parse_object_literal(Parser *p)
     return e;
 }
 
-static int token_equals_literal(const Token *tok, const char *str, size_t len)
-{
-    return tok->len == len && strncmp(tok->start, str, len) == 0;
-}
-
 static Expr *parse_primary(Parser *p)
 {
     if (p->current.kind == TOK_LBRACE) {
@@ -833,18 +872,6 @@ static Expr *parse_primary(Parser *p)
     }
 
     if (p->current.kind == TOK_IDENT) {
-        int is_table = token_equals_literal(&p->current, "table", 5);
-        int is_number = token_equals_literal(&p->current, "number", 6);
-        int is_byte = token_equals_literal(&p->current, "byte", 4);
-        if ((is_table || is_number || is_byte) && peek_kind(p, 1) == TOK_LBRACE) {
-            advance(p);
-            if (is_table) {
-                return parse_object_literal(p);
-            }
-            CastKind cast = is_number ? CAST_NUMBER : CAST_BYTE;
-            if (!expect(p, TOK_LBRACE, "expected '{' to start literal")) return NULL;
-            return parse_cast_list(p, cast, TOK_RBRACE, "expected '}' to end list");
-        }
         Expr *e = expr_new(p, EXPR_NAME);
         if (!e) return NULL;
         e->as.name.name = arena_strndup(&p->arena, p->current.start, p->current.len);
@@ -855,7 +882,7 @@ static Expr *parse_primary(Parser *p)
 
     if (p->current.kind == TOK_LBRACKET) {
         advance(p);
-        return parse_cast_list(p, CAST_NUMBER, TOK_RBRACKET, "expected ']' to end list");
+        return parse_cast_list(p, TOK_RBRACKET, "expected ']' to end list");
     }
 
     if (p->current.kind == TOK_LPAREN) {
@@ -874,40 +901,37 @@ static Expr *parse_primary(Parser *p)
     return NULL;
 }
 
-static Expr *parse_cast_list(Parser *p, CastKind cast, TokenKind closing, const char *close_msg)
+static Expr *parse_cast_list(Parser *p, TokenKind closing, const char *close_msg)
 {
-    if (cast == CAST_NUMBER) {
-        double *vals = NULL;
-        int count = 0;
-        if (parse_number_list_fast(p, &vals, &count, closing, close_msg)) {
-            Expr *e = expr_new(p, EXPR_LITERAL_NUMBER_LIST);
-            if (!e) {
-                free(vals);
-                return NULL;
-            }
-            if (vals && !arena_track(&p->arena, vals)) {
-                parser_error(p, "out of memory");
-                free(vals);
-                return NULL;
-            }
-            e->as.num_list.items = vals;
-            e->as.num_list.count = count;
-            return e;
+    double *vals = NULL;
+    int count = 0;
+    if (parse_number_list_fast(p, &vals, &count, closing, close_msg)) {
+        Expr *e = expr_new(p, EXPR_LITERAL_NUMBER_LIST);
+        if (!e) {
+            free(vals);
+            return NULL;
         }
+        if (vals && !arena_track(&p->arena, vals)) {
+            parser_error(p, "out of memory");
+            free(vals);
+            return NULL;
+        }
+        e->as.num_list.items = vals;
+        e->as.num_list.count = count;
+        return e;
     }
 
     Expr *e = expr_new(p, EXPR_CAST_LIST);
     if (!e) return NULL;
-    e->as.cast_list.kind = cast;
     Expr **items = NULL;
-    int count = 0;
+    int item_count = 0;
     int cap = 0;
 
     if (p->current.kind != closing) {
         for (;;) {
             Expr *item = parse_expr(p);
             if (!item) return NULL;
-            if (count == cap) {
+            if (item_count == cap) {
                 int next = cap == 0 ? 4 : cap * 2;
                 Expr **tmp = (Expr**)realloc(items, (size_t)next * sizeof(Expr*));
                 if (!tmp) {
@@ -917,7 +941,7 @@ static Expr *parse_cast_list(Parser *p, CastKind cast, TokenKind closing, const 
                 items = tmp;
                 cap = next;
             }
-            items[count++] = item;
+            items[item_count++] = item;
 
             if (match(p, TOK_COMMA)) continue;
             break;
@@ -930,7 +954,7 @@ static Expr *parse_cast_list(Parser *p, CastKind cast, TokenKind closing, const 
         return NULL;
     }
     e->as.cast_list.items = items;
-    e->as.cast_list.count = count;
+    e->as.cast_list.count = item_count;
     return e;
 }
 
@@ -1535,30 +1559,6 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         return 1;
     case EXPR_CAST_LIST: {
         int count = e->as.cast_list.count;
-        if (e->as.cast_list.kind == CAST_BYTE) {
-            for (int i = 0; i < count; i++) {
-                Expr *item = e->as.cast_list.items[i];
-                if (item->kind == EXPR_LITERAL_NUM) {
-                    double v = item->as.lit_num.number;
-                    if (v < 0 || v > 255 || (double)(int)v != v) {
-                        parser_error(p, "byte literal out of range (0-255)");
-                        return 0;
-                    }
-                    if (!bc_emit_u8(bc, BC_PUSH_BYTE) || !bc_emit_u8(bc, (uint8_t)v)) {
-                        parser_error(p, "failed to emit byte literal");
-                        return 0;
-                    }
-                    continue;
-                }
-                if (!emit_expr(bc, p, item)) return 0;
-            }
-            if (!bc_emit_u8(bc, BC_BUILD_BYTE) || !bc_emit_u32(bc, (uint32_t)count)) {
-                parser_error(p, "failed to emit BUILD_BYTE");
-                return 0;
-            }
-            return 1;
-        }
-
         int all_literal = 1;
         for (int i = 0; i < count; i++) {
             if (e->as.cast_list.items[i]->kind != EXPR_LITERAL_NUM) {
@@ -1844,10 +1844,83 @@ static int emit_loop_continue(Parser *p, Bytecode *bc)
     return 1;
 }
 
+static Expr *expr_new_number_literal(Parser *p, double value)
+{
+    Expr *e = expr_new(p, EXPR_LITERAL_NUM);
+    if (!e) return NULL;
+    e->as.lit_num.number = value;
+    return e;
+}
+
+static int emit_compound_assign_statement(Bytecode *bc, Parser *p, Expr *lhs, TokenKind bin_op, Expr *rhs)
+{
+    Expr *bin = expr_new(p, EXPR_BINARY);
+    if (!bin) return 0;
+    bin->as.binary.op = bin_op;
+    bin->as.binary.left = lhs;
+    bin->as.binary.right = rhs;
+    return emit_store(bc, p, lhs, bin);
+}
+
+static int emit_adjust_statement(Bytecode *bc, Parser *p, Expr *lhs, TokenKind bin_op, double delta)
+{
+    Expr *value = expr_new_number_literal(p, delta);
+    if (!value) return 0;
+    return emit_compound_assign_statement(bc, p, lhs, bin_op, value);
+}
+
 static int parse_simple_statement(Parser *p, Bytecode *bc, int require_semi)
 {
+    TokenKind prefix_op = TOK_EOF;
+    if (p->current.kind == TOK_PLUSPLUS || p->current.kind == TOK_MINUSMINUS) {
+        prefix_op = p->current.kind;
+        advance(p);
+    }
+
     Expr *expr = parse_expr(p);
     if (!expr) return 0;
+
+    if (prefix_op != TOK_EOF) {
+        if (!expr_is_lvalue(expr)) {
+            parser_error(p, "left side is not assignable");
+            return 0;
+        }
+        TokenKind bin_op = prefix_op == TOK_PLUSPLUS ? TOK_PLUS : TOK_MINUS;
+        if (!emit_adjust_statement(bc, p, expr, bin_op, 1.0)) return 0;
+        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after statement")) return 0;
+        return 1;
+    }
+
+    if (p->current.kind == TOK_PLUSPLUS || p->current.kind == TOK_MINUSMINUS) {
+        TokenKind postfix_op = p->current.kind;
+        advance(p);
+        if (!expr_is_lvalue(expr)) {
+            parser_error(p, "left side is not assignable");
+            return 0;
+        }
+        TokenKind bin_op = postfix_op == TOK_PLUSPLUS ? TOK_PLUS : TOK_MINUS;
+        if (!emit_adjust_statement(bc, p, expr, bin_op, 1.0)) return 0;
+        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after statement")) return 0;
+        return 1;
+    }
+
+    TokenKind assign_op = TOK_EOF;
+    if (match(p, TOK_PLUS_EQ)) assign_op = TOK_PLUS;
+    else if (match(p, TOK_MINUS_EQ)) assign_op = TOK_MINUS;
+    else if (match(p, TOK_STAR_EQ)) assign_op = TOK_STAR;
+    else if (match(p, TOK_SLASH_EQ)) assign_op = TOK_SLASH;
+    else if (match(p, TOK_PERCENT_EQ)) assign_op = TOK_PERCENT;
+
+    if (assign_op != TOK_EOF) {
+        if (!expr_is_lvalue(expr)) {
+            parser_error(p, "left side is not assignable");
+            return 0;
+        }
+        Expr *rhs = parse_expr(p);
+        if (!rhs) return 0;
+        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after assignment")) return 0;
+        return emit_compound_assign_statement(bc, p, expr, assign_op, rhs);
+    }
 
     if (match(p, TOK_EQ)) {
         if (!expr_is_lvalue(expr)) {

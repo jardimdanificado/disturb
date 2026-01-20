@@ -1,7 +1,8 @@
 # Changelog
 
 ## 0.14.0
-- Introduce `[]` for number arrays plus `.toByte()`/`.toNumber()` conversions, keep `{}` as the default table literal (with `table{}` optional) and `(args){}` reserved for lambdas, and refresh string output to match the new notation.
+- Simplify literal syntax: table literals always use `{...}` (no `table` prefix) and byte strings are derived from number arrays via `[]/.toByte()` with `.toNumber()` available for coercion, preserving `(args){}` for lambdas.
+- Add compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) plus prefix/postfix `++`/`--` statement forms for in-place updates.
 
 ## 0.13.0
 - user-defined functions are now called `lambda`, which is more appropriate.

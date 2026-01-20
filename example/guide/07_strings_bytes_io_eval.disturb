@@ -1,8 +1,8 @@
 // 07_strings_bytes_io_eval.disturb
 // Strings, bytes, and IO/eval.
 
-// Byte literal yields a string (bytes are treated as strings).
-bytes = byte{72, 105, 33};
+// Byte strings are created by converting a number array.
+bytes = [72, 105, 33].toByte();
 println(bytes);
 
 // String helpers work on bytes too.
