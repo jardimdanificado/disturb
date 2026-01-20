@@ -7,6 +7,6 @@ println(b[2]);
 println(b.toNumber());
 
 // Assigning a single byte updates the string in-place.
-b[1] = [68].toByte();
-println(b);
+b[1] = 68;
+println(b.toNumber());
 println(numbers);

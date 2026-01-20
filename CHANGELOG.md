@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.14.0
-- Simplify literal syntax: table literals always use `{...}` (no `table` prefix) and byte strings are derived from number arrays via `[]/.toByte()` with `.toNumber()` available for coercion, preserving `(args){}` for lambdas.
+- Simplify literal syntax: table literals always use `{...}` and byte strings are derived from number arrays via `[]/.toByte()` with `.toNumber()` available for coercion, preserving `(args){}` for lambdas.
 - Add compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) plus prefix/postfix `++`/`--` statement forms for in-place updates.
 
 ## 0.13.0

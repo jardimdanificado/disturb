@@ -63,6 +63,7 @@ Notes:
 - `null` and numeric `0` are false; everything else is true.
 - `+` concatenates when either side is a string/char/byte; non-strings stringify to Disturb literals.
 - `a ?= b` assigns `b` only when `a` is `null`.
+- Byte indexing assignments accept either byte-length strings/bytes or numeric values `0-255`.
 
 ## Control Flow
 

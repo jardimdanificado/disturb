@@ -2,5 +2,5 @@ b = [65, 66, 67].toByte();
 
 println(b[2]);
 
-b[1] = [68].toByte();
+b[1] = 68;
 println(b);

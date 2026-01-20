@@ -2496,12 +2496,22 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     return 0;
                 }
                 Int vtype = urb_obj_type(value->obj);
-                if (!((vtype == URB_T_BYTE || vtype == URB_T_BYTE) &&
-                      urb_bytes_len(value->obj) == 1)) {
-                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects single string element\n", pc);
-                    return 0;
+                if ((vtype == URB_T_BYTE || vtype == URB_T_BYTE) && urb_bytes_len(value->obj) == 1) {
+                    urb_bytes_data(target->obj)[idx] = urb_bytes_data(value->obj)[0];
+                    break;
                 }
-                urb_bytes_data(target->obj)[idx] = urb_bytes_data(value->obj)[0];
+                if (vtype == URB_T_NUMBER && value->obj->size == 3) {
+                    double v = value->obj->data[2].f;
+                    Int iv = (Int)v;
+                    if (v < 0 || v > 255 || (double)iv != v) {
+                        fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects byte-sized number\n", pc);
+                        return 0;
+                    }
+                    urb_bytes_data(target->obj)[idx] = (unsigned char)iv;
+                    break;
+                }
+                fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects single string element or byte-sized number\n", pc);
+                return 0;
                 break;
             }
 
