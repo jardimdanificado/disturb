@@ -1,4 +1,4 @@
-data = (table){a = (number){10, 20, 30}, b = (table){c = "hi"}};
+data = {a = [10, 20, 30], b = {c = "hi"}};
 
 println(data.a[1]);
 println(data.b.c[0]);

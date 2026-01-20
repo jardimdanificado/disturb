@@ -1,9 +1,12 @@
 // Byte literals behave like strings for printing and string ops.
-b = (byte){65, 66, 67};
+numbers = [65, 66, 67];
+b = numbers.toByte();
 
 // Indexing yields a single-byte string.
 println(b[2]);
+println(b.toNumber());
 
 // Assigning a single byte updates the string in-place.
-b[1] = (byte){68};
+b[1] = byte{68};
 println(b);
+println(numbers);

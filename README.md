@@ -28,8 +28,8 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 
 | Type | Literal | Notes |
 | --- | --- | --- |
-| number | `1`, `3.14` | Always floating point |
-| byte | `(byte){9, 1, 2}` | String literal from byte values (0–255) |
+| number | `1`, `3.14` | Always floating point; arrays use `[]` |
+| byte | `byte{9, 1, 2}` | String literal from byte values (0–255) |
 | char | `'c'` | Single-byte string |
 | string | `"abc"` | String with length > 1 |
 | table | `{a = 1}` | Keyed container |
@@ -38,10 +38,15 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 
 | Form | Result |
 | --- | --- |
-| `(number){1, 2}` | Number list |
-| `(byte){9, 1}` | String from byte values |
+| `[1, 2]` | Number list |
+| `byte{9, 1}` | String from byte values |
 | `{a = b}` | Table with keys |
-| `(table){a = b}` | Explicit table cast |
+| `table{a = b}` | Optional explicit table literal (same as `{...}`) |
+
+Notes:
+- `[]` builds a number array; call `.toByte()` to coerce to a byte string and `.toNumber()` on byte strings to get numbers.
+- Table literals now default to `{...}`; prefixing with `table` is only necessary when you want an explicit hint.
+- Plain `{}` is reserved for tables, while typed lists use `[value, ...]`/`byte{}`; `()` before `{}` still introduces a lambda.
 
 ## Expressions and Operators
 
@@ -211,7 +216,7 @@ Notes:
 Metaprogramming functions use a bytecode-level AST, not a syntax AST.
 
 Top-level shape:
-- `(table){type = "bytecode", ops = (table){...}}`
+- `table{type = "bytecode", ops = table{...}}`
 
 Each `ops` item is a table with `op` and optional fields:
 - `PUSH_NUM`: `value` (number)

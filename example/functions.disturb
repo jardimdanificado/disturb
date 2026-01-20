@@ -8,9 +8,9 @@ var(1);
 var(1, 2, 3);
 
 // Calling a table uses a method with the same name inside it.
-obj = (table){a = 7, obj = (a){ println(this.a); println(a); }};
+obj = {a = 7, obj = (a){ println(this.a); println(a); }};
 obj(9);
 
 // Method calls bind this to the target table.
-obj2 = (table){a = 3, foo = (x){ println(this.a + x); }};
+obj2 = {a = 3, foo = (x){ println(this.a + x); }};
 obj2.foo(4);

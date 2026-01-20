@@ -8,14 +8,14 @@ println(s.upper());
 
 println("hi,there".split(","));
 
-arr = (table){a = "hi", b = "there"};
+arr = {a = "hi", b = "there"};
 println(arr.join("-"));
 
 println("  trim  ".trim());
 
 println("hello".replace("hello", "hi"));
 
-o = (table){a = 1, b = 2};
+o = {a = 1, b = 2};
 println(o.keys());
 
 println(o.values());
@@ -26,7 +26,7 @@ println(o.delete("a"));
 
 println(o.has("a"));
 
-n = (number){1, 2};
+n = [1, 2];
 n.push(3);
 println(n);
 

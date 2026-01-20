@@ -519,16 +519,20 @@ static void vm_append_value_text(VM *vm, ObjEntry *entry, StrBuf *b, int raw_str
             sb_append_number(b, obj->data[2].f);
             break;
         }
-        sb_append_n(b, "(number){", 9);
+        if (count == 0) {
+            sb_append_n(b, "[]", 2);
+            break;
+        }
+        sb_append_char(b, '[');
         for (Int i = 0; i < count; i++) {
             if (i) sb_append_n(b, ", ", 2);
             sb_append_number(b, obj->data[i + 2].f);
         }
-        sb_append_char(b, '}');
+        sb_append_char(b, ']');
         break;
     }
     case URB_T_TABLE: {
-        sb_append_n(b, "(table){", 8);
+        sb_append_char(b, '{');
         int first = 1;
         for (Int i = 2; i < obj->size; i++) {
             ObjEntry *child = (ObjEntry*)obj->data[i].p;
@@ -628,16 +632,17 @@ static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int inden
             vm_append_value_text(vm, entry, b, 0);
             break;
         }
-        sb_append_n(b, "(number){\n", 10);
+        sb_append_char(b, '[');
+        sb_append_char(b, '\n');
         for (Int i = 0; i < count; i++) {
-            sb_append_indent(b, depth + 1, indent);
-            sb_append_number(b, obj->data[i + 2].f);
-            if (i + 1 < count) sb_append_char(b, ',');
-            sb_append_char(b, '\n');
-        }
-        sb_append_indent(b, depth, indent);
-        sb_append_char(b, '}');
-        break;
+        sb_append_indent(b, depth + 1, indent);
+        sb_append_number(b, obj->data[i + 2].f);
+        if (i + 1 < count) sb_append_char(b, ',');
+        sb_append_char(b, '\n');
+    }
+    sb_append_indent(b, depth, indent);
+    sb_append_char(b, ']');
+    break;
     }
     case URB_T_TABLE: {
         if (pretty_seen_has(seen, obj)) {
@@ -653,11 +658,11 @@ static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int inden
             if (obj->data[i].p) count++;
         }
         if (count <= 0) {
-            sb_append_n(b, "(table){}", 9);
+            sb_append_n(b, "{}", 2);
             pretty_seen_pop(seen);
             break;
         }
-        sb_append_n(b, "(table){\n", 9);
+        sb_append_n(b, "{\n", 2);
         Int printed = 0;
         for (Int i = 2; i < obj->size; i++) {
             ObjEntry *child = (ObjEntry*)obj->data[i].p;
@@ -943,6 +948,10 @@ void vm_init(VM *vm)
     entry = vm_define_native(vm, "len", "len");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
     entry = vm_define_native(vm, "pretty", "pretty");
+    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    entry = vm_define_native(vm, "toByte", "toByte");
+    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    entry = vm_define_native(vm, "toNumber", "toNumber");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
     entry = vm_define_native(vm, "gc", "gc");
     if (entry) urb_table_add(vm->common_entry->obj, entry);

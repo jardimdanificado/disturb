@@ -1,7 +1,7 @@
 // 03_indexing_objects.disturb
 // Indexing, table keys, and array-like behavior.
 
-data = {nums = (number){10, 20, 30}, msg = "hi"};
+data = {nums = [10, 20, 30], msg = "hi"};
 
 // Numeric indexing (0-based) for number lists and strings.
 println(data.nums[1]);

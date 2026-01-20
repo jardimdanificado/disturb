@@ -1,8 +1,8 @@
 // Basic values and globals.
-a = (number){1, 2, 3};
+a = [1, 2, 3];
 
 // Everything lives under global; missing keys resolve to null.
-global.e = {a = 1, b = (number){2, 3}};
+global.e = {a = 1, b = [2, 3]};
 global.i = "hello world!\n";
 
 // Print a string and a nested value.

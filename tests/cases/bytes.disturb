@@ -1,6 +1,6 @@
-b = (byte){65, 66, 67};
+b = byte{65, 66, 67};
 
 println(b[2]);
 
-b[1] = (byte){68};
+b[1] = byte{68};
 println(b);

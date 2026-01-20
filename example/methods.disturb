@@ -13,11 +13,11 @@ println();
 println();
 
 // Table methods can act on table/array-like values.
-arr = (table){a = "hi", b = "there"};
+arr = {a = "hi", b = "there"};
 arr.join("-");
 println();
 
 // Table key helpers.
-o = (table){a = 1, b = 2};
+o = {a = 1, b = 2};
 o.keys();
 println();

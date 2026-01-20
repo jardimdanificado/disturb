@@ -639,23 +639,6 @@ static TokenKind peek_kind(Parser *p, int n)
     return kind;
 }
 
-static int peek_ident_is_type(Parser *p)
-{
-    Parser probe = *p;
-    Token tok = {0};
-    token_free(&tok);
-    tok = next_token(&probe);
-    if (tok.kind != TOK_IDENT) {
-        token_free(&tok);
-        return 0;
-    }
-    int ok = (tok.len == 5 && strncmp(tok.start, "table", 5) == 0) ||
-             (tok.len == 6 && strncmp(tok.start, "number", 6) == 0) ||
-             (tok.len == 4 && strncmp(tok.start, "byte", 4) == 0);
-    token_free(&tok);
-    return ok;
-}
-
 static int peek_is_func_literal(Parser *p)
 {
     Parser probe = *p;
@@ -758,63 +741,74 @@ static Expr *expr_new(Parser *p, ExprKind kind)
 }
 
 static Expr *parse_expr(Parser *p);
-static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count);
+static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, TokenKind closing, const char *close_msg);
 static int parse_statement(Parser *p, Bytecode *bc);
 static Expr *parse_func_literal(Parser *p);
 static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len);
 static int emit_expr(Bytecode *bc, Parser *p, Expr *e);
+static Expr *parse_cast_list(Parser *p, CastKind cast, TokenKind closing, const char *close_msg);
+
+static Expr *parse_object_literal(Parser *p)
+{
+    if (!expect(p, TOK_LBRACE, "expected '{' to start object literal")) return NULL;
+    Expr *e = expr_new(p, EXPR_OBJECT_LITERAL);
+    if (!e) return NULL;
+    ObjPair *pairs = NULL;
+    int count = 0;
+    int cap = 0;
+
+    if (p->current.kind != TOK_RBRACE) {
+        for (;;) {
+            if (p->current.kind != TOK_IDENT) {
+                parser_error(p, "object key must be an identifier");
+                return NULL;
+            }
+            char *key = arena_strndup(&p->arena, p->current.start, p->current.len);
+            size_t key_len = p->current.len;
+            advance(p);
+            if (!expect(p, TOK_EQ, "expected '=' after object key")) return NULL;
+            Expr *value = parse_expr(p);
+            if (!value) return NULL;
+
+            if (count == cap) {
+                int next = cap == 0 ? 4 : cap * 2;
+                ObjPair *tmp = (ObjPair*)realloc(pairs, (size_t)next * sizeof(ObjPair));
+                if (!tmp) {
+                    parser_error(p, "out of memory");
+                    return NULL;
+                }
+                pairs = tmp;
+                cap = next;
+            }
+            pairs[count].name = key;
+            pairs[count].name_len = key_len;
+            pairs[count].value = value;
+            count++;
+
+            if (match(p, TOK_COMMA)) continue;
+            break;
+        }
+    }
+
+    if (!expect(p, TOK_RBRACE, "expected '}' to end object literal")) return NULL;
+    if (pairs && !arena_track(&p->arena, pairs)) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+    e->as.obj.pairs = pairs;
+    e->as.obj.count = count;
+    return e;
+}
+
+static int token_equals_literal(const Token *tok, const char *str, size_t len)
+{
+    return tok->len == len && strncmp(tok->start, str, len) == 0;
+}
 
 static Expr *parse_primary(Parser *p)
 {
     if (p->current.kind == TOK_LBRACE) {
-        advance(p);
-        Expr *e = expr_new(p, EXPR_OBJECT_LITERAL);
-        if (!e) return NULL;
-        ObjPair *pairs = NULL;
-        int count = 0;
-        int cap = 0;
-
-        if (p->current.kind != TOK_RBRACE) {
-            for (;;) {
-                if (p->current.kind != TOK_IDENT) {
-                    parser_error(p, "object key must be an identifier");
-                    return NULL;
-                }
-                char *key = arena_strndup(&p->arena, p->current.start, p->current.len);
-                size_t key_len = p->current.len;
-                advance(p);
-                if (!expect(p, TOK_EQ, "expected '=' after object key")) return NULL;
-                Expr *value = parse_expr(p);
-                if (!value) return NULL;
-
-                if (count == cap) {
-                    int next = cap == 0 ? 4 : cap * 2;
-                    ObjPair *tmp = (ObjPair*)realloc(pairs, (size_t)next * sizeof(ObjPair));
-                    if (!tmp) {
-                        parser_error(p, "out of memory");
-                        return NULL;
-                    }
-                    pairs = tmp;
-                    cap = next;
-                }
-                pairs[count].name = key;
-                pairs[count].name_len = key_len;
-                pairs[count].value = value;
-                count++;
-
-                if (match(p, TOK_COMMA)) continue;
-                break;
-            }
-        }
-
-        if (!expect(p, TOK_RBRACE, "expected '}' to end object literal")) return NULL;
-        if (pairs && !arena_track(&p->arena, pairs)) {
-            parser_error(p, "out of memory");
-            return NULL;
-        }
-        e->as.obj.pairs = pairs;
-        e->as.obj.count = count;
-        return e;
+        return parse_object_literal(p);
     }
 
     if (p->current.kind == TOK_NUMBER) {
@@ -839,6 +833,18 @@ static Expr *parse_primary(Parser *p)
     }
 
     if (p->current.kind == TOK_IDENT) {
+        int is_table = token_equals_literal(&p->current, "table", 5);
+        int is_number = token_equals_literal(&p->current, "number", 6);
+        int is_byte = token_equals_literal(&p->current, "byte", 4);
+        if ((is_table || is_number || is_byte) && peek_kind(p, 1) == TOK_LBRACE) {
+            advance(p);
+            if (is_table) {
+                return parse_object_literal(p);
+            }
+            CastKind cast = is_number ? CAST_NUMBER : CAST_BYTE;
+            if (!expect(p, TOK_LBRACE, "expected '{' to start literal")) return NULL;
+            return parse_cast_list(p, cast, TOK_RBRACE, "expected '}' to end list");
+        }
         Expr *e = expr_new(p, EXPR_NAME);
         if (!e) return NULL;
         e->as.name.name = arena_strndup(&p->arena, p->current.start, p->current.len);
@@ -847,154 +853,88 @@ static Expr *parse_primary(Parser *p)
         return e;
     }
 
+    if (p->current.kind == TOK_LBRACKET) {
+        advance(p);
+        return parse_cast_list(p, CAST_NUMBER, TOK_RBRACKET, "expected ']' to end list");
+    }
+
     if (p->current.kind == TOK_LPAREN) {
-        int is_cast = peek_kind(p, 1) == TOK_IDENT && peek_ident_is_type(p) &&
-                      peek_kind(p, 2) == TOK_RPAREN &&
-                      peek_kind(p, 3) == TOK_LBRACE;
-        int is_func = !is_cast && peek_is_func_literal(p);
+        int is_func = peek_is_func_literal(p);
         advance(p);
         if (is_func) {
             return parse_func_literal(p);
         }
-        if (!is_cast) {
-            Expr *inner = parse_expr(p);
-            if (!inner) return NULL;
-            if (!expect(p, TOK_RPAREN, "expected ')' after expression")) return NULL;
-            return inner;
-        }
-        if (p->current.kind != TOK_IDENT) {
-            parser_error(p, "expected type name after '('");
-            return NULL;
-        }
-        char *type = arena_strndup(&p->arena, p->current.start, p->current.len);
-        advance(p);
-        if (!expect(p, TOK_RPAREN, "expected ')' after type")) return NULL;
-
-        if (strcmp(type, "table") == 0) {
-            if (!expect(p, TOK_LBRACE, "expected '{' to start literal")) return NULL;
-            Expr *e = expr_new(p, EXPR_OBJECT_LITERAL);
-            if (!e) return NULL;
-            ObjPair *pairs = NULL;
-            int count = 0;
-            int cap = 0;
-
-            if (p->current.kind != TOK_RBRACE) {
-                for (;;) {
-                    if (p->current.kind != TOK_IDENT) {
-                        parser_error(p, "object key must be an identifier");
-                        return NULL;
-                    }
-                    char *key = arena_strndup(&p->arena, p->current.start, p->current.len);
-                    size_t key_len = p->current.len;
-                    advance(p);
-                    if (!expect(p, TOK_EQ, "expected '=' after object key")) return NULL;
-                    Expr *value = parse_expr(p);
-                    if (!value) return NULL;
-
-                    if (count == cap) {
-                        int next = cap == 0 ? 4 : cap * 2;
-                        ObjPair *tmp = (ObjPair*)realloc(pairs, (size_t)next * sizeof(ObjPair));
-                        if (!tmp) {
-                            parser_error(p, "out of memory");
-                            return NULL;
-                        }
-                        pairs = tmp;
-                        cap = next;
-                    }
-                    pairs[count].name = key;
-                    pairs[count].name_len = key_len;
-                    pairs[count].value = value;
-                    count++;
-
-                    if (match(p, TOK_COMMA)) continue;
-                    break;
-                }
-            }
-
-            if (!expect(p, TOK_RBRACE, "expected '}' to end object literal")) return NULL;
-            if (pairs && !arena_track(&p->arena, pairs)) {
-                parser_error(p, "out of memory");
-                return NULL;
-            }
-            e->as.obj.pairs = pairs;
-            e->as.obj.count = count;
-            return e;
-        }
-
-        CastKind cast;
-        if (strcmp(type, "number") == 0) {
-            cast = CAST_NUMBER;
-        } else if (strcmp(type, "byte") == 0) {
-            cast = CAST_BYTE;
-        } else {
-            return parse_func_literal_with_first_arg(p, type, strlen(type));
-        }
-
-        if (!expect(p, TOK_LBRACE, "expected '{' to start literal")) return NULL;
-
-        if (cast == CAST_NUMBER) {
-            double *vals = NULL;
-            int count = 0;
-            if (parse_number_list_fast(p, &vals, &count)) {
-                Expr *e = expr_new(p, EXPR_LITERAL_NUMBER_LIST);
-                if (!e) {
-                    free(vals);
-                    return NULL;
-                }
-                if (vals && !arena_track(&p->arena, vals)) {
-                    parser_error(p, "out of memory");
-                    free(vals);
-                    return NULL;
-                }
-                e->as.num_list.items = vals;
-                e->as.num_list.count = count;
-                return e;
-            }
-        }
-
-        Expr *e = expr_new(p, EXPR_CAST_LIST);
-        if (!e) return NULL;
-        e->as.cast_list.kind = cast;
-        Expr **items = NULL;
-        int count = 0;
-        int cap = 0;
-
-        if (p->current.kind != TOK_RBRACE) {
-            for (;;) {
-                Expr *item = parse_expr(p);
-                if (!item) return NULL;
-                if (count == cap) {
-                    int next = cap == 0 ? 4 : cap * 2;
-                    Expr **tmp = (Expr**)realloc(items, (size_t)next * sizeof(Expr*));
-                    if (!tmp) {
-                        parser_error(p, "out of memory");
-                        return NULL;
-                    }
-                    items = tmp;
-                    cap = next;
-                }
-                items[count++] = item;
-
-                if (match(p, TOK_COMMA)) continue;
-                break;
-            }
-        }
-
-        if (!expect(p, TOK_RBRACE, "expected '}' to end list")) return NULL;
-        if (items && !arena_track(&p->arena, items)) {
-            parser_error(p, "out of memory");
-            return NULL;
-        }
-        e->as.cast_list.items = items;
-        e->as.cast_list.count = count;
-        return e;
+        Expr *inner = parse_expr(p);
+        if (!inner) return NULL;
+        if (!expect(p, TOK_RPAREN, "expected ')' after expression")) return NULL;
+        return inner;
     }
 
     parser_error(p, "unexpected token");
     return NULL;
 }
 
-static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count)
+static Expr *parse_cast_list(Parser *p, CastKind cast, TokenKind closing, const char *close_msg)
+{
+    if (cast == CAST_NUMBER) {
+        double *vals = NULL;
+        int count = 0;
+        if (parse_number_list_fast(p, &vals, &count, closing, close_msg)) {
+            Expr *e = expr_new(p, EXPR_LITERAL_NUMBER_LIST);
+            if (!e) {
+                free(vals);
+                return NULL;
+            }
+            if (vals && !arena_track(&p->arena, vals)) {
+                parser_error(p, "out of memory");
+                free(vals);
+                return NULL;
+            }
+            e->as.num_list.items = vals;
+            e->as.num_list.count = count;
+            return e;
+        }
+    }
+
+    Expr *e = expr_new(p, EXPR_CAST_LIST);
+    if (!e) return NULL;
+    e->as.cast_list.kind = cast;
+    Expr **items = NULL;
+    int count = 0;
+    int cap = 0;
+
+    if (p->current.kind != closing) {
+        for (;;) {
+            Expr *item = parse_expr(p);
+            if (!item) return NULL;
+            if (count == cap) {
+                int next = cap == 0 ? 4 : cap * 2;
+                Expr **tmp = (Expr**)realloc(items, (size_t)next * sizeof(Expr*));
+                if (!tmp) {
+                    parser_error(p, "out of memory");
+                    return NULL;
+                }
+                items = tmp;
+                cap = next;
+            }
+            items[count++] = item;
+
+            if (match(p, TOK_COMMA)) continue;
+            break;
+        }
+    }
+
+    if (!expect(p, closing, close_msg)) return NULL;
+    if (items && !arena_track(&p->arena, items)) {
+        parser_error(p, "out of memory");
+        return NULL;
+    }
+    e->as.cast_list.items = items;
+    e->as.cast_list.count = count;
+    return e;
+}
+
+static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, TokenKind closing, const char *close_msg)
 {
     Parser probe = *p;
     probe.current.str = NULL;
@@ -1005,7 +945,7 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count)
     int cap = 0;
     Token tok = probe.current;
 
-    if (tok.kind == TOK_RBRACE) {
+    if (tok.kind == closing) {
         *out_vals = NULL;
         *out_count = 0;
         return 1;
@@ -1036,14 +976,14 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count)
             tok = probe.current;
             continue;
         }
-        if (tok.kind == TOK_RBRACE) break;
+        if (tok.kind == closing) break;
         token_free(&probe.current);
         free(vals);
         return 0;
     }
 
-    if (p->current.kind == TOK_RBRACE) {
-        if (!expect(p, TOK_RBRACE, "expected '}' to end list")) {
+    if (p->current.kind == closing) {
+        if (!expect(p, closing, close_msg)) {
             free(vals);
             return 0;
         }
@@ -1060,7 +1000,7 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count)
                 return 0;
             }
         }
-        if (!expect(p, TOK_RBRACE, "expected '}' to end list")) {
+        if (!expect(p, closing, close_msg)) {
             free(vals);
             return 0;
         }

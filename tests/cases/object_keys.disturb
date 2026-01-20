@@ -1,4 +1,4 @@
-o = (table){a = 1};
+o = {a = 1};
 
 println(o.a);
 println(o["a"]);

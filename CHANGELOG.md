@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.14.0
+- Introduce `[]` for number arrays plus `.toByte()`/`.toNumber()` conversions, keep `{}` as the default table literal (with `table{}` optional) and `(args){}` reserved for lambdas, and refresh string output to match the new notation.
+
 ## 0.13.0
 - user-defined functions are now called `lambda`, which is more appropriate.
 - `object` type is now called `table`.

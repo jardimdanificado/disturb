@@ -19,7 +19,7 @@ for (i = 0; i < 4; i = i + 1) { sum = sum + i; }
 println(sum);
 
 // each loop over list/table order
-items = (number){1, 2, 3};
+items = [1, 2, 3];
 total = 0;
 each(v in items) { total = total + v; }
 println(total);

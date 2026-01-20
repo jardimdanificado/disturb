@@ -3,7 +3,7 @@ a = (1 + 2) * 3;
 // String concatenation auto-stringifies non-strings.
 b = "hello " + 123;
 // Tables stringify in Disturb literal format.
-c = "obj=" + (table){a = 1, b = "x"};
+c = "obj=" + {a = 1, b = "x"};
 // Comparison + logical operators return 1/0.
 d = (1 < 2) && (2 > 1);
 

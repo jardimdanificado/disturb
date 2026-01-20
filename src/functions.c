@@ -979,6 +979,60 @@ static void native_pretty(VM *vm, List *stack, List *global)
     urb_table_add(stack, out);
 }
 
+static void native_to_byte(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    if (!target || urb_obj_type(target->obj) != URB_T_NUMBER) {
+        fprintf(stderr, "toByte expects a number list\n");
+        return;
+    }
+    Int count = target->obj->size - 2;
+    char *buf = NULL;
+    if (count > 0) {
+        buf = (char*)malloc((size_t)count);
+        if (!buf) {
+            fprintf(stderr, "toByte failed to allocate buffer\n");
+            return;
+        }
+    }
+    for (Int i = 0; i < count; i++) {
+        Float v = target->obj->data[i + 2].f;
+        Int iv = (Int)v;
+        if (v < 0 || v > 255 || (Float)iv != v) {
+            fprintf(stderr, "toByte expects integer values 0-255\n");
+            free(buf);
+            return;
+        }
+        buf[i] = (char)(unsigned char)iv;
+    }
+    ObjEntry *entry = vm_make_byte_value(vm, buf, (size_t)count);
+    free(buf);
+    if (!entry) return;
+    urb_table_add(stack, entry);
+}
+
+static void native_to_number(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    if (!target || urb_obj_type(target->obj) != URB_T_BYTE) {
+        fprintf(stderr, "toNumber expects bytes\n");
+        return;
+    }
+    size_t len = urb_bytes_len(target->obj);
+    ObjEntry *entry = vm_make_number_value(vm, 0);
+    if (!entry) return;
+    List *obj = entry->obj;
+    obj->size = 2;
+    for (size_t i = 0; i < len; i++) {
+        Value val;
+        val.f = (Float)(unsigned char)urb_bytes_data(target->obj)[i];
+        urb_push(obj, val);
+    }
+    urb_table_add(stack, entry);
+}
+
 static void native_read(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -2478,6 +2532,8 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "println") == 0) return native_println;
     if (strcmp(name, "len") == 0) return native_len;
     if (strcmp(name, "pretty") == 0) return native_pretty;
+    if (strcmp(name, "toByte") == 0) return native_to_byte;
+    if (strcmp(name, "toNumber") == 0) return native_to_number;
     if (strcmp(name, "read") == 0) return native_read;
     if (strcmp(name, "write") == 0) return native_write;
     if (strcmp(name, "eval") == 0) return native_eval;

@@ -1,3 +1,3 @@
-deep = (table){a = (table){a = (table){a = (table){a = (table){a = (table){a = (table){a = (table){a = 12345}}}}}}}};
+deep = {a = {a = {a = {a = {a = {a = {a = {a = 12345}}}}}}}};
 x = deep.a.a.a.a.a.a.a;
 println(x);

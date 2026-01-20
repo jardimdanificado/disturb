@@ -2,7 +2,7 @@
 // Strings, bytes, and IO/eval.
 
 // Byte literal yields a string (bytes are treated as strings).
-bytes = (byte){72, 105, 33};
+bytes = byte{72, 105, 33};
 println(bytes);
 
 // String helpers work on bytes too.
