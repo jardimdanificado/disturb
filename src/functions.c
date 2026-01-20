@@ -41,7 +41,7 @@ static ObjEntry *native_target(VM *vm, List *stack, uint32_t argc)
     ObjEntry *self = native_this(vm);
     if (self) {
         Int type = urb_obj_type(self->obj);
-        if (type == URB_T_OBJECT || type == URB_T_NUMBER || type == URB_T_CHAR || type == URB_T_BYTE) {
+        if (type == URB_T_TABLE || type == URB_T_NUMBER || type == URB_T_BYTE || type == URB_T_BYTE) {
             return self;
         }
     }
@@ -59,34 +59,34 @@ static int entry_as_string(ObjEntry *entry, const char **out, size_t *len)
 {
     if (!entry) return 0;
     Int type = urb_obj_type(entry->obj);
-    if (type != URB_T_CHAR && type != URB_T_BYTE) return 0;
-    *out = urb_char_data(entry->obj);
-    *len = urb_char_len(entry->obj);
+    if (type != URB_T_BYTE && type != URB_T_BYTE) return 0;
+    *out = urb_bytes_data(entry->obj);
+    *len = urb_bytes_len(entry->obj);
     return 1;
 }
 
 static void push_number(VM *vm, List *stack, Float value)
 {
-    urb_object_add(stack, vm_make_number_value(vm, value));
+    urb_table_add(stack, vm_make_number_value(vm, value));
 }
 
 static void push_string(VM *vm, List *stack, const char *s, size_t len)
 {
-    urb_object_add(stack, vm_make_char_value(vm, s, len));
+    urb_table_add(stack, vm_make_byte_value(vm, s, len));
 }
 
 static int number_to_int(ObjEntry *entry, Int *out);
 
 static ObjEntry *object_find_by_key_len(List *obj, const char *name, size_t len)
 {
-    if (!obj || urb_obj_type(obj) != URB_T_OBJECT) return NULL;
+    if (!obj || urb_obj_type(obj) != URB_T_TABLE) return NULL;
     for (Int i = 2; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         if (!entry) continue;
         ObjEntry *key = urb_obj_key(entry->obj);
-        if (!key || urb_obj_type(key->obj) != URB_T_CHAR) continue;
-        if (urb_char_len(key->obj) == len &&
-            memcmp(urb_char_data(key->obj), name, len) == 0) {
+        if (!key || urb_obj_type(key->obj) != URB_T_BYTE) continue;
+        if (urb_bytes_len(key->obj) == len &&
+            memcmp(urb_bytes_data(key->obj), name, len) == 0) {
             return entry;
         }
     }
@@ -125,11 +125,11 @@ static void ast_err(char *err, size_t cap, const char *msg)
 static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size_t err_cap)
 {
     if (!vm || !ast || !out) {
-        ast_err(err, err_cap, "emit expects an AST object");
+        ast_err(err, err_cap, "emit expects an AST table");
         return 0;
     }
-    if (urb_obj_type(ast->obj) != URB_T_OBJECT) {
-        ast_err(err, err_cap, "emit expects an AST object");
+    if (urb_obj_type(ast->obj) != URB_T_TABLE) {
+        ast_err(err, err_cap, "emit expects an AST table");
         return 0;
     }
 
@@ -145,7 +145,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
     }
 
     ObjEntry *ops_entry = object_find_by_key(ast->obj, "ops");
-    if (!ops_entry || urb_obj_type(ops_entry->obj) != URB_T_OBJECT) {
+    if (!ops_entry || urb_obj_type(ops_entry->obj) != URB_T_TABLE) {
         ast_err(err, err_cap, "emit expects ops array");
         return 0;
     }
@@ -155,8 +155,8 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
     List *ops = ops_entry->obj;
     for (Int i = 2; i < ops->size; i++) {
         ObjEntry *op_entry = (ObjEntry*)ops->data[i].p;
-        if (!op_entry || urb_obj_type(op_entry->obj) != URB_T_OBJECT) {
-            ast_err(err, err_cap, "emit expects op objects");
+        if (!op_entry || urb_obj_type(op_entry->obj) != URB_T_TABLE) {
+            ast_err(err, err_cap, "emit expects op tables");
             bc_free(out);
             return 0;
         }
@@ -264,7 +264,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
             }
         } else if (op_len == 16 && memcmp(op_name, "BUILD_NUMBER_LIT", 16) == 0) {
             ObjEntry *values_entry = object_find_by_key(op_entry->obj, "values");
-            if (!values_entry || urb_obj_type(values_entry->obj) != URB_T_OBJECT) {
+            if (!values_entry || urb_obj_type(values_entry->obj) != URB_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_NUMBER_LIT expects values");
                 bc_free(out);
                 return 0;
@@ -314,7 +314,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 bc_free(out);
                 return 0;
             }
-            if (urb_obj_type(args_entry->obj) != URB_T_OBJECT) {
+            if (urb_obj_type(args_entry->obj) != URB_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_FUNCTION expects args array");
                 bc_free(out);
                 return 0;
@@ -336,8 +336,8 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
             }
             for (uint32_t j = 0; j < argc; j++) {
                 ObjEntry *arg = (ObjEntry*)args->data[2 + j].p;
-                if (!arg || urb_obj_type(arg->obj) != URB_T_OBJECT) {
-                    ast_err(err, err_cap, "BUILD_FUNCTION arg must be object");
+                if (!arg || urb_obj_type(arg->obj) != URB_T_TABLE) {
+                    ast_err(err, err_cap, "BUILD_FUNCTION arg must be table");
                     bc_free(out);
                     return 0;
                 }
@@ -632,19 +632,19 @@ static void sb_append_escaped(StrBuf *b, const char *s, size_t len, char quote)
 
 static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t err_cap)
 {
-    if (!vm || !ast || urb_obj_type(ast->obj) != URB_T_OBJECT) {
+    if (!vm || !ast || urb_obj_type(ast->obj) != URB_T_TABLE) {
         ast_err(err, err_cap, "ast_to_source expects AST object");
         return 0;
     }
     ObjEntry *ops_entry = object_find_by_key(ast->obj, "ops");
-    if (!ops_entry || urb_obj_type(ops_entry->obj) != URB_T_OBJECT) {
+    if (!ops_entry || urb_obj_type(ops_entry->obj) != URB_T_TABLE) {
         ast_err(err, err_cap, "ast_to_source expects ops array");
         return 0;
     }
     List *ops = ops_entry->obj;
     for (Int i = 2; i < ops->size; i++) {
         ObjEntry *op_entry = (ObjEntry*)ops->data[i].p;
-        if (!op_entry || urb_obj_type(op_entry->obj) != URB_T_OBJECT) {
+        if (!op_entry || urb_obj_type(op_entry->obj) != URB_T_TABLE) {
             ast_err(err, err_cap, "ast_to_source expects op objects");
             return 0;
         }
@@ -728,7 +728,7 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
             sb_append_n(out, buf, strlen(buf));
         } else if (op_len == 16 && memcmp(op_name, "BUILD_NUMBER_LIT", 16) == 0) {
             ObjEntry *values_entry = object_find_by_key(op_entry->obj, "values");
-            if (!values_entry || urb_obj_type(values_entry->obj) != URB_T_OBJECT) {
+            if (!values_entry || urb_obj_type(values_entry->obj) != URB_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_NUMBER_LIT expects values");
                 return 0;
             }
@@ -766,14 +766,14 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
             snprintf(head, sizeof(head), " %u %u %u", (unsigned)argc, (unsigned)vararg, (unsigned)code_len);
             sb_append_n(out, head, strlen(head));
 
-            if (urb_obj_type(args_entry->obj) != URB_T_OBJECT) {
+            if (urb_obj_type(args_entry->obj) != URB_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_FUNCTION expects args array");
                 return 0;
             }
             List *args = args_entry->obj;
             for (uint32_t j = 0; j < argc; j++) {
                 ObjEntry *arg = (ObjEntry*)args->data[2 + j].p;
-                if (!arg || urb_obj_type(arg->obj) != URB_T_OBJECT) {
+                if (!arg || urb_obj_type(arg->obj) != URB_T_TABLE) {
                     ast_err(err, err_cap, "BUILD_FUNCTION arg must be object");
                     return 0;
                 }
@@ -976,7 +976,7 @@ static void native_pretty(VM *vm, List *stack, List *global)
         return;
     }
     ObjEntry *out = vm_pretty_value(vm, target);
-    urb_object_add(stack, out);
+    urb_table_add(stack, out);
 }
 
 static void native_read(VM *vm, List *stack, List *global)
@@ -1001,12 +1001,12 @@ static void native_read(VM *vm, List *stack, List *global)
     free(path_buf);
     if (!data && len == 0) {
         fprintf(stderr, "read failed\n");
-        urb_object_add(stack, vm->null_entry);
+        urb_table_add(stack, vm->null_entry);
         return;
     }
-    ObjEntry *out = vm_make_char_value(vm, data ? data : "", len);
+    ObjEntry *out = vm_make_byte_value(vm, data ? data : "", len);
     free(data);
-    urb_object_add(stack, out);
+    urb_table_add(stack, out);
 }
 
 static void native_write(VM *vm, List *stack, List *global)
@@ -1030,8 +1030,8 @@ static void native_write(VM *vm, List *stack, List *global)
     size_t data_len = 0;
     if (!entry_as_string(data_entry, &data, &data_len)) {
         string_entry = vm_stringify_value(vm, data_entry, 1);
-        data = urb_char_data(string_entry->obj);
-        data_len = urb_char_len(string_entry->obj);
+        data = urb_bytes_data(string_entry->obj);
+        data_len = urb_bytes_len(string_entry->obj);
     }
     char *path_buf = (char*)malloc(path_len + 1);
     if (!path_buf) {
@@ -1064,7 +1064,7 @@ static void native_eval(VM *vm, List *stack, List *global)
     buf[len] = 0;
     vm_exec_line(vm, buf);
     free(buf);
-    urb_object_add(stack, vm->null_entry);
+    urb_table_add(stack, vm->null_entry);
 }
 
 static void native_parse(VM *vm, List *stack, List *global)
@@ -1101,7 +1101,7 @@ static void native_parse(VM *vm, List *stack, List *global)
         fprintf(stderr, "parse failed to build AST\n");
         return;
     }
-    urb_object_add(stack, ast);
+    urb_table_add(stack, ast);
 }
 
 static void native_emit(VM *vm, List *stack, List *global)
@@ -1117,7 +1117,7 @@ static void native_emit(VM *vm, List *stack, List *global)
     }
     ObjEntry *bytes = vm_make_byte_value(vm, (const char*)bc.data, bc.len);
     bc_free(&bc);
-    urb_object_add(stack, bytes);
+    urb_table_add(stack, bytes);
 }
 
 static void native_eval_bytecode(VM *vm, List *stack, List *global)
@@ -1131,7 +1131,7 @@ static void native_eval_bytecode(VM *vm, List *stack, List *global)
         return;
     }
     vm_exec_bytecode(vm, (const unsigned char*)data, len);
-    urb_object_add(stack, vm->null_entry);
+    urb_table_add(stack, vm->null_entry);
 }
 
 static void native_bytecode_to_ast(VM *vm, List *stack, List *global)
@@ -1149,7 +1149,7 @@ static void native_bytecode_to_ast(VM *vm, List *stack, List *global)
         fprintf(stderr, "bytecode_to_ast failed\n");
         return;
     }
-    urb_object_add(stack, ast);
+    urb_table_add(stack, ast);
 }
 
 static void native_ast_to_source(VM *vm, List *stack, List *global)
@@ -1174,7 +1174,7 @@ static void native_gc(VM *vm, List *stack, List *global)
     (void)global;
     if (vm) vm_gc(vm);
     if (vm) {
-        urb_object_add(stack, vm->null_entry);
+        urb_table_add(stack, vm->null_entry);
     }
 }
 
@@ -1183,7 +1183,7 @@ static void native_gc_collect(VM *vm, List *stack, List *global)
     (void)global;
     if (vm) vm_gc(vm);
     if (vm) {
-        urb_object_add(stack, vm->null_entry);
+        urb_table_add(stack, vm->null_entry);
     }
 }
 
@@ -1207,13 +1207,13 @@ static void native_append(VM *vm, List *stack, List *global)
 
     Int dst_type = urb_obj_type(dst->obj);
     Int src_type = urb_obj_type(src->obj);
-    if (!((dst_type == URB_T_CHAR || dst_type == URB_T_BYTE) &&
-          (src_type == URB_T_CHAR || src_type == URB_T_BYTE))) {
+    if (!((dst_type == URB_T_BYTE || dst_type == URB_T_BYTE) &&
+          (src_type == URB_T_BYTE || src_type == URB_T_BYTE))) {
         fprintf(stderr, "append expects string values\n");
         return;
     }
 
-    urb_bytes_append(dst->obj, urb_char_data(src->obj), urb_char_len(src->obj));
+    urb_bytes_append(dst->obj, urb_bytes_data(src->obj), urb_bytes_len(src->obj));
 }
 
 static int native_number_seed(VM *vm, List *stack, List *global, Float *out, uint32_t *start)
@@ -1545,9 +1545,9 @@ static void native_exp(VM *vm, List *stack, List *global)
 static ObjEntry *native_string_target(VM *vm, List *stack, uint32_t argc)
 {
     ObjEntry *self = native_this(vm);
-    if (self && (urb_obj_type(self->obj) == URB_T_CHAR || urb_obj_type(self->obj) == URB_T_BYTE)) return self;
+    if (self && (urb_obj_type(self->obj) == URB_T_BYTE || urb_obj_type(self->obj) == URB_T_BYTE)) return self;
     ObjEntry *arg0 = native_arg(stack, argc, 0);
-    if (arg0 && (urb_obj_type(arg0->obj) == URB_T_CHAR || urb_obj_type(arg0->obj) == URB_T_BYTE)) return arg0;
+    if (arg0 && (urb_obj_type(arg0->obj) == URB_T_BYTE || urb_obj_type(arg0->obj) == URB_T_BYTE)) return arg0;
     return NULL;
 }
 
@@ -1583,8 +1583,8 @@ static void native_slice(VM *vm, List *stack, List *global)
         fprintf(stderr, "slice expects a string target\n");
         return;
     }
-    const char *s = urb_char_data(target->obj);
-    size_t len = urb_char_len(target->obj);
+    const char *s = urb_bytes_data(target->obj);
+    size_t len = urb_bytes_len(target->obj);
     Int start = 0;
     Int end = (Int)len;
     if (argc >= 1) {
@@ -1619,8 +1619,8 @@ static void native_substr(VM *vm, List *stack, List *global)
         fprintf(stderr, "substr expects a string target\n");
         return;
     }
-    const char *s = urb_char_data(target->obj);
-    size_t len = urb_char_len(target->obj);
+    const char *s = urb_bytes_data(target->obj);
+    size_t len = urb_bytes_len(target->obj);
     Int start = 0;
     Int count = (Int)len;
     if (argc >= 1) {
@@ -1654,10 +1654,10 @@ static void native_upper(VM *vm, List *stack, List *global)
         fprintf(stderr, "upper expects a string target\n");
         return;
     }
-    size_t len = urb_char_len(target->obj);
+    size_t len = urb_bytes_len(target->obj);
     char *buf = (char*)malloc(len);
     for (size_t i = 0; i < len; i++) {
-        buf[i] = (char)toupper((unsigned char)urb_char_data(target->obj)[i]);
+        buf[i] = (char)toupper((unsigned char)urb_bytes_data(target->obj)[i]);
     }
     push_string(vm, stack, buf, len);
     free(buf);
@@ -1671,10 +1671,10 @@ static void native_lower(VM *vm, List *stack, List *global)
         fprintf(stderr, "lower expects a string target\n");
         return;
     }
-    size_t len = urb_char_len(target->obj);
+    size_t len = urb_bytes_len(target->obj);
     char *buf = (char*)malloc(len);
     for (size_t i = 0; i < len; i++) {
-        buf[i] = (char)tolower((unsigned char)urb_char_data(target->obj)[i]);
+        buf[i] = (char)tolower((unsigned char)urb_bytes_data(target->obj)[i]);
     }
     push_string(vm, stack, buf, len);
     free(buf);
@@ -1688,8 +1688,8 @@ static void native_trim(VM *vm, List *stack, List *global)
         fprintf(stderr, "trim expects a string target\n");
         return;
     }
-    const char *s = urb_char_data(target->obj);
-    size_t len = urb_char_len(target->obj);
+    const char *s = urb_bytes_data(target->obj);
+    size_t len = urb_bytes_len(target->obj);
     size_t start = 0;
     size_t end = len;
     while (start < len && isspace((unsigned char)s[start])) start++;
@@ -1712,8 +1712,8 @@ static void native_starts_with(VM *vm, List *stack, List *global)
         fprintf(stderr, "startsWith expects a string\n");
         return;
     }
-    const char *s = urb_char_data(target->obj);
-    size_t len = urb_char_len(target->obj);
+    const char *s = urb_bytes_data(target->obj);
+    size_t len = urb_bytes_len(target->obj);
     int ok = nlen <= len && memcmp(s, needle, nlen) == 0;
     push_number(vm, stack, ok ? 1 : 0);
 }
@@ -1733,8 +1733,8 @@ static void native_ends_with(VM *vm, List *stack, List *global)
         fprintf(stderr, "endsWith expects a string\n");
         return;
     }
-    const char *s = urb_char_data(target->obj);
-    size_t len = urb_char_len(target->obj);
+    const char *s = urb_bytes_data(target->obj);
+    size_t len = urb_bytes_len(target->obj);
     int ok = nlen <= len && memcmp(s + (len - nlen), needle, nlen) == 0;
     push_number(vm, stack, ok ? 1 : 0);
 }
@@ -1747,8 +1747,8 @@ static void native_split(VM *vm, List *stack, List *global)
         fprintf(stderr, "split expects a string target\n");
         return;
     }
-    const char *s = urb_char_data(target->obj);
-    size_t len = urb_char_len(target->obj);
+    const char *s = urb_bytes_data(target->obj);
+    size_t len = urb_bytes_len(target->obj);
     const char *delim = "";
     size_t dlen = 0;
     if (argc >= 1) {
@@ -1759,13 +1759,13 @@ static void native_split(VM *vm, List *stack, List *global)
         }
     }
 
-    ObjEntry *out = vm_make_object_value(vm, 8);
+    ObjEntry *out = vm_make_table_value(vm, 8);
     if (dlen == 0) {
         for (size_t i = 0; i < len; i++) {
-            ObjEntry *part = vm_make_char_value(vm, s + i, 1);
-            urb_object_add(out->obj, part);
+            ObjEntry *part = vm_make_byte_value(vm, s + i, 1);
+            urb_table_add(out->obj, part);
         }
-        urb_object_add(stack, out);
+        urb_table_add(stack, out);
         return;
     }
 
@@ -1773,28 +1773,28 @@ static void native_split(VM *vm, List *stack, List *global)
     while (pos <= len) {
         size_t next = pos;
         while (next + dlen <= len && memcmp(s + next, delim, dlen) != 0) next++;
-        ObjEntry *part = vm_make_char_value(vm, s + pos, next - pos);
-        urb_object_add(out->obj, part);
+        ObjEntry *part = vm_make_byte_value(vm, s + pos, next - pos);
+        urb_table_add(out->obj, part);
         pos = next + dlen;
         if (next + dlen > len) break;
     }
-    urb_object_add(stack, out);
+    urb_table_add(stack, out);
 }
 
 static void native_join(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || urb_obj_type(target->obj) != URB_T_OBJECT) {
-        fprintf(stderr, "join expects an object/array target\n");
+    if (!target || urb_obj_type(target->obj) != URB_T_TABLE) {
+        fprintf(stderr, "join expects a table/array target\n");
         return;
     }
     const char *delim = "";
     size_t dlen = 0;
     ObjEntry *arg0 = native_arg(stack, argc, 0);
-    if (arg0 && urb_obj_type(arg0->obj) == URB_T_CHAR) {
-        delim = urb_char_data(arg0->obj);
-        dlen = urb_char_len(arg0->obj);
+    if (arg0 && urb_obj_type(arg0->obj) == URB_T_BYTE) {
+        delim = urb_bytes_data(arg0->obj);
+        dlen = urb_bytes_len(arg0->obj);
     }
 
     StrBuf buf;
@@ -1803,7 +1803,7 @@ static void native_join(VM *vm, List *stack, List *global)
         ObjEntry *entry = (ObjEntry*)target->obj->data[i].p;
         if (i > 2 && dlen) sb_append_n(&buf, delim, dlen);
         ObjEntry *str = vm_stringify_value(vm, entry, 1);
-        sb_append_n(&buf, urb_char_data(str->obj), urb_char_len(str->obj));
+        sb_append_n(&buf, urb_bytes_data(str->obj), urb_bytes_len(str->obj));
     }
     push_string(vm, stack, buf.data, buf.len);
     sb_free(&buf);
@@ -1866,8 +1866,8 @@ static void native_replace(VM *vm, List *stack, List *global)
         return;
     }
 
-    const char *input = urb_char_data(target->obj);
-    size_t input_len = urb_char_len(target->obj);
+    const char *input = urb_bytes_data(target->obj);
+    size_t input_len = urb_bytes_len(target->obj);
     char *input_c = (char*)malloc(input_len + 1);
     memcpy(input_c, input, input_len);
     input_c[input_len] = 0;
@@ -1943,8 +1943,8 @@ static void native_find(VM *vm, List *stack, List *global)
         }
     }
 
-    const char *hay = urb_char_data(target->obj);
-    size_t hlen_sz = urb_char_len(target->obj);
+    const char *hay = urb_bytes_data(target->obj);
+    size_t hlen_sz = urb_bytes_len(target->obj);
     Int hlen = (Int)hlen_sz;
 
     start = clamp_index(start, hlen);
@@ -1987,8 +1987,8 @@ static void native_rfind(VM *vm, List *stack, List *global)
         return;
     }
 
-    const char *hay = urb_char_data(target->obj);
-    size_t hlen_sz = urb_char_len(target->obj);
+    const char *hay = urb_bytes_data(target->obj);
+    size_t hlen_sz = urb_bytes_len(target->obj);
     Int hlen = (Int)hlen_sz;
 
     // start aqui é o "limite superior" (posição onde a busca reversa pode começar).
@@ -2058,8 +2058,8 @@ static void native_contains(VM *vm, List *stack, List *global)
         }
     }
 
-    const char *hay = urb_char_data(target->obj);
-    size_t hlen = urb_char_len(target->obj);
+    const char *hay = urb_bytes_data(target->obj);
+    size_t hlen = urb_bytes_len(target->obj);
     Int hlen_i = (Int)hlen;
     start = clamp_index(start, hlen_i);
 
@@ -2079,7 +2079,7 @@ static void native_contains(VM *vm, List *stack, List *global)
 static ObjEntry *native_object_target(VM *vm, List *stack, uint32_t argc)
 {
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || urb_obj_type(target->obj) != URB_T_OBJECT) return NULL;
+    if (!target || urb_obj_type(target->obj) != URB_T_TABLE) return NULL;
     return target;
 }
 
@@ -2088,18 +2088,18 @@ static void native_keys(VM *vm, List *stack, List *global)
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_object_target(vm, stack, argc);
     if (!target) {
-        fprintf(stderr, "keys expects object target\n");
+        fprintf(stderr, "keys expects table target\n");
         return;
     }
-    ObjEntry *out = vm_make_object_value(vm, target->obj->size - 2);
+    ObjEntry *out = vm_make_table_value(vm, target->obj->size - 2);
     for (Int i = 2; i < target->obj->size; i++) {
         ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
         ObjEntry *key = child ? urb_obj_key(child->obj) : NULL;
-        if (!key || urb_obj_type(key->obj) != URB_T_CHAR) continue;
-        ObjEntry *entry = vm_make_char_value(vm, urb_char_data(key->obj), urb_char_len(key->obj));
-        urb_object_add(out->obj, entry);
+        if (!key || urb_obj_type(key->obj) != URB_T_BYTE) continue;
+        ObjEntry *entry = vm_make_byte_value(vm, urb_bytes_data(key->obj), urb_bytes_len(key->obj));
+        urb_table_add(out->obj, entry);
     }
-    urb_object_add(stack, out);
+    urb_table_add(stack, out);
 }
 
 static void native_values(VM *vm, List *stack, List *global)
@@ -2107,16 +2107,16 @@ static void native_values(VM *vm, List *stack, List *global)
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_object_target(vm, stack, argc);
     if (!target) {
-        fprintf(stderr, "values expects object target\n");
+        fprintf(stderr, "values expects table target\n");
         return;
     }
-    ObjEntry *out = vm_make_object_value(vm, target->obj->size - 2);
+    ObjEntry *out = vm_make_table_value(vm, target->obj->size - 2);
     for (Int i = 2; i < target->obj->size; i++) {
         ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
         if (!child) continue;
-        urb_object_add(out->obj, child);
+        urb_table_add(out->obj, child);
     }
-    urb_object_add(stack, out);
+    urb_table_add(stack, out);
 }
 
 static void native_has(VM *vm, List *stack, List *global)
@@ -2130,14 +2130,14 @@ static void native_has(VM *vm, List *stack, List *global)
     }
 
     Int type = urb_obj_type(target->obj);
-    if (urb_obj_type(idx->obj) == URB_T_CHAR && type == URB_T_OBJECT) {
-        const char *key = urb_char_data(idx->obj);
-        size_t len = urb_char_len(idx->obj);
+    if (urb_obj_type(idx->obj) == URB_T_BYTE && type == URB_T_TABLE) {
+        const char *key = urb_bytes_data(idx->obj);
+        size_t len = urb_bytes_len(idx->obj);
         for (Int i = 2; i < target->obj->size; i++) {
             ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
             ObjEntry *k = child ? urb_obj_key(child->obj) : NULL;
-            if (!k || urb_obj_type(k->obj) != URB_T_CHAR) continue;
-            if (urb_char_len(k->obj) == len && memcmp(urb_char_data(k->obj), key, len) == 0) {
+            if (!k || urb_obj_type(k->obj) != URB_T_BYTE) continue;
+            if (urb_bytes_len(k->obj) == len && memcmp(urb_bytes_data(k->obj), key, len) == 0) {
                 push_number(vm, stack, 1);
                 return;
             }
@@ -2162,7 +2162,7 @@ static void native_has(VM *vm, List *stack, List *global)
         return;
     }
 
-    fprintf(stderr, "has expects object key or numeric index\n");
+    fprintf(stderr, "has expects table key or numeric index\n");
 }
 
 static void native_delete(VM *vm, List *stack, List *global)
@@ -2176,14 +2176,14 @@ static void native_delete(VM *vm, List *stack, List *global)
     }
 
     Int type = urb_obj_type(target->obj);
-    if (urb_obj_type(idx->obj) == URB_T_CHAR && type == URB_T_OBJECT) {
-        const char *key = urb_char_data(idx->obj);
-        size_t len = urb_char_len(idx->obj);
+    if (urb_obj_type(idx->obj) == URB_T_BYTE && type == URB_T_TABLE) {
+        const char *key = urb_bytes_data(idx->obj);
+        size_t len = urb_bytes_len(idx->obj);
         for (Int i = 2; i < target->obj->size; i++) {
             ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
             ObjEntry *k = child ? urb_obj_key(child->obj) : NULL;
-            if (!k || urb_obj_type(k->obj) != URB_T_CHAR) continue;
-            if (urb_char_len(k->obj) == len && memcmp(urb_char_data(k->obj), key, len) == 0) {
+            if (!k || urb_obj_type(k->obj) != URB_T_BYTE) continue;
+            if (urb_bytes_len(k->obj) == len && memcmp(urb_bytes_data(k->obj), key, len) == 0) {
                 urb_remove(target->obj, i);
                 push_number(vm, stack, 1);
                 return;
@@ -2203,21 +2203,21 @@ static void native_delete(VM *vm, List *stack, List *global)
             push_number(vm, stack, 0);
             return;
         }
-        if (type == URB_T_OBJECT || type == URB_T_NUMBER) {
+        if (type == URB_T_TABLE || type == URB_T_NUMBER) {
             urb_remove(target->obj, list_pos_from_index(target->obj, i));
             push_number(vm, stack, 1);
             return;
         }
-        if (type == URB_T_CHAR || type == URB_T_BYTE) {
-            size_t len = urb_char_len(target->obj);
+        if (type == URB_T_BYTE || type == URB_T_BYTE) {
+            size_t len = urb_bytes_len(target->obj);
             if (i < 0) i = (Int)len + i;
             if (i < 0 || (size_t)i >= len) {
                 push_number(vm, stack, 0);
                 return;
             }
             size_t pos = (size_t)i;
-            memmove(urb_char_data(target->obj) + pos,
-                    urb_char_data(target->obj) + pos + 1,
+            memmove(urb_bytes_data(target->obj) + pos,
+                    urb_bytes_data(target->obj) + pos + 1,
                     len - pos - 1);
             target->obj->size = (UHalf)(target->obj->size - 1);
             target->obj->capacity = target->obj->size;
@@ -2226,7 +2226,7 @@ static void native_delete(VM *vm, List *stack, List *global)
         }
     }
 
-    fprintf(stderr, "delete expects object key or numeric index\n");
+    fprintf(stderr, "delete expects table key or numeric index\n");
 }
 
 static void native_push(VM *vm, List *stack, List *global)
@@ -2242,8 +2242,8 @@ static void native_push(VM *vm, List *stack, List *global)
     for (uint32_t i = start; i < argc; i++) {
         ObjEntry *arg = native_arg(stack, argc, i);
         if (!arg) continue;
-        if (type == URB_T_OBJECT) {
-            urb_object_add(target->obj, arg);
+        if (type == URB_T_TABLE) {
+            urb_table_add(target->obj, arg);
         } else if (type == URB_T_NUMBER) {
             Float v = 0;
             if (!entry_as_number(arg, &v)) {
@@ -2253,13 +2253,13 @@ static void native_push(VM *vm, List *stack, List *global)
             Value val;
             val.f = v;
             urb_push(target->obj, val);
-        } else if (type == URB_T_CHAR || type == URB_T_BYTE) {
+        } else if (type == URB_T_BYTE || type == URB_T_BYTE) {
             Int at = urb_obj_type(arg->obj);
-            if (at != URB_T_CHAR && at != URB_T_BYTE) {
+            if (at != URB_T_BYTE && at != URB_T_BYTE) {
                 fprintf(stderr, "push expects string values\n");
                 return;
             }
-            urb_bytes_append(target->obj, urb_char_data(arg->obj), urb_char_len(arg->obj));
+            urb_bytes_append(target->obj, urb_bytes_data(arg->obj), urb_bytes_len(arg->obj));
         }
     }
 }
@@ -2273,11 +2273,11 @@ static void native_pop(VM *vm, List *stack, List *global)
         return;
     }
     Int type = urb_obj_type(target->obj);
-    if (type == URB_T_OBJECT) {
+    if (type == URB_T_TABLE) {
         if (target->obj->size <= 2) return;
         Value v = urb_pop(target->obj);
         ObjEntry *entry = (ObjEntry*)v.p;
-        if (entry) urb_object_add(stack, entry);
+        if (entry) urb_table_add(stack, entry);
         return;
     }
     if (type == URB_T_NUMBER) {
@@ -2286,10 +2286,10 @@ static void native_pop(VM *vm, List *stack, List *global)
         push_number(vm, stack, v.f);
         return;
     }
-    if (type == URB_T_CHAR || type == URB_T_BYTE) {
-        size_t len = urb_char_len(target->obj);
+    if (type == URB_T_BYTE || type == URB_T_BYTE) {
+        size_t len = urb_bytes_len(target->obj);
         if (!len) return;
-        char c = urb_char_data(target->obj)[len - 1];
+        char c = urb_bytes_data(target->obj)[len - 1];
         target->obj->size = (UHalf)(target->obj->size - 1);
         target->obj->capacity = target->obj->size;
         push_string(vm, stack, &c, 1);
@@ -2306,11 +2306,11 @@ static void native_shift(VM *vm, List *stack, List *global)
         return;
     }
     Int type = urb_obj_type(target->obj);
-    if (type == URB_T_OBJECT) {
+    if (type == URB_T_TABLE) {
         if (target->obj->size <= 2) return;
         Value v = urb_remove(target->obj, 2);
         ObjEntry *entry = (ObjEntry*)v.p;
-        if (entry) urb_object_add(stack, entry);
+        if (entry) urb_table_add(stack, entry);
         return;
     }
     if (type == URB_T_NUMBER) {
@@ -2319,11 +2319,11 @@ static void native_shift(VM *vm, List *stack, List *global)
         push_number(vm, stack, v.f);
         return;
     }
-    if (type == URB_T_CHAR || type == URB_T_BYTE) {
-        size_t len = urb_char_len(target->obj);
+    if (type == URB_T_BYTE || type == URB_T_BYTE) {
+        size_t len = urb_bytes_len(target->obj);
         if (!len) return;
-        char c = urb_char_data(target->obj)[0];
-        memmove(urb_char_data(target->obj), urb_char_data(target->obj) + 1, len - 1);
+        char c = urb_bytes_data(target->obj)[0];
+        memmove(urb_bytes_data(target->obj), urb_bytes_data(target->obj) + 1, len - 1);
         target->obj->size = (UHalf)(target->obj->size - 1);
         target->obj->capacity = target->obj->size;
         push_string(vm, stack, &c, 1);
@@ -2344,7 +2344,7 @@ static void native_unshift(VM *vm, List *stack, List *global)
     for (uint32_t i = argc; i-- > start;) {
         ObjEntry *arg = native_arg(stack, argc, i);
         if (!arg) continue;
-        if (type == URB_T_OBJECT) {
+        if (type == URB_T_TABLE) {
             Value v;
             v.p = arg;
             urb_insert(target->obj, 2, v);
@@ -2357,17 +2357,17 @@ static void native_unshift(VM *vm, List *stack, List *global)
             Value val;
             val.f = v;
             urb_insert(target->obj, 2, val);
-        } else if (type == URB_T_CHAR || type == URB_T_BYTE) {
+        } else if (type == URB_T_BYTE || type == URB_T_BYTE) {
             Int at = urb_obj_type(arg->obj);
-            if (at != URB_T_CHAR && at != URB_T_BYTE) {
+            if (at != URB_T_BYTE && at != URB_T_BYTE) {
                 fprintf(stderr, "unshift expects string values\n");
                 return;
             }
-            size_t len = urb_char_len(target->obj);
-            size_t add = urb_char_len(arg->obj);
+            size_t len = urb_bytes_len(target->obj);
+            size_t add = urb_bytes_len(arg->obj);
             target->obj->data = (Value*)realloc(target->obj->data, 2 * sizeof(Value) + len + add);
-            memmove(urb_char_data(target->obj) + add, urb_char_data(target->obj), len);
-            memcpy(urb_char_data(target->obj), urb_char_data(arg->obj), add);
+            memmove(urb_bytes_data(target->obj) + add, urb_bytes_data(target->obj), len);
+            memcpy(urb_bytes_data(target->obj), urb_bytes_data(arg->obj), add);
             target->obj->size = (UHalf)(len + add + 2);
             target->obj->capacity = target->obj->size;
         }
@@ -2390,7 +2390,7 @@ static void native_insert(VM *vm, List *stack, List *global)
         return;
     }
     Int type = urb_obj_type(target->obj);
-    if (type == URB_T_OBJECT) {
+    if (type == URB_T_TABLE) {
         Value v;
         v.p = val;
         urb_insert(target->obj, list_pos_from_index(target->obj, index), v);
@@ -2407,22 +2407,22 @@ static void native_insert(VM *vm, List *stack, List *global)
         urb_insert(target->obj, list_pos_from_index(target->obj, index), nv);
         return;
     }
-    if (type == URB_T_CHAR || type == URB_T_BYTE) {
+    if (type == URB_T_BYTE || type == URB_T_BYTE) {
         Int vt = urb_obj_type(val->obj);
-        if (vt != URB_T_CHAR && vt != URB_T_BYTE) {
+        if (vt != URB_T_BYTE && vt != URB_T_BYTE) {
             fprintf(stderr, "insert expects string value\n");
             return;
         }
-        size_t len = urb_char_len(target->obj);
-        size_t add = urb_char_len(val->obj);
+        size_t len = urb_bytes_len(target->obj);
+        size_t add = urb_bytes_len(val->obj);
         if (index < 0) index = (Int)len + index;
         if (index < 0) index = 0;
         if ((size_t)index > len) index = (Int)len;
         target->obj->data = (Value*)realloc(target->obj->data, 2 * sizeof(Value) + len + add);
-        memmove(urb_char_data(target->obj) + index + add,
-                urb_char_data(target->obj) + index,
+        memmove(urb_bytes_data(target->obj) + index + add,
+                urb_bytes_data(target->obj) + index,
                 len - (size_t)index);
-        memcpy(urb_char_data(target->obj) + index, urb_char_data(val->obj), add);
+        memcpy(urb_bytes_data(target->obj) + index, urb_bytes_data(val->obj), add);
         target->obj->size = (UHalf)(len + add + 2);
         target->obj->capacity = target->obj->size;
         return;
@@ -2444,11 +2444,11 @@ static void native_remove(VM *vm, List *stack, List *global)
         return;
     }
     Int type = urb_obj_type(target->obj);
-    if (type == URB_T_OBJECT) {
+    if (type == URB_T_TABLE) {
         if (target->obj->size <= 2) return;
         Value v = urb_remove(target->obj, list_pos_from_index(target->obj, index));
         ObjEntry *entry = (ObjEntry*)v.p;
-        if (entry) urb_object_add(stack, entry);
+        if (entry) urb_table_add(stack, entry);
         return;
     }
     if (type == URB_T_NUMBER) {
@@ -2457,13 +2457,13 @@ static void native_remove(VM *vm, List *stack, List *global)
         push_number(vm, stack, v.f);
         return;
     }
-    if (type == URB_T_CHAR || type == URB_T_BYTE) {
-        size_t len = urb_char_len(target->obj);
+    if (type == URB_T_BYTE || type == URB_T_BYTE) {
+        size_t len = urb_bytes_len(target->obj);
         if (index < 0) index = (Int)len + index;
         if (index < 0 || (size_t)index >= len) return;
-        char c = urb_char_data(target->obj)[index];
-        memmove(urb_char_data(target->obj) + index,
-                urb_char_data(target->obj) + index + 1,
+        char c = urb_bytes_data(target->obj)[index];
+        memmove(urb_bytes_data(target->obj) + index,
+                urb_bytes_data(target->obj) + index + 1,
                 len - (size_t)index - 1);
         target->obj->size = (UHalf)(target->obj->size - 1);
         target->obj->capacity = target->obj->size;

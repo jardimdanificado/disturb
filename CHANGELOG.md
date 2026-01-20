@@ -1,7 +1,13 @@
 # Changelog
 
+## 0.13.0
+- user-defined functions are now called `lambda`, which is more appropriate.
+- `object` type is now called `table`.
+- method lookup now uses `global.common` instead of `global.prototype`.
+- `string` and `char` are now unified as `byte`.
+
 ## 0.12.7
-- New string methods: find, rfind, contains;
+- New string methods: `find`, `rfind`, `contains`;
 
 ## 0.12.6
 - Args are now supported by the cli.
@@ -26,19 +32,19 @@
 ## 0.12.0
 - Allow function calls inside expressions.
 - Add `return`, `break`, and `continue`.
-- Add optional parameters and default values for user functions.
+- Add optional parameters and default values for lambdas.
 - Add `?=` default assignment operator.
 
 ## 0.11.0
 - Add control flow statements: `if/else`, `while`, `for`, and `each`.
 - Add `pretty` formatting for human-readable object output.
-- Allow `{}` object literals without explicit `(object)` cast.
+- Allow `{}` table literals without explicit `(table)` cast.
 - Treat numeric `0` as false in truthiness checks.
 
 ## 0.10.0
 - Add arithmetic, comparison, and logical operators with precedence and unary support.
 - Add string concatenation via `+` with Disturb-style stringification.
-- Add prototype methods for math, string, and object/array helpers.
-- Add `this` binding for method calls and `global.prototype`.
+- Add common methods for math, string, and table/array helpers.
+- Add `this` binding for method calls and `global.common`.
 - Extend bytecode to support `LOAD_THIS`, `SET_THIS`, and operator opcodes.
-- Add user-defined functions with varargs and object-call semantics.
+- Add lambdas with varargs and table-call semantics.

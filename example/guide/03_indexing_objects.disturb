@@ -1,5 +1,5 @@
 // 03_indexing_objects.disturb
-// Indexing, object keys, and array-like behavior.
+// Indexing, table keys, and array-like behavior.
 
 data = {nums = (number){10, 20, 30}, msg = "hi"};
 
@@ -7,15 +7,15 @@ data = {nums = (number){10, 20, 30}, msg = "hi"};
 println(data.nums[1]);
 println(data.msg[0]);
 
-// Key indexing for objects (string keys only).
+// Key indexing for tables (string keys only).
 println(data["nums"]);
 println(data.msg);
 
-// Objects are array-like; you can push/remove entries.
+// Tables are array-like; you can push/remove entries.
 data.push({k = "x"});
 println(data.size);
 
-// Object helpers return list-like objects.
+// Table helpers return list-like tables.
 keys = data.keys();
 vals = data.values();
 println(keys.size);

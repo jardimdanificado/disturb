@@ -649,7 +649,7 @@ static int peek_ident_is_type(Parser *p)
         token_free(&tok);
         return 0;
     }
-    int ok = (tok.len == 6 && strncmp(tok.start, "object", 6) == 0) ||
+    int ok = (tok.len == 5 && strncmp(tok.start, "table", 5) == 0) ||
              (tok.len == 6 && strncmp(tok.start, "number", 6) == 0) ||
              (tok.len == 4 && strncmp(tok.start, "byte", 4) == 0);
     token_free(&tok);
@@ -870,7 +870,7 @@ static Expr *parse_primary(Parser *p)
         advance(p);
         if (!expect(p, TOK_RPAREN, "expected ')' after type")) return NULL;
 
-        if (strcmp(type, "object") == 0) {
+        if (strcmp(type, "table") == 0) {
             if (!expect(p, TOK_LBRACE, "expected '{' to start literal")) return NULL;
             Expr *e = expr_new(p, EXPR_OBJECT_LITERAL);
             if (!e) return NULL;

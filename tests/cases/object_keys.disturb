@@ -1,4 +1,4 @@
-o = (object){a = 1};
+o = (table){a = 1};
 
 println(o.a);
 println(o["a"]);

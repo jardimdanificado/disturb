@@ -1,5 +1,5 @@
 // 02_types_literals.disturb
-// Numbers, strings, bytes, objects, and meta.
+// Numbers, strings, bytes, tables, and meta.
 
 // Numbers are stored as number lists; single numbers are just length 1.
 n = 42;
@@ -12,7 +12,7 @@ c = 'x';
 // Byte literal creates a string from numeric byte values.
 b = (byte){65, 66, 67};
 
-// Objects are key/value pairs; values can be any type.
+// Tables are key/value pairs; values can be any type.
 obj = {a = 1, b = "hi", c = (number){9, 8}};
 
 // Meta fields are accessed as string keys.
@@ -23,7 +23,7 @@ println(obj.capacity);
 // type can be reassigned within compatible layouts (list <-> list or byte <-> string).
 obj.type = "number";
 println(obj.type);
-obj.type = "object";
+obj.type = "table";
 
 // name is the key name inside its parent.
 global.sample = obj;

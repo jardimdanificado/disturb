@@ -18,7 +18,7 @@ q = null || 2;
 r = null || null;
 s = "a" + 1;
 t = 1 + "a";
-u = "x" + (object){a = 1, b = "c"};
+u = "x" + (table){a = 1, b = "c"};
 v = "n=" + (number){1, 2};
 w = "hi" == "hi";
 x = "hi" != "ho";

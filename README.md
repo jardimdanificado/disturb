@@ -1,6 +1,6 @@
 # Disturb
 
-Disturb is a stack-oriented VM with a C-like source syntax that compiles to a compact RPN bytecode. The language focuses on safety and explicit behavior: everything lives under the global object, and missing lookups return a null object.
+Disturb is a stack-oriented VM with a C-like source syntax that compiles to a compact RPN bytecode. The language focuses on safety and explicit behavior: everything lives under the global table, and missing lookups return a null table.
 
 ## Quick Start
 
@@ -18,10 +18,10 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | Concept | Behavior |
 | --- | --- |
 | Global root | `a = b;` is the same as `global.a = b;` |
-| Object type | `object` (formerly `any`) is the generic container |
+| Table type | `table` (formerly `any`) is the generic container |
 | Null | Missing globals/keys return `null` |
-| Natives | Built-in and stored in `global` as objects |
-| Prototype | Shared methods live on `global.prototype` |
+| Natives | Built-in and stored in `global` as tables |
+| Prototype | Shared methods live on `global.common` |
 | this | Method calls bind `this` to the call target |
 
 ## Types and Literals
@@ -32,7 +32,7 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | byte | `(byte){9, 1, 2}` | String literal from byte values (0–255) |
 | char | `'c'` | Single-byte string |
 | string | `"abc"` | String with length > 1 |
-| object | `{a = 1}` | Keyed container |
+| table | `{a = 1}` | Keyed container |
 
 ## Construction
 
@@ -40,8 +40,8 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | --- | --- |
 | `(number){1, 2}` | Number list |
 | `(byte){9, 1}` | String from byte values |
-| `{a = b}` | Object with keys |
-| `(object){a = b}` | Explicit object cast |
+| `{a = b}` | Table with keys |
+| `(table){a = b}` | Explicit table cast |
 
 ## Expressions and Operators
 
@@ -70,21 +70,21 @@ Supported control flow forms:
 - `break;` and `continue;`
 
 Notes:
-- `each` iterates in index order. For objects, the entry key is available via `value.name`.
+- `each` iterates in index order. For tables, the entry key is available via `value.name`.
 
-## User Functions
+## Lambdas
 
-Define functions by assigning a parameter list and body:
+- Define lambdas by assigning a parameter list and body:
 - `name = (a, b, rest...){ println(a + b); }`
 - `name = (a = 1, b = "x"){ println(a + b); }`
 
-Rules:
+- Rules:
 - Parameters are identifiers only.
-- `...` marks the last parameter as a vararg list (stored as an object list).
+- `...` marks the last parameter as a vararg list (stored as a table list).
 - Missing arguments default to `null` unless a default value is provided.
-- `return expr;` exits a function and returns a value. `return;` returns `null`.
+- `return expr;` exits a lambda and returns a value. `return;` returns `null`.
 - Calls bind `this` to the call target (`obj.method()` sets `this` to `obj`).
-- Calling an object by name (e.g. `obj()`) uses a method with the same name inside that object.
+- Calling a table by name (e.g. `obj()`) uses a method with the same name inside that table.
 - Calls can be used inside expressions (`x = add(1, 2);`).
 
 ## Indexing
@@ -92,12 +92,12 @@ Rules:
 | Syntax | Meaning |
 | --- | --- |
 | `a[i]` | Numeric indexing |
-| `a.key` | Object key lookup |
-| `a["key"]` | Object key lookup |
-| `a[string_obj]` | Object key lookup |
+| `a.key` | Table key lookup |
+| `a["key"]` | Table key lookup |
+| `a[string_obj]` | Table key lookup |
 
 Rules:
-- Only `object` supports string/key indexing.
+- Only `table` supports string/key indexing.
 - Indexing strings/bytes yields a single-byte string.
 - Indexing supports infinite nesting.
 
@@ -108,14 +108,14 @@ Every entry exposes meta properties via string keys:
 | Property | Type | Description |
 | --- | --- | --- |
 | `.name` | string | Key name in its parent (`global.a.name == "a"`) |
-| `.type` | string | `null`, `number`, `byte`, `char`, `string`, `object`, `native` |
+| `.type` | string | `null`, `number`, `byte`, `char`, `string`, `table`, `native` |
 | `.size` | number | Used slots (`list.size - 2`) |
 | `.capacity` | number | Allocated slots (`list.capacity - 2`) |
 
 Notes:
 - `.name` and `.type` are writable. `.name = null` clears the key. `.type` is pure type punning (no conversion).
 - Setting `.size` changes used slots; if larger than capacity it reallocates.
-- Setting `.capacity` reallocates; the object remains in the same entry slot.
+- Setting `.capacity` reallocates; the table remains in the same entry slot.
 
 ## Bytecode
 
@@ -164,14 +164,12 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 ## Safety Notes and Oddities
 
 - Missing globals/keys yield `null` instead of error.
-- `global` is a real object; `global.name[0]` is valid.
+- `global` is a real table; `global.name[0]` is valid.
 - Strings are `char` objects; `char` vs `string` is decided by length.
-- Resizing always keeps the same object entry slot to preserve references.
-- Object stringification uses Disturb literals like `(object){a = 1, b = "x"}`.
-
+ Resizing always keeps the same table entry slot to preserve references.
 ## Built-in Methods
-
-All objects share methods from `global.prototype` and can be called as `obj.method(...)`.
+ Cross-language literal list parsing, deep table access, and string length for Disturb/Lua/Node/Python/C if present
+ `BUILD_OBJECT n` | `k v… -- obj` | Build table |
 
 Math:
 - `add`, `sub`, `mul`, `div`, `mod`, `pow`, `min`, `max`
@@ -182,7 +180,7 @@ Strings:
 - `slice`, `substr`, `split`, `join`, `upper`, `lower`, `trim`
 - `startsWith`, `endsWith`, `replace`
 
-Objects/Arrays:
+Tables/Arrays:
 - `keys`, `values`, `has`, `delete`
 - `push`, `pop`, `shift`, `unshift`, `insert`, `remove`
 
@@ -213,9 +211,9 @@ Notes:
 Metaprogramming functions use a bytecode-level AST, not a syntax AST.
 
 Top-level shape:
-- `(object){type = "bytecode", ops = (object){...}}`
+- `(table){type = "bytecode", ops = (table){...}}`
 
-Each `ops` item is an object with `op` and optional fields:
+Each `ops` item is a table with `op` and optional fields:
 - `PUSH_NUM`: `value` (number)
 - `PUSH_CHAR`/`PUSH_STRING`: `value` (string)
 - `PUSH_BYTE`: `value` (0-255)

@@ -18,7 +18,7 @@
 0
 a1
 1a
-x(object){a = 1, b = 'c'}
+x(table){a = 1, b = 'c'}
 n=(number){1, 2}
 1
 1

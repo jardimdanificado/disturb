@@ -11,12 +11,12 @@ typedef void (*NativeFn)(VM *vm, List *stack, List *global);
 
 enum {
     URB_T_NULL = 0,
-    URB_T_CHAR = 1,
+
     URB_T_BYTE,
     URB_T_NUMBER,
-    URB_T_OBJECT,
+    URB_T_TABLE,
     URB_T_NATIVE,
-    URB_T_FUNCTION
+    URB_T_LAMBDA
 };
 
 struct ObjEntry {
@@ -32,7 +32,7 @@ struct VM {
     ObjEntry *global_entry;
     ObjEntry *stack_entry;
     ObjEntry *null_entry;
-    ObjEntry *prototype_entry;
+    ObjEntry *common_entry;
     ObjEntry *argc_entry;
     ObjEntry *this_entry;
     size_t gc_tick;
@@ -42,9 +42,9 @@ struct VM {
 const char *urb_type_name(Int type);
 Int urb_obj_type(const List *obj);
 ObjEntry *urb_obj_key(const List *obj);
-char *urb_char_data(List *obj);
-size_t urb_char_len(const List *obj);
-void urb_object_add(List *obj, ObjEntry *entry);
+char *urb_bytes_data(List *obj);
+size_t urb_bytes_len(const List *obj);
+void urb_table_add(List *obj, ObjEntry *entry);
 void urb_bytes_append(List *obj, const char *bytes, size_t len);
 Int urb_value_len(const List *obj);
 void urb_number_set_single(List *obj, Float value);
@@ -56,9 +56,9 @@ void print_entry(FILE *out, ObjEntry *entry);
 void print_plain_entry(FILE *out, ObjEntry *entry);
 
 ObjEntry *vm_make_number_value(VM *vm, Float value);
-ObjEntry *vm_make_char_value(VM *vm, const char *s, size_t len);
+ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len);
-ObjEntry *vm_make_object_value(VM *vm, Int reserve);
+ObjEntry *vm_make_table_value(VM *vm, Int reserve);
 ObjEntry *vm_stringify_value(VM *vm, ObjEntry *entry, int raw_string);
 ObjEntry *vm_pretty_value(VM *vm, ObjEntry *entry);
 
@@ -68,10 +68,10 @@ void vm_gc(VM *vm);
 void vm_dump_global(VM *vm);
 void vm_exec_line(VM *vm, const char *line);
 
-ObjEntry *vm_define_char(VM *vm, const char *key, const char *value);
+ObjEntry *vm_define_bytes(VM *vm, const char *key, const char *value);
 ObjEntry *vm_define_byte(VM *vm, const char *key, char **items, int count, int start);
 ObjEntry *vm_define_number(VM *vm, const char *key, char **items, int count, int start);
-ObjEntry *vm_define_object(VM *vm, const char *key, char **items, int count, int start);
+ObjEntry *vm_define_table(VM *vm, const char *key, char **items, int count, int start);
 ObjEntry *vm_define_native(VM *vm, const char *key, const char *fn_name);
 
 void vm_push_stack(VM *vm, const char *key);

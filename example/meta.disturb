@@ -1,5 +1,5 @@
 // Meta fields are accessed via string keys.
-obj = (object){alpha = "test", beta = (number){1, 2, 3}};
+obj = (table){alpha = "test", beta = (number){1, 2, 3}};
 
 // name/type/size/capacity come from meta.
 println(obj.name);

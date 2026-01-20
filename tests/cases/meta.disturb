@@ -1,4 +1,4 @@
-obj = (object){alpha = "test", beta = (number){1, 2, 3}};
+obj = (table){alpha = "test", beta = (number){1, 2, 3}};
 
 println(obj.name);
 println(obj.type);

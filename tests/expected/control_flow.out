@@ -7,9 +7,9 @@ ok
 1
 10
 5
-(object){
+(table){
   a = 1,
-  b = (object){
+  b = (table){
     c = 2
   }
 }

@@ -1,7 +1,7 @@
 // 01_intro.disturb
 // Basic syntax, globals, and output.
 
-// Assignment puts values in the global object by default.
+// Assignment puts values in the global table by default.
 greeting = "hello";
 count = 3;
 
@@ -16,5 +16,5 @@ println("hello world");
 // Missing keys resolve to null (no exception).
 println(global.missing);
 
-// Global is a real object.
+// Global is a real table.
 println(global.title);

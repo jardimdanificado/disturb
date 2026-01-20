@@ -109,7 +109,7 @@ static void vm_add_args(VM *vm, int argc, char **argv)
     for (int i = 0; i < argc; i++) {
         char var_name[32];
         snprintf(var_name, sizeof(var_name), "arg_%d", i);
-        vm_define_char(vm, var_name, argv[i]);
+        vm_define_bytes(vm, var_name, argv[i]);
     }
     
     // Cria um array apenas com as referências às variáveis (sem chaves)
@@ -122,7 +122,7 @@ static void vm_add_args(VM *vm, int argc, char **argv)
     }
     
     // Define o objeto args sem chaves (passa apenas valores)
-    vm_define_object(vm, "args", items, argc, 0);
+    vm_define_table(vm, "args", items, argc, 0);
     
     // Libera a memória alocada
     for (int i = 0; i < argc; i++) {
@@ -133,7 +133,7 @@ static void vm_add_args(VM *vm, int argc, char **argv)
     // Define argc
     char argc_str[32];
     snprintf(argc_str, sizeof(argc_str), "%d", argc);
-    vm_define_char(vm, "argc", argc_str);
+    vm_define_bytes(vm, "argc", argc_str);
 }
 
 static int repl_run(int argc, char **argv)

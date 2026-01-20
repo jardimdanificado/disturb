@@ -1,4 +1,4 @@
-// Methods are looked up on the object, then global.prototype.
+// Methods are looked up on the table, then global.common.
 x = 5;
 x.add(2, 3);
 println();
@@ -12,12 +12,12 @@ println();
 "hi,there".split(",");
 println();
 
-// Object methods can act on object/array-like values.
-arr = (object){a = "hi", b = "there"};
+// Table methods can act on table/array-like values.
+arr = (table){a = "hi", b = "there"};
 arr.join("-");
 println();
 
-// Object key helpers.
-o = (object){a = 1, b = 2};
+// Table key helpers.
+o = (table){a = 1, b = 2};
 o.keys();
 println();
