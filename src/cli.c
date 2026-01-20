@@ -104,36 +104,34 @@ static void repl_update_state(const char *line, int *depth, int *in_single, int 
 // Função para adicionar os argumentos como um objeto na VM
 static void vm_add_args(VM *vm, int argc, char **argv)
 {
-    // Primeiro, define cada argumento como uma variável global
-    // arg_0, arg_1, arg_2, etc.
+    char var_name[32];
+    
+    // Define cada argumento como variável global arg_0, arg_1, etc.
+    char **items = argc > 0 ? (char**)malloc(sizeof(char*) * argc) : NULL;
+    
     for (int i = 0; i < argc; i++) {
-        char var_name[32];
         snprintf(var_name, sizeof(var_name), "arg_%d", i);
         vm_define_bytes(vm, var_name, argv[i]);
-    }
-    
-    // Cria um array apenas com as referências às variáveis (sem chaves)
-    char **items = (char**)malloc(sizeof(char*) * argc);
-    
-    for (int i = 0; i < argc; i++) {
-        // Aloca a referência à variável
+        
+        // Aloca e copia o nome da variável para o array items
         items[i] = (char*)malloc(32);
         snprintf(items[i], 32, "arg_%d", i);
     }
     
-    // Define o objeto args sem chaves (passa apenas valores)
-    vm_define_table(vm, "args", items, argc, 0);
-    
-    // Libera a memória alocada
-    for (int i = 0; i < argc; i++) {
-        free(items[i]);
+    // Define o objeto args sem chaves
+    if (items) {
+        vm_define_table(vm, "args", items, argc, 0);
+        
+        // Libera a memória alocada para os nomes
+        for (int i = 0; i < argc; i++) {
+            free(items[i]);
+        }
+        free(items);
     }
-    free(items);
     
-    // Define argc
-    char argc_str[32];
-    snprintf(argc_str, sizeof(argc_str), "%d", argc);
-    vm_define_bytes(vm, "argc", argc_str);
+    // Define argc como uma variável única
+    snprintf(var_name, sizeof(var_name), "%d", argc);
+    vm_define_bytes(vm, "argc", var_name);
 }
 
 static int repl_run(int argc, char **argv)
@@ -278,8 +276,10 @@ int main(int argc, char **argv)
         VM vm;
         vm_init(&vm);
         
-        // Adiciona os argumentos na VM
-        vm_add_args(&vm, argc, argv);
+        // Adiciona apenas os argumentos do script (após o nome do arquivo)
+        int script_argc = argc - 2;  // argc - programa - arquivo
+        char **script_argv = argv + 2;  // argv[2] em diante
+        vm_add_args(&vm, script_argc, script_argv);
         
         FILE *fp = fopen(argv[1], "r");
         if (!fp) {

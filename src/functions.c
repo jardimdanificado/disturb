@@ -2519,6 +2519,9 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "trim") == 0) return native_trim;
     if (strcmp(name, "startsWith") == 0) return native_starts_with;
     if (strcmp(name, "endsWith") == 0) return native_ends_with;
+    if (strcmp(name, "find") == 0) return native_find;
+    if (strcmp(name, "rfind") == 0) return native_rfind;
+    if (strcmp(name, "contains") == 0) return native_contains;
     if (strcmp(name, "replace") == 0) return native_replace;
     if (strcmp(name, "keys") == 0) return native_keys;
     if (strcmp(name, "values") == 0) return native_values;
@@ -2530,8 +2533,5 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "unshift") == 0) return native_unshift;
     if (strcmp(name, "insert") == 0) return native_insert;
     if (strcmp(name, "remove") == 0) return native_remove;
-    if (strcmp(name, "find") == 0) return native_find;
-    if (strcmp(name, "rfind") == 0) return native_rfind;
-    if (strcmp(name, "contains") == 0) return native_contains;
     return NULL;
 }
