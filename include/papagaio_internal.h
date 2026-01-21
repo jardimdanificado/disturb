@@ -65,7 +65,9 @@ typedef struct {
     Capture *cap;
     int count;
     int cap_size;
+    int start;
     int end;
+    const char *src;
     struct {
         const uint8_t **capture;
         int capture_count;

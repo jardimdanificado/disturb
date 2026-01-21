@@ -3,3 +3,11 @@ println(text.replace("$regex num {\\d+}", "<num:$regex{0}>"));
 
 fmt = "abc";
 println(fmt.replace("$regex triple {(a)(b)(c)}", "$regex{1}-$regex{2}-$regex{3}"));
+
+tmpl = "$pattern{hello $name}{Oi $name} hello Joao";
+println(tmpl);
+
+escaped = "\$pattern{hello $name}{Oi $name} hello Joao";
+println(escaped);
+
+println("total: $eval{add(1,2);}");

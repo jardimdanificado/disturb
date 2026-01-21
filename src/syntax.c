@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define PAPAGAIO_ESCAPED_SIGIL '\x01'
+
 typedef enum {
     TOK_EOF = 0,
     TOK_IDENT,
@@ -519,6 +521,7 @@ static int parse_escape(Parser *p, int *out)
     case '\\': *out = '\\'; return 1;
     case '\'': *out = '\''; return 1;
     case '"': *out = '"'; return 1;
+    case '$': *out = PAPAGAIO_ESCAPED_SIGIL; return 1;
     default: return 0;
     }
 }

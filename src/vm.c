@@ -1,5 +1,6 @@
 #include "vm.h"
 #include "bytecode.h"
+#include "papagaio.h"
 #include <math.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -1068,6 +1069,8 @@ void vm_init(VM *vm)
     entry = vm_define_native(vm, "endsWith", "endsWith");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
     entry = vm_define_native(vm, "replace", "replace");
+    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    entry = vm_define_native(vm, "papagaio", "papagaio");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
     entry = vm_define_native(vm, "keys", "keys");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
@@ -2224,7 +2227,15 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 fprintf(stderr, "bytecode error at pc %zu: truncated string\n", pc);
                 return 0;
             }
-            List *obj = urb_obj_new_bytes(URB_T_BYTE,NULL, (const char*)buf, slen);
+            char *processed = papagaio_process_text(vm, (const char*)buf, slen);
+            if (processed) {
+                List *obj = urb_obj_new_bytes(URB_T_BYTE, NULL, processed, strlen(processed));
+                free(processed);
+                free(buf);
+                vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
+                break;
+            }
+            List *obj = urb_obj_new_bytes(URB_T_BYTE, NULL, (const char*)buf, slen);
             free(buf);
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;

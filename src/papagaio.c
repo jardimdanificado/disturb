@@ -15,6 +15,17 @@
 #define PAPAGAIO_DEFAULT_BLOCK "recursive"
 #define PAPAGAIO_DEFAULT_BLOCKSEQ "sequential"
 #define PAPAGAIO_DEFAULT_REGEX "regex"
+#define PAPAGAIO_ESCAPED_SIGIL '\x01'
+
+typedef struct {
+    char *m;
+    char *r;
+} PatternPair;
+
+typedef struct {
+    char *code;
+    size_t len;
+} EvalBlock;
 
 static Symbols make_default_symbols(const char *sigil, const char *open, const char *close)
 {
@@ -84,10 +95,44 @@ static StrView trim_view(StrView v)
     return (StrView){ v.ptr + start, end - start };
 }
 
-static char *papagaio_eval_code(VM *vm, const char *code, size_t len)
+static char *papagaio_eval_code(VM *vm, const char *code, size_t len,
+                                const char *match, size_t match_len)
 {
+    char *old_match_buf = NULL;
+    size_t old_match_len = 0;
+    if (vm) {
+        ObjEntry *old_match = vm_global_find_by_key(vm->global_entry->obj, "match");
+        if (old_match && urb_obj_type(old_match->obj) == URB_T_BYTE) {
+            old_match_len = urb_bytes_len(old_match->obj);
+            old_match_buf = (char*)malloc(old_match_len + 1);
+            if (old_match_buf) {
+                memcpy(old_match_buf, urb_bytes_data(old_match->obj), old_match_len);
+                old_match_buf[old_match_len] = 0;
+            }
+        }
+        if (old_match) vm_global_remove_by_key(vm, "match");
+        if (!match) {
+            match = "";
+            match_len = 0;
+        }
+        char *match_buf = (char*)malloc(match_len + 1);
+        if (!match_buf) return NULL;
+        if (match_len) memcpy(match_buf, match, match_len);
+        match_buf[match_len] = 0;
+        vm_define_bytes(vm, "match", match_buf);
+        free(match_buf);
+    }
     ObjEntry *value = vm_eval_source(vm, code, len);
-    if (!value) return NULL;
+    if (!value) {
+        if (vm) {
+            vm_global_remove_by_key(vm, "match");
+            if (old_match_buf) {
+                vm_define_bytes(vm, "match", old_match_buf);
+                free(old_match_buf);
+            }
+        }
+        return NULL;
+    }
     ObjEntry *stringified = vm_stringify_value(vm, value, 1);
     const char *data = "";
     size_t slen = 0;
@@ -105,6 +150,13 @@ static char *papagaio_eval_code(VM *vm, const char *code, size_t len)
     out[slen] = 0;
     if (stringified) vm_release_entry(stringified);
     if (value != vm->null_entry) vm_release_entry(value);
+    if (vm) {
+        vm_global_remove_by_key(vm, "match");
+        if (old_match_buf) {
+            vm_define_bytes(vm, "match", old_match_buf);
+            free(old_match_buf);
+        }
+    }
     return out;
 }
 
@@ -199,7 +251,8 @@ static int apply_eval_placeholder(
     size_t repl_len,
     size_t *idx,
     const Symbols *sym,
-    VM *vm
+    VM *vm,
+    const Match *m
 )
 {
     if (!sym->eval || !vm) return 0;
@@ -217,7 +270,13 @@ static int apply_eval_placeholder(
     if (!code) return 0;
     memcpy(code, trimmed.ptr, trimmed.len);
     code[trimmed.len] = 0;
-    char *result = papagaio_eval_code(vm, code, trimmed.len);
+    const char *match_src = "";
+    size_t match_len = 0;
+    if (m && m->src && m->end >= m->start) {
+        match_src = m->src + m->start;
+        match_len = (size_t)(m->end - m->start);
+    }
+    char *result = papagaio_eval_code(vm, code, trimmed.len, match_src, match_len);
     free(code);
     if (!result) return 0;
     sb_append_n(out, result, strlen(result));
@@ -281,6 +340,312 @@ static void free_match(Match *m)
     }
     m->count = 0;
     m->cap_size = 0;
+}
+
+static char *papagaio_prepare_input(const char *input, const Symbols *sym)
+{
+    if (!input) return NULL;
+    StrBuf out;
+    sb_init(&out);
+    size_t sigil_len = strlen(sym->sigil);
+    size_t len = strlen(input);
+    for (size_t i = 0; i < len; i++) {
+        if (input[i] == '\\' && sigil_len > 0 &&
+            i + sigil_len < len &&
+            memcmp(input + i + 1, sym->sigil, sigil_len) == 0) {
+            sb_append_char(&out, PAPAGAIO_ESCAPED_SIGIL);
+            i += sigil_len;
+            continue;
+        }
+        sb_append_char(&out, input[i]);
+    }
+    return out.data;
+}
+
+static char *papagaio_restore_escaped(const char *input, const Symbols *sym)
+{
+    if (!input) return NULL;
+    StrBuf out;
+    sb_init(&out);
+    size_t sigil_len = strlen(sym->sigil);
+    size_t len = strlen(input);
+    for (size_t i = 0; i < len; i++) {
+        if (input[i] == PAPAGAIO_ESCAPED_SIGIL) {
+            sb_append_n(&out, sym->sigil, sigil_len);
+            continue;
+        }
+        sb_append_char(&out, input[i]);
+    }
+    return out.data;
+}
+
+static void free_pattern_pairs(PatternPair *pairs, int count)
+{
+    if (!pairs) return;
+    for (int i = 0; i < count; i++) {
+        free(pairs[i].m);
+        free(pairs[i].r);
+    }
+    free(pairs);
+}
+
+static void free_eval_blocks(EvalBlock *evals, int count)
+{
+    if (!evals) return;
+    for (int i = 0; i < count; i++) {
+        free(evals[i].code);
+    }
+    free(evals);
+}
+
+static char *extract_nested(const char *src, const Symbols *sym,
+                            PatternPair **out_pairs, int *out_count)
+{
+    if (out_pairs) *out_pairs = NULL;
+    if (out_count) *out_count = 0;
+    if (!src || !sym || !sym->pattern) return NULL;
+
+    int collect = out_pairs && out_count;
+    PatternPair *pairs = NULL;
+    int pair_count = 0;
+    int pair_cap = 0;
+
+    StrBuf out;
+    sb_init(&out);
+
+    size_t sigil_len = strlen(sym->sigil);
+    size_t pat_len = strlen(sym->pattern);
+    StrView open = { sym->open, strlen(sym->open) };
+    StrView close = { sym->close, strlen(sym->close) };
+
+    size_t len = strlen(src);
+    size_t i = 0;
+    while (i < len) {
+        if (sigil_len > 0 &&
+            i + sigil_len + pat_len <= len &&
+            memcmp(src + i, sym->sigil, sigil_len) == 0 &&
+            memcmp(src + i + sigil_len, sym->pattern, pat_len) == 0) {
+            size_t j = i + sigil_len + pat_len;
+            while (j < len && isspace((unsigned char)src[j])) j++;
+            if (j < len && sv_starts_with(src + j, open)) {
+                StrView mp;
+                int next = extract_block(src, (int)j, open, close, &mp);
+                size_t k = (size_t)next;
+                while (k < len && isspace((unsigned char)src[k])) k++;
+                if (k < len && sv_starts_with(src + k, open)) {
+                    StrView rp;
+                    int end = extract_block(src, (int)k, open, close, &rp);
+                    StrView mp_trim = trim_view(mp);
+                    StrView rp_trim = trim_view(rp);
+                    if (collect) {
+                        if (pair_count >= pair_cap) {
+                            pair_cap = pair_cap ? pair_cap * 2 : 8;
+                            pairs = (PatternPair*)realloc(pairs, sizeof(PatternPair) * pair_cap);
+                        }
+                        pairs[pair_count].m = (char*)malloc(mp_trim.len + 1);
+                        pairs[pair_count].r = (char*)malloc(rp_trim.len + 1);
+                        if (!pairs[pair_count].m || !pairs[pair_count].r) {
+                            free(pairs[pair_count].m);
+                            free(pairs[pair_count].r);
+                        } else {
+                            memcpy(pairs[pair_count].m, mp_trim.ptr, mp_trim.len);
+                            pairs[pair_count].m[mp_trim.len] = 0;
+                            memcpy(pairs[pair_count].r, rp_trim.ptr, rp_trim.len);
+                            pairs[pair_count].r[rp_trim.len] = 0;
+                            pair_count++;
+                        }
+                    }
+                    i = (size_t)end;
+                    continue;
+                }
+            }
+        }
+        sb_append_char(&out, src[i++]);
+    }
+
+    if (out_pairs) *out_pairs = pairs;
+    if (out_count) *out_count = pair_count;
+    return out.data;
+}
+
+static char *extract_evals(const char *src, const Symbols *sym,
+                           EvalBlock **out_evals, int *out_count)
+{
+    if (out_evals) *out_evals = NULL;
+    if (out_count) *out_count = 0;
+    if (!src || !sym || !sym->eval) return NULL;
+
+    EvalBlock *evals = NULL;
+    int eval_count = 0;
+    int eval_cap = 0;
+
+    StrBuf out;
+    sb_init(&out);
+
+    size_t sigil_len = strlen(sym->sigil);
+    size_t eval_len = strlen(sym->eval);
+    StrView open = { sym->open, strlen(sym->open) };
+    StrView close = { sym->close, strlen(sym->close) };
+
+    size_t len = strlen(src);
+    size_t i = 0;
+    while (i < len) {
+        if (sigil_len > 0 &&
+            i + sigil_len + eval_len <= len &&
+            memcmp(src + i, sym->sigil, sigil_len) == 0 &&
+            memcmp(src + i + sigil_len, sym->eval, eval_len) == 0) {
+            size_t j = i + sigil_len + eval_len;
+            while (j < len && isspace((unsigned char)src[j])) j++;
+            if (j < len && sv_starts_with(src + j, open)) {
+                StrView code_block;
+                int next = extract_block(src, (int)j, open, close, &code_block);
+                StrView code_trim = trim_view(code_block);
+                if (eval_count >= eval_cap) {
+                    eval_cap = eval_cap ? eval_cap * 2 : 8;
+                    evals = (EvalBlock*)realloc(evals, sizeof(EvalBlock) * eval_cap);
+                }
+                evals[eval_count].code = (char*)malloc(code_trim.len + 1);
+                evals[eval_count].len = code_trim.len;
+                if (evals[eval_count].code) {
+                    memcpy(evals[eval_count].code, code_trim.ptr, code_trim.len);
+                    evals[eval_count].code[code_trim.len] = 0;
+                    char placeholder[32];
+                    snprintf(placeholder, sizeof(placeholder), "__E%d__", eval_count);
+                    sb_append_n(&out, placeholder, strlen(placeholder));
+                    eval_count++;
+                    i = (size_t)next;
+                    continue;
+                }
+            }
+        }
+        sb_append_char(&out, src[i++]);
+    }
+
+    if (out_evals) *out_evals = evals;
+    if (out_count) *out_count = eval_count;
+    return out.data;
+}
+
+static char *replace_all(const char *src, const char *needle, const char *replacement)
+{
+    if (!src || !needle || !*needle) return NULL;
+    StrBuf out;
+    sb_init(&out);
+    size_t nlen = strlen(needle);
+    size_t rlen = replacement ? strlen(replacement) : 0;
+    size_t len = strlen(src);
+    size_t i = 0;
+    while (i < len) {
+        if (i + nlen <= len && memcmp(src + i, needle, nlen) == 0) {
+            if (rlen) sb_append_n(&out, replacement, rlen);
+            i += nlen;
+            continue;
+        }
+        sb_append_char(&out, src[i++]);
+    }
+    return out.data;
+}
+
+static char *apply_evals(VM *vm, const char *src, EvalBlock *evals, int eval_count,
+                         const Symbols *sym, const char *match, size_t match_len)
+{
+    (void)sym;
+    if (!src) return NULL;
+    char *current = (char*)malloc(strlen(src) + 1);
+    if (!current) return NULL;
+    strcpy(current, src);
+
+    for (int i = eval_count - 1; i >= 0; i--) {
+        char placeholder[32];
+        snprintf(placeholder, sizeof(placeholder), "__E%d__", i);
+        char *result = papagaio_eval_code(vm, evals[i].code, evals[i].len, match, match_len);
+        if (!result) {
+            result = (char*)malloc(20);
+            if (result) strcpy(result, "error: eval failed");
+        }
+        if (result) {
+            char *next = replace_all(current, placeholder, result);
+            free(result);
+            if (next) {
+                free(current);
+                current = next;
+            }
+        }
+    }
+    return current;
+}
+
+static char *apply_patterns(VM *vm, const char *src,
+                            PatternPair *pairs, int pair_count,
+                            const Symbols *sym)
+{
+    if (!src) return NULL;
+    char *current = (char*)malloc(strlen(src) + 1);
+    if (!current) return NULL;
+    strcpy(current, src);
+
+    for (int i = 0; i < pair_count; i++) {
+        Pattern pat;
+        parse_pattern_ex(pairs[i].m, &pat, sym);
+
+        StrBuf out;
+        sb_init(&out);
+
+        int len = (int)strlen(current);
+        int pos = 0;
+        int matched = 0;
+        while (pos < len) {
+            Match m;
+            if (match_pattern(current, len, &pat, pos, &m)) {
+                PatternPair *nested = NULL;
+                int nested_count = 0;
+                char *clean = extract_nested(pairs[i].r, sym, &nested, &nested_count);
+                char *rep = apply_replacement_ex(clean ? clean : pairs[i].r, &m, sym, NULL);
+                free(clean);
+
+                char *nested_out = rep;
+                if (nested_count > 0) {
+                    char *next = apply_patterns(vm, nested_out, nested, nested_count, sym);
+                    if (next) {
+                        free(nested_out);
+                        nested_out = next;
+                    }
+                }
+                free_pattern_pairs(nested, nested_count);
+
+                EvalBlock *evals = NULL;
+                int eval_count = 0;
+                char *ph = extract_evals(nested_out, sym, &evals, &eval_count);
+                char *applied = NULL;
+                if (ph) {
+                    const char *match_src = m.src ? m.src + m.start : "";
+                    size_t match_len = (m.src && m.end >= m.start) ? (size_t)(m.end - m.start) : 0;
+                    applied = apply_evals(vm, ph, evals, eval_count, sym, match_src, match_len);
+                    free(ph);
+                }
+                free_eval_blocks(evals, eval_count);
+                if (applied) {
+                    sb_append_n(&out, applied, strlen(applied));
+                    free(applied);
+                }
+                free(nested_out);
+                pos = m.end;
+                free_match(&m);
+                matched = 1;
+                continue;
+            }
+            sb_append_char(&out, current[pos++]);
+        }
+        free_pattern(&pat);
+        if (matched) {
+            free(current);
+            current = out.data;
+        } else {
+            sb_free(&out);
+        }
+    }
+
+    return current;
 }
 
 void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
@@ -440,6 +805,8 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
     m->count = 0;
     m->cap = (Capture*)malloc(sizeof(Capture) * m->cap_size);
 
+    m->start = start;
+    m->src = src;
     m->regex.capture = NULL;
     m->regex.capture_count = 0;
     m->regex.match_start = start;
@@ -572,7 +939,7 @@ char *apply_replacement_ex(const char *rep, const Match *m, const Symbols *sym, 
             if (sym->regex && apply_regex_placeholder(&out, rep, n, &i, sym, m)) {
                 continue;
             }
-            if (sym->eval && apply_eval_placeholder(&out, rep, n, &i, sym, vm)) {
+            if (sym->eval && apply_eval_placeholder(&out, rep, n, &i, sym, vm, m)) {
                 continue;
             }
             size_t name_start = i + sigil_len;
@@ -742,4 +1109,78 @@ char *papagaio_process_pairs(
     result[out.len] = 0;
     sb_free(&out);
     return result;
+}
+
+char *papagaio_process_text(VM *vm, const char *input, size_t len)
+{
+    if (!input) return NULL;
+    Symbols sym = make_default_symbols("$", "{", "}");
+    char *buf = (char*)malloc(len + 1);
+    if (!buf) return NULL;
+    memcpy(buf, input, len);
+    buf[len] = 0;
+
+    char *prepared = papagaio_prepare_input(buf, &sym);
+    free(buf);
+    if (!prepared) return NULL;
+
+    PatternPair *pairs = NULL;
+    int pair_count = 0;
+    char *clean = extract_nested(prepared, &sym, &pairs, &pair_count);
+    free(prepared);
+    if (!clean) {
+        free_pattern_pairs(pairs, pair_count);
+        return NULL;
+    }
+
+    EvalBlock *evals = NULL;
+    int eval_count = 0;
+    char *ph = extract_evals(clean, &sym, &evals, &eval_count);
+    free(clean);
+    if (!ph) {
+        free_pattern_pairs(pairs, pair_count);
+        free_eval_blocks(evals, eval_count);
+        return NULL;
+    }
+
+    char *proc = apply_evals(vm, ph, evals, eval_count, &sym, "", 0);
+    free(ph);
+    free_eval_blocks(evals, eval_count);
+    if (!proc) {
+        free_pattern_pairs(pairs, pair_count);
+        return NULL;
+    }
+
+    if (pair_count > 0) {
+        char *src = proc;
+        char *last = NULL;
+        while (1) {
+            if (last && strcmp(src, last) == 0) break;
+            free(last);
+            last = (char*)malloc(strlen(src) + 1);
+            if (!last) break;
+            strcpy(last, src);
+            char *next = apply_patterns(vm, src, pairs, pair_count, &sym);
+            if (next && next != src) {
+                free(src);
+                src = next;
+            }
+
+            PatternPair *nested = NULL;
+            int nested_count = 0;
+            char *check = extract_nested(src, &sym, &nested, &nested_count);
+            free(check);
+            free_pattern_pairs(nested, nested_count);
+            if (nested_count == 0) break;
+        }
+        free(last);
+        free_pattern_pairs(pairs, pair_count);
+        proc = src;
+    } else {
+        free_pattern_pairs(pairs, pair_count);
+    }
+
+    char *restored = papagaio_restore_escaped(proc, &sym);
+    free(proc);
+    return restored;
 }

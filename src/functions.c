@@ -1951,6 +1951,25 @@ static void native_replace(VM *vm, List *stack, List *global)
     free(repls);
 }
 
+static void native_papagaio(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_string_target(vm, stack, argc);
+    if (!target) {
+        fprintf(stderr, "papagaio expects a string target\n");
+        return;
+    }
+    const char *input = urb_bytes_data(target->obj);
+    size_t input_len = urb_bytes_len(target->obj);
+    char *out = papagaio_process_text(vm, input, input_len);
+    if (!out) {
+        fprintf(stderr, "papagaio failed\n");
+        return;
+    }
+    push_string(vm, stack, out, strlen(out));
+    free(out);
+}
+
 static Int clamp_index(Int i, Int len)
 {
     if (i < 0) i = len + i;      // suporta negativos tipo slice
@@ -2567,6 +2586,7 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "rfind") == 0) return native_rfind;
     if (strcmp(name, "contains") == 0) return native_contains;
     if (strcmp(name, "replace") == 0) return native_replace;
+    if (strcmp(name, "papagaio") == 0) return native_papagaio;
     if (strcmp(name, "keys") == 0) return native_keys;
     if (strcmp(name, "values") == 0) return native_values;
     if (strcmp(name, "has") == 0) return native_has;
