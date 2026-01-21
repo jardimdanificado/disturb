@@ -240,8 +240,17 @@ Notes:
 - `global.gc.collect()` runs a collection.
 - Comments are supported via `//` and `/* ... */`.
 
-`replace` uses Papagaio-style patterns:
+Papagaio processing is applied to all string literals. Use `\$` to escape a literal `$`.
+
+`replace` uses Papagaio-style patterns, and you can also process runtime strings with `papagaio(text)`:
 - `"hello $name".replace("$name", "world")`
+- `papagaio("\$pattern{a}{b}a")`
+
+Papagaio tokens:
+- `$pattern{...}{...}` defines a pattern+replacement pair (nested patterns are supported).
+- `$regex name {pattern}` captures regex matches (use `$regex{0}`/`{1}`... in replacements).
+- `$eval{...}` evaluates Disturb code; use `return` to produce a value.
+- `this` inside `$eval{}` points to `global.papagaio`, which exposes `content` and `match`.
 
 `print`/`println` with no arguments prints the top of the stack if present.
 

@@ -43,6 +43,25 @@ static Symbols make_default_symbols(const char *sigil, const char *open, const c
 
 static int sv_starts_with(const char *s, StrView v);
 
+static ObjEntry *papagaio_get_entry(VM *vm)
+{
+    if (!vm) return NULL;
+    ObjEntry *entry = vm_global_find_by_key(vm->global_entry->obj, "papagaio");
+    if (!entry || entry == vm->null_entry) {
+        entry = vm_define_table(vm, "papagaio", NULL, 0, 0);
+    }
+    return entry;
+}
+
+static void papagaio_set_field(VM *vm, const char *key, const char *value, size_t len)
+{
+    if (!vm) return;
+    ObjEntry *entry = papagaio_get_entry(vm);
+    if (!entry) return;
+    ObjEntry *str = vm_make_bytes_value(vm, value ? value : "", len);
+    vm_object_set_by_key(vm, entry, key, strlen(key), str);
+}
+
 void sb_init(StrBuf *b)
 {
     b->cap = 256;
@@ -100,6 +119,7 @@ static char *papagaio_eval_code(VM *vm, const char *code, size_t len,
 {
     char *old_match_buf = NULL;
     size_t old_match_len = 0;
+    ObjEntry *old_this = NULL;
     if (vm) {
         ObjEntry *old_match = vm_global_find_by_key(vm->global_entry->obj, "match");
         if (old_match && urb_obj_type(old_match->obj) == URB_T_BYTE) {
@@ -121,6 +141,10 @@ static char *papagaio_eval_code(VM *vm, const char *code, size_t len,
         match_buf[match_len] = 0;
         vm_define_bytes(vm, "match", match_buf);
         free(match_buf);
+        papagaio_set_field(vm, "match", match, match_len);
+        old_this = vm->this_entry;
+        ObjEntry *pap = papagaio_get_entry(vm);
+        vm->this_entry = pap ? pap : vm->null_entry;
     }
     ObjEntry *value = vm_eval_source(vm, code, len);
     if (!value) {
@@ -130,6 +154,7 @@ static char *papagaio_eval_code(VM *vm, const char *code, size_t len,
                 vm_define_bytes(vm, "match", old_match_buf);
                 free(old_match_buf);
             }
+            vm->this_entry = old_this ? old_this : vm->null_entry;
         }
         return NULL;
     }
@@ -156,6 +181,7 @@ static char *papagaio_eval_code(VM *vm, const char *code, size_t len,
             vm_define_bytes(vm, "match", old_match_buf);
             free(old_match_buf);
         }
+        vm->this_entry = old_this ? old_this : vm->null_entry;
     }
     return out;
 }
@@ -661,6 +687,9 @@ static char *apply_patterns(VM *vm, const char *src,
 
                 EvalBlock *evals = NULL;
                 int eval_count = 0;
+                if (vm && m.src && m.end >= m.start) {
+                    papagaio_set_field(vm, "match", m.src + m.start, (size_t)(m.end - m.start));
+                }
                 char *ph = extract_evals(nested_out, sym, &evals, &eval_count);
                 char *applied = NULL;
                 if (ph) {
@@ -979,6 +1008,10 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
             const uint8_t *end_ptr = capture[1];
             size_t match_start = start_ptr ? (size_t)(start_ptr - (const uint8_t*)src) : (size_t)pos;
             size_t match_end = end_ptr ? (size_t)(end_ptr - (const uint8_t*)src) : match_start;
+            if (match_start != (size_t)pos) {
+                free((void*)capture);
+                goto fail;
+            }
             if (match_end > (size_t)src_len) match_end = (size_t)src_len;
             if (match_start > match_end) match_start = match_end;
             ensure_cap(m);
@@ -1378,5 +1411,8 @@ char *papagaio_process_text(VM *vm, const char *input, size_t len)
 
     char *restored = papagaio_restore_escaped(proc, &sym);
     free(proc);
+    if (vm && restored) {
+        papagaio_set_field(vm, "content", restored, strlen(restored));
+    }
     return restored;
 }

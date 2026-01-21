@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.1
+- Apply Papagaio processing to all string literals, with `\$` escape support.
+- Add `$pattern{}`/`$regex{}`/`$eval{}` tokens plus nested patterns and block sequences.
+- Add `papagaio(text)` helper for runtime strings and expose `global.papagaio` with `content`/`match`.
+
 ## 0.14.0
 - Simplify literal syntax: table literals always use `{...}` and byte strings are derived from number arrays via `[]/.toByte()` with `.toNumber()` available for coercion, preserving `(args){}` for lambdas.
 - Add compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) plus prefix/postfix `++`/`--` statement forms for in-place updates.

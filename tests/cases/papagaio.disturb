@@ -1,0 +1,5 @@
+println("$pattern{hello $name}{Oi $name}hello Joao");
+println("$pattern{$regex num {\\d+}}{<$regex{0}>}12 34");
+println("$pattern{hi $name}{[$eval{return this.match;}]}hi Ana");
+raw = "\$pattern{a}{b}a";
+println(papagaio(raw));

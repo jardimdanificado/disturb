@@ -400,7 +400,10 @@ ObjEntry *vm_global_find_by_key(List *global, const char *name)
 static ObjEntry *vm_object_find_direct(List *obj, const char *name, size_t len)
 {
     if (!obj) return NULL;
-    for (Int i = 2; i < obj->size; i++) {
+    Int start = 2;
+    Int type = urb_obj_type(obj);
+    if (type == URB_T_NATIVE || type == URB_T_LAMBDA) start = 3;
+    for (Int i = start; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         if (!entry) continue;
         ObjEntry *key = urb_obj_key(entry->obj);
@@ -1999,6 +2002,12 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
         return (ObjEntry*)target->obj->data[pos].p;
     }
 
+    if (type == URB_T_NATIVE && index && urb_obj_type(index->obj) == URB_T_BYTE) {
+        return vm_object_find_by_key_len(vm, target->obj,
+                                         urb_bytes_data(index->obj),
+                                         urb_bytes_len(index->obj));
+    }
+
     if (index && urb_obj_type(index->obj) == URB_T_BYTE) {
         if (vm && vm->common_entry) {
             ObjEntry *method = vm_object_find_direct(vm->common_entry->obj,
@@ -2045,7 +2054,10 @@ static int vm_object_set_by_key_len(VM *vm, List *obj, const char *name, size_t 
         fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX missing target/value\n", pc);
         return 0;
     }
-    for (Int i = 2; i < obj->size; i++) {
+    Int start = 2;
+    Int type = urb_obj_type(obj);
+    if (type == URB_T_NATIVE || type == URB_T_LAMBDA) start = 3;
+    for (Int i = start; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         ObjEntry *key = entry ? urb_obj_key(entry->obj) : NULL;
         if (!key || urb_obj_type(key->obj) != URB_T_BYTE) continue;
@@ -2062,6 +2074,14 @@ static int vm_object_set_by_key_len(VM *vm, List *obj, const char *name, size_t 
     }
     urb_table_add(obj, copy);
     return 1;
+}
+
+int vm_object_set_by_key(VM *vm, ObjEntry *target, const char *name, size_t len, ObjEntry *value)
+{
+    if (!target) return 0;
+    Int type = urb_obj_type(target->obj);
+    if (type != URB_T_TABLE && type != URB_T_NATIVE) return 0;
+    return vm_object_set_by_key_len(vm, target->obj, name, len, value, 0);
 }
 
 static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc)

@@ -61,6 +61,7 @@ ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_table_value(VM *vm, Int reserve);
 ObjEntry *vm_stringify_value(VM *vm, ObjEntry *entry, int raw_string);
 ObjEntry *vm_pretty_value(VM *vm, ObjEntry *entry);
+int vm_object_set_by_key(VM *vm, ObjEntry *target, const char *name, size_t len, ObjEntry *value);
 
 int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len);
 ObjEntry *vm_eval_source(VM *vm, const char *src, size_t len);

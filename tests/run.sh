@@ -34,6 +34,7 @@ run_case operators
 run_case switch
 run_case natives
 run_case functions
+run_case papagaio
 run_case control_flow
 run_case resize
 run_case stress_deep
