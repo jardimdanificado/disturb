@@ -1856,99 +1856,84 @@ static void native_join(VM *vm, List *stack, List *global)
     sb_free(&buf);
 }
 
-static void native_replace(VM *vm, List *stack, List *global)
+static size_t find_substring(const char *hay, size_t hlen, const char *needle, size_t nlen, size_t start)
+{
+    if (nlen == 0 || nlen > hlen || start > hlen - nlen) return SIZE_MAX;
+    for (size_t i = start; i + nlen <= hlen; i++) {
+        if (memcmp(hay + i, needle, nlen) == 0) return i;
+    }
+    return SIZE_MAX;
+}
+
+static void native_replace_impl(VM *vm, List *stack, List *global, int replace_all, const char *name)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_string_target(vm, stack, argc);
     if (!target) {
-        fprintf(stderr, "replace expects a string target\n");
+        fprintf(stderr, "%s expects a string target\n", name);
         return;
     }
-    if (argc < 2 || (argc % 2) != 0) {
-        fprintf(stderr, "replace expects pattern/replacement pairs\n");
+    if (argc < 2) {
+        fprintf(stderr, "%s expects needle and replacement\n", name);
         return;
     }
 
-    const char *input = urb_bytes_data(target->obj);
-    size_t input_len = urb_bytes_len(target->obj);
-    char *input_c = (char*)malloc(input_len + 1);
-    if (!input_c) {
-        fprintf(stderr, "replace: out of memory\n");
+    ObjEntry *arg0 = native_arg(stack, argc, 0);
+    ObjEntry *arg1 = native_arg(stack, argc, 1);
+    const char *needle = NULL;
+    size_t nlen = 0;
+    const char *repl = NULL;
+    size_t rlen = 0;
+    if (!entry_as_string(arg0, &needle, &nlen) || !entry_as_string(arg1, &repl, &rlen)) {
+        fprintf(stderr, "%s expects string needle and replacement\n", name);
         return;
-    }
-    memcpy(input_c, input, input_len);
-    input_c[input_len] = 0;
-
-    int pair_count = (int)(argc / 2);
-    char **patterns = (char**)calloc((size_t)pair_count, sizeof(char*));
-    char **repls = (char**)calloc((size_t)pair_count, sizeof(char*));
-    if (!patterns || !repls) {
-        fprintf(stderr, "replace: out of memory\n");
-        free(input_c);
-        free(patterns);
-        free(repls);
-        return;
-    }
-    for (int i = 0; i < pair_count; i++) {
-        ObjEntry *pat = native_arg(stack, argc, (uint32_t)(i * 2));
-        ObjEntry *rep = native_arg(stack, argc, (uint32_t)(i * 2 + 1));
-        const char *p = NULL;
-        size_t plen = 0;
-        const char *r = NULL;
-        size_t rlen = 0;
-        if (!entry_as_string(pat, &p, &plen) || !entry_as_string(rep, &r, &rlen)) {
-            fprintf(stderr, "replace expects string patterns and replacements\n");
-            free(input_c);
-            for (int j = 0; j < i; j++) {
-                free(patterns[j]);
-                free(repls[j]);
-            }
-            free(patterns);
-            free(repls);
-            return;
-        }
-        patterns[i] = (char*)malloc(plen + 1);
-        repls[i] = (char*)malloc(rlen + 1);
-        if (!patterns[i] || !repls[i]) {
-            fprintf(stderr, "replace: out of memory\n");
-            free(patterns[i]);
-            free(repls[i]);
-            free(input_c);
-            for (int j = 0; j < i; j++) {
-                free(patterns[j]);
-                free(repls[j]);
-            }
-            free(patterns);
-            free(repls);
-            return;
-        }
-        memcpy(patterns[i], p, plen);
-        patterns[i][plen] = 0;
-        memcpy(repls[i], r, rlen);
-        repls[i][rlen] = 0;
     }
 
-    char *out = papagaio_process_pairs(vm, input_c, (const char**)patterns, (const char**)repls, pair_count);
-    if (!out) {
-        fprintf(stderr, "papagaio replace failed\n");
-        free(input_c);
-        for (int i = 0; i < pair_count; i++) {
-            free(patterns[i]);
-            free(repls[i]);
-        }
-        free(patterns);
-        free(repls);
+    const char *hay = urb_bytes_data(target->obj);
+    size_t hlen = urb_bytes_len(target->obj);
+    if (nlen == 0 || hlen == 0) {
+        push_string(vm, stack, hay, hlen);
         return;
     }
-    push_string(vm, stack, out, strlen(out));
-    free(out);
-    free(input_c);
-    for (int i = 0; i < pair_count; i++) {
-        free(patterns[i]);
-        free(repls[i]);
+
+    size_t first = find_substring(hay, hlen, needle, nlen, 0);
+    if (first == SIZE_MAX) {
+        push_string(vm, stack, hay, hlen);
+        return;
     }
-    free(patterns);
-    free(repls);
+
+    StrBuf out;
+    sb_init(&out);
+    if (!replace_all) {
+        sb_append_n(&out, hay, first);
+        sb_append_n(&out, repl, rlen);
+        sb_append_n(&out, hay + first + nlen, hlen - (first + nlen));
+        push_string(vm, stack, out.data, out.len);
+        sb_free(&out);
+        return;
+    }
+
+    size_t pos = 0;
+    size_t match = first;
+    while (match != SIZE_MAX) {
+        sb_append_n(&out, hay + pos, match - pos);
+        sb_append_n(&out, repl, rlen);
+        pos = match + nlen;
+        match = find_substring(hay, hlen, needle, nlen, pos);
+    }
+    sb_append_n(&out, hay + pos, hlen - pos);
+    push_string(vm, stack, out.data, out.len);
+    sb_free(&out);
+}
+
+static void native_replace(VM *vm, List *stack, List *global)
+{
+    native_replace_impl(vm, stack, global, 0, "replace");
+}
+
+static void native_replace_all(VM *vm, List *stack, List *global)
+{
+    native_replace_impl(vm, stack, global, 1, "replaceAll");
 }
 
 static void native_papagaio(VM *vm, List *stack, List *global)
@@ -2586,6 +2571,7 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "rfind") == 0) return native_rfind;
     if (strcmp(name, "contains") == 0) return native_contains;
     if (strcmp(name, "replace") == 0) return native_replace;
+    if (strcmp(name, "replaceAll") == 0) return native_replace_all;
     if (strcmp(name, "papagaio") == 0) return native_papagaio;
     if (strcmp(name, "keys") == 0) return native_keys;
     if (strcmp(name, "values") == 0) return native_values;

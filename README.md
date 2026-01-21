@@ -186,7 +186,7 @@ Math:
 
 Strings:
 - `slice`, `substr`, `split`, `join`, `upper`, `lower`, `trim`
-- `startsWith`, `endsWith`, `replace`
+- `startsWith`, `endsWith`, `replace`, `replaceAll`
 
 Tables/Arrays:
 - `keys`, `values`, `has`, `delete`
@@ -242,8 +242,8 @@ Notes:
 
 Papagaio processing is applied to all string literals. Use `\$` to escape a literal `$`.
 
-`replace` uses Papagaio-style patterns, and you can also process runtime strings with `papagaio(text)`:
-- `"hello $name".replace("$name", "world")`
+`replace` and `replaceAll` perform literal substring replacement (first match vs all matches). For Papagaio patterns on runtime strings, use `papagaio(text)` with `$pattern{...}{...}` directives embedded in the text:
+- `papagaio("$pattern{hello $name}{Oi $name}hello Joao")`
 - `papagaio("\$pattern{a}{b}a")`
 
 Papagaio tokens:

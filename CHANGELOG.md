@@ -4,6 +4,7 @@
 - Apply Papagaio processing to all string literals, with `\$` escape support.
 - Add `$pattern{}`/`$regex{}`/`$eval{}` tokens plus nested patterns and block sequences.
 - Add `papagaio(text)` helper for runtime strings and expose `global.papagaio` with `content`/`match`.
+- Make `replace` a literal substring replacement and add `replaceAll`.
 
 ## 0.14.0
 - Simplify literal syntax: table literals always use `{...}` and byte strings are derived from number arrays via `[]/.toByte()` with `.toNumber()` available for coercion, preserving `(args){}` for lambdas.

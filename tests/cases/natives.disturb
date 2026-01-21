@@ -14,6 +14,7 @@ println(arr.join("-"));
 println("  trim  ".trim());
 
 println("hello".replace("hello", "hi"));
+println("banana".replaceAll("na", "NA"));
 
 o = {a = 1, b = 2};
 println(o.keys());

@@ -1,8 +1,8 @@
-text = "foo    123    bar 456";
-println(text.replace("$regex num {\\d+}", "<num:$regex{0}>"));
+text = "$pattern{$regex num {\\d+}}{<num:$regex{0}>}foo    123    bar 456";
+println(text);
 
-fmt = "abc";
-println(fmt.replace("$regex triple {(a)(b)(c)}", "$regex{1}-$regex{2}-$regex{3}"));
+fmt = "$pattern{$regex triple {(a)(b)(c)}}{$regex{1}-$regex{2}-$regex{3}}abc";
+println(fmt);
 
 tmpl = "$pattern{hello $name}{Oi $name} hello Joao";
 println(tmpl);
@@ -10,7 +10,7 @@ println(tmpl);
 escaped = "\$pattern{hello $name}{Oi $name} hello Joao";
 println(escaped);
 
-println("total: $eval{add(1,2);}");
+println("total: $eval{return add(1,2);}");
 
-seq = "{a}{b}{c}";
-println(seq.replace("$${}{}items", "$items"));
+seq = "$pattern{$${}{}items}{$items}{a}{b}{c}";
+println(seq);
