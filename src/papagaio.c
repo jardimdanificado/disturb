@@ -165,6 +165,24 @@ static int extract_block(
     StrView o, StrView c,
     StrView *out
 ) {
+    if (o.len == c.len && o.len > 0 && memcmp(o.ptr, c.ptr, o.len) == 0) {
+        if (!sv_starts_with(src + pos, o))
+            return pos;
+        pos += o.len;
+        int start = pos;
+        while (src[pos]) {
+            if (sv_starts_with(src + pos, c)) {
+                out->ptr = src + start;
+                out->len = (size_t)(pos - start);
+                return pos + (int)c.len;
+            }
+            pos++;
+        }
+        out->ptr = src + start;
+        out->len = strlen(src + start);
+        return (int)strlen(src);
+    }
+
     if (!sv_starts_with(src + pos, o))
         return pos;
 
@@ -318,6 +336,8 @@ static void free_pattern(Pattern *p)
 {
     if (!p || !p->t) return;
     for (int i = 0; i < p->count; i++) {
+        free(p->t[i].open_str);
+        free(p->t[i].close_str);
         free(p->t[i].regex_str);
         free(p->t[i].re_code);
     }
@@ -331,6 +351,12 @@ static void free_match(Match *m)
 {
     if (!m) return;
     if (m->cap) {
+        for (int i = 0; i < m->count; i++) {
+            if (m->cap[i].owned) {
+                free(m->cap[i].owned);
+                m->cap[i].owned = NULL;
+            }
+        }
         free(m->cap);
         m->cap = NULL;
     }
@@ -340,6 +366,26 @@ static void free_match(Match *m)
     }
     m->count = 0;
     m->cap_size = 0;
+}
+
+static char *unescape_delim(StrView v, size_t *out_len)
+{
+    StrBuf out;
+    sb_init(&out);
+    for (size_t i = 0; i < v.len; i++) {
+        char c = v.ptr[i];
+        if (c == '\\' && i + 1 < v.len) {
+            char n = v.ptr[i + 1];
+            if (n == '"' || n == '\'' || n == '\\') {
+                sb_append_char(&out, n);
+                i++;
+                continue;
+            }
+        }
+        sb_append_char(&out, c);
+    }
+    if (out_len) *out_len = out.len;
+    return out.data;
 }
 
 static char *papagaio_prepare_input(const char *input, const Symbols *sym)
@@ -726,21 +772,99 @@ void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
         }
 
         if (starts_with_str(pat + i, sym->sigil)) {
+            int double_sigil = starts_with_str(pat + i + sigil_len, sym->sigil);
+
+            if (double_sigil && starts_with_str(pat + i + sigil_len * 2, sym->open)) {
+                i += sigil_len * 2;
+                i += open_len;
+                int o = i;
+                while (i < n && !starts_with_str(pat + i, sym->close)) i++;
+                StrView raw_open = { pat + o, (size_t)(i - o) };
+                if (starts_with_str(pat + i, sym->close)) i += close_len;
+
+                StrView raw_close = { sym->close, strlen(sym->close) };
+                if (starts_with_str(pat + i, sym->open)) {
+                    i += open_len;
+                    int c = i;
+                    while (i < n && !starts_with_str(pat + i, sym->close)) i++;
+                    raw_close = (StrView){ pat + c, (size_t)(i - c) };
+                    if (starts_with_str(pat + i, sym->close)) i += close_len;
+                }
+
+                StrView open_trim = trim_view(raw_open);
+                size_t open_len_out = 0;
+                char *open_unesc = unescape_delim(open_trim, &open_len_out);
+                if (open_len_out == 0) {
+                    free(open_unesc);
+                    t->open = (StrView){ sym->open, strlen(sym->open) };
+                } else {
+                    t->open_str = open_unesc;
+                    t->open = (StrView){ t->open_str, open_len_out };
+                }
+
+                StrView close_trim = trim_view(raw_close);
+                size_t close_len_out = 0;
+                char *close_unesc = unescape_delim(close_trim, &close_len_out);
+                if (close_len_out == 0) {
+                    free(close_unesc);
+                    t->close = (StrView){ sym->close, strlen(sym->close) };
+                } else {
+                    t->close_str = close_unesc;
+                    t->close = (StrView){ t->close_str, close_len_out };
+                }
+
+                int v = i;
+                while (i < n && (isalnum((unsigned char)pat[i]) || pat[i] == '_')) i++;
+                t->var = (StrView){ pat + v, (size_t)(i - v) };
+
+                if (i < n && pat[i] == '?') {
+                    t->optional = 1;
+                    i++;
+                }
+
+                t->type = TOK_BLOCKSEQ;
+                p->count++;
+                continue;
+            }
+
             i += sigil_len;
 
             if (starts_with_str(pat + i, sym->open)) {
                 i += open_len;
                 int o = i;
                 while (i < n && !starts_with_str(pat + i, sym->close)) i++;
-                t->open = (StrView){ pat + o, (size_t)(i - o) };
+                StrView raw_open = { pat + o, (size_t)(i - o) };
                 if (starts_with_str(pat + i, sym->close)) i += close_len;
 
+                StrView raw_close = { sym->close, strlen(sym->close) };
                 if (starts_with_str(pat + i, sym->open)) {
                     i += open_len;
                     int c = i;
                     while (i < n && !starts_with_str(pat + i, sym->close)) i++;
-                    t->close = (StrView){ pat + c, (size_t)(i - c) };
+                    raw_close = (StrView){ pat + c, (size_t)(i - c) };
                     if (starts_with_str(pat + i, sym->close)) i += close_len;
+                }
+
+                StrView open_trim = trim_view(raw_open);
+                size_t open_len_out = 0;
+                char *open_unesc = unescape_delim(open_trim, &open_len_out);
+                if (open_len_out == 0) {
+                    free(open_unesc);
+                    t->open = (StrView){ sym->open, strlen(sym->open) };
+                } else {
+                    t->open_str = open_unesc;
+                    t->open = (StrView){ t->open_str, open_len_out };
+                }
+
+                StrView close_trim = trim_view(raw_close);
+                size_t close_len_out = 0;
+                char *close_unesc = unescape_delim(close_trim, &close_len_out);
+                if (close_len_out == 0) {
+                    free(close_unesc);
+                    t->close = (StrView){ sym->close, strlen(sym->close) };
+                } else {
+                    t->close_str = close_unesc;
+                    t->close = (StrView){ t->close_str, close_len_out };
                 }
 
                 int v = i;
@@ -759,7 +883,14 @@ void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
 
             int v = i;
             while (i < n && (isalnum((unsigned char)pat[i]) || pat[i] == '_')) i++;
-            t->var = (StrView){ pat + v, (size_t)(i - v) };
+            size_t vlen = (size_t)(i - v);
+            if (vlen == 0) {
+                t->type = TOK_LITERAL;
+                t->value = (StrView){ sym->sigil, (size_t)sigil_len };
+                p->count++;
+                continue;
+            }
+            t->var = (StrView){ pat + v, vlen };
 
             if (i < n && pat[i] == '?') {
                 t->optional = 1;
@@ -853,7 +984,8 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
             ensure_cap(m);
             m->cap[m->count++] = (Capture){
                 t->var,
-                { src + match_start, match_end - match_start }
+                { src + match_start, match_end - match_start },
+                NULL
             };
             if (m->regex.capture) {
                 free((void*)m->regex.capture);
@@ -874,11 +1006,37 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
                 skip_ws(src, &pos);
 
             int s = pos;
+            if (nx && (nx->type == TOK_LITERAL || nx->type == TOK_BLOCK || nx->type == TOK_BLOCKSEQ)) {
+                while (src[pos]) {
+                    if (src[pos] == '\n') break;
+                    if (nx->type == TOK_LITERAL && sv_starts_with(src + pos, nx->value)) break;
+                    if ((nx->type == TOK_BLOCK || nx->type == TOK_BLOCKSEQ) &&
+                        sv_starts_with(src + pos, nx->open)) break;
+                    pos++;
+                }
+                int end = pos;
+                while (end > s && isspace((unsigned char)src[end - 1])) end--;
+                if (end == s) {
+                    if (!t->optional) goto fail;
+                    ensure_cap(m);
+                    m->cap[m->count++] = (Capture){ t->var, { "", 0 }, NULL };
+                    continue;
+                }
+                ensure_cap(m);
+                m->cap[m->count++] = (Capture){
+                    t->var,
+                    { src + s, (size_t)(end - s) },
+                    NULL
+                };
+                continue;
+            }
+
             while (src[pos]) {
                 if (nx && isspace((unsigned char)src[pos])) break;
                 if (nx) {
                     if (nx->type == TOK_LITERAL && sv_starts_with(src + pos, nx->value)) break;
                     if (nx->type == TOK_BLOCK && sv_starts_with(src + pos, nx->open)) break;
+                    if (nx->type == TOK_BLOCKSEQ && sv_starts_with(src + pos, nx->open)) break;
                 } else if (isspace((unsigned char)src[pos])) break;
                 pos++;
             }
@@ -886,14 +1044,15 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
             if (pos == s) {
                 if (!t->optional) goto fail;
                 ensure_cap(m);
-                m->cap[m->count++] = (Capture){ t->var, { "", 0 } };
+                m->cap[m->count++] = (Capture){ t->var, { "", 0 }, NULL };
                 continue;
             }
 
             ensure_cap(m);
             m->cap[m->count++] = (Capture){
                 t->var,
-                { src + s, (size_t)(pos - s) }
+                { src + s, (size_t)(pos - s) },
+                NULL
             };
             continue;
         }
@@ -902,14 +1061,51 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
             if (!sv_starts_with(src + pos, t->open)) {
                 if (!t->optional) goto fail;
                 ensure_cap(m);
-                m->cap[m->count++] = (Capture){ t->var, { "", 0 } };
+                m->cap[m->count++] = (Capture){ t->var, { "", 0 }, NULL };
                 continue;
             }
 
             StrView v;
             pos = extract_block(src, pos, t->open, t->close, &v);
             ensure_cap(m);
-            m->cap[m->count++] = (Capture){ t->var, v };
+            m->cap[m->count++] = (Capture){ t->var, v, NULL };
+            continue;
+        }
+
+        if (t->type == TOK_BLOCKSEQ) {
+            if (!sv_starts_with(src + pos, t->open)) {
+                if (!t->optional) goto fail;
+                ensure_cap(m);
+                m->cap[m->count++] = (Capture){ t->var, { "", 0 }, NULL };
+                continue;
+            }
+
+            StrBuf buf;
+            sb_init(&buf);
+            int blocks = 0;
+            while (sv_starts_with(src + pos, t->open)) {
+                StrView v;
+                pos = extract_block(src, pos, t->open, t->close, &v);
+                if (blocks > 0) sb_append_char(&buf, ' ');
+                sb_append_n(&buf, v.ptr, v.len);
+                blocks++;
+                skip_ws(src, &pos);
+            }
+
+            if (blocks == 0) {
+                if (!t->optional) goto fail;
+                sb_free(&buf);
+                ensure_cap(m);
+                m->cap[m->count++] = (Capture){ t->var, { "", 0 }, NULL };
+                continue;
+            }
+
+            ensure_cap(m);
+            m->cap[m->count++] = (Capture){
+                t->var,
+                { buf.data, buf.len },
+                buf.data
+            };
         }
     }
 

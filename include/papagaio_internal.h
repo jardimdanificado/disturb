@@ -20,7 +20,8 @@ typedef enum {
     TOK_VAR,
     TOK_BLOCK,
     TOK_WS,
-    TOK_REGEX
+    TOK_REGEX,
+    TOK_BLOCKSEQ
 } TokenType;
 
 typedef struct {
@@ -29,6 +30,8 @@ typedef struct {
     StrView var;
     StrView open;
     StrView close;
+    char *open_str;
+    char *close_str;
     char *regex_str;
     uint8_t *re_code;
     size_t re_len;
@@ -59,6 +62,7 @@ typedef struct {
 typedef struct {
     StrView name;
     StrView value;
+    char *owned;
 } Capture;
 
 typedef struct {

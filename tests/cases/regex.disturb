@@ -11,3 +11,6 @@ escaped = "\$pattern{hello $name}{Oi $name} hello Joao";
 println(escaped);
 
 println("total: $eval{add(1,2);}");
+
+seq = "{a}{b}{c}";
+println(seq.replace("$${}{}items", "$items"));
