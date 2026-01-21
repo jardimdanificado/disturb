@@ -13,6 +13,7 @@ enum {
     URB_T_NULL = 0,
 
     URB_T_BYTE,
+    URB_T_REGEX,
     URB_T_NUMBER,
     URB_T_TABLE,
     URB_T_NATIVE,

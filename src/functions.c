@@ -1,8 +1,10 @@
 #include "vm.h"
 #include "papagaio.h"
+#include "regex.h"
 
 #include <ctype.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1907,6 +1909,164 @@ static char *papagaio_process_pairs(
     return out.data;
 }
 
+static void append_input_slice(StrBuf *out, const char *input, size_t input_len,
+                               size_t start, size_t end)
+{
+    if (start > input_len) start = input_len;
+    if (end > input_len) end = input_len;
+    if (end <= start) return;
+    sb_append_n(out, input + start, end - start);
+}
+
+static int regex_append_placeholder(
+    StrBuf *out,
+    const char *replacement,
+    size_t repl_len,
+    size_t *idx,
+    const char *input,
+    size_t input_len,
+    uint8_t **capture,
+    int capture_count,
+    size_t match_start,
+    size_t match_end
+)
+{
+    const char prefix[] = "$regex{";
+    size_t prefix_len = sizeof(prefix) - 1;
+    if (*idx + prefix_len >= repl_len) return 0;
+    if (memcmp(replacement + *idx, prefix, prefix_len) != 0) return 0;
+    size_t name_start = *idx + prefix_len;
+    size_t name_end = name_start;
+    while (name_end < repl_len && replacement[name_end] != '}') name_end++;
+    if (name_end == repl_len) return 0;
+    size_t name_len = name_end - name_start;
+    size_t group_start = match_start;
+    size_t group_end = match_end;
+    const uint8_t *base = (const uint8_t*)input;
+    if (name_len == 0) {
+        // Entire match.
+    } else if (name_len == 5 && strncmp(replacement + name_start, "match", 5) == 0) {
+        // Entire match.
+    } else {
+        if (name_len >= 16) return 0;
+        char tmp[16];
+        memcpy(tmp, replacement + name_start, name_len);
+        tmp[name_len] = 0;
+        char *endptr = NULL;
+        long idx_val = strtol(tmp, &endptr, 10);
+        if (!tmp[0] || *endptr != 0 || idx_val < 0) return 0;
+        int idx_int = (int)idx_val;
+        if (idx_int < capture_count) {
+            const uint8_t *start_ptr = capture[2 * idx_int];
+            const uint8_t *end_ptr = capture[2 * idx_int + 1];
+            if (start_ptr) group_start = (size_t)(start_ptr - base);
+            if (end_ptr) group_end = (size_t)(end_ptr - base);
+            if (group_end < group_start) group_end = group_start;
+        } else {
+            group_start = group_end = match_start;
+        }
+    }
+    append_input_slice(out, input, input_len, group_start, group_end);
+    *idx = name_end + 1;
+    return 1;
+}
+
+static char *regex_apply_replacement(
+    const char *input,
+    size_t input_len,
+    RegexBox *regex,
+    const char *replacement,
+    size_t repl_len
+)
+{
+    if (!input || !replacement || !regex) return NULL;
+    StrBuf out;
+    sb_init(&out);
+    int capture_count = regex_box_capture_count(regex);
+    size_t capture_slots = (size_t)capture_count * 2;
+    uint8_t **capture = capture_slots ? (uint8_t**)calloc(capture_slots, sizeof(uint8_t*)) : NULL;
+    if (capture_slots && !capture) {
+        sb_free(&out);
+        return NULL;
+    }
+    size_t cursor = 0;
+    int global = regex_box_flags(regex) & LRE_FLAG_GLOBAL;
+    int sticky = regex_box_flags(regex) & LRE_FLAG_STICKY;
+    while (cursor <= input_len) {
+        size_t match_start = 0;
+        size_t match_end = 0;
+        int matched = 0;
+        if (sticky) {
+            if (capture_slots) memset(capture, 0, capture_slots * sizeof(uint8_t*));
+            int ret = regex_box_exec(regex, input, input_len, cursor, capture, capture_slots);
+            if (ret < 0) {
+                fprintf(stderr, "regex exec error (%d)\n", ret);
+                goto err;
+            }
+            if (ret == 1) {
+                const uint8_t *start_ptr = capture[0];
+                const uint8_t *end_ptr = capture[1];
+                match_start = start_ptr ? (size_t)(start_ptr - (const uint8_t*)input) : cursor;
+                match_end = end_ptr ? (size_t)(end_ptr - (const uint8_t*)input) : match_start;
+                matched = 1;
+            }
+        } else {
+            size_t search_pos = cursor;
+            for (; search_pos <= input_len; search_pos++) {
+                if (capture_slots) memset(capture, 0, capture_slots * sizeof(uint8_t*));
+                int ret = regex_box_exec(regex, input, input_len, search_pos, capture, capture_slots);
+                if (ret < 0) {
+                    fprintf(stderr, "regex exec error (%d)\n", ret);
+                    goto err;
+                }
+                if (ret == 1) {
+                    const uint8_t *start_ptr = capture[0];
+                    const uint8_t *end_ptr = capture[1];
+                    match_start = start_ptr ? (size_t)(start_ptr - (const uint8_t*)input) : search_pos;
+                    match_end = end_ptr ? (size_t)(end_ptr - (const uint8_t*)input) : match_start;
+                    matched = 1;
+                    break;
+                }
+            }
+        }
+        if (!matched) break;
+        if (match_start > cursor) {
+            append_input_slice(&out, input, input_len, cursor, match_start);
+        }
+        size_t repl_idx = 0;
+        while (repl_idx < repl_len) {
+            if (!regex_append_placeholder(&out, replacement, repl_len, &repl_idx,
+                                          input, input_len, capture, capture_count,
+                                          match_start, match_end)) {
+                sb_append_char(&out, replacement[repl_idx++]);
+            }
+        }
+        cursor = match_end;
+        if (!global) break;
+        if (match_end == match_start) {
+            if (cursor < input_len) {
+                cursor++;
+            } else {
+                break;
+            }
+        }
+    }
+    if (cursor < input_len) {
+        append_input_slice(&out, input, input_len, cursor, input_len);
+    }
+    char *result = (char*)malloc(out.len + 1);
+    if (!result) goto err;
+    memcpy(result, out.data, out.len);
+    result[out.len] = 0;
+    sb_free(&out);
+    free(capture);
+    return result;
+err:
+    sb_free(&out);
+    free(capture);
+    return NULL;
+}
+
 static void native_replace(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -1923,12 +2083,86 @@ static void native_replace(VM *vm, List *stack, List *global)
     const char *input = urb_bytes_data(target->obj);
     size_t input_len = urb_bytes_len(target->obj);
     char *input_c = (char*)malloc(input_len + 1);
+    if (!input_c) {
+        fprintf(stderr, "replace: out of memory\n");
+        return;
+    }
     memcpy(input_c, input, input_len);
     input_c[input_len] = 0;
 
     int pair_count = (int)(argc / 2);
+    int has_regex = 0;
+    int has_string = 0;
+    for (int i = 0; i < pair_count; i++) {
+        ObjEntry *pat = native_arg(stack, argc, (uint32_t)(i * 2));
+        if (!pat) {
+            fprintf(stderr, "replace expects patterns\n");
+            free(input_c);
+            return;
+        }
+        Int type = urb_obj_type(pat->obj);
+        if (type == URB_T_REGEX) {
+            has_regex = 1;
+        } else if (type == URB_T_BYTE || type == URB_T_BYTE) {
+            has_string = 1;
+        } else {
+            fprintf(stderr, "replace expects string or regex patterns\n");
+            free(input_c);
+            return;
+        }
+    }
+    if (has_regex && has_string) {
+        fprintf(stderr, "replace does not support mixing regex objects with papagaio patterns\n");
+        free(input_c);
+        return;
+    }
+
+    if (has_regex) {
+        char *current = input_c;
+        size_t current_len = input_len;
+        for (int i = 0; i < pair_count; i++) {
+            ObjEntry *pat = native_arg(stack, argc, (uint32_t)(i * 2));
+            ObjEntry *rep = native_arg(stack, argc, (uint32_t)(i * 2 + 1));
+            if (!pat || urb_obj_type(pat->obj) != URB_T_REGEX) {
+                fprintf(stderr, "replace expects regex patterns\n");
+                free(current);
+                return;
+            }
+            const char *r = NULL;
+            size_t rlen = 0;
+            if (!entry_as_string(rep, &r, &rlen)) {
+                fprintf(stderr, "replace expects string replacements\n");
+                free(current);
+                return;
+            }
+            RegexBox *regex = regex_box_from_entry(pat);
+            if (!regex) {
+                fprintf(stderr, "replace expects compiled regex patterns\n");
+                free(current);
+                return;
+            }
+            char *next = regex_apply_replacement(current, current_len, regex, r, rlen);
+            free(current);
+            if (!next) {
+                return;
+            }
+            current = next;
+            current_len = strlen(current);
+        }
+        push_string(vm, stack, current, current_len);
+        free(current);
+        return;
+    }
+
     char **patterns = (char**)calloc((size_t)pair_count, sizeof(char*));
     char **repls = (char**)calloc((size_t)pair_count, sizeof(char*));
+    if (!patterns || !repls) {
+        fprintf(stderr, "replace: out of memory\n");
+        free(input_c);
+        free(patterns);
+        free(repls);
+        return;
+    }
     for (int i = 0; i < pair_count; i++) {
         ObjEntry *pat = native_arg(stack, argc, (uint32_t)(i * 2));
         ObjEntry *rep = native_arg(stack, argc, (uint32_t)(i * 2 + 1));
@@ -1939,14 +2173,31 @@ static void native_replace(VM *vm, List *stack, List *global)
         if (!entry_as_string(pat, &p, &plen) || !entry_as_string(rep, &r, &rlen)) {
             fprintf(stderr, "replace expects string patterns and replacements\n");
             free(input_c);
+            for (int j = 0; j < i; j++) {
+                free(patterns[j]);
+                free(repls[j]);
+            }
             free(patterns);
             free(repls);
             return;
         }
         patterns[i] = (char*)malloc(plen + 1);
+        repls[i] = (char*)malloc(rlen + 1);
+        if (!patterns[i] || !repls[i]) {
+            fprintf(stderr, "replace: out of memory\n");
+            free(patterns[i]);
+            free(repls[i]);
+            free(input_c);
+            for (int j = 0; j < i; j++) {
+                free(patterns[j]);
+                free(repls[j]);
+            }
+            free(patterns);
+            free(repls);
+            return;
+        }
         memcpy(patterns[i], p, plen);
         patterns[i][plen] = 0;
-        repls[i] = (char*)malloc(rlen + 1);
         memcpy(repls[i], r, rlen);
         repls[i][rlen] = 0;
     }

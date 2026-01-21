@@ -1,4 +1,5 @@
 #include "asm.h"
+#include "regex_flags.h"
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -175,6 +176,42 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                 bc_free(out);
                 return 0;
             }
+        } else if (strcmp(ident, "PUSH_REGEX") == 0) {
+            unsigned char *pattern = NULL;
+            size_t plen = 0;
+            if (!parse_string_lit(&s, &pattern, &plen, err_buf, err_cap)) {
+                bc_free(out);
+                return 0;
+            }
+            s = skip_ws(s);
+            unsigned char *flags = NULL;
+            size_t flen = 0;
+            if (*s == '"' || *s == '\'') {
+                if (!parse_string_lit(&s, &flags, &flen, err_buf, err_cap)) {
+                    free(pattern);
+                    bc_free(out);
+                    return 0;
+                }
+            }
+            int mask = 0;
+            if (flen > 0 && !regex_flags_from_string((const char*)flags, flen, &mask)) {
+                err_set(err_buf, err_cap, "PUSH_REGEX has invalid flags");
+                free(pattern);
+                free(flags);
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_PUSH_REGEX) ||
+                !bc_emit_string(out, (const char*)pattern, plen) ||
+                !bc_emit_u32(out, (uint32_t)mask)) {
+                err_set(err_buf, err_cap, "failed to emit PUSH_REGEX");
+                free(pattern);
+                free(flags);
+                bc_free(out);
+                return 0;
+            }
+            free(pattern);
+            free(flags);
         } else if (strcmp(ident, "BUILD_NUMBER_LIT") == 0) {
             uint32_t count = 0;
             if (!parse_u32(&s, &count)) {
@@ -394,6 +431,30 @@ static void fprint_escaped(FILE *out, const unsigned char *s, size_t len, char q
     fputc(quote, out);
 }
 
+static size_t regex_mask_to_flags(int mask, char *out, size_t cap)
+{
+    struct { int bit; char ch; } mapping[] = {
+        { LRE_FLAG_GLOBAL, 'g' },
+        { LRE_FLAG_IGNORECASE, 'i' },
+        { LRE_FLAG_MULTILINE, 'm' },
+        { LRE_FLAG_DOTALL, 's' },
+        { LRE_FLAG_UNICODE, 'u' },
+        { LRE_FLAG_STICKY, 'y' }
+    };
+    size_t len = 0;
+    for (size_t i = 0; i < sizeof(mapping)/sizeof(mapping[0]); i++) {
+        if (mask & mapping[i].bit) {
+            if (len + 1 < cap) {
+                out[len++] = mapping[i].ch;
+            }
+        }
+    }
+    if (cap > 0) {
+        out[len < cap ? len : cap - 1] = 0;
+    }
+    return len;
+}
+
 int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
 {
     size_t pc = 0;
@@ -422,6 +483,25 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
             uint8_t v = 0;
             if (!read_u8(data, len, &pc, &v)) return 0;
             fprintf(out, "PUSH_BYTE %u\n", (unsigned)v);
+            break;
+        }
+        case BC_PUSH_REGEX: {
+            unsigned char *pattern = NULL;
+            size_t plen = 0;
+            if (!read_string(data, len, &pc, &pattern, &plen)) return 0;
+            uint32_t mask = 0;
+            if (!read_u32(data, len, &pc, &mask)) {
+                free(pattern);
+                return 0;
+            }
+            char flags[8];
+            size_t flag_len = regex_mask_to_flags((int)mask, flags, sizeof(flags));
+            fprintf(out, "PUSH_REGEX ");
+            fprint_escaped(out, pattern, plen, '"');
+            fputc(' ', out);
+            fprint_escaped(out, (unsigned char*)flags, flag_len, '"');
+            fputc('\n', out);
+            free(pattern);
             break;
         }
         case BC_BUILD_NUMBER:

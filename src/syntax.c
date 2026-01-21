@@ -1,5 +1,6 @@
 #include "vm.h"
 #include "bytecode.h"
+#include "regex_flags.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -26,6 +27,7 @@ typedef enum {
     TOK_NUMBER,
     TOK_STRING,
     TOK_CHAR,
+    TOK_REGEX,
     TOK_LPAREN,
     TOK_RPAREN,
     TOK_LBRACE,
@@ -69,6 +71,7 @@ typedef struct {
     double number;
     char *str;
     size_t str_len;
+    int regex_flag_mask;
     int line;
     int col;
 } Token;
@@ -79,6 +82,7 @@ typedef enum {
     EXPR_LITERAL_NUM,
     EXPR_LITERAL_STRING,
     EXPR_LITERAL_CHAR,
+    EXPR_LITERAL_REGEX,
     EXPR_NAME,
     EXPR_MEMBER,
     EXPR_INDEX,
@@ -109,6 +113,11 @@ struct Expr {
             char *data;
             size_t len;
         } lit_str;
+        struct {
+            char *pattern;
+            size_t len;
+            int flags;
+        } lit_regex;
         struct {
             char *name;
             size_t len;
@@ -194,6 +203,7 @@ typedef struct {
     int line;
     int col;
     Token current;
+    TokenKind prev_kind;
     int had_error;
     char err[256];
     Arena arena;
@@ -449,6 +459,59 @@ static void token_free(Token *t)
     free(t->str);
     t->str = NULL;
     t->str_len = 0;
+    t->regex_flag_mask = 0;
+}
+
+static int token_allows_regex(TokenKind prev)
+{
+    switch (prev) {
+    case TOK_EOF:
+    case TOK_LPAREN:
+    case TOK_LBRACE:
+    case TOK_LBRACKET:
+    case TOK_COMMA:
+    case TOK_COLON:
+    case TOK_SEMI:
+    case TOK_EQ:
+    case TOK_QEQ:
+    case TOK_PLUS:
+    case TOK_MINUS:
+    case TOK_STAR:
+    case TOK_SLASH:
+    case TOK_PERCENT:
+    case TOK_BANG:
+    case TOK_EQEQ:
+    case TOK_NEQ:
+    case TOK_LT:
+    case TOK_LTE:
+    case TOK_GT:
+    case TOK_GTE:
+    case TOK_AND:
+    case TOK_OR:
+    case TOK_PLUSPLUS:
+    case TOK_MINUSMINUS:
+    case TOK_PLUS_EQ:
+    case TOK_MINUS_EQ:
+    case TOK_STAR_EQ:
+    case TOK_SLASH_EQ:
+    case TOK_PERCENT_EQ:
+    case TOK_IF:
+    case TOK_ELSE:
+    case TOK_FOR:
+    case TOK_WHILE:
+    case TOK_EACH:
+    case TOK_RETURN:
+    case TOK_CASE:
+    case TOK_DEFAULT:
+    case TOK_SWITCH:
+    case TOK_IN:
+    case TOK_BREAK:
+    case TOK_CONTINUE:
+    case TOK_GOTO:
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 static int peek_char(Parser *p)
@@ -536,6 +599,111 @@ static Token next_token(Parser *p)
     int c = peek_char(p);
     if (!c) {
         t.kind = TOK_EOF;
+        return t;
+    }
+
+    if (c == '/' && token_allows_regex(p->prev_kind)) {
+        next_char(p); // consume '/'
+        size_t cap = 32;
+        char *buf = (char*)malloc(cap);
+        if (!buf) {
+            parser_error(p, "out of memory");
+            t.kind = TOK_EOF;
+            return t;
+        }
+        size_t len = 0;
+        int in_class = 0;
+        for (;;) {
+            int nc = peek_char(p);
+            if (!nc) {
+                free(buf);
+                parser_error(p, "unterminated regex literal");
+                t.kind = TOK_EOF;
+                return t;
+            }
+            if (nc == '/' && in_class == 0) break;
+            if (nc == '\n' || nc == '\r') {
+                free(buf);
+                parser_error(p, "unterminated regex literal");
+                t.kind = TOK_EOF;
+                return t;
+            }
+            if (nc == '\\') {
+                next_char(p); // consume '\'
+                int esc = peek_char(p);
+                if (!esc) {
+                    free(buf);
+                    parser_error(p, "unterminated regex literal");
+                    t.kind = TOK_EOF;
+                    return t;
+                }
+                if (len + 2 > cap) {
+                    size_t next_cap = cap * 2;
+                    char *next = (char*)realloc(buf, next_cap);
+                    if (!next) {
+                        free(buf);
+                        parser_error(p, "out of memory");
+                        t.kind = TOK_EOF;
+                        return t;
+                    }
+                    buf = next;
+                    cap = next_cap;
+                }
+                buf[len++] = '\\';
+                buf[len++] = (char)next_char(p);
+                continue;
+            }
+            if (nc == '[') {
+                in_class++;
+            } else if (nc == ']' && in_class > 0) {
+                in_class--;
+            }
+            next_char(p);
+            if (len + 1 > cap) {
+                size_t next_cap = cap * 2;
+                char *next = (char*)realloc(buf, next_cap);
+                if (!next) {
+                    free(buf);
+                    parser_error(p, "out of memory");
+                    t.kind = TOK_EOF;
+                    return t;
+                }
+                buf = next;
+                cap = next_cap;
+            }
+            buf[len++] = (char)nc;
+        }
+        // consume closing '/'
+        next_char(p);
+        char flag_buf[8];
+        size_t flag_len = 0;
+        int too_many_flags = 0;
+        while (isalpha((unsigned char)peek_char(p))) {
+            int fc = next_char(p);
+            if (flag_len < sizeof(flag_buf)) {
+                flag_buf[flag_len++] = (char)fc;
+            } else {
+                too_many_flags = 1;
+            }
+        }
+        if (too_many_flags) {
+            free(buf);
+            parser_error(p, "invalid regex flags");
+            t.kind = TOK_EOF;
+            return t;
+        }
+        int mask = 0;
+        if (flag_len > 0 && !regex_flags_from_string(flag_buf, flag_len, &mask)) {
+            free(buf);
+            parser_error(p, "invalid regex flags");
+            t.kind = TOK_EOF;
+            return t;
+        }
+        t.kind = TOK_REGEX;
+        t.str = buf;
+        t.str_len = len;
+        t.regex_flag_mask = mask;
+        t.len = (size_t)(p->src + p->pos - t.start);
         return t;
     }
 
@@ -770,6 +938,7 @@ static Token next_token(Parser *p)
 
 static void advance(Parser *p)
 {
+    p->prev_kind = p->current.kind;
     token_free(&p->current);
     p->current = next_token(p);
 }
@@ -995,6 +1164,17 @@ static Expr *parse_primary(Parser *p)
         if (!e) return NULL;
         e->as.lit_str.data = arena_strndup(&p->arena, p->current.str, p->current.str_len);
         e->as.lit_str.len = p->current.str_len;
+        advance(p);
+        return e;
+    }
+
+    if (p->current.kind == TOK_REGEX) {
+        Expr *e = expr_new(p, EXPR_LITERAL_REGEX);
+        if (!e) return NULL;
+        e->as.lit_regex.pattern = arena_strndup(&p->arena, p->current.str, p->current.str_len);
+        if (!e->as.lit_regex.pattern) return NULL;
+        e->as.lit_regex.len = p->current.str_len;
+        e->as.lit_regex.flags = p->current.regex_flag_mask;
         advance(p);
         return e;
     }
@@ -1646,6 +1826,14 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         if (!bc_emit_u8(bc, BC_PUSH_CHAR) ||
             !bc_emit_string(bc, e->as.lit_str.data, e->as.lit_str.len)) {
             parser_error(p, "failed to emit char literal");
+            return 0;
+        }
+        return 1;
+    case EXPR_LITERAL_REGEX:
+        if (!bc_emit_u8(bc, BC_PUSH_REGEX) ||
+            !bc_emit_string(bc, e->as.lit_regex.pattern, e->as.lit_regex.len) ||
+            !bc_emit_u32(bc, (uint32_t)e->as.lit_regex.flags)) {
+            parser_error(p, "failed to emit regex literal");
             return 0;
         }
         return 1;
@@ -2548,6 +2736,7 @@ void vm_exec_line(VM *vm, const char *line)
     p.loop_count = 0;
     p.loop_cap = 0;
     arena_init(&p.arena);
+    p.prev_kind = TOK_EOF;
     p.current = next_token(&p);
 
     Bytecode bc;
@@ -2595,6 +2784,7 @@ int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap)
     p.loop_count = 0;
     p.loop_cap = 0;
     arena_init(&p.arena);
+    p.prev_kind = TOK_EOF;
     p.current = next_token(&p);
 
     bc_init(out);
