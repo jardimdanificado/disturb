@@ -1,0 +1,18 @@
+value = "beta";
+
+switch (value) {
+case "alpha":
+    println("alpha");
+case "beta":
+    println("beta");
+case "gamma":
+    println("gamma");
+default:
+    println("default");
+}
+
+goto skip;
+println("should skip");
+
+skip:
+println("done");

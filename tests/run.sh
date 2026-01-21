@@ -31,6 +31,7 @@ run_case meta
 run_case null
 run_case object_keys
 run_case operators
+run_case switch
 run_case natives
 run_case functions
 run_case control_flow

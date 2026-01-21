@@ -77,6 +77,8 @@ Supported control flow forms:
 
 Notes:
 - `each` iterates in index order. For tables, the entry key is available via `value.name`.
+- `switch (expr) { case literal: ... }` performs equality checks (strings/numbers) and exits after the first matching case; `default` runs if no case matches.
+- Use `label:` definitions and `goto label;` statements for direct jumps; `goto` resolves labels at compile time.
 
 ## Lambdas
 
