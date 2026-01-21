@@ -87,7 +87,6 @@ const char *bc_opcode_name(uint8_t op)
     case BC_PUSH_CHAR: return "PUSH_CHAR";
     case BC_PUSH_STRING: return "PUSH_STRING";
     case BC_PUSH_BYTE: return "PUSH_BYTE";
-    case BC_PUSH_REGEX: return "PUSH_REGEX";
     case BC_BUILD_NUMBER: return "BUILD_NUMBER";
     case BC_BUILD_BYTE: return "BUILD_BYTE";
     case BC_BUILD_OBJECT: return "BUILD_OBJECT";

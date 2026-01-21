@@ -3,7 +3,7 @@ CFLAGS = -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp
 LDFLAGS = -lm
 
 SRC = lib/libregexp/cutils.c lib/libregexp/libunicode.c lib/libregexp/libregexp.c \
-      src/vm.c src/bytecode.c src/asm.c src/syntax.c src/functions.c src/cli.c
+      src/vm.c src/bytecode.c src/asm.c src/syntax.c src/functions.c src/papagaio.c src/cli.c
 OBJ = $(SRC:.c=.o)
 
 all: disturb

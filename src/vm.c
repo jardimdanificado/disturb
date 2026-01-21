@@ -1,8 +1,5 @@
 #include "vm.h"
 #include "bytecode.h"
-#include "regex_flags.h"
-#include "regex.h"
-
 #include <math.h>
 #include <limits.h>
 #include <stdlib.h>
@@ -29,15 +26,6 @@ typedef struct {
     size_t len;
     size_t cap;
 } StrBuf;
-
-struct RegexBox {
-    uint8_t *code;
-    size_t len;
-    char *pattern;
-    size_t pattern_len;
-    int flags;
-    int capture_count;
-};
 
 int lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
@@ -118,7 +106,6 @@ const char *urb_type_name(Int type)
     switch (type) {
     case URB_T_NULL: return "null";
     case URB_T_BYTE: return "byte";
-    case URB_T_REGEX: return "regex";
     case URB_T_NUMBER: return "number";
     case URB_T_TABLE: return "table";
     
@@ -215,10 +202,6 @@ static void urb_obj_free(List *obj)
             free(box);
         }
     }
-    if (urb_obj_type(obj) == URB_T_REGEX && obj->size >= 3) {
-        RegexBox *box = (RegexBox*)obj->data[2].p;
-        regex_box_free(box);
-    }
     free(obj->data);
     free(obj);
 }
@@ -284,6 +267,17 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
     entry->in_use = 1;
     entry->mark = 0;
     return entry;
+}
+
+void vm_release_entry(ObjEntry *entry)
+{
+    if (!entry || !entry->in_use) return;
+    if (entry->obj) {
+        urb_obj_free(entry->obj);
+        entry->obj = NULL;
+    }
+    entry->in_use = 0;
+    entry->mark = 0;
 }
 
 static ObjEntry *vm_make_key(VM *vm, const char *name)
@@ -1211,15 +1205,6 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         urb_push(copy, v);
         break;
     }
-    case URB_T_REGEX: {
-        copy = urb_obj_new_list(URB_T_REGEX, key_entry, 1);
-        RegexBox *src_box = regex_box_from_entry(src);
-        RegexBox *box = regex_box_clone(src_box);
-        Value v;
-        v.p = box;
-        urb_push(copy, v);
-        break;
-    }
     default:
         copy = urb_obj_new_list(type, key_entry, (Int)(obj->size - 2));
         for (Int i = 2; i < obj->size; i++) {
@@ -1469,160 +1454,6 @@ static int bc_read_string(const unsigned char *data, size_t len, size_t *pc, uns
     return 1;
 }
 
-static size_t regex_mask_to_flags(int mask, char *out, size_t cap)
-{
-    struct { int bit; char ch; } mapping[] = {
-        { LRE_FLAG_GLOBAL, 'g' },
-        { LRE_FLAG_IGNORECASE, 'i' },
-        { LRE_FLAG_MULTILINE, 'm' },
-        { LRE_FLAG_DOTALL, 's' },
-        { LRE_FLAG_UNICODE, 'u' },
-        { LRE_FLAG_STICKY, 'y' }
-    };
-    size_t len = 0;
-    for (size_t i = 0; i < sizeof(mapping)/sizeof(mapping[0]); i++) {
-        if (mask & mapping[i].bit) {
-            if (len + 1 < cap) {
-                out[len++] = mapping[i].ch;
-            }
-        }
-    }
-    if (cap > 0) {
-        out[len < cap ? len : cap - 1] = 0;
-    }
-    return len;
-}
-
-static RegexBox *regex_box_create(const char *pattern, size_t len, int flags, char *err, size_t err_cap)
-{
-    char local_err[256] = {0};
-    char *error_target = (err && err_cap > 0) ? err : local_err;
-    size_t error_cap = (err && err_cap > 0) ? err_cap : sizeof(local_err);
-    if (error_cap > INT_MAX) error_cap = INT_MAX;
-
-    int compiled_len = 0;
-    uint8_t *bc = lre_compile(&compiled_len, error_target, (int)error_cap,
-                               pattern, len, flags, NULL);
-    if (!bc) {
-        return NULL;
-    }
-
-    RegexBox *box = (RegexBox*)malloc(sizeof(RegexBox));
-    if (!box) {
-        free(bc);
-        return NULL;
-    }
-    box->code = bc;
-    box->len = (size_t)compiled_len;
-    box->pattern = (char*)malloc(len + 1);
-    if (!box->pattern) {
-        free(bc);
-        free(box);
-        return NULL;
-    }
-    memcpy(box->pattern, pattern, len);
-    box->pattern[len] = 0;
-    box->pattern_len = len;
-    box->flags = flags;
-    box->capture_count = lre_get_capture_count(bc);
-    return box;
-}
-
-ObjEntry *regex_box_new_entry(VM *vm, const char *pattern, size_t len, int flags,
-                             char *err, size_t err_cap)
-{
-    char local_err[256] = {0};
-    char *error_target = (err && err_cap > 0) ? err : local_err;
-    size_t error_cap = (err && err_cap > 0) ? err_cap : sizeof(local_err);
-    if (error_cap > INT_MAX) error_cap = INT_MAX;
-
-    RegexBox *box = regex_box_create(pattern, len, flags, error_target, error_cap);
-    if (!box) {
-        if (!err && error_target[0]) {
-            fprintf(stderr, "regex compile error: %s\n", error_target);
-        }
-        return NULL;
-    }
-    List *obj = urb_obj_new_list(URB_T_REGEX, NULL, 1);
-    if (!obj) {
-        regex_box_free(box);
-        return NULL;
-    }
-    Value v;
-    v.p = box;
-    urb_push(obj, v);
-    return vm_reg_alloc(vm, obj);
-}
-
-RegexBox *regex_box_from_entry(ObjEntry *entry)
-{
-    if (!entry || urb_obj_type(entry->obj) != URB_T_REGEX || entry->obj->size < 3) return NULL;
-    return (RegexBox*)entry->obj->data[2].p;
-}
-
-RegexBox *regex_box_clone(const RegexBox *src)
-{
-    if (!src) return NULL;
-    RegexBox *dst = (RegexBox*)malloc(sizeof(RegexBox));
-    if (!dst) return NULL;
-    dst->len = src->len;
-    dst->code = src->len ? (uint8_t*)malloc(src->len) : NULL;
-    if (src->len && !dst->code) {
-        free(dst);
-        return NULL;
-    }
-    if (src->len) memcpy(dst->code, src->code, src->len);
-    dst->pattern_len = src->pattern_len;
-    dst->pattern = (char*)malloc(dst->pattern_len + 1);
-    if (!dst->pattern) {
-        free(dst->code);
-        free(dst);
-        return NULL;
-    }
-    memcpy(dst->pattern, src->pattern, dst->pattern_len);
-    dst->pattern[dst->pattern_len] = 0;
-    dst->flags = src->flags;
-    dst->capture_count = src->capture_count;
-    return dst;
-}
-
-void regex_box_free(RegexBox *box)
-{
-    if (!box) return;
-    free(box->code);
-    free(box->pattern);
-    free(box);
-}
-
-int regex_box_capture_count(const RegexBox *box)
-{
-    return box ? box->capture_count : 0;
-}
-
-int regex_box_flags(const RegexBox *box)
-{
-    return box ? box->flags : 0;
-}
-
-const char *regex_box_pattern(const RegexBox *box)
-{
-    return box ? box->pattern : NULL;
-}
-
-size_t regex_box_pattern_len(const RegexBox *box)
-{
-    return box ? box->pattern_len : 0;
-}
-
-int regex_box_exec(const RegexBox *box, const char *input, size_t input_len,
-                   size_t index, uint8_t **capture, size_t capture_len)
-{
-    if (!box || !box->code) return 0;
-    size_t needed = (size_t)box->capture_count * 2;
-    if (capture_len < needed) return 0;
-    return lre_exec(capture, box->code, (const uint8_t*)input, (int)index, (int)input_len, 0, NULL);
-}
-
 static int ast_set_kv(VM *vm, ObjEntry *obj, const char *key, ObjEntry *value)
 {
     if (!vm || !obj || !value) return 0;
@@ -1690,27 +1521,6 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                 return NULL;
             }
             ast_set_kv(vm, node, "value", vm_make_number_value(vm, (Float)v));
-            break;
-        }
-        case BC_PUSH_REGEX: {
-            unsigned char *pattern = NULL;
-            size_t plen = 0;
-            if (!bc_read_string(data, len, &pc, &pattern, &plen)) {
-                fprintf(stderr, "bytecode_to_ast: truncated PUSH_REGEX at pc %zu\n", pc);
-                return NULL;
-            }
-            uint32_t mask = 0;
-            if (!bc_read_u32(data, len, &pc, &mask)) {
-                fprintf(stderr, "bytecode_to_ast: truncated PUSH_REGEX flags at pc %zu\n", pc);
-                free(pattern);
-                return NULL;
-            }
-            ast_set_kv(vm, node, "pattern", vm_make_bytes_value(vm, (const char*)pattern, plen));
-            char flags[8];
-            size_t flag_len = regex_mask_to_flags((int)mask, flags, sizeof(flags));
-            ast_set_kv(vm, node, "flags", vm_make_bytes_value(vm, flags, flag_len));
-            ast_set_kv(vm, node, "mask", vm_make_number_value(vm, (Float)mask));
-            free(pattern);
             break;
         }
         case BC_BUILD_NUMBER:
@@ -2430,30 +2240,6 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
-        case BC_PUSH_REGEX: {
-            unsigned char *pattern = NULL;
-            size_t plen = 0;
-            if (!bc_read_string(data, len, &pc, &pattern, &plen)) {
-                fprintf(stderr, "bytecode error at pc %zu: truncated PUSH_REGEX\n", pc);
-                return 0;
-            }
-            uint32_t mask = 0;
-            if (!bc_read_u32(data, len, &pc, &mask)) {
-                fprintf(stderr, "bytecode error at pc %zu: truncated PUSH_REGEX flags\n", pc);
-                free(pattern);
-                return 0;
-            }
-            char err_buf[256] = {0};
-            ObjEntry *entry = regex_box_new_entry(vm, (const char*)pattern, plen, (int)mask, err_buf, sizeof(err_buf));
-            free(pattern);
-            if (!entry) {
-                fprintf(stderr, "bytecode error at pc %zu: failed to compile regex: %s\n",
-                        pc, err_buf[0] ? err_buf : "unknown");
-                return 0;
-            }
-            vm_stack_push_entry(vm, entry);
-            break;
-        }
         case BC_BUILD_NUMBER: {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
@@ -3063,4 +2849,39 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         }
     }
     return 1;
+}
+
+ObjEntry *vm_eval_source(VM *vm, const char *src, size_t len)
+{
+    if (!vm || !src) return NULL;
+    char *buf = (char*)malloc(len + 1);
+    if (!buf) return NULL;
+    memcpy(buf, src, len);
+    buf[len] = 0;
+
+    Bytecode bc;
+    char err[256];
+    err[0] = 0;
+    if (!vm_compile_source(buf, &bc, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "eval error");
+        free(buf);
+        return NULL;
+    }
+    free(buf);
+
+    Int stack_before = vm->stack_entry->obj->size;
+    if (!vm_exec_bytecode(vm, bc.data, bc.len)) {
+        bc_free(&bc);
+        return NULL;
+    }
+    List *stack = vm->stack_entry->obj;
+    ObjEntry *result = NULL;
+    if (stack->size > stack_before) {
+        result = (ObjEntry*)stack->data[stack->size - 1].p;
+    }
+    while (stack->size > stack_before) {
+        urb_pop(stack);
+    }
+    bc_free(&bc);
+    return result ? result : vm->null_entry;
 }

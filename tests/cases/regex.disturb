@@ -1,5 +1,5 @@
-text = "foo 123 bar 456";
-println(text.replace(/\d+/g, "<num:$regex{0}>"));
+text = "foo    123    bar 456";
+println(text.replace("$regex num {\\d+}", "<num:$regex{0}>"));
 
 fmt = "abc";
-println(fmt.replace(/(a)(b)(c)/, "$regex{1}-$regex{2}-$regex{3}"));
+println(fmt.replace("$regex triple {(a)(b)(c)}", "$regex{1}-$regex{2}-$regex{3}"));
