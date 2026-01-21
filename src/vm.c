@@ -975,7 +975,7 @@ void vm_init(VM *vm)
 
     ObjEntry *rate_val = vm_make_number_value(vm, 0);
     vm_object_set_by_key_len(vm, gc_obj, "rate", 4, rate_val, 0);
-    ObjEntry *collect_entry = vm_make_native_entry(vm, "collect", "gc_collect");
+    ObjEntry *collect_entry = vm_make_native_entry(vm, "collect", "gcCollect");
     if (collect_entry) urb_table_add(gc_obj, collect_entry);
 
     ObjEntry *entry = NULL;
@@ -1003,11 +1003,11 @@ void vm_init(VM *vm)
     if (entry) urb_table_add(vm->common_entry->obj, entry);
     entry = vm_define_native(vm, "emit", "emit");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
-    entry = vm_define_native(vm, "eval_bytecode", "eval_bytecode");
+    entry = vm_define_native(vm, "evalBytecode", "evalBytecode");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
-    entry = vm_define_native(vm, "bytecode_to_ast", "bytecode_to_ast");
+    entry = vm_define_native(vm, "bytecodeToAst", "bytecodeToAst");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
-    entry = vm_define_native(vm, "ast_to_source", "ast_to_source");
+    entry = vm_define_native(vm, "astToSource", "astToSource");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
     entry = vm_define_native(vm, "append", "append");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
@@ -1072,6 +1072,8 @@ void vm_init(VM *vm)
     entry = vm_define_native(vm, "endsWith", "endsWith");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
     entry = vm_define_native(vm, "replace", "replace");
+    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    entry = vm_define_native(vm, "replaceAll", "replaceAll");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
     entry = vm_define_native(vm, "papagaio", "papagaio");
     if (entry) urb_table_add(vm->common_entry->obj, entry);
@@ -1487,12 +1489,12 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
     while (pc < len) {
         uint8_t op = 0;
         if (!bc_read_u8(data, len, &pc, &op)) {
-            fprintf(stderr, "bytecode_to_ast: truncated opcode at pc %zu\n", pc);
+            fprintf(stderr, "bytecodeToAst: truncated opcode at pc %zu\n", pc);
             return NULL;
         }
         const char *op_name = bc_opcode_name(op);
         if (strcmp(op_name, "UNKNOWN") == 0) {
-            fprintf(stderr, "bytecode_to_ast: unknown opcode %u at pc %zu\n", (unsigned)op, pc - 1);
+            fprintf(stderr, "bytecodeToAst: unknown opcode %u at pc %zu\n", (unsigned)op, pc - 1);
             return NULL;
         }
         ObjEntry *node = ast_make_op(vm, op_name);
@@ -1502,7 +1504,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         case BC_PUSH_NUM: {
             double v = 0.0;
             if (!bc_read_f64(data, len, &pc, &v)) {
-                fprintf(stderr, "bytecode_to_ast: truncated PUSH_NUM at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: truncated PUSH_NUM at pc %zu\n", pc);
                 return NULL;
             }
             ast_set_kv(vm, node, "value", vm_make_number_value(vm, (Float)v));
@@ -1513,7 +1515,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             unsigned char *buf = NULL;
             size_t slen = 0;
             if (!bc_read_string(data, len, &pc, &buf, &slen)) {
-                fprintf(stderr, "bytecode_to_ast: truncated string at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: truncated string at pc %zu\n", pc);
                 return NULL;
             }
             ast_set_kv(vm, node, "value", vm_make_bytes_value(vm, (const char*)buf, slen));
@@ -1523,7 +1525,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         case BC_PUSH_BYTE: {
             uint8_t v = 0;
             if (!bc_read_u8(data, len, &pc, &v)) {
-                fprintf(stderr, "bytecode_to_ast: truncated PUSH_BYTE at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: truncated PUSH_BYTE at pc %zu\n", pc);
                 return NULL;
             }
             ast_set_kv(vm, node, "value", vm_make_number_value(vm, (Float)v));
@@ -1534,7 +1536,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         case BC_BUILD_OBJECT: {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
-                fprintf(stderr, "bytecode_to_ast: truncated BUILD_* at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: truncated BUILD_* at pc %zu\n", pc);
                 return NULL;
             }
             ast_set_kv(vm, node, "count", vm_make_number_value(vm, (Float)count));
@@ -1543,14 +1545,14 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         case BC_BUILD_NUMBER_LIT: {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
-                fprintf(stderr, "bytecode_to_ast: truncated BUILD_NUMBER_LIT at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: truncated BUILD_NUMBER_LIT at pc %zu\n", pc);
                 return NULL;
             }
             ObjEntry *values = vm_make_table_value(vm, (Int)count);
             for (uint32_t i = 0; i < count; i++) {
                 double v = 0.0;
                 if (!bc_read_f64(data, len, &pc, &v)) {
-                    fprintf(stderr, "bytecode_to_ast: truncated BUILD_NUMBER_LIT value at pc %zu\n", pc);
+                    fprintf(stderr, "bytecodeToAst: truncated BUILD_NUMBER_LIT value at pc %zu\n", pc);
                     return NULL;
                 }
                 urb_table_add(values->obj, vm_make_number_value(vm, (Float)v));
@@ -1566,11 +1568,11 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             if (!bc_read_u32(data, len, &pc, &argc) ||
                 !bc_read_u32(data, len, &pc, &vararg) ||
                 !bc_read_u32(data, len, &pc, &code_len)) {
-                fprintf(stderr, "bytecode_to_ast: truncated BUILD_FUNCTION at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: truncated BUILD_FUNCTION at pc %zu\n", pc);
                 return NULL;
             }
             if (pc + code_len > len) {
-                fprintf(stderr, "bytecode_to_ast: BUILD_FUNCTION code out of bounds at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: BUILD_FUNCTION code out of bounds at pc %zu\n", pc);
                 return NULL;
             }
             ObjEntry *code = vm_make_byte_value(vm, (const char*)(data + pc), code_len);
@@ -1581,18 +1583,18 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                 unsigned char *name = NULL;
                 size_t name_len = 0;
                 if (!bc_read_string(data, len, &pc, &name, &name_len)) {
-                    fprintf(stderr, "bytecode_to_ast: truncated BUILD_FUNCTION arg name at pc %zu\n", pc);
+                    fprintf(stderr, "bytecodeToAst: truncated BUILD_FUNCTION arg name at pc %zu\n", pc);
                     return NULL;
                 }
                 uint32_t def_len = 0;
                 if (!bc_read_u32(data, len, &pc, &def_len)) {
                     free(name);
-                    fprintf(stderr, "bytecode_to_ast: truncated BUILD_FUNCTION default length at pc %zu\n", pc);
+                    fprintf(stderr, "bytecodeToAst: truncated BUILD_FUNCTION default length at pc %zu\n", pc);
                     return NULL;
                 }
                 if (pc + def_len > len) {
                     free(name);
-                    fprintf(stderr, "bytecode_to_ast: BUILD_FUNCTION default out of bounds at pc %zu\n", pc);
+                    fprintf(stderr, "bytecodeToAst: BUILD_FUNCTION default out of bounds at pc %zu\n", pc);
                     return NULL;
                 }
                 ObjEntry *arg = vm_make_table_value(vm, 2);
@@ -1620,7 +1622,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             unsigned char *name = NULL;
             size_t name_len = 0;
             if (!bc_read_string(data, len, &pc, &name, &name_len)) {
-                fprintf(stderr, "bytecode_to_ast: truncated name at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: truncated name at pc %zu\n", pc);
                 return NULL;
             }
             ast_set_kv(vm, node, "name", vm_make_bytes_value(vm, (const char*)name, name_len));
@@ -1628,7 +1630,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             if (op == BC_CALL) {
                 uint32_t argc = 0;
                 if (!bc_read_u32(data, len, &pc, &argc)) {
-                    fprintf(stderr, "bytecode_to_ast: truncated CALL argc at pc %zu\n", pc);
+                    fprintf(stderr, "bytecodeToAst: truncated CALL argc at pc %zu\n", pc);
                     return NULL;
                 }
                 ast_set_kv(vm, node, "argc", vm_make_number_value(vm, (Float)argc));
@@ -1639,7 +1641,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         case BC_JMP_IF_FALSE: {
             uint32_t target = 0;
             if (!bc_read_u32(data, len, &pc, &target)) {
-                fprintf(stderr, "bytecode_to_ast: truncated jump at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: truncated jump at pc %zu\n", pc);
                 return NULL;
             }
             ast_set_kv(vm, node, "target", vm_make_number_value(vm, (Float)target));
@@ -1672,7 +1674,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         case BC_OR:
             break;
         default:
-            fprintf(stderr, "bytecode_to_ast: unsupported opcode %u at pc %zu\n", (unsigned)op, pc - 1);
+            fprintf(stderr, "bytecodeToAst: unsupported opcode %u at pc %zu\n", (unsigned)op, pc - 1);
             return NULL;
         }
 

@@ -24,7 +24,7 @@
 - Args are now supported by the cli.
 
 ## 0.12.5
-- Add bytecode metaprogramming natives (`parse`, `emit`, `eval_bytecode`, `bytecode_to_ast`, `ast_to_source`).
+- Add bytecode metaprogramming natives (`parse`, `emit`, `evalBytecode`, `bytecodeToAst`, `astToSource`).
 
 ## 0.12.4
 - Add `gc()` plus `global.gc.rate` and `global.gc.collect()` for GC control.

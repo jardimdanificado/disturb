@@ -77,7 +77,8 @@ Supported control flow forms:
 
 Notes:
 - `each` iterates in index order. For tables, the entry key is available via `value.name`.
-- `switch (expr) { case literal: ... }` performs equality checks (strings/numbers) and exits after the first matching case; `default` runs if no case matches.
+- `switch (expr) { case literal: ... }` performs equality checks (strings/numbers) and exits after the first matching case; `default` runs if no case matches (no fall-through, so `break` is unnecessary).
+- Performance: the current compiler emits a linear chain of comparisons, so runtime is similar to `if/else`. There is no jump-table optimization yet; dense integer switches would benefit if one is added.
 - Use `label:` definitions and `goto label;` statements for direct jumps; `goto` resolves labels at compile time.
 
 ## Lambdas
@@ -199,7 +200,7 @@ IO(might not be available in all environments):
 - `read`, `write`
 
 Metaprogramming:
-- `parse`, `emit`, `eval_bytecode`, `bytecode_to_ast`, `ast_to_source`, `eval`
+- `parse`, `emit`, `evalBytecode`, `bytecodeToAst`, `astToSource`, `eval`
 
 GC:
 - `gc`, `global.gc`
@@ -210,9 +211,9 @@ Notes:
 - `eval(code)` executes code in the current VM and returns `null`.
 - `parse(source)` compiles source into a bytecode AST (see below).
 - `emit(ast)` produces bytecode bytes from a bytecode AST.
-- `eval_bytecode(bytes)` executes bytecode and returns `null`.
-- `bytecode_to_ast(bytes)` decodes bytecode bytes into a bytecode AST.
-- `ast_to_source(ast)` returns a disassembly-style text view of the bytecode AST.
+- `evalBytecode(bytes)` executes bytecode and returns `null`.
+- `bytecodeToAst(bytes)` decodes bytecode bytes into a bytecode AST.
+- `astToSource(ast)` returns a disassembly-style text view of the bytecode AST.
 
 ## Bytecode AST
 
@@ -233,7 +234,7 @@ Each `ops` item is a table with `op` and optional fields:
 - `JMP`/`JMP_IF_FALSE`: `target` (number)
 
 Notes:
-- `ast_to_source` follows the disassembler format; `BUILD_FUNCTION` shows lengths, not raw bytes.
+- `astToSource` follows the disassembler format; `BUILD_FUNCTION` shows lengths, not raw bytes.
 - `emit` consumes AST objects directly, so include `code`/`default` byte strings in `BUILD_FUNCTION`.
 - `gc()` runs a collection.
 - `global.gc.rate` controls automatic GC (0 or less disables).

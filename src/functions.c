@@ -634,26 +634,26 @@ static void sb_append_escaped(StrBuf *b, const char *s, size_t len, char quote)
 static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t err_cap)
 {
     if (!vm || !ast || urb_obj_type(ast->obj) != URB_T_TABLE) {
-        ast_err(err, err_cap, "ast_to_source expects AST object");
+        ast_err(err, err_cap, "astToSource expects AST object");
         return 0;
     }
     ObjEntry *ops_entry = object_find_by_key(ast->obj, "ops");
     if (!ops_entry || urb_obj_type(ops_entry->obj) != URB_T_TABLE) {
-        ast_err(err, err_cap, "ast_to_source expects ops array");
+        ast_err(err, err_cap, "astToSource expects ops array");
         return 0;
     }
     List *ops = ops_entry->obj;
     for (Int i = 2; i < ops->size; i++) {
         ObjEntry *op_entry = (ObjEntry*)ops->data[i].p;
         if (!op_entry || urb_obj_type(op_entry->obj) != URB_T_TABLE) {
-            ast_err(err, err_cap, "ast_to_source expects op objects");
+            ast_err(err, err_cap, "astToSource expects op objects");
             return 0;
         }
         ObjEntry *op_name_entry = object_find_by_key(op_entry->obj, "op");
         const char *op_name = NULL;
         size_t op_len = 0;
         if (!op_name_entry || !entry_as_string(op_name_entry, &op_name, &op_len)) {
-            ast_err(err, err_cap, "ast_to_source expects op name");
+            ast_err(err, err_cap, "astToSource expects op name");
             return 0;
         }
         sb_append_n(out, op_name, op_len);
@@ -1174,7 +1174,7 @@ static void native_eval_bytecode(VM *vm, List *stack, List *global)
     const char *data = NULL;
     size_t len = 0;
     if (!entry_as_string(target, &data, &len)) {
-        fprintf(stderr, "eval_bytecode expects byte/string data\n");
+        fprintf(stderr, "evalBytecode expects byte/string data\n");
         return;
     }
     vm_exec_bytecode(vm, (const unsigned char*)data, len);
@@ -1188,12 +1188,12 @@ static void native_bytecode_to_ast(VM *vm, List *stack, List *global)
     const char *data = NULL;
     size_t len = 0;
     if (!entry_as_string(target, &data, &len)) {
-        fprintf(stderr, "bytecode_to_ast expects byte/string data\n");
+        fprintf(stderr, "bytecodeToAst expects byte/string data\n");
         return;
     }
     ObjEntry *ast = vm_bytecode_to_ast(vm, (const unsigned char*)data, len);
     if (!ast) {
-        fprintf(stderr, "bytecode_to_ast failed\n");
+        fprintf(stderr, "bytecodeToAst failed\n");
         return;
     }
     urb_table_add(stack, ast);
@@ -1208,7 +1208,7 @@ static void native_ast_to_source(VM *vm, List *stack, List *global)
     char err[256];
     err[0] = 0;
     if (!ast_to_source(vm, target, &out, err, sizeof(err))) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ast_to_source failed");
+        fprintf(stderr, "%s\n", err[0] ? err : "astToSource failed");
         sb_free(&out);
         return;
     }
@@ -2531,11 +2531,11 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "eval") == 0) return native_eval;
     if (strcmp(name, "parse") == 0) return native_parse;
     if (strcmp(name, "emit") == 0) return native_emit;
-    if (strcmp(name, "eval_bytecode") == 0) return native_eval_bytecode;
-    if (strcmp(name, "bytecode_to_ast") == 0) return native_bytecode_to_ast;
-    if (strcmp(name, "ast_to_source") == 0) return native_ast_to_source;
+    if (strcmp(name, "evalBytecode") == 0) return native_eval_bytecode;
+    if (strcmp(name, "bytecodeToAst") == 0) return native_bytecode_to_ast;
+    if (strcmp(name, "astToSource") == 0) return native_ast_to_source;
     if (strcmp(name, "gc") == 0) return native_gc;
-    if (strcmp(name, "gc_collect") == 0) return native_gc_collect;
+    if (strcmp(name, "gcCollect") == 0) return native_gc_collect;
     if (strcmp(name, "append") == 0) return native_append;
     if (strcmp(name, "add") == 0) return native_add;
     if (strcmp(name, "sub") == 0) return native_sub;
