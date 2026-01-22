@@ -89,7 +89,9 @@ typedef enum {
     EXPR_UNARY,
     EXPR_BINARY,
     EXPR_CALL,
-    EXPR_FUNC_LITERAL
+    EXPR_FUNC_LITERAL,
+    EXPR_ASSIGN,
+    EXPR_UPDATE
 } ExprKind;
 
 typedef struct {
@@ -150,6 +152,16 @@ struct Expr {
             int argc;
         } call;
         struct {
+            TokenKind op;
+            Expr *left;
+            Expr *right;
+        } assign;
+        struct {
+            TokenKind op;
+            Expr *target;
+            int is_prefix;
+        } update;
+        struct {
             char **args;
             size_t *arg_lens;
             int argc;
@@ -161,11 +173,15 @@ struct Expr {
     } as;
 };
 
+static int expr_is_lvalue(const Expr *e);
+
 typedef struct {
     void **items;
     size_t count;
     size_t cap;
 } Arena;
+
+static char *arena_format_temp(Arena *a, const char *prefix, int id);
 
 typedef struct LoopContext {
     size_t *breaks;
@@ -917,9 +933,6 @@ static int parse_switch_case(Parser *p, Bytecode *bc, const char *tmp_name, size
 static Expr *parse_func_literal(Parser *p);
 static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len);
 static int emit_expr(Bytecode *bc, Parser *p, Expr *e);
-static Expr *expr_new_number_literal(Parser *p, double value);
-static int emit_compound_assign_statement(Bytecode *bc, Parser *p, Expr *lhs, TokenKind bin_op, Expr *rhs);
-static int emit_adjust_statement(Bytecode *bc, Parser *p, Expr *lhs, TokenKind bin_op, double delta);
 static Expr *parse_cast_list(Parser *p, TokenKind closing, const char *close_msg);
 static void parser_error(Parser *p, const char *fmt, ...);
 static int patch_jump(Bytecode *bc, Parser *p, size_t pos, size_t target);
@@ -1412,11 +1425,42 @@ static Expr *parse_postfix(Parser *p)
         break;
     }
 
+    if (p->current.kind == TOK_PLUSPLUS || p->current.kind == TOK_MINUSMINUS) {
+        TokenKind op = p->current.kind;
+        advance(p);
+        if (!expr_is_lvalue(expr)) {
+            parser_error(p, "left side is not assignable");
+            return NULL;
+        }
+        Expr *e = expr_new(p, EXPR_UPDATE);
+        if (!e) return NULL;
+        e->as.update.op = op;
+        e->as.update.target = expr;
+        e->as.update.is_prefix = 0;
+        expr = e;
+    }
+
     return expr;
 }
 
 static Expr *parse_unary(Parser *p)
 {
+    if (p->current.kind == TOK_PLUSPLUS || p->current.kind == TOK_MINUSMINUS) {
+        TokenKind op = p->current.kind;
+        advance(p);
+        Expr *target = parse_postfix(p);
+        if (!target) return NULL;
+        if (!expr_is_lvalue(target)) {
+            parser_error(p, "left side is not assignable");
+            return NULL;
+        }
+        Expr *e = expr_new(p, EXPR_UPDATE);
+        if (!e) return NULL;
+        e->as.update.op = op;
+        e->as.update.target = target;
+        e->as.update.is_prefix = 1;
+        return e;
+    }
     if (p->current.kind == TOK_BANG || p->current.kind == TOK_MINUS) {
         TokenKind op = p->current.kind;
         advance(p);
@@ -1544,9 +1588,40 @@ static Expr *parse_or(Parser *p)
     return expr;
 }
 
+static Expr *parse_assignment(Parser *p)
+{
+    Expr *left = parse_or(p);
+    if (!left) return NULL;
+
+    TokenKind op = TOK_EOF;
+    if (match(p, TOK_EQ)) op = TOK_EQ;
+    else if (match(p, TOK_PLUS_EQ)) op = TOK_PLUS_EQ;
+    else if (match(p, TOK_MINUS_EQ)) op = TOK_MINUS_EQ;
+    else if (match(p, TOK_STAR_EQ)) op = TOK_STAR_EQ;
+    else if (match(p, TOK_SLASH_EQ)) op = TOK_SLASH_EQ;
+    else if (match(p, TOK_PERCENT_EQ)) op = TOK_PERCENT_EQ;
+    else if (match(p, TOK_QEQ)) op = TOK_QEQ;
+
+    if (op != TOK_EOF) {
+        if (!expr_is_lvalue(left)) {
+            parser_error(p, "left side is not assignable");
+            return NULL;
+        }
+        Expr *right = parse_assignment(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_ASSIGN);
+        if (!e) return NULL;
+        e->as.assign.op = op;
+        e->as.assign.left = left;
+        e->as.assign.right = right;
+        return e;
+    }
+    return left;
+}
+
 static Expr *parse_expr(Parser *p)
 {
-    return parse_or(p);
+    return parse_assignment(p);
 }
 
 static int expr_is_lvalue(const Expr *e)
@@ -1586,6 +1661,36 @@ static int emit_store_global_name(Bytecode *bc, Parser *p, const char *name, siz
     return 1;
 }
 
+static int is_global_name(const Expr *e);
+
+static int emit_binary_op(Bytecode *bc, Parser *p, TokenKind op)
+{
+    uint8_t out = 0;
+    switch (op) {
+    case TOK_PLUS: out = BC_ADD; break;
+    case TOK_MINUS: out = BC_SUB; break;
+    case TOK_STAR: out = BC_MUL; break;
+    case TOK_SLASH: out = BC_DIV; break;
+    case TOK_PERCENT: out = BC_MOD; break;
+    case TOK_EQEQ: out = BC_EQ; break;
+    case TOK_NEQ: out = BC_NEQ; break;
+    case TOK_LT: out = BC_LT; break;
+    case TOK_LTE: out = BC_LTE; break;
+    case TOK_GT: out = BC_GT; break;
+    case TOK_GTE: out = BC_GTE; break;
+    case TOK_AND: out = BC_AND; break;
+    case TOK_OR: out = BC_OR; break;
+    default:
+        parser_error(p, "unsupported binary operator");
+        return 0;
+    }
+    if (!bc_emit_u8(bc, out)) {
+        parser_error(p, "failed to emit binary op");
+        return 0;
+    }
+    return 1;
+}
+
 static size_t emit_jump(Bytecode *bc, Parser *p, uint8_t op)
 {
     if (!bc_emit_u8(bc, op)) {
@@ -1615,6 +1720,298 @@ static int patch_jump(Bytecode *bc, Parser *p, size_t pos, size_t target)
     bc->data[pos + 1] = (unsigned char)((v >> 8) & 0xFF);
     bc->data[pos + 2] = (unsigned char)((v >> 16) & 0xFF);
     bc->data[pos + 3] = (unsigned char)((v >> 24) & 0xFF);
+    return 1;
+}
+
+static int is_global_member(const Expr *lhs, const char **name, size_t *len)
+{
+    if (!lhs || lhs->kind != EXPR_MEMBER) return 0;
+    if (!is_global_name(lhs->as.member.base)) return 0;
+    if (name) *name = lhs->as.member.name;
+    if (len) *len = lhs->as.member.len;
+    return 1;
+}
+
+static int emit_assign_expr(Bytecode *bc, Parser *p, Expr *lhs, TokenKind op, Expr *rhs)
+{
+    if (!lhs || !rhs) return 0;
+
+    const char *name = NULL;
+    size_t name_len = 0;
+    if (lhs->kind == EXPR_NAME && !is_global_name(lhs)) {
+        name = lhs->as.name.name;
+        name_len = lhs->as.name.len;
+    } else if (is_global_member(lhs, &name, &name_len)) {
+        /* ok */
+    }
+
+    if (name) {
+        TokenKind bin_op = TOK_EOF;
+        if (op == TOK_PLUS_EQ) bin_op = TOK_PLUS;
+        else if (op == TOK_MINUS_EQ) bin_op = TOK_MINUS;
+        else if (op == TOK_STAR_EQ) bin_op = TOK_STAR;
+        else if (op == TOK_SLASH_EQ) bin_op = TOK_SLASH;
+        else if (op == TOK_PERCENT_EQ) bin_op = TOK_PERCENT;
+
+        if (op == TOK_QEQ) {
+            if (!emit_load_global_name(bc, p, name, name_len)) return 0;
+            if (!emit_load_global_name(bc, p, "null", 4)) return 0;
+            if (!bc_emit_u8(bc, BC_EQ)) {
+                parser_error(p, "failed to emit default compare");
+                return 0;
+            }
+            size_t jmp_skip = emit_jump(bc, p, BC_JMP_IF_FALSE);
+            if (!jmp_skip) return 0;
+            if (!emit_expr(bc, p, rhs)) return 0;
+            if (!bc_emit_u8(bc, BC_DUP)) {
+                parser_error(p, "failed to emit DUP");
+                return 0;
+            }
+            if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+            size_t jmp_end = emit_jump(bc, p, BC_JMP);
+            if (!jmp_end) return 0;
+            if (!patch_jump(bc, p, jmp_skip, bc->len)) return 0;
+            if (!emit_load_global_name(bc, p, name, name_len)) return 0;
+            if (!patch_jump(bc, p, jmp_end, bc->len)) return 0;
+            return 1;
+        }
+
+        if (op == TOK_EQ) {
+            if (!emit_expr(bc, p, rhs)) return 0;
+            if (!bc_emit_u8(bc, BC_DUP)) {
+                parser_error(p, "failed to emit DUP");
+                return 0;
+            }
+            if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+            return 1;
+        }
+
+        if (bin_op == TOK_EOF) {
+            parser_error(p, "unsupported assignment operator");
+            return 0;
+        }
+        if (!emit_load_global_name(bc, p, name, name_len)) return 0;
+        if (!emit_expr(bc, p, rhs)) return 0;
+        if (!emit_binary_op(bc, p, bin_op)) return 0;
+        if (!bc_emit_u8(bc, BC_DUP)) {
+            parser_error(p, "failed to emit DUP");
+            return 0;
+        }
+        if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+        return 1;
+    }
+
+    if (lhs->kind != EXPR_MEMBER && lhs->kind != EXPR_INDEX) {
+        parser_error(p, "invalid assignment target");
+        return 0;
+    }
+
+    int id = p->temp_id++;
+    char *value_name = arena_format_temp(&p->arena, "__assign_value_", id);
+    if (!value_name) {
+        parser_error(p, "out of memory");
+        return 0;
+    }
+
+    TokenKind bin_op = TOK_EOF;
+    if (op == TOK_PLUS_EQ) bin_op = TOK_PLUS;
+    else if (op == TOK_MINUS_EQ) bin_op = TOK_MINUS;
+    else if (op == TOK_STAR_EQ) bin_op = TOK_STAR;
+    else if (op == TOK_SLASH_EQ) bin_op = TOK_SLASH;
+    else if (op == TOK_PERCENT_EQ) bin_op = TOK_PERCENT;
+
+    if (op == TOK_QEQ) {
+        if (!emit_expr(bc, p, lhs->kind == EXPR_MEMBER ? lhs->as.member.base : lhs->as.index.base)) return 0;
+        if (lhs->kind == EXPR_MEMBER) {
+            if (!emit_key(bc, p, lhs->as.member.name, lhs->as.member.len)) return 0;
+        } else {
+            if (!emit_expr(bc, p, lhs->as.index.index)) return 0;
+        }
+        if (!bc_emit_u8(bc, BC_INDEX)) {
+            parser_error(p, "failed to emit INDEX");
+            return 0;
+        }
+        if (!emit_load_global_name(bc, p, "null", 4)) return 0;
+        if (!bc_emit_u8(bc, BC_EQ)) {
+            parser_error(p, "failed to emit default compare");
+            return 0;
+        }
+        size_t jmp_skip = emit_jump(bc, p, BC_JMP_IF_FALSE);
+        if (!jmp_skip) return 0;
+        if (!emit_expr(bc, p, rhs)) return 0;
+        if (!emit_store_global_name(bc, p, value_name, strlen(value_name))) return 0;
+        if (!emit_expr(bc, p, lhs->kind == EXPR_MEMBER ? lhs->as.member.base : lhs->as.index.base)) return 0;
+        if (lhs->kind == EXPR_MEMBER) {
+            if (!emit_key(bc, p, lhs->as.member.name, lhs->as.member.len)) return 0;
+        } else {
+            if (!emit_expr(bc, p, lhs->as.index.index)) return 0;
+        }
+        if (!emit_load_global_name(bc, p, value_name, strlen(value_name))) return 0;
+        if (!bc_emit_u8(bc, BC_STORE_INDEX)) {
+            parser_error(p, "failed to emit STORE_INDEX");
+            return 0;
+        }
+        if (!emit_load_global_name(bc, p, value_name, strlen(value_name))) return 0;
+        size_t jmp_end = emit_jump(bc, p, BC_JMP);
+        if (!jmp_end) return 0;
+        if (!patch_jump(bc, p, jmp_skip, bc->len)) return 0;
+        if (!emit_expr(bc, p, lhs->kind == EXPR_MEMBER ? lhs->as.member.base : lhs->as.index.base)) return 0;
+        if (lhs->kind == EXPR_MEMBER) {
+            if (!emit_key(bc, p, lhs->as.member.name, lhs->as.member.len)) return 0;
+        } else {
+            if (!emit_expr(bc, p, lhs->as.index.index)) return 0;
+        }
+        if (!bc_emit_u8(bc, BC_INDEX)) {
+            parser_error(p, "failed to emit INDEX");
+            return 0;
+        }
+        if (!patch_jump(bc, p, jmp_end, bc->len)) return 0;
+        return 1;
+    }
+
+    if (op == TOK_EQ) {
+        if (!emit_expr(bc, p, rhs)) return 0;
+        if (!emit_store_global_name(bc, p, value_name, strlen(value_name))) return 0;
+        if (!emit_expr(bc, p, lhs->kind == EXPR_MEMBER ? lhs->as.member.base : lhs->as.index.base)) return 0;
+        if (lhs->kind == EXPR_MEMBER) {
+            if (!emit_key(bc, p, lhs->as.member.name, lhs->as.member.len)) return 0;
+        } else {
+            if (!emit_expr(bc, p, lhs->as.index.index)) return 0;
+        }
+        if (!emit_load_global_name(bc, p, value_name, strlen(value_name))) return 0;
+        if (!bc_emit_u8(bc, BC_STORE_INDEX)) {
+            parser_error(p, "failed to emit STORE_INDEX");
+            return 0;
+        }
+        if (!emit_load_global_name(bc, p, value_name, strlen(value_name))) return 0;
+        return 1;
+    }
+
+    if (bin_op == TOK_EOF) {
+        parser_error(p, "unsupported assignment operator");
+        return 0;
+    }
+    if (!emit_expr(bc, p, lhs->kind == EXPR_MEMBER ? lhs->as.member.base : lhs->as.index.base)) return 0;
+    if (lhs->kind == EXPR_MEMBER) {
+        if (!emit_key(bc, p, lhs->as.member.name, lhs->as.member.len)) return 0;
+    } else {
+        if (!emit_expr(bc, p, lhs->as.index.index)) return 0;
+    }
+    if (!bc_emit_u8(bc, BC_INDEX)) {
+        parser_error(p, "failed to emit INDEX");
+        return 0;
+    }
+    if (!emit_expr(bc, p, rhs)) return 0;
+    if (!emit_binary_op(bc, p, bin_op)) return 0;
+    if (!emit_store_global_name(bc, p, value_name, strlen(value_name))) return 0;
+    if (!emit_expr(bc, p, lhs->kind == EXPR_MEMBER ? lhs->as.member.base : lhs->as.index.base)) return 0;
+    if (lhs->kind == EXPR_MEMBER) {
+        if (!emit_key(bc, p, lhs->as.member.name, lhs->as.member.len)) return 0;
+    } else {
+        if (!emit_expr(bc, p, lhs->as.index.index)) return 0;
+    }
+    if (!emit_load_global_name(bc, p, value_name, strlen(value_name))) return 0;
+    if (!bc_emit_u8(bc, BC_STORE_INDEX)) {
+        parser_error(p, "failed to emit STORE_INDEX");
+        return 0;
+    }
+    if (!emit_load_global_name(bc, p, value_name, strlen(value_name))) return 0;
+    return 1;
+}
+
+static int emit_update_expr(Bytecode *bc, Parser *p, Expr *target, TokenKind op, int is_prefix)
+{
+    if (!target) return 0;
+
+    const char *name = NULL;
+    size_t name_len = 0;
+    if (target->kind == EXPR_NAME && !is_global_name(target)) {
+        name = target->as.name.name;
+        name_len = target->as.name.len;
+    } else if (is_global_member(target, &name, &name_len)) {
+        /* ok */
+    }
+
+    TokenKind bin_op = op == TOK_PLUSPLUS ? TOK_PLUS : TOK_MINUS;
+
+    if (name) {
+        if (!emit_load_global_name(bc, p, name, name_len)) return 0;
+        if (is_prefix) {
+            if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {
+                parser_error(p, "failed to emit number literal");
+                return 0;
+            }
+            if (!emit_binary_op(bc, p, bin_op)) return 0;
+            if (!bc_emit_u8(bc, BC_DUP)) {
+                parser_error(p, "failed to emit DUP");
+                return 0;
+            }
+            if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+            return 1;
+        }
+        if (!bc_emit_u8(bc, BC_DUP)) {
+            parser_error(p, "failed to emit DUP");
+            return 0;
+        }
+        if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {
+            parser_error(p, "failed to emit number literal");
+            return 0;
+        }
+        if (!emit_binary_op(bc, p, bin_op)) return 0;
+        if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+        return 1;
+    }
+
+    if (target->kind != EXPR_MEMBER && target->kind != EXPR_INDEX) {
+        parser_error(p, "invalid assignment target");
+        return 0;
+    }
+
+    int id = p->temp_id++;
+    char *value_name = arena_format_temp(&p->arena, "__update_value_", id);
+    char *old_name = arena_format_temp(&p->arena, "__update_old_", id);
+    if (!value_name || !old_name) {
+        parser_error(p, "out of memory");
+        return 0;
+    }
+
+    Expr *base = target->kind == EXPR_MEMBER ? target->as.member.base : target->as.index.base;
+    if (!emit_expr(bc, p, base)) return 0;
+    if (target->kind == EXPR_MEMBER) {
+        if (!emit_key(bc, p, target->as.member.name, target->as.member.len)) return 0;
+    } else {
+        if (!emit_expr(bc, p, target->as.index.index)) return 0;
+    }
+    if (!bc_emit_u8(bc, BC_INDEX)) {
+        parser_error(p, "failed to emit INDEX");
+        return 0;
+    }
+
+    if (!emit_store_global_name(bc, p, old_name, strlen(old_name))) return 0;
+    if (!emit_load_global_name(bc, p, old_name, strlen(old_name))) return 0;
+    if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {
+        parser_error(p, "failed to emit number literal");
+        return 0;
+    }
+    if (!emit_binary_op(bc, p, bin_op)) return 0;
+    if (!emit_store_global_name(bc, p, value_name, strlen(value_name))) return 0;
+    if (!emit_expr(bc, p, base)) return 0;
+    if (target->kind == EXPR_MEMBER) {
+        if (!emit_key(bc, p, target->as.member.name, target->as.member.len)) return 0;
+    } else {
+        if (!emit_expr(bc, p, target->as.index.index)) return 0;
+    }
+    if (!emit_load_global_name(bc, p, value_name, strlen(value_name))) return 0;
+    if (!bc_emit_u8(bc, BC_STORE_INDEX)) {
+        parser_error(p, "failed to emit STORE_INDEX");
+        return 0;
+    }
+
+    if (is_prefix) {
+        if (!emit_load_global_name(bc, p, value_name, strlen(value_name))) return 0;
+    } else {
+        if (!emit_load_global_name(bc, p, old_name, strlen(old_name))) return 0;
+    }
     return 1;
 }
 
@@ -1760,31 +2157,12 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
     case EXPR_BINARY: {
         if (!emit_expr(bc, p, e->as.binary.left)) return 0;
         if (!emit_expr(bc, p, e->as.binary.right)) return 0;
-        uint8_t op = 0;
-        switch (e->as.binary.op) {
-        case TOK_PLUS: op = BC_ADD; break;
-        case TOK_MINUS: op = BC_SUB; break;
-        case TOK_STAR: op = BC_MUL; break;
-        case TOK_SLASH: op = BC_DIV; break;
-        case TOK_PERCENT: op = BC_MOD; break;
-        case TOK_EQEQ: op = BC_EQ; break;
-        case TOK_NEQ: op = BC_NEQ; break;
-        case TOK_LT: op = BC_LT; break;
-        case TOK_LTE: op = BC_LTE; break;
-        case TOK_GT: op = BC_GT; break;
-        case TOK_GTE: op = BC_GTE; break;
-        case TOK_AND: op = BC_AND; break;
-        case TOK_OR: op = BC_OR; break;
-        default:
-            parser_error(p, "unsupported binary operator");
-            return 0;
-        }
-        if (!bc_emit_u8(bc, op)) {
-            parser_error(p, "failed to emit binary op");
-            return 0;
-        }
-        return 1;
+        return emit_binary_op(bc, p, e->as.binary.op);
     }
+    case EXPR_ASSIGN:
+        return emit_assign_expr(bc, p, e->as.assign.left, e->as.assign.op, e->as.assign.right);
+    case EXPR_UPDATE:
+        return emit_update_expr(bc, p, e->as.update.target, e->as.update.op, e->as.update.is_prefix);
     case EXPR_CALL: {
         uint32_t argc = 0;
         for (int i = 0; i < e->as.call.argc; i++) {
@@ -1889,63 +2267,6 @@ static int is_global_name(const Expr *e)
     return e && e->kind == EXPR_NAME && e->as.name.len == 6 && strncmp(e->as.name.name, "global", 6) == 0;
 }
 
-static int emit_store(Bytecode *bc, Parser *p, Expr *lhs, Expr *rhs)
-{
-    if (!lhs || !rhs) return 0;
-
-    if (lhs->kind == EXPR_NAME && !is_global_name(lhs)) {
-        if (!emit_expr(bc, p, rhs)) return 0;
-        if (!bc_emit_u8(bc, BC_STORE_GLOBAL) || !bc_emit_string(bc, lhs->as.name.name, lhs->as.name.len)) {
-            parser_error(p, "failed to emit STORE_GLOBAL");
-            return 0;
-        }
-        return 1;
-    }
-
-    if (lhs->kind == EXPR_MEMBER && is_global_name(lhs->as.member.base)) {
-        if (!emit_expr(bc, p, rhs)) return 0;
-        if (!bc_emit_u8(bc, BC_STORE_GLOBAL) || !bc_emit_string(bc, lhs->as.member.name, lhs->as.member.len)) {
-            parser_error(p, "failed to emit STORE_GLOBAL");
-            return 0;
-        }
-        return 1;
-    }
-
-    if (lhs->kind == EXPR_MEMBER || lhs->kind == EXPR_INDEX) {
-        Expr *base = lhs->kind == EXPR_MEMBER ? lhs->as.member.base : lhs->as.index.base;
-        if (!emit_expr(bc, p, base)) return 0;
-        if (lhs->kind == EXPR_MEMBER) {
-            if (!emit_key(bc, p, lhs->as.member.name, lhs->as.member.len)) return 0;
-        } else {
-            if (!emit_expr(bc, p, lhs->as.index.index)) return 0;
-        }
-        if (!emit_expr(bc, p, rhs)) return 0;
-        if (!bc_emit_u8(bc, BC_STORE_INDEX)) {
-            parser_error(p, "failed to emit STORE_INDEX");
-            return 0;
-        }
-        return 1;
-    }
-
-    parser_error(p, "invalid assignment target");
-    return 0;
-}
-
-static int emit_default_store(Bytecode *bc, Parser *p, Expr *lhs, Expr *rhs)
-{
-    if (!emit_expr(bc, p, lhs)) return 0;
-    if (!emit_load_global_name(bc, p, "null", 4)) return 0;
-    if (!bc_emit_u8(bc, BC_EQ)) {
-        parser_error(p, "failed to emit default compare");
-        return 0;
-    }
-    size_t jmp_skip = emit_jump(bc, p, BC_JMP_IF_FALSE);
-    if (!jmp_skip) return 0;
-    if (!emit_store(bc, p, lhs, rhs)) return 0;
-    if (!patch_jump(bc, p, jmp_skip, bc->len)) return 0;
-    return 1;
-}
-
 static int emit_loop_break(Parser *p, Bytecode *bc)
 {
     if (!loop_current(p)) {
@@ -1977,118 +2298,17 @@ static int emit_loop_continue(Parser *p, Bytecode *bc)
     return 1;
 }
 
-static Expr *expr_new_number_literal(Parser *p, double value)
-{
-    Expr *e = expr_new(p, EXPR_LITERAL_NUM);
-    if (!e) return NULL;
-    e->as.lit_num.number = value;
-    return e;
-}
-
-static int emit_compound_assign_statement(Bytecode *bc, Parser *p, Expr *lhs, TokenKind bin_op, Expr *rhs)
-{
-    Expr *bin = expr_new(p, EXPR_BINARY);
-    if (!bin) return 0;
-    bin->as.binary.op = bin_op;
-    bin->as.binary.left = lhs;
-    bin->as.binary.right = rhs;
-    return emit_store(bc, p, lhs, bin);
-}
-
-static int emit_adjust_statement(Bytecode *bc, Parser *p, Expr *lhs, TokenKind bin_op, double delta)
-{
-    Expr *value = expr_new_number_literal(p, delta);
-    if (!value) return 0;
-    return emit_compound_assign_statement(bc, p, lhs, bin_op, value);
-}
-
 static int parse_simple_statement(Parser *p, Bytecode *bc, int require_semi)
 {
-    TokenKind prefix_op = TOK_EOF;
-    if (p->current.kind == TOK_PLUSPLUS || p->current.kind == TOK_MINUSMINUS) {
-        prefix_op = p->current.kind;
-        advance(p);
-    }
-
     Expr *expr = parse_expr(p);
     if (!expr) return 0;
-
-    if (prefix_op != TOK_EOF) {
-        if (!expr_is_lvalue(expr)) {
-            parser_error(p, "left side is not assignable");
-            return 0;
-        }
-        TokenKind bin_op = prefix_op == TOK_PLUSPLUS ? TOK_PLUS : TOK_MINUS;
-        if (!emit_adjust_statement(bc, p, expr, bin_op, 1.0)) return 0;
-        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after statement")) return 0;
-        return 1;
+    if (require_semi && !expect(p, TOK_SEMI, "expected ';' after statement")) return 0;
+    if (!emit_expr(bc, p, expr)) return 0;
+    if (!bc_emit_u8(bc, BC_POP)) {
+        parser_error(p, "failed to emit POP");
+        return 0;
     }
-
-    if (p->current.kind == TOK_PLUSPLUS || p->current.kind == TOK_MINUSMINUS) {
-        TokenKind postfix_op = p->current.kind;
-        advance(p);
-        if (!expr_is_lvalue(expr)) {
-            parser_error(p, "left side is not assignable");
-            return 0;
-        }
-        TokenKind bin_op = postfix_op == TOK_PLUSPLUS ? TOK_PLUS : TOK_MINUS;
-        if (!emit_adjust_statement(bc, p, expr, bin_op, 1.0)) return 0;
-        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after statement")) return 0;
-        return 1;
-    }
-
-    TokenKind assign_op = TOK_EOF;
-    if (match(p, TOK_PLUS_EQ)) assign_op = TOK_PLUS;
-    else if (match(p, TOK_MINUS_EQ)) assign_op = TOK_MINUS;
-    else if (match(p, TOK_STAR_EQ)) assign_op = TOK_STAR;
-    else if (match(p, TOK_SLASH_EQ)) assign_op = TOK_SLASH;
-    else if (match(p, TOK_PERCENT_EQ)) assign_op = TOK_PERCENT;
-
-    if (assign_op != TOK_EOF) {
-        if (!expr_is_lvalue(expr)) {
-            parser_error(p, "left side is not assignable");
-            return 0;
-        }
-        Expr *rhs = parse_expr(p);
-        if (!rhs) return 0;
-        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after assignment")) return 0;
-        return emit_compound_assign_statement(bc, p, expr, assign_op, rhs);
-    }
-
-    if (match(p, TOK_EQ)) {
-        if (!expr_is_lvalue(expr)) {
-            parser_error(p, "left side is not assignable");
-            return 0;
-        }
-        Expr *rhs = parse_expr(p);
-        if (!rhs) return 0;
-        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after assignment")) return 0;
-        return emit_store(bc, p, expr, rhs);
-    }
-
-    if (match(p, TOK_QEQ)) {
-        if (!expr_is_lvalue(expr)) {
-            parser_error(p, "left side is not assignable");
-            return 0;
-        }
-        Expr *rhs = parse_expr(p);
-        if (!rhs) return 0;
-        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after assignment")) return 0;
-        return emit_default_store(bc, p, expr, rhs);
-    }
-
-    if (expr->kind == EXPR_CALL) {
-        if (!emit_expr(bc, p, expr)) return 0;
-        if (require_semi && !expect(p, TOK_SEMI, "expected ';' after call")) return 0;
-        if (!bc_emit_u8(bc, BC_POP)) {
-            parser_error(p, "failed to emit POP");
-            return 0;
-        }
-        return 1;
-    }
-
-    parser_error(p, "expected assignment or call");
-    return 0;
+    return 1;
 }
 
 static int parse_switch_case(Parser *p, Bytecode *bc, const char *tmp_name, size_t tmp_len)

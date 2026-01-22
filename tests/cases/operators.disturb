@@ -68,3 +68,28 @@ println(acc);
 println(acc);
 acc--;
 println(acc);
+
+i = 1;
+fn = (x) { return x; };
+println(fn(i++));
+println(i);
+println(fn(++i));
+println(i);
+println(i += 2);
+println(i);
+println(i = i + 1);
+println(i);
+
+arr = [10, 20];
+println(arr[0]++);
+println(arr[0]);
+println(++arr[0]);
+println(arr[0]);
+println(arr[1] += 5);
+println(arr[1]);
+
+tbl = {a = 3};
+println(tbl.a--);
+println(tbl.a);
+println(--tbl.a);
+println(tbl.a);
