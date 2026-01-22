@@ -28,6 +28,11 @@ typedef struct {
     size_t cap;
 } StrBuf;
 
+struct FreeNode {
+    List *obj;
+    struct FreeNode *next;
+};
+
 int lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
     (void)opaque;
@@ -173,8 +178,25 @@ static List *urb_obj_new_list(Int type, ObjEntry *key_entry, Int reserve)
     return obj;
 }
 
-List *vm_alloc_list(Int type, ObjEntry *key_entry, Int reserve)
+List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve)
 {
+    size_t need = (size_t)reserve + 2;
+    FreeNode *prev = NULL;
+    FreeNode *cur = vm->free_lists;
+    while (cur) {
+        List *obj = cur->obj;
+        if (obj && (size_t)obj->capacity >= need) {
+            if (prev) prev->next = cur->next;
+            else vm->free_lists = cur->next;
+            free(cur);
+            obj->data[0].i = type;
+            obj->data[1].p = key_entry;
+            obj->size = 2;
+            return obj;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
     return urb_obj_new_list(type, key_entry, reserve);
 }
 
@@ -198,16 +220,11 @@ static List *urb_obj_new_bytes(Int type, ObjEntry *key_entry, const char *s, siz
 
 
 
-static List *urb_obj_new_byte(ObjEntry *key_entry, size_t len)
-{
-    return urb_obj_new_bytes(URB_T_BYTE, key_entry, NULL, len);
-}
-
-static void urb_obj_free(List *obj)
+static void urb_obj_clear(List *obj)
 {
     if (urb_obj_type(obj) == URB_T_NATIVE && obj->size >= 3) {
         NativeBox *box = (NativeBox*)obj->data[2].p;
-        free(box);
+        if (box) free(box);
     }
     if (urb_obj_type(obj) == URB_T_LAMBDA && obj->size >= 3) {
         FunctionBox *box = (FunctionBox*)obj->data[2].p;
@@ -227,12 +244,64 @@ static void urb_obj_free(List *obj)
             free(box);
         }
     }
+}
+
+static void urb_obj_free(List *obj)
+{
+    urb_obj_clear(obj);
     free(obj);
 }
 
 void vm_free_list(List *obj)
 {
     urb_obj_free(obj);
+}
+
+static List *vm_alloc_bytes(VM *vm, ObjEntry *key_entry, const char *s, size_t len)
+{
+    size_t need = len + 2;
+    FreeNode *prev = NULL;
+    FreeNode *cur = vm->free_bytes;
+    while (cur) {
+        List *obj = cur->obj;
+        if (obj && (size_t)obj->capacity >= need) {
+            if (prev) prev->next = cur->next;
+            else vm->free_bytes = cur->next;
+            free(cur);
+            obj->data[0].i = URB_T_BYTE;
+            obj->data[1].p = key_entry;
+            obj->size = (UHalf)(len + 2);
+            if ((size_t)obj->capacity < need) obj->capacity = (UHalf)need;
+            if (len && s) memcpy(urb_bytes_data(obj), s, len);
+            return obj;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+    return urb_obj_new_bytes(URB_T_BYTE, key_entry, s, len);
+}
+
+static void vm_pool_push(VM *vm, List *obj)
+{
+    if (!vm || !obj) return;
+    urb_obj_clear(obj);
+    FreeNode *node = (FreeNode*)malloc(sizeof(FreeNode));
+    if (!node) {
+        return;
+    }
+    node->obj = obj;
+    if (urb_obj_type(obj) == URB_T_BYTE) {
+        node->next = vm->free_bytes;
+        vm->free_bytes = node;
+    } else {
+        node->next = vm->free_lists;
+        vm->free_lists = node;
+    }
+}
+
+void vm_reuse_list(VM *vm, List *obj)
+{
+    vm_pool_push(vm, obj);
 }
 
 static void vm_table_add_entry(VM *vm, ObjEntry *target, ObjEntry *entry)
@@ -276,6 +345,8 @@ static void vm_reg_init(VM *vm)
     vm->reg_cap = 64;
     vm->reg_count = 0;
     vm->reg = (ObjEntry**)calloc((size_t)vm->reg_cap, sizeof(ObjEntry*));
+    vm->free_lists = NULL;
+    vm->free_bytes = NULL;
 }
 
 static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
@@ -325,7 +396,7 @@ void vm_release_entry(VM *vm, ObjEntry *entry)
     if (!entry || !entry->in_use) return;
     if (entry->obj) {
         if (!vm_entry_shared(vm, entry)) {
-            urb_obj_free(entry->obj);
+            vm_pool_push(vm, entry->obj);
         }
         entry->obj = NULL;
     }
@@ -336,7 +407,7 @@ void vm_release_entry(VM *vm, ObjEntry *entry)
 
 static ObjEntry *vm_make_key(VM *vm, const char *name)
 {
-    List *key_obj = urb_obj_new_bytes(URB_T_BYTE,NULL, name, strlen(name));
+    List *key_obj = vm_alloc_bytes(vm, NULL, name, strlen(name));
     return vm_reg_alloc(vm, key_obj);
 }
 
@@ -348,7 +419,7 @@ static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_na
         fprintf(stderr, "unknown native: %s\n", fn_name);
         return NULL;
     }
-    List *obj = urb_obj_new_list(URB_T_NATIVE, key_entry, 1);
+    List *obj = vm_alloc_list(vm, URB_T_NATIVE, key_entry, 1);
     NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
     box->fn = fn;
     Value v;
@@ -359,7 +430,7 @@ static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_na
 
 static ObjEntry *vm_make_key_len(VM *vm, const char *name, size_t len)
 {
-    List *key_obj = urb_obj_new_bytes(URB_T_BYTE,NULL, name, len);
+    List *key_obj = vm_alloc_bytes(vm, NULL, name, len);
     return vm_reg_alloc(vm, key_obj);
 }
 
@@ -399,42 +470,72 @@ int vm_global_remove_by_key(VM *vm, const char *name)
 
 void vm_gc(VM *vm)
 {
+    if (!vm) return;
+
+    /* mark */
+    for (Int i = 0; i < vm->reg_count; i++) {
+        ObjEntry *entry = vm->reg[i];
+        if (!entry || !entry->in_use) continue;
+        entry->mark = 0;
+    }
+
+    ObjEntry *roots[] = {
+        vm->global_entry,
+        vm->stack_entry,
+        vm->local_entry,
+        vm->this_entry,
+        vm->common_entry,
+        vm->null_entry,
+        vm->argc_entry,
+        vm->gc_entry,
+    };
+    const size_t root_count = sizeof(roots) / sizeof(roots[0]);
+
+    for (size_t i = 0; i < root_count; i++) {
+        ObjEntry *root = roots[i];
+        if (!root || !root->in_use) continue;
+        if (root->mark) continue;
+        /* iterative mark using a simple stack */
+        List *mark_stack = urb_new(16);
+        Value v;
+        v.p = root;
+        mark_stack = urb_push(mark_stack, v);
+        while (mark_stack->size > 0) {
+            ObjEntry *entry = (ObjEntry*)urb_pop(mark_stack).p;
+            if (!entry || !entry->in_use || entry->mark) continue;
+            entry->mark = 1;
+            ObjEntry *key = vm_entry_key(entry);
+            if (key && key->in_use && !key->mark) {
+                Value kv;
+                kv.p = key;
+                mark_stack = urb_push(mark_stack, kv);
+            }
+            if (!entry->obj) continue;
+            Int type = urb_obj_type(entry->obj);
+            if (type == URB_T_TABLE) {
+                List *obj = entry->obj;
+                for (Int j = 2; j < obj->size; j++) {
+                    ObjEntry *child = (ObjEntry*)obj->data[j].p;
+                    if (child && child->in_use && !child->mark) {
+                        Value cv;
+                        cv.p = child;
+                        mark_stack = urb_push(mark_stack, cv);
+                    }
+                }
+            }
+        }
+        urb_free(mark_stack);
+    }
+
+    /* sweep */
     for (Int i = 0; i < vm->reg_count; i++) {
         ObjEntry *entry = vm->reg[i];
         if (!entry || !entry->in_use) continue;
         if (entry->mark) {
-            List *obj = entry->obj;
-            if (!obj) {
-                entry->in_use = 0;
-                entry->mark = 0;
-                entry->key = NULL;
-                continue;
-            }
-            int all_marked = 1;
-            for (Int j = 0; j < vm->reg_count; j++) {
-                ObjEntry *other = vm->reg[j];
-                if (!other || !other->in_use || other->obj != obj) continue;
-                if (!other->mark) {
-                    all_marked = 0;
-                    break;
-                }
-            }
-            if (!all_marked) {
-                entry->mark = 0;
-                continue;
-            }
-            urb_obj_free(obj);
-            for (Int j = 0; j < vm->reg_count; j++) {
-                ObjEntry *other = vm->reg[j];
-                if (!other || !other->in_use || other->obj != obj) continue;
-                other->obj = NULL;
-                other->in_use = 0;
-                other->mark = 0;
-                other->key = NULL;
-            }
+            entry->mark = 0;
             continue;
         }
-        entry->mark = 0;
+        vm_release_entry(vm, entry);
     }
 }
 
@@ -473,24 +574,6 @@ static ObjEntry *vm_object_find_direct(List *obj, const char *name, size_t len)
         if (urb_bytes_eq_bytes(key->obj, name, len)) return entry;
     }
     return NULL;
-}
-
-static int vm_object_remove_by_key_len(List *obj, const char *name, size_t len)
-{
-    if (!obj) return 0;
-    Int start = 2;
-    Int type = urb_obj_type(obj);
-    if (type == URB_T_NATIVE || type == URB_T_LAMBDA) start = 3;
-    for (Int i = start; i < obj->size; i++) {
-        ObjEntry *entry = (ObjEntry*)obj->data[i].p;
-        ObjEntry *key = vm_entry_key(entry);
-        if (!key || urb_obj_type(key->obj) != URB_T_BYTE) continue;
-        if (urb_bytes_eq_bytes(key->obj, name, len)) {
-            urb_remove(obj, i);
-            return 1;
-        }
-    }
-    return 0;
 }
 
 static ObjEntry *vm_object_find_by_key_len(VM *vm, List *obj, const char *name, size_t len)
@@ -1010,26 +1093,28 @@ void vm_init(VM *vm)
     vm->gc_entry = NULL;
 
     ObjEntry *global_key = vm_make_key(vm, "global");
-    List *global_obj = urb_obj_new_list(URB_T_TABLE, global_key, 8);
+    List *global_obj = vm_alloc_list(vm, URB_T_TABLE, global_key, 8);
     vm->global_entry = vm_reg_alloc(vm, global_obj);
 
     ObjEntry *stack_key = vm_make_key(vm, "stack");
-    List *stack_obj = urb_obj_new_list(URB_T_TABLE, stack_key, 8);
+    List *stack_obj = vm_alloc_list(vm, URB_T_TABLE, stack_key, 8);
     vm->stack_entry = vm_reg_alloc(vm, stack_obj);
     vm_global_add(vm, vm->stack_entry);
 
+    vm->local_entry = NULL;
+
     ObjEntry *null_key = vm_make_key(vm, "null");
-    List *null_obj = urb_obj_new_list(URB_T_NULL, null_key, 0);
+    List *null_obj = vm_alloc_list(vm, URB_T_NULL, null_key, 0);
     vm->null_entry = vm_reg_alloc(vm, null_obj);
     vm_global_add(vm, vm->null_entry);
 
     ObjEntry *proto_key = vm_make_key(vm, "common");
-    List *proto_obj = urb_obj_new_list(URB_T_TABLE, proto_key, 16);
+    List *proto_obj = vm_alloc_list(vm, URB_T_TABLE, proto_key, 16);
     vm->common_entry = vm_reg_alloc(vm, proto_obj);
     vm_global_add(vm, vm->common_entry);
 
     ObjEntry *argc_key = vm_make_key(vm, "__argc");
-    List *argc_obj = urb_obj_new_list(URB_T_NUMBER, argc_key, 1);
+    List *argc_obj = vm_alloc_list(vm, URB_T_NUMBER, argc_key, 1);
     Value argc_v;
     argc_v.f = 0;
     argc_obj = urb_push(argc_obj, argc_v);
@@ -1039,7 +1124,7 @@ void vm_init(VM *vm)
     vm->this_entry = vm->null_entry;
 
     ObjEntry *len_key = vm_make_key(vm, "__len");
-    List *len_obj = urb_obj_new_list(URB_T_NUMBER, len_key, 1);
+    List *len_obj = vm_alloc_list(vm, URB_T_NUMBER, len_key, 1);
     Value v;
     v.f = 0;
     len_obj = urb_push(len_obj, v);
@@ -1047,7 +1132,7 @@ void vm_init(VM *vm)
     vm_global_add(vm, len_entry);
 
     ObjEntry *gc_key = vm_make_key(vm, "gc");
-    List *gc_obj = urb_obj_new_list(URB_T_TABLE, gc_key, 4);
+    List *gc_obj = vm_alloc_list(vm, URB_T_TABLE, gc_key, 4);
     vm->gc_entry = vm_reg_alloc(vm, gc_obj);
     vm_global_add(vm, vm->gc_entry);
 
@@ -1218,6 +1303,18 @@ void vm_free(VM *vm)
         free(entry);
         vm->reg[i] = NULL;
     }
+    while (vm->free_lists) {
+        FreeNode *node = vm->free_lists;
+        vm->free_lists = node->next;
+        vm_free_list(node->obj);
+        free(node);
+    }
+    while (vm->free_bytes) {
+        FreeNode *node = vm->free_bytes;
+        vm->free_bytes = node->next;
+        vm_free_list(node->obj);
+        free(node);
+    }
     free(vm->reg);
 }
 
@@ -1253,14 +1350,14 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
 
     switch (type) {
     case URB_T_NULL:
-        copy = urb_obj_new_list(URB_T_NULL, key_entry, 0);
+        copy = vm_alloc_list(vm, URB_T_NULL, key_entry, 0);
         break;
     case URB_T_BYTE:
-        copy = urb_obj_new_bytes(URB_T_BYTE,key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
+        copy = vm_alloc_bytes(vm, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
         break;
     case URB_T_NUMBER: {
         Int n = (Int)(obj->size - 2);
-        copy = urb_obj_new_list(URB_T_NUMBER, key_entry, n);
+        copy = vm_alloc_list(vm, URB_T_NUMBER, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             copy = urb_push(copy, obj->data[i]);
         }
@@ -1268,11 +1365,11 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
     }
     case URB_T_TABLE: {
         Int n = (Int)(obj->size - 2);
-        copy = urb_obj_new_list(URB_T_TABLE, key_entry, n);
+        copy = vm_alloc_list(vm, URB_T_TABLE, key_entry, n);
         break;
     }
     case URB_T_NATIVE: {
-        copy = urb_obj_new_list(URB_T_NATIVE, key_entry, 1);
+        copy = vm_alloc_list(vm, URB_T_NATIVE, key_entry, 1);
         NativeBox *src_box = obj->size >= 3 ? (NativeBox*)obj->data[2].p : NULL;
         NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
         box->fn = src_box ? src_box->fn : NULL;
@@ -1282,7 +1379,7 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         break;
     }
     case URB_T_LAMBDA: {
-        copy = urb_obj_new_list(URB_T_LAMBDA, key_entry, 1);
+        copy = vm_alloc_list(vm, URB_T_LAMBDA, key_entry, 1);
         FunctionBox *src_box = obj->size >= 3 ? (FunctionBox*)obj->data[2].p : NULL;
         FunctionBox *box = (FunctionBox*)malloc(sizeof(FunctionBox));
         memset(box, 0, sizeof(*box));
@@ -1323,7 +1420,7 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         break;
     }
     default:
-        copy = urb_obj_new_list(type, key_entry, (Int)(obj->size - 2));
+        copy = vm_alloc_list(vm, type, key_entry, (Int)(obj->size - 2));
         for (Int i = 2; i < obj->size; i++) {
             copy = urb_push(copy, obj->data[i]);
         }
@@ -1385,14 +1482,14 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
 
     switch (type) {
     case URB_T_NULL:
-        copy = urb_obj_new_list(URB_T_NULL, key_entry, 0);
+        copy = vm_alloc_list(vm, URB_T_NULL, key_entry, 0);
         break;
     case URB_T_BYTE:
-        copy = urb_obj_new_bytes(URB_T_BYTE, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
+        copy = vm_alloc_bytes(vm, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
         break;
     case URB_T_NUMBER: {
         Int n = (Int)(obj->size - 2);
-        copy = urb_obj_new_list(URB_T_NUMBER, key_entry, n);
+        copy = vm_alloc_list(vm, URB_T_NUMBER, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             copy = urb_push(copy, obj->data[i]);
         }
@@ -1400,7 +1497,7 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
     }
     case URB_T_TABLE: {
         Int n = (Int)(obj->size - 2);
-        copy = urb_obj_new_list(URB_T_TABLE, key_entry, n);
+        copy = vm_alloc_list(vm, URB_T_TABLE, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             Value v = obj->data[i];
             copy = urb_push(copy, v);
@@ -1410,7 +1507,7 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
     case URB_T_NATIVE:
     case URB_T_LAMBDA: {
         Int n = (Int)(obj->size - 2);
-        copy = urb_obj_new_list(type, key_entry, n);
+        copy = vm_alloc_list(vm, type, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             copy = urb_push(copy, obj->data[i]);
         }
@@ -1418,7 +1515,7 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
     }
     default: {
         Int n = (Int)(obj->size - 2);
-        copy = urb_obj_new_list(type, key_entry, n);
+        copy = vm_alloc_list(vm, type, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             copy = urb_push(copy, obj->data[i]);
         }
@@ -1440,7 +1537,7 @@ ObjEntry *vm_define_bytes(VM *vm, const char *key, const char *value)
         key_entry = vm_make_key(vm, key);
     }
 
-    List *obj = urb_obj_new_bytes(URB_T_BYTE,key_entry, value, strlen(value));
+    List *obj = vm_alloc_bytes(vm, key_entry, value, strlen(value));
     ObjEntry *entry = vm_reg_alloc(vm, obj);
     vm_global_add(vm, entry);
     return entry;
@@ -1454,7 +1551,7 @@ ObjEntry *vm_define_byte(VM *vm, const char *key, char **items, int count, int s
     }
 
     size_t len = (size_t)(count - start);
-    List *obj = urb_obj_new_byte(key_entry, len);
+    List *obj = vm_alloc_bytes(vm, key_entry, NULL, len);
     for (int i = start; i < count; i++) {
         char *end = NULL;
         long value = strtol(items[i], &end, 10);
@@ -1477,7 +1574,7 @@ ObjEntry *vm_define_number(VM *vm, const char *key, char **items, int count, int
     }
 
     Int n = (Int)(count - start);
-    List *obj = urb_obj_new_list(URB_T_NUMBER, key_entry, n);
+    List *obj = vm_alloc_list(vm, URB_T_NUMBER, key_entry, n);
     for (int i = start; i < count; i++) {
         Value v;
         v.f = (Float)strtod(items[i], NULL);
@@ -1497,7 +1594,7 @@ ObjEntry *vm_define_table(VM *vm, const char *key, char **items, int count, int 
     }
 
     Int n = (Int)(count - start);
-    List *obj = urb_obj_new_list(URB_T_TABLE, key_entry, n);
+    List *obj = vm_alloc_list(vm, URB_T_TABLE, key_entry, n);
     for (int i = start; i < count; i++) {
         ObjEntry *child = vm_find_by_key(vm, items[i]);
         if (!child) {
@@ -1525,7 +1622,7 @@ ObjEntry *vm_define_native(VM *vm, const char *key, const char *fn_name)
         return NULL;
     }
 
-    List *obj = urb_obj_new_list(URB_T_NATIVE, key_entry, 1);
+    List *obj = vm_alloc_list(vm, URB_T_NATIVE, key_entry, 1);
     NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
     box->fn = fn;
     Value v;
@@ -1899,12 +1996,12 @@ static ObjEntry *vm_make_type_name(VM *vm, ObjEntry *target)
             name = urb_type_name(type);
         }
     }
-    return vm_reg_alloc(vm, urb_obj_new_bytes(URB_T_BYTE,NULL, name, strlen(name)));
+    return vm_reg_alloc(vm, vm_alloc_bytes(vm, NULL, name, strlen(name)));
 }
 
 ObjEntry *vm_make_number_value(VM *vm, Float value)
 {
-    List *obj = urb_obj_new_list(URB_T_NUMBER, NULL, 1);
+    List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, 1);
     Value v;
     v.f = value;
     obj = urb_push(obj, v);
@@ -1913,19 +2010,19 @@ ObjEntry *vm_make_number_value(VM *vm, Float value)
 
 ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len)
 {
-    List *obj = urb_obj_new_bytes(URB_T_BYTE,NULL, s, len);
+    List *obj = vm_alloc_bytes(vm, NULL, s, len);
     return vm_reg_alloc(vm, obj);
 }
 
 ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len)
 {
-    List *obj = urb_obj_new_bytes(URB_T_BYTE, NULL, s, len);
+    List *obj = vm_alloc_bytes(vm, NULL, s, len);
     return vm_reg_alloc(vm, obj);
 }
 
 ObjEntry *vm_make_table_value(VM *vm, Int reserve)
 {
-    List *obj = urb_obj_new_list(URB_T_TABLE, NULL, reserve);
+    List *obj = vm_alloc_list(vm, URB_T_TABLE, NULL, reserve);
     return vm_reg_alloc(vm, obj);
 }
 
@@ -2112,18 +2209,33 @@ static ObjEntry *vm_eval_default(VM *vm, List *stack, unsigned char *code, size_
     return val ? val : (vm ? vm->null_entry : NULL);
 }
 
-static int vm_global_rebind(VM *vm, const char *name, size_t len, ObjEntry *entry)
+static int vm_entry_on_stack(List *stack, ObjEntry *entry)
 {
-    if (!vm || !vm->global_entry) return 0;
-    vm_object_remove_by_key_len(vm->global_entry->obj, name, len);
-    if (!entry) return 1;
-    List *old_obj = vm->global_entry->obj;
-    vm->global_entry->obj = vm_update_shared_obj(vm, old_obj,
-                                                 urb_table_add(old_obj, entry));
-    return 1;
+    if (!stack || !entry) return 0;
+    for (Int i = 2; i < stack->size; i++) {
+        if ((ObjEntry*)stack->data[i].p == entry) return 1;
+    }
+    return 0;
 }
 
-static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc, ObjEntry **bound)
+static void vm_release_local_scope(VM *vm, ObjEntry *local, List *stack)
+{
+    if (!vm || !local || !local->obj) return;
+    List *obj = local->obj;
+    for (Int i = 2; i < obj->size; i++) {
+        ObjEntry *entry = (ObjEntry*)obj->data[i].p;
+        ObjEntry *key = vm_entry_key(entry);
+        if (key && urb_obj_type(key->obj) == URB_T_BYTE &&
+            urb_bytes_eq_cstr(key->obj, "local")) {
+            continue;
+        }
+        if (vm_entry_on_stack(stack, entry)) continue;
+        if (entry) vm_release_entry(vm, entry);
+    }
+    vm_release_entry(vm, local);
+}
+
+static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc, ObjEntry *local)
 {
     if (!vm || !box) return 0;
     uint32_t fixed = box->argc;
@@ -2136,16 +2248,11 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc, Ob
             }
             if (!arg) arg = vm->null_entry;
         }
-        ObjEntry *key_entry = vm_make_key_len(vm, box->arg_names[i], box->arg_lens[i]);
-        ObjEntry *entry = NULL;
-        if (arg == vm->null_entry) {
-            entry = vm_reg_alloc(vm, vm_alloc_list(URB_T_NULL, key_entry, 0));
-            if (entry) entry->key = key_entry;
-        } else {
-            entry = vm_clone_entry_shallow(vm, arg, key_entry);
-        }
-        if (bound) bound[i] = entry;
-        if (!vm_global_rebind(vm, box->arg_names[i], box->arg_lens[i], entry)) {
+        if (!local) return 0;
+        if (!vm_object_set_by_key_len(vm, &local->obj,
+                                      box->arg_names[i],
+                                      box->arg_lens[i],
+                                      arg, 0)) {
             return 0;
         }
     }
@@ -2157,14 +2264,16 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc, Ob
             list->obj = vm_update_shared_obj(vm, list->obj,
                                              urb_table_add(list->obj, arg));
         }
-        ObjEntry *key_entry = vm_make_key_len(vm, box->arg_names[box->argc - 1],
-                                              box->arg_lens[box->argc - 1]);
-        list->key = key_entry;
-        if (bound) bound[box->argc - 1] = list;
-        if (!vm_global_rebind(vm, box->arg_names[box->argc - 1],
-                              box->arg_lens[box->argc - 1], list)) {
+        if (!local) return 0;
+        if (!vm_object_set_by_key_len(vm, &local->obj,
+                                      box->arg_names[box->argc - 1],
+                                      box->arg_lens[box->argc - 1],
+                                      list, 0)) {
             return 0;
         }
+    }
+    if (!vm_object_set_by_key_len(vm, &local->obj, "local", 5, local, 0)) {
+        return 0;
     }
     return 1;
 }
@@ -2245,7 +2354,7 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
             return vm->null_entry;
         }
         char c = urb_bytes_data(target->obj)[idx];
-        ObjEntry *entry = vm_reg_alloc(vm, urb_obj_new_bytes(URB_T_BYTE, NULL, &c, 1));
+        ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, NULL, &c, 1));
         return entry;
     }
 
@@ -2255,7 +2364,7 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
             fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
             return vm->null_entry;
         }
-        List *obj = urb_obj_new_list(URB_T_NUMBER, NULL, 1);
+        List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, 1);
         obj = urb_push(obj, target->obj->data[pos]);
         return vm_reg_alloc(vm, obj);
     }
@@ -2504,7 +2613,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 fprintf(stderr, "bytecode error at pc %zu: truncated PUSH_NUM\n", pc);
                 return 0;
             }
-            List *obj = urb_obj_new_list(URB_T_NUMBER, NULL, 1);
+            List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, 1);
             Value val;
             val.f = (Float)v;
             obj = urb_push(obj, val);
@@ -2521,13 +2630,13 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             }
             char *processed = papagaio_process_text(vm, (const char*)buf, slen);
             if (processed) {
-                List *obj = urb_obj_new_bytes(URB_T_BYTE, NULL, processed, strlen(processed));
+                List *obj = vm_alloc_bytes(vm, NULL, processed, strlen(processed));
                 free(processed);
                 free(buf);
                 vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
                 break;
             }
-            List *obj = urb_obj_new_bytes(URB_T_BYTE, NULL, (const char*)buf, slen);
+            List *obj = vm_alloc_bytes(vm, NULL, (const char*)buf, slen);
             free(buf);
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
@@ -2539,7 +2648,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 return 0;
             }
             unsigned char b = v;
-            List *obj = urb_obj_new_bytes(URB_T_BYTE, NULL, (const char*)&b, 1);
+            List *obj = vm_alloc_bytes(vm, NULL, (const char*)&b, 1);
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
@@ -2549,7 +2658,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_NUMBER\n", pc);
                 return 0;
             }
-            List *obj = urb_obj_new_list(URB_T_NUMBER, NULL, (Int)count);
+            List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, (Int)count);
             Value *vals = (Value*)calloc(count, sizeof(Value));
             if (!vals && count > 0) {
                 fprintf(stderr, "bytecode error at pc %zu: out of memory\n", pc);
@@ -2578,7 +2687,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_NUMBER_LIT\n", pc);
                 return 0;
             }
-            List *obj = urb_obj_new_list(URB_T_NUMBER, NULL, (Int)count);
+            List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, (Int)count);
             for (uint32_t i = 0; i < count; i++) {
                 double v = 0.0;
                 if (!bc_read_f64(data, len, &pc, &v)) {
@@ -2602,7 +2711,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 fprintf(stderr, "bytecode error at pc %zu: BUILD_BYTE count too large\n", pc);
                 return 0;
             }
-            List *obj = urb_obj_new_byte(NULL, count);
+            List *obj = vm_alloc_bytes(vm, NULL, NULL, count);
             for (uint32_t i = 0; i < count; i++) {
                 ObjEntry *entry = vm_stack_pop_entry(vm, "BUILD_BYTE", pc);
                 if (!entry) return 0;
@@ -2621,7 +2730,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_OBJECT\n", pc);
                 return 0;
             }
-            List *obj = urb_obj_new_list(URB_T_TABLE, NULL, (Int)count);
+            List *obj = vm_alloc_list(vm, URB_T_TABLE, NULL, (Int)count);
             ObjEntry **keys = (ObjEntry**)calloc(count, sizeof(ObjEntry*));
             ObjEntry **vals = (ObjEntry**)calloc(count, sizeof(ObjEntry*));
             if (!keys || !vals) {
@@ -2772,7 +2881,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             box->default_code = default_code;
             box->default_lens = default_lens;
             box->has_default = has_default;
-            List *obj = urb_obj_new_list(URB_T_LAMBDA, NULL, 1);
+            List *obj = vm_alloc_list(vm, URB_T_LAMBDA, NULL, 1);
             Value v;
             v.p = box;
             obj = urb_push(obj, v);
@@ -2881,7 +2990,13 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 fprintf(stderr, "bytecode error at pc %zu: truncated LOAD_GLOBAL\n", pc);
                 return 0;
             }
-            ObjEntry *entry = vm_object_find_by_key_len(vm, vm->global_entry->obj, (char*)name, name_len);
+            ObjEntry *entry = NULL;
+            if (vm->local_entry) {
+                entry = vm_object_find_direct(vm->local_entry->obj, (char*)name, name_len);
+            }
+            if (!entry) {
+                entry = vm_object_find_by_key_len(vm, vm->global_entry->obj, (char*)name, name_len);
+            }
             free(name);
             vm_stack_push_entry(vm, entry);
             break;
@@ -2901,7 +3016,12 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 free(name);
                 return 0;
             }
-            int ok = vm_object_set_by_key_len(vm, &vm->global_entry->obj, (char*)name, name_len, value, pc);
+            int ok = 0;
+            if (vm->local_entry) {
+                ok = vm_object_set_by_key_len(vm, &vm->local_entry->obj, (char*)name, name_len, value, pc);
+            } else {
+                ok = vm_object_set_by_key_len(vm, &vm->global_entry->obj, (char*)name, name_len, value, pc);
+            }
             free(name);
             if (!ok) return 0;
             break;
@@ -2974,80 +3094,22 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     fprintf(stderr, "bytecode error at pc %zu: CALL null function\n", pc);
                     return 0;
                 }
-                ObjEntry **saved_args = NULL;
-                unsigned char *saved_flags = NULL;
-                ObjEntry **bound_args = NULL;
-                uint32_t saved_count = box->argc;
-                if (saved_count > 0) {
-                    saved_args = (ObjEntry**)calloc(saved_count, sizeof(ObjEntry*));
-                    saved_flags = (unsigned char*)calloc(saved_count, sizeof(unsigned char));
-                    bound_args = (ObjEntry**)calloc(saved_count, sizeof(ObjEntry*));
-                    if (!saved_args || !saved_flags) {
-                        fprintf(stderr, "bytecode error at pc %zu: CALL out of memory\n", pc);
-                        free(saved_args);
-                        free(saved_flags);
-                        free(bound_args);
-                        return 0;
-                    }
-                    for (uint32_t i = 0; i < saved_count; i++) {
-                        ObjEntry *existing = vm_object_find_direct(vm->global_entry->obj,
-                                                                   box->arg_names[i],
-                                                                   box->arg_lens[i]);
-                        if (existing) {
-                            saved_args[i] = existing;
-                            saved_flags[i] = 1;
-                        }
-                    }
-                }
-                if (!vm_bind_args(vm, box, vm->stack_entry->obj, argc, bound_args)) {
+                ObjEntry *old_local = vm->local_entry;
+                ObjEntry *local = vm_make_table_value(vm, (Int)box->argc);
+                vm->local_entry = local;
+                if (!vm_bind_args(vm, box, vm->stack_entry->obj, argc, local)) {
                     fprintf(stderr, "bytecode error at pc %zu: CALL arg bind failed\n", pc);
-                    if (saved_args || saved_flags) {
-                        for (uint32_t i = 0; i < saved_count; i++) {
-                            if (saved_flags[i]) {
-                                vm_global_rebind(vm, box->arg_names[i], box->arg_lens[i], saved_args[i]);
-                            } else {
-                                vm_object_remove_by_key_len(vm->global_entry->obj,
-                                                            box->arg_names[i],
-                                                            box->arg_lens[i]);
-                            }
-                        }
-                        free(saved_args);
-                        free(saved_flags);
-                        free(bound_args);
-                    }
+                    vm->local_entry = old_local;
+                    if (local) vm_release_local_scope(vm, local, vm->stack_entry->obj);
                     return 0;
                 }
                 if (!vm_exec_bytecode(vm, box->code, box->len)) {
-                    if (saved_args || saved_flags) {
-                        for (uint32_t i = 0; i < saved_count; i++) {
-                            if (saved_flags[i]) {
-                                vm_global_rebind(vm, box->arg_names[i], box->arg_lens[i], saved_args[i]);
-                            } else {
-                                vm_object_remove_by_key_len(vm->global_entry->obj,
-                                                            box->arg_names[i],
-                                                            box->arg_lens[i]);
-                            }
-                        }
-                        free(saved_args);
-                        free(saved_flags);
-                        free(bound_args);
-                    }
+                    vm->local_entry = old_local;
+                    if (local) vm_release_local_scope(vm, local, vm->stack_entry->obj);
                     return 0;
                 }
-                if (saved_args || saved_flags) {
-                    for (uint32_t i = 0; i < saved_count; i++) {
-                        if (saved_flags[i]) {
-                            vm_global_rebind(vm, box->arg_names[i], box->arg_lens[i], saved_args[i]);
-                        } else {
-                            vm_object_remove_by_key_len(vm->global_entry->obj,
-                                                        box->arg_names[i],
-                                                        box->arg_lens[i]);
-                        }
-                    }
-                    free(saved_args);
-                    free(saved_flags);
-                    free(bound_args);
-                }
+                vm->local_entry = old_local;
+                if (local) vm_release_local_scope(vm, local, vm->stack_entry->obj);
             } else {
                 fprintf(stderr, "bytecode error at pc %zu: CALL target not callable\n", pc);
                 return 0;
@@ -3123,7 +3185,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 sb_init(&buf);
                 vm_append_value_text(vm, left, &buf, 1);
                 vm_append_value_text(vm, right, &buf, 1);
-                ObjEntry *entry = vm_reg_alloc(vm, urb_obj_new_bytes(URB_T_BYTE,NULL, buf.data, buf.len));
+                ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, NULL, buf.data, buf.len));
                 sb_free(&buf);
                 vm_stack_push_entry(vm, entry);
                 break;

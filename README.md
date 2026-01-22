@@ -177,6 +177,7 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 - `global` is a real table; `global.name[0]` is valid.
 - Strings are `char` objects; `char` vs `string` is decided by length.
  - Assignments are reference-based; use `clone()` for shallow copies or `copy()` for deep copies.
+ - Lambda bodies now use local scope; assign to `global.name` to update globals explicitly. The local scope is available as `local` inside lambdas.
  Resizing always keeps the same table entry slot to preserve references.
 ## Built-in Methods
  Cross-language literal list parsing, deep table access, and string length for Disturb/Lua/Node/Python/C if present
@@ -257,9 +258,9 @@ Notes:
 - `astToSource` follows the disassembler format; `BUILD_FUNCTION` shows lengths, not raw bytes.
 - `emit` consumes AST objects directly, so include `code`/`default` byte strings in `BUILD_FUNCTION`.
 - `gc()` runs a collection.
-- `global.gc.collect()` runs a collection (manual only, no automatic GC).
+- `global.gc.collect()` runs a manual reachability collection and marks unreachable values for reuse.
 - `global.gc.free(value)` frees the value and replaces it with `null` (manual management).
-- `global.gc.sweep(value)` marks a value as unused so `gc.collect()` will free it.
+- `global.gc.sweep(value)` marks the value for reuse immediately and replaces it with `null`.
 - `global.gc.new(size)` allocates a table with reserved capacity.
 - Comments are supported via `//` and `/* ... */`.
 

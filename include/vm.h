@@ -6,6 +6,7 @@
 
 typedef struct ObjEntry ObjEntry;
 typedef struct VM VM;
+typedef struct FreeNode FreeNode;
 
 typedef void (*NativeFn)(VM *vm, List *stack, List *global);
 
@@ -32,11 +33,14 @@ struct VM {
     Int reg_cap;
     ObjEntry *global_entry;
     ObjEntry *stack_entry;
+    ObjEntry *local_entry;
     ObjEntry *null_entry;
     ObjEntry *common_entry;
     ObjEntry *argc_entry;
     ObjEntry *this_entry;
     ObjEntry *gc_entry;
+    FreeNode *free_lists;
+    FreeNode *free_bytes;
 };
 
 const char *urb_type_name(Int type);
@@ -59,8 +63,9 @@ ObjEntry *vm_make_number_value(VM *vm, Float value);
 ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_table_value(VM *vm, Int reserve);
-List *vm_alloc_list(Int type, ObjEntry *key_entry, Int reserve);
+List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve);
 void vm_free_list(List *obj);
+void vm_reuse_list(VM *vm, List *obj);
 ObjEntry *vm_entry_key(const ObjEntry *entry);
 ObjEntry *vm_clone_entry_shallow(VM *vm, ObjEntry *src, ObjEntry *forced_key);
 ObjEntry *vm_clone_entry_deep(VM *vm, ObjEntry *src, ObjEntry *forced_key);

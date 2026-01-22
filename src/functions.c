@@ -1301,11 +1301,15 @@ static void native_gc_free(VM *vm, List *stack, List *global)
         fprintf(stderr, "gc.free cannot free protected values\n");
         return;
     }
+    if (gc_entry_shared(vm, target)) {
+        fprintf(stderr, "gc.free cannot free shared values\n");
+        return;
+    }
     ObjEntry *key_entry = vm_entry_key(target);
-    if (target->obj && !gc_entry_shared(vm, target)) {
+    if (target->obj) {
         vm_free_list(target->obj);
     }
-    target->obj = vm_alloc_list(URB_T_NULL, key_entry, 0);
+    target->obj = vm_alloc_list(vm, URB_T_NULL, key_entry, 0);
     target->key = key_entry;
     target->mark = 0;
     push_number(vm, stack, 1);
@@ -1324,7 +1328,13 @@ static void native_gc_sweep(VM *vm, List *stack, List *global)
         fprintf(stderr, "gc.sweep cannot sweep protected values\n");
         return;
     }
-    target->mark = 1;
+    ObjEntry *key_entry = vm_entry_key(target);
+    if (target->obj && !gc_entry_shared(vm, target)) {
+        vm_reuse_list(vm, target->obj);
+    }
+    target->obj = vm_alloc_list(vm, URB_T_NULL, key_entry, 0);
+    target->key = key_entry;
+    target->mark = 0;
     push_number(vm, stack, 1);
 }
 
