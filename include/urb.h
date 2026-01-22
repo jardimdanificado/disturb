@@ -1,6 +1,8 @@
 // urb
 // urb use no other libraries beside the standard C99 libraries
-// urb.h is standalone and is not dependant on any other file of the repo
+// this is a modified version of urb withou the data pointer
+// you can find the original at:
+// https://github.com/jardimdanificado/urb
 
 #ifndef URB_H
 #define URB_H 1
@@ -15,7 +17,7 @@
 #include <ctype.h>
 
 // version
-#define URB_VERSION "0.9.5"
+#define URB_VERSION "0.9.6"
 
 typedef intptr_t Int;
 typedef uintptr_t UInt;
@@ -67,25 +69,25 @@ struct List
     UHalf capacity;
     // the current size
     UHalf size;
-    // the data, it is a pointer to a Value array
-    Value *data;
+    // the data buffer
+    Value data[];
 };
 
-// List functions   
+// List functions
 // create a new list with the given size, if size is 0, it will be initialized with NULL data and then allocated when needed
 static inline List*              urb_new(Int size);
 // free the list    
 static inline void               urb_free(List *list);
 // double the list capacity   
-static inline void               urb_double(List *list);
+static inline List*              urb_double(List *list);
 // halve the list capacity   
-static inline void               urb_half(List *list);
+static inline List*              urb_half(List *list);
 // push a value to the end of the list
-static inline void               urb_push(List *list, Value value);
+static inline List*              urb_push(List *list, Value value);
 // unshift a value to the start of the list
-static inline void               urb_unshift(List *list, Value value);
+static inline List*              urb_unshift(List *list, Value value);
 // insert a value at index i in the list
-static inline void               urb_insert(List *list, Int i, Value value);
+static inline List*              urb_insert(List *list, Int i, Value value);
 // pop a value from the end of the list
 static inline Value              urb_pop(List *list);
 // shift a value from the start of the list
@@ -100,8 +102,9 @@ static inline List *urb_new(Int size)
 {
     if (size < 0)
         PANIC("cannot create a list with negative size.");
-    List *list = (List*)malloc(sizeof(List));
-    list->data = (size == 0) ? NULL : (Value*)malloc((size_t)size * sizeof(Value));
+    size_t cap = (size_t)size;
+    size_t bytes = sizeof(List) + cap * sizeof(Value);
+    List *list = (List*)malloc(bytes);
     list->size = 0;
     list->capacity = size;
 
@@ -110,49 +113,52 @@ static inline List *urb_new(Int size)
 
 static inline void urb_free(List *list)
 {
-    free(list->data);
     free(list);
 }
 
-static inline void urb_double(List *list)
+static inline List *urb_double(List *list)
 {
     list->capacity = list->capacity == 0 ? 1 : list->capacity * 2;
-    Value *new_data = (Value*)realloc(list->data, (size_t)list->capacity * sizeof(Value));
-    list->data = new_data;
+    size_t bytes = sizeof(List) + (size_t)list->capacity * sizeof(Value);
+    List *next = (List*)realloc(list, bytes);
+    return next ? next : list;
 }
 
-static inline void urb_half(List *list)
+static inline List *urb_half(List *list)
 {
     list->capacity /= 2;
-    Value *new_data = (Value*)realloc(list->data, (size_t)list->capacity * sizeof(Value));
-    list->data = new_data;
+    size_t bytes = sizeof(List) + (size_t)list->capacity * sizeof(Value);
+    List *next = (List*)realloc(list, bytes);
 
     if (list->size > list->capacity)
         list->size = list->capacity;
+    return next ? next : list;
 }
 
-static inline void urb_push(List *list, Value value)
+static inline List *urb_push(List *list, Value value)
 {
     if (list->size == list->capacity)
-        urb_double(list);
+        list = urb_double(list);
     list->data[list->size] = value;
     list->size++;
+    return list;
 }
 
-static inline void urb_unshift(List *list, Value value)
+static inline List *urb_unshift(List *list, Value value)
 {
     if (list->size == list->capacity)
-        urb_double(list);
+        list = urb_double(list);
     memmove(&(list->data[1]), &(list->data[0]), (size_t)list->size * sizeof(Value));
     list->data[0] = value;
 
     list->size++;
+    return list;
 }
 
-static inline void urb_insert(List *list, Int index, Value value)
+static inline List *urb_insert(List *list, Int index, Value value)
 {
     if (list->size == list->capacity)
-        urb_double(list);
+        list = urb_double(list);
 
     index = INDEX_CYCLE(index);
 
@@ -162,6 +168,7 @@ static inline void urb_insert(List *list, Int index, Value value)
     memmove(&(list->data[index + 1]), &(list->data[index]), (size_t)(list->size - index) * sizeof(Value));
     list->data[index] = value;
     list->size++;
+    return list;
 }
 
 static inline Value urb_pop(List *list)

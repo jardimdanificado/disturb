@@ -51,7 +51,7 @@ void *lre_realloc(void *opaque, void *ptr, size_t size)
     return realloc(ptr, size);
 }
 
-static int vm_object_set_by_key_len(VM *vm, List *obj, const char *name, size_t len,
+static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_t len,
                                     ObjEntry *value, size_t pc);
 
 
@@ -148,9 +148,9 @@ static List *urb_obj_new_list(Int type, ObjEntry *key_entry, Int reserve)
     List *obj = urb_new(2 + reserve);
     Value v;
     v.i = type;
-    urb_push(obj, v);
+    obj = urb_push(obj, v);
     v.p = key_entry;
-    urb_push(obj, v);
+    obj = urb_push(obj, v);
     return obj;
 }
 
@@ -160,10 +160,10 @@ static List *urb_obj_new_bytes(Int type, ObjEntry *key_entry, const char *s, siz
         PANIC("byte object too large.");
     }
 
-    List *obj = (List*)malloc(sizeof(List));
+    size_t bytes = sizeof(List) + 2 * sizeof(Value) + len;
+    List *obj = (List*)malloc(bytes);
     obj->capacity = (UHalf)(len + 2);
     obj->size = (UHalf)(len + 2);
-    obj->data = (Value*)malloc(2 * sizeof(Value) + len);
     obj->data[0].i = type;
     obj->data[1].p = key_entry;
     if (len && s) {
@@ -203,30 +203,37 @@ static void urb_obj_free(List *obj)
             free(box);
         }
     }
-    free(obj->data);
     free(obj);
 }
 
-void urb_table_add(List *obj, ObjEntry *entry)
+static void vm_table_add_entry(ObjEntry *target, ObjEntry *entry)
+{
+    if (!target) return;
+    target->obj = urb_table_add(target->obj, entry);
+}
+
+List *urb_table_add(List *obj, ObjEntry *entry)
 {
     Value v;
     v.p = entry;
-    urb_push(obj, v);
+    return urb_push(obj, v);
 }
 
-void urb_bytes_append(List *obj, const char *bytes, size_t len)
+List *urb_bytes_append(List *obj, const char *bytes, size_t len)
 {
     size_t old_len = urb_bytes_len(obj);
     size_t new_len = old_len + len;
     if (new_len > urb_bytes_max() - 2) {
         PANIC("byte object too large.");
     }
-    obj->data = (Value*)realloc(obj->data, 2 * sizeof(Value) + new_len);
+    size_t bytes_size = sizeof(List) + 2 * sizeof(Value) + new_len;
+    obj = (List*)realloc(obj, bytes_size);
     if (len) {
         memcpy(urb_bytes_data(obj) + old_len, bytes, len);
     }
     obj->size = (UHalf)(new_len + 2);
     obj->capacity = (UHalf)(new_len + 2);
+    return obj;
 }
 
 static int urb_bytes_eq_cstr(const List *obj, const char *s)
@@ -300,7 +307,7 @@ static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_na
     box->fn = fn;
     Value v;
     v.p = box;
-    urb_push(obj, v);
+    obj = urb_push(obj, v);
     return vm_reg_alloc(vm, obj);
 }
 
@@ -325,7 +332,7 @@ static ObjEntry *vm_find_by_key(VM *vm, const char *name)
 
 static void vm_global_add(VM *vm, ObjEntry *entry)
 {
-    urb_table_add(vm->global_entry->obj, entry);
+    vm_table_add_entry(vm->global_entry, entry);
 }
 
 int vm_global_remove_by_key(VM *vm, const char *name)
@@ -467,7 +474,7 @@ void urb_number_set_single(List *obj, Float value)
     obj->size = 2;
     Value v;
     v.f = value;
-    urb_push(obj, v);
+    obj = urb_push(obj, v);
 }
 
 static int vm_entry_truthy(const ObjEntry *entry)
@@ -972,7 +979,7 @@ void vm_init(VM *vm)
     List *argc_obj = urb_obj_new_list(URB_T_NUMBER, argc_key, 1);
     Value argc_v;
     argc_v.f = 0;
-    urb_push(argc_obj, argc_v);
+    argc_obj = urb_push(argc_obj, argc_v);
     vm->argc_entry = vm_reg_alloc(vm, argc_obj);
     vm_global_add(vm, vm->argc_entry);
 
@@ -982,7 +989,7 @@ void vm_init(VM *vm)
     List *len_obj = urb_obj_new_list(URB_T_NUMBER, len_key, 1);
     Value v;
     v.f = 0;
-    urb_push(len_obj, v);
+    len_obj = urb_push(len_obj, v);
     ObjEntry *len_entry = vm_reg_alloc(vm, len_obj);
     vm_global_add(vm, len_entry);
 
@@ -992,129 +999,133 @@ void vm_init(VM *vm)
     vm_global_add(vm, vm->gc_entry);
 
     ObjEntry *rate_val = vm_make_number_value(vm, 0);
-    vm_object_set_by_key_len(vm, gc_obj, "rate", 4, rate_val, 0);
+    vm_object_set_by_key_len(vm, &gc_obj, "rate", 4, rate_val, 0);
+    vm->gc_entry->obj = gc_obj;
     ObjEntry *collect_entry = vm_make_native_entry(vm, "collect", "gcCollect");
-    if (collect_entry) urb_table_add(gc_obj, collect_entry);
+    if (collect_entry) {
+        gc_obj = urb_table_add(gc_obj, collect_entry);
+        vm->gc_entry->obj = gc_obj;
+    }
 
     ObjEntry *entry = NULL;
     entry = vm_define_native(vm, "print", "print");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "println", "println");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "len", "len");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "pretty", "pretty");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "toByte", "toByte");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "toNumber", "toNumber");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "gc", "gc");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "read", "read");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "write", "write");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "eval", "eval");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "parse", "parse");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "emit", "emit");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "evalBytecode", "evalBytecode");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "bytecodeToAst", "bytecodeToAst");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "astToSource", "astToSource");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "append", "append");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "add", "add");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "sub", "sub");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "mul", "mul");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "div", "div");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "mod", "mod");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "pow", "pow");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "min", "min");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "max", "max");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "abs", "abs");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "floor", "floor");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "ceil", "ceil");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "round", "round");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "sqrt", "sqrt");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "sin", "sin");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "cos", "cos");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "tan", "tan");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "asin", "asin");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "acos", "acos");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "atan", "atan");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "log", "log");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "exp", "exp");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "slice", "slice");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "substr", "substr");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "split", "split");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "join", "join");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "upper", "upper");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "lower", "lower");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "trim", "trim");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "startsWith", "startsWith");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "endsWith", "endsWith");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "replace", "replace");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "replaceAll", "replaceAll");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "papagaio", "papagaio");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "keys", "keys");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "values", "values");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "has", "has");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "delete", "delete");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "push", "push");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "pop", "pop");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "shift", "shift");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "unshift", "unshift");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "insert", "insert");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
     entry = vm_define_native(vm, "remove", "remove");
-    if (entry) urb_table_add(vm->common_entry->obj, entry);
+    if (entry) vm_table_add_entry(vm->common_entry, entry);
 }
 
 void vm_free(VM *vm)
@@ -1171,7 +1182,7 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         Int n = (Int)(obj->size - 2);
         copy = urb_obj_new_list(URB_T_NUMBER, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
-            urb_push(copy, obj->data[i]);
+            copy = urb_push(copy, obj->data[i]);
         }
         break;
     }
@@ -1187,7 +1198,7 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         box->fn = src_box ? src_box->fn : NULL;
         Value v;
         v.p = box;
-        urb_push(copy, v);
+        copy = urb_push(copy, v);
         break;
     }
     case URB_T_LAMBDA: {
@@ -1228,13 +1239,13 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         }
         Value v;
         v.p = box;
-        urb_push(copy, v);
+        copy = urb_push(copy, v);
         break;
     }
     default:
         copy = urb_obj_new_list(type, key_entry, (Int)(obj->size - 2));
         for (Int i = 2; i < obj->size; i++) {
-            urb_push(copy, obj->data[i]);
+            copy = urb_push(copy, obj->data[i]);
         }
         break;
     }
@@ -1257,7 +1268,7 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
             ObjEntry *child = (ObjEntry*)obj->data[i].p;
             ObjEntry *child_copy = vm_clone_entry_internal(vm, child, NULL, pairs, count, cap);
             if (child_copy) {
-                urb_table_add(copy, child_copy);
+                copy = urb_table_add(copy, child_copy);
             }
         }
     }
@@ -1323,7 +1334,7 @@ ObjEntry *vm_define_number(VM *vm, const char *key, char **items, int count, int
     for (int i = start; i < count; i++) {
         Value v;
         v.f = (Float)strtod(items[i], NULL);
-        urb_push(obj, v);
+        obj = urb_push(obj, v);
     }
 
     ObjEntry *entry = vm_reg_alloc(vm, obj);
@@ -1346,7 +1357,7 @@ ObjEntry *vm_define_table(VM *vm, const char *key, char **items, int count, int 
             fprintf(stderr, "unknown key: %s\n", items[i]);
             continue;
         }
-        urb_table_add(obj, child);
+        obj = urb_table_add(obj, child);
     }
 
     ObjEntry *entry = vm_reg_alloc(vm, obj);
@@ -1372,7 +1383,7 @@ ObjEntry *vm_define_native(VM *vm, const char *key, const char *fn_name)
     box->fn = fn;
     Value v;
     v.p = box;
-    urb_push(obj, v);
+    obj = urb_push(obj, v);
     ObjEntry *entry = vm_reg_alloc(vm, obj);
     vm_global_add(vm, entry);
     return entry;
@@ -1385,7 +1396,7 @@ void vm_push_stack(VM *vm, const char *key)
         fprintf(stderr, "unknown key: %s\n", key);
         return;
     }
-    urb_table_add(vm->stack_entry->obj, entry);
+    vm_table_add_entry(vm->stack_entry, entry);
 }
 
 void vm_pop_stack(VM *vm)
@@ -1483,7 +1494,7 @@ static int bc_read_string(const unsigned char *data, size_t len, size_t *pc, uns
 static int ast_set_kv(VM *vm, ObjEntry *obj, const char *key, ObjEntry *value)
 {
     if (!vm || !obj || !value) return 0;
-    return vm_object_set_by_key_len(vm, obj->obj, key, strlen(key), value, 0);
+    return vm_object_set_by_key_len(vm, &obj->obj, key, strlen(key), value, 0);
 }
 
 static ObjEntry *ast_make_op(VM *vm, const char *op_name)
@@ -1573,7 +1584,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                     fprintf(stderr, "bytecodeToAst: truncated BUILD_NUMBER_LIT value at pc %zu\n", pc);
                     return NULL;
                 }
-                urb_table_add(values->obj, vm_make_number_value(vm, (Float)v));
+                values->obj = urb_table_add(values->obj, vm_make_number_value(vm, (Float)v));
             }
             ast_set_kv(vm, node, "count", vm_make_number_value(vm, (Float)count));
             ast_set_kv(vm, node, "values", values);
@@ -1624,7 +1635,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                     ast_set_kv(vm, arg, "default", vm->null_entry);
                 }
                 pc += def_len;
-                urb_table_add(args->obj, arg);
+                args->obj = urb_table_add(args->obj, arg);
                 free(name);
             }
 
@@ -1696,7 +1707,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             return NULL;
         }
 
-        urb_table_add(ops->obj, node);
+        ops->obj = urb_table_add(ops->obj, node);
     }
 
     ast_set_kv(vm, root, "type", vm_make_bytes_value(vm, "bytecode", 8));
@@ -1746,7 +1757,7 @@ ObjEntry *vm_make_number_value(VM *vm, Float value)
     List *obj = urb_obj_new_list(URB_T_NUMBER, NULL, 1);
     Value v;
     v.f = value;
-    urb_push(obj, v);
+    obj = urb_push(obj, v);
     return vm_reg_alloc(vm, obj);
 }
 
@@ -1804,28 +1815,31 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
     return NULL;
 }
 
-static int vm_resize_bytes(List *obj, Int new_size)
+static List *vm_resize_bytes(List *obj, Int new_size)
 {
     if (new_size < 0) return 0;
     size_t len = (size_t)new_size;
-    if (len > urb_bytes_max() - 2) return 0;
-    obj->data = (Value*)realloc(obj->data, 2 * sizeof(Value) + len);
+    if (len > urb_bytes_max() - 2) return NULL;
+    size_t bytes = sizeof(List) + 2 * sizeof(Value) + len;
+    obj = (List*)realloc(obj, bytes);
+    if (!obj) return NULL;
     size_t old_len = urb_bytes_len(obj);
     if (len > old_len) {
         memset(urb_bytes_data(obj) + old_len, 0, len - old_len);
     }
     obj->size = (UHalf)(len + 2);
     obj->capacity = (UHalf)(len + 2);
-    return 1;
+    return obj;
 }
 
-static int vm_resize_list(List *obj, Int new_size, ObjEntry *null_entry)
+static List *vm_resize_list(List *obj, Int new_size, ObjEntry *null_entry)
 {
-    if (new_size < 0) return 0;
+    if (new_size < 0) return NULL;
     size_t payload = (size_t)new_size;
     size_t new_cap = payload + 2;
-    obj->data = (Value*)realloc(obj->data, new_cap * sizeof(Value));
-    if (!obj->data && new_cap > 0) return 0;
+    size_t bytes = sizeof(List) + new_cap * sizeof(Value);
+    obj = (List*)realloc(obj, bytes);
+    if (!obj && new_cap > 0) return NULL;
     if ((size_t)obj->capacity < new_cap) {
         memset(obj->data + obj->capacity, 0, (new_cap - obj->capacity) * sizeof(Value));
     }
@@ -1843,12 +1857,14 @@ static int vm_resize_list(List *obj, Int new_size, ObjEntry *null_entry)
         }
     }
     obj->size = (UHalf)new_total;
-    return 1;
+    return obj;
 }
 
-static int vm_set_size_bytes(List *obj, Int new_size)
+static int vm_set_size_bytes(ObjEntry *target, Int new_size)
 {
     if (new_size < 0) return 0;
+    if (!target || !target->obj) return 0;
+    List *obj = target->obj;
     size_t cap = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
     size_t old_len = urb_bytes_len(obj);
     size_t len = (size_t)new_size;
@@ -1859,12 +1875,17 @@ static int vm_set_size_bytes(List *obj, Int new_size)
         obj->size = (UHalf)(len + 2);
         return 1;
     }
-    return vm_resize_bytes(obj, new_size);
+    obj = vm_resize_bytes(obj, new_size);
+    if (!obj) return 0;
+    target->obj = obj;
+    return 1;
 }
 
-static int vm_set_size_list(List *obj, Int new_size, ObjEntry *null_entry)
+static int vm_set_size_list(ObjEntry *target, Int new_size, ObjEntry *null_entry)
 {
     if (new_size < 0) return 0;
+    if (!target || !target->obj) return 0;
+    List *obj = target->obj;
     size_t cap = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
     size_t old_size = obj->size >= 2 ? (size_t)obj->size - 2 : 0;
     size_t len = (size_t)new_size;
@@ -1884,12 +1905,15 @@ static int vm_set_size_list(List *obj, Int new_size, ObjEntry *null_entry)
         obj->size = (UHalf)new_total;
         return 1;
     }
-    return vm_resize_list(obj, new_size, null_entry);
+    obj = vm_resize_list(obj, new_size, null_entry);
+    if (!obj) return 0;
+    target->obj = obj;
+    return 1;
 }
 static void vm_stack_push_entry(VM *vm, ObjEntry *entry)
 {
     if (!entry) return;
-    urb_table_add(vm->stack_entry->obj, entry);
+    vm_table_add_entry(vm->stack_entry, entry);
 }
 
 static void vm_stack_remove_range(List *stack, Int start, Int count)
@@ -1949,7 +1973,7 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc)
             }
             if (!arg) arg = vm->null_entry;
         }
-        if (!vm_object_set_by_key_len(vm, vm->global_entry->obj,
+        if (!vm_object_set_by_key_len(vm, &vm->global_entry->obj,
                                       box->arg_names[i], box->arg_lens[i],
                                       arg, 0)) {
             return 0;
@@ -1960,9 +1984,9 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc)
         for (uint32_t i = fixed; i < argc; i++) {
             ObjEntry *arg = vm_stack_arg(stack, argc, i);
             if (!arg) arg = vm->null_entry;
-            urb_table_add(list->obj, arg);
+            list->obj = urb_table_add(list->obj, arg);
         }
-        if (!vm_object_set_by_key_len(vm, vm->global_entry->obj,
+        if (!vm_object_set_by_key_len(vm, &vm->global_entry->obj,
                                       box->arg_names[box->argc - 1],
                                       box->arg_lens[box->argc - 1],
                                       list, 0)) {
@@ -2059,7 +2083,7 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
             return vm->null_entry;
         }
         List *obj = urb_obj_new_list(URB_T_NUMBER, NULL, 1);
-        urb_push(obj, target->obj->data[pos]);
+        obj = urb_push(obj, target->obj->data[pos]);
         return vm_reg_alloc(vm, obj);
     }
 
@@ -2068,12 +2092,13 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
     return NULL;
 }
 
-static int vm_object_set_by_key_len(VM *vm, List *obj, const char *name, size_t len, ObjEntry *value, size_t pc)
+static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_t len, ObjEntry *value, size_t pc)
 {
-    if (!obj || !value) {
+    if (!objp || !*objp || !value) {
         fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX missing target/value\n", pc);
         return 0;
     }
+    List *obj = *objp;
     Int start = 2;
     Int type = urb_obj_type(obj);
     if (type == URB_T_NATIVE || type == URB_T_LAMBDA) start = 3;
@@ -2092,7 +2117,8 @@ static int vm_object_set_by_key_len(VM *vm, List *obj, const char *name, size_t 
         fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX clone failed\n", pc);
         return 0;
     }
-    urb_table_add(obj, copy);
+    obj = urb_table_add(obj, copy);
+    *objp = obj;
     return 1;
 }
 
@@ -2101,7 +2127,7 @@ int vm_object_set_by_key(VM *vm, ObjEntry *target, const char *name, size_t len,
     if (!target) return 0;
     Int type = urb_obj_type(target->obj);
     if (type != URB_T_TABLE && type != URB_T_NATIVE) return 0;
-    return vm_object_set_by_key_len(vm, target->obj, name, len, value, 0);
+    return vm_object_set_by_key_len(vm, &target->obj, name, len, value, 0);
 }
 
 static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc)
@@ -2155,14 +2181,14 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         }
         Int type = urb_obj_type(target->obj);
         if (type == URB_T_BYTE || type == URB_T_BYTE) {
-            if (!vm_set_size_bytes(target->obj, new_size)) {
+            if (!vm_set_size_bytes(target, new_size)) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize bytes\n", pc);
                 return -1;
             }
             return 1;
         }
         if (type == URB_T_TABLE || type == URB_T_NUMBER) {
-            if (!vm_set_size_list(target->obj, new_size, vm->null_entry)) {
+            if (!vm_set_size_list(target, new_size, vm->null_entry)) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize list\n", pc);
                 return -1;
             }
@@ -2187,20 +2213,24 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         }
         Int type = urb_obj_type(target->obj);
         if (type == URB_T_BYTE || type == URB_T_BYTE) {
-            if (!vm_resize_bytes(target->obj, new_cap)) {
+            List *resized = vm_resize_bytes(target->obj, new_cap);
+            if (!resized) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize bytes\n", pc);
                 return -1;
             }
+            target->obj = resized;
             return 1;
         }
         if (type == URB_T_TABLE || type == URB_T_NUMBER) {
             size_t payload = (size_t)new_cap;
             size_t new_total = payload + 2;
-            target->obj->data = (Value*)realloc(target->obj->data, new_total * sizeof(Value));
-            if (!target->obj->data && new_total > 0) {
+            size_t bytes = sizeof(List) + new_total * sizeof(Value);
+            List *resized = (List*)realloc(target->obj, bytes);
+            if (!resized && new_total > 0) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize list\n", pc);
                 return -1;
             }
+            target->obj = resized;
             if ((size_t)target->obj->capacity < new_total) {
                 memset(target->obj->data + target->obj->capacity, 0,
                        (new_total - target->obj->capacity) * sizeof(Value));
@@ -2255,7 +2285,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             List *obj = urb_obj_new_list(URB_T_NUMBER, NULL, 1);
             Value val;
             val.f = (Float)v;
-            urb_push(obj, val);
+            obj = urb_push(obj, val);
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
@@ -2314,7 +2344,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 vals[count - 1 - i] = entry->obj->data[2];
             }
             for (uint32_t i = 0; i < count; i++) {
-                urb_push(obj, vals[i]);
+                obj = urb_push(obj, vals[i]);
             }
             free(vals);
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
@@ -2335,7 +2365,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 }
                 Value val;
                 val.f = (Float)v;
-                urb_push(obj, val);
+                obj = urb_push(obj, val);
             }
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
@@ -2401,7 +2431,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     free(vals);
                     return 0;
                 }
-                urb_table_add(obj, copy);
+                obj = urb_table_add(obj, copy);
             }
             free(keys);
             free(vals);
@@ -2523,7 +2553,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             List *obj = urb_obj_new_list(URB_T_LAMBDA, NULL, 1);
             Value v;
             v.p = box;
-            urb_push(obj, v);
+            obj = urb_push(obj, v);
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
@@ -2548,7 +2578,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
 
             Int type = urb_obj_type(target->obj);
             if (type == URB_T_TABLE && urb_obj_type(index->obj) == URB_T_BYTE) {
-                if (!vm_object_set_by_key_len(vm, target->obj,
+                if (!vm_object_set_by_key_len(vm, &target->obj,
                                               urb_bytes_data(index->obj),
                                               urb_bytes_len(index->obj),
                                               value, pc)) {
@@ -2649,7 +2679,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 free(name);
                 return 0;
             }
-            int ok = vm_object_set_by_key_len(vm, vm->global_entry->obj, (char*)name, name_len, value, pc);
+            int ok = vm_object_set_by_key_len(vm, &vm->global_entry->obj, (char*)name, name_len, value, pc);
             free(name);
             if (!ok) return 0;
             break;
@@ -2749,7 +2779,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     if (saved_args || saved_flags) {
                         for (uint32_t i = 0; i < saved_count; i++) {
                             if (saved_flags[i]) {
-                                vm_object_set_by_key_len(vm, vm->global_entry->obj,
+                                vm_object_set_by_key_len(vm, &vm->global_entry->obj,
                                                          box->arg_names[i],
                                                          box->arg_lens[i],
                                                          saved_args[i], 0);
@@ -2768,7 +2798,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     if (saved_args || saved_flags) {
                         for (uint32_t i = 0; i < saved_count; i++) {
                             if (saved_flags[i]) {
-                                vm_object_set_by_key_len(vm, vm->global_entry->obj,
+                                vm_object_set_by_key_len(vm, &vm->global_entry->obj,
                                                          box->arg_names[i],
                                                          box->arg_lens[i],
                                                          saved_args[i], 0);
@@ -2786,7 +2816,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 if (saved_args || saved_flags) {
                     for (uint32_t i = 0; i < saved_count; i++) {
                         if (saved_flags[i]) {
-                            vm_object_set_by_key_len(vm, vm->global_entry->obj,
+                            vm_object_set_by_key_len(vm, &vm->global_entry->obj,
                                                      box->arg_names[i],
                                                      box->arg_lens[i],
                                                      saved_args[i], 0);

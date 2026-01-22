@@ -44,8 +44,8 @@ Int urb_obj_type(const List *obj);
 ObjEntry *urb_obj_key(const List *obj);
 char *urb_bytes_data(List *obj);
 size_t urb_bytes_len(const List *obj);
-void urb_table_add(List *obj, ObjEntry *entry);
-void urb_bytes_append(List *obj, const char *bytes, size_t len);
+List *urb_table_add(List *obj, ObjEntry *entry);
+List *urb_bytes_append(List *obj, const char *bytes, size_t len);
 Int urb_value_len(const List *obj);
 void urb_number_set_single(List *obj, Float value);
 
