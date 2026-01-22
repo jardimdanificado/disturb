@@ -1,3 +1,7 @@
+// this is REIMPLEMENTATION of the papagaio.js
+// you can find the original at:
+// https://github.com/jardimdanificado/urb
+
 #include "papagaio.h"
 #include "papagaio_internal.h"
 
@@ -167,14 +171,14 @@ static char *papagaio_eval_code(VM *vm, const char *code, size_t len,
     }
     char *out = (char*)malloc(slen + 1);
     if (!out) {
-        if (stringified) vm_release_entry(stringified);
-        if (value != vm->null_entry) vm_release_entry(value);
+        if (stringified) vm_release_entry(vm, stringified);
+        if (value != vm->null_entry) vm_release_entry(vm, value);
         return NULL;
     }
     if (slen) memcpy(out, data, slen);
     out[slen] = 0;
-    if (stringified) vm_release_entry(stringified);
-    if (value != vm->null_entry) vm_release_entry(value);
+    if (stringified) vm_release_entry(vm, stringified);
+    if (value != vm->null_entry) vm_release_entry(vm, value);
     if (vm) {
         vm_global_remove_by_key(vm, "match");
         if (old_match_buf) {

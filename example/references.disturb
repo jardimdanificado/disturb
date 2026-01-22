@@ -1,0 +1,7 @@
+a = 123;
+b = a;
+c = a.clone();
+b = 999;
+println("a = " + a);
+println("b = " + b);
+println("c = " + c);

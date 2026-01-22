@@ -1763,11 +1763,8 @@ static int emit_assign_expr(Bytecode *bc, Parser *p, Expr *lhs, TokenKind op, Ex
             size_t jmp_skip = emit_jump(bc, p, BC_JMP_IF_FALSE);
             if (!jmp_skip) return 0;
             if (!emit_expr(bc, p, rhs)) return 0;
-            if (!bc_emit_u8(bc, BC_DUP)) {
-                parser_error(p, "failed to emit DUP");
-                return 0;
-            }
             if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+            if (!emit_load_global_name(bc, p, name, name_len)) return 0;
             size_t jmp_end = emit_jump(bc, p, BC_JMP);
             if (!jmp_end) return 0;
             if (!patch_jump(bc, p, jmp_skip, bc->len)) return 0;
@@ -1778,11 +1775,8 @@ static int emit_assign_expr(Bytecode *bc, Parser *p, Expr *lhs, TokenKind op, Ex
 
         if (op == TOK_EQ) {
             if (!emit_expr(bc, p, rhs)) return 0;
-            if (!bc_emit_u8(bc, BC_DUP)) {
-                parser_error(p, "failed to emit DUP");
-                return 0;
-            }
             if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+            if (!emit_load_global_name(bc, p, name, name_len)) return 0;
             return 1;
         }
 
@@ -1793,11 +1787,8 @@ static int emit_assign_expr(Bytecode *bc, Parser *p, Expr *lhs, TokenKind op, Ex
         if (!emit_load_global_name(bc, p, name, name_len)) return 0;
         if (!emit_expr(bc, p, rhs)) return 0;
         if (!emit_binary_op(bc, p, bin_op)) return 0;
-        if (!bc_emit_u8(bc, BC_DUP)) {
-            parser_error(p, "failed to emit DUP");
-            return 0;
-        }
         if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+        if (!emit_load_global_name(bc, p, name, name_len)) return 0;
         return 1;
     }
 
@@ -1942,23 +1933,28 @@ static int emit_update_expr(Bytecode *bc, Parser *p, Expr *target, TokenKind op,
                 return 0;
             }
             if (!emit_binary_op(bc, p, bin_op)) return 0;
-            if (!bc_emit_u8(bc, BC_DUP)) {
-                parser_error(p, "failed to emit DUP");
-                return 0;
-            }
             if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+            if (!emit_load_global_name(bc, p, name, name_len)) return 0;
             return 1;
+        }
+        int id = p->temp_id++;
+        char *old_name = arena_format_temp(&p->arena, "__update_old_", id);
+        if (!old_name) {
+            parser_error(p, "out of memory");
+            return 0;
         }
         if (!bc_emit_u8(bc, BC_DUP)) {
             parser_error(p, "failed to emit DUP");
             return 0;
         }
+        if (!emit_store_global_name(bc, p, old_name, strlen(old_name))) return 0;
         if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {
             parser_error(p, "failed to emit number literal");
             return 0;
         }
         if (!emit_binary_op(bc, p, bin_op)) return 0;
         if (!emit_store_global_name(bc, p, name, name_len)) return 0;
+        if (!emit_load_global_name(bc, p, old_name, strlen(old_name))) return 0;
         return 1;
     }
 
@@ -1987,6 +1983,10 @@ static int emit_update_expr(Bytecode *bc, Parser *p, Expr *target, TokenKind op,
         return 0;
     }
 
+    if (!bc_emit_u8(bc, BC_DUP)) {
+        parser_error(p, "failed to emit DUP");
+        return 0;
+    }
     if (!emit_store_global_name(bc, p, old_name, strlen(old_name))) return 0;
     if (!emit_load_global_name(bc, p, old_name, strlen(old_name))) return 0;
     if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {

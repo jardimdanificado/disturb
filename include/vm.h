@@ -21,6 +21,7 @@ enum {
 
 struct ObjEntry {
     List *obj;
+    ObjEntry *key;
     unsigned in_use : 1;
     unsigned mark : 1;
 };
@@ -35,7 +36,6 @@ struct VM {
     ObjEntry *common_entry;
     ObjEntry *argc_entry;
     ObjEntry *this_entry;
-    size_t gc_tick;
     ObjEntry *gc_entry;
 };
 
@@ -59,13 +59,20 @@ ObjEntry *vm_make_number_value(VM *vm, Float value);
 ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_table_value(VM *vm, Int reserve);
+List *vm_alloc_list(Int type, ObjEntry *key_entry, Int reserve);
+void vm_free_list(List *obj);
+ObjEntry *vm_entry_key(const ObjEntry *entry);
+ObjEntry *vm_clone_entry_shallow(VM *vm, ObjEntry *src, ObjEntry *forced_key);
+ObjEntry *vm_clone_entry_deep(VM *vm, ObjEntry *src, ObjEntry *forced_key);
+ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_key);
+List *vm_update_shared_obj(VM *vm, List *old_obj, List *new_obj);
 ObjEntry *vm_stringify_value(VM *vm, ObjEntry *entry, int raw_string);
 ObjEntry *vm_pretty_value(VM *vm, ObjEntry *entry);
 int vm_object_set_by_key(VM *vm, ObjEntry *target, const char *name, size_t len, ObjEntry *value);
 
 int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len);
 ObjEntry *vm_eval_source(VM *vm, const char *src, size_t len);
-void vm_release_entry(ObjEntry *entry);
+void vm_release_entry(VM *vm, ObjEntry *entry);
 
 void vm_init(VM *vm);
 void vm_free(VM *vm);

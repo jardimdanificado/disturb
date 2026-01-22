@@ -1,3 +1,7 @@
+// this is a REIMPLEMENTATION of papagaio.js in c
+// do not mistake with the original papagaio.h
+// https://github.com/jardimdanificado/papagaio
+
 #ifndef PAPAGAIO_H
 #define PAPAGAIO_H 1
 

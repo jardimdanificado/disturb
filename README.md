@@ -176,6 +176,7 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 - Missing globals/keys yield `null` instead of error.
 - `global` is a real table; `global.name[0]` is valid.
 - Strings are `char` objects; `char` vs `string` is decided by length.
+ - Assignments are reference-based; use `clone()` for shallow copies or `copy()` for deep copies.
  Resizing always keeps the same table entry slot to preserve references.
 ## Built-in Methods
  Cross-language literal list parsing, deep table access, and string length for Disturb/Lua/Node/Python/C if present
@@ -193,6 +194,9 @@ Strings:
 Tables/Arrays:
 - `keys`, `values`, `has`, `delete`
 - `push`, `pop`, `shift`, `unshift`, `insert`, `remove`
+
+Values:
+- `clone` (shallow copy), `copy` (deep copy)
 
 Formatting:
 - `pretty`
@@ -238,8 +242,10 @@ Notes:
 - `astToSource` follows the disassembler format; `BUILD_FUNCTION` shows lengths, not raw bytes.
 - `emit` consumes AST objects directly, so include `code`/`default` byte strings in `BUILD_FUNCTION`.
 - `gc()` runs a collection.
-- `global.gc.rate` controls automatic GC (0 or less disables).
-- `global.gc.collect()` runs a collection.
+- `global.gc.collect()` runs a collection (manual only, no automatic GC).
+- `global.gc.free(value)` frees the value and replaces it with `null` (manual management).
+- `global.gc.sweep(value)` marks a value as unused so `gc.collect()` will free it.
+- `global.gc.new(size)` allocates a table with reserved capacity.
 - Comments are supported via `//` and `/* ... */`.
 
 Papagaio processing is applied to all string literals. Use `\$` to escape a literal `$`.

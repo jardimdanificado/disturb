@@ -24,6 +24,8 @@ println(o.values());
 println(o.has("a"));
 
 println(o.delete("a"));
+println(o.remove("b"));
+println(o.has("b"));
 
 println(o.has("a"));
 
@@ -44,3 +46,16 @@ println(str);
 
 println(str.remove(1));
 println(str);
+
+a = {x = 1};
+b = a;
+b.x = 2;
+println(a.x);
+
+c = a.clone();
+c.x = 3;
+println(a.x);
+
+d = a.copy();
+d.x = 4;
+println(a.x);

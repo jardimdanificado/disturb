@@ -20,9 +20,6 @@ println({a = 1, b = {c = 2}}.pretty());
 // __argc is updated for native/user calls.
 println(__argc);
 
-// gc() triggers a collection; global.gc controls automatic GC.
+// gc() triggers a collection; GC is manual only.
 gc();
-global.gc.rate = 128;
-println(global.gc.rate);
 global.gc.collect();
-global.gc.rate = 0;
