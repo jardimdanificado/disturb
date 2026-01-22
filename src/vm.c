@@ -2112,7 +2112,18 @@ static ObjEntry *vm_eval_default(VM *vm, List *stack, unsigned char *code, size_
     return val ? val : (vm ? vm->null_entry : NULL);
 }
 
-static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc)
+static int vm_global_rebind(VM *vm, const char *name, size_t len, ObjEntry *entry)
+{
+    if (!vm || !vm->global_entry) return 0;
+    vm_object_remove_by_key_len(vm->global_entry->obj, name, len);
+    if (!entry) return 1;
+    List *old_obj = vm->global_entry->obj;
+    vm->global_entry->obj = vm_update_shared_obj(vm, old_obj,
+                                                 urb_table_add(old_obj, entry));
+    return 1;
+}
+
+static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc, ObjEntry **bound)
 {
     if (!vm || !box) return 0;
     uint32_t fixed = box->argc;
@@ -2125,9 +2136,16 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc)
             }
             if (!arg) arg = vm->null_entry;
         }
-        if (!vm_object_set_by_key_len(vm, &vm->global_entry->obj,
-                                      box->arg_names[i], box->arg_lens[i],
-                                      arg, 0)) {
+        ObjEntry *key_entry = vm_make_key_len(vm, box->arg_names[i], box->arg_lens[i]);
+        ObjEntry *entry = NULL;
+        if (arg == vm->null_entry) {
+            entry = vm_reg_alloc(vm, vm_alloc_list(URB_T_NULL, key_entry, 0));
+            if (entry) entry->key = key_entry;
+        } else {
+            entry = vm_clone_entry_shallow(vm, arg, key_entry);
+        }
+        if (bound) bound[i] = entry;
+        if (!vm_global_rebind(vm, box->arg_names[i], box->arg_lens[i], entry)) {
             return 0;
         }
     }
@@ -2139,10 +2157,12 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc)
             list->obj = vm_update_shared_obj(vm, list->obj,
                                              urb_table_add(list->obj, arg));
         }
-        if (!vm_object_set_by_key_len(vm, &vm->global_entry->obj,
-                                      box->arg_names[box->argc - 1],
-                                      box->arg_lens[box->argc - 1],
-                                      list, 0)) {
+        ObjEntry *key_entry = vm_make_key_len(vm, box->arg_names[box->argc - 1],
+                                              box->arg_lens[box->argc - 1]);
+        list->key = key_entry;
+        if (bound) bound[box->argc - 1] = list;
+        if (!vm_global_rebind(vm, box->arg_names[box->argc - 1],
+                              box->arg_lens[box->argc - 1], list)) {
             return 0;
         }
     }
@@ -2956,14 +2976,17 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 }
                 ObjEntry **saved_args = NULL;
                 unsigned char *saved_flags = NULL;
+                ObjEntry **bound_args = NULL;
                 uint32_t saved_count = box->argc;
                 if (saved_count > 0) {
                     saved_args = (ObjEntry**)calloc(saved_count, sizeof(ObjEntry*));
                     saved_flags = (unsigned char*)calloc(saved_count, sizeof(unsigned char));
+                    bound_args = (ObjEntry**)calloc(saved_count, sizeof(ObjEntry*));
                     if (!saved_args || !saved_flags) {
                         fprintf(stderr, "bytecode error at pc %zu: CALL out of memory\n", pc);
                         free(saved_args);
                         free(saved_flags);
+                        free(bound_args);
                         return 0;
                     }
                     for (uint32_t i = 0; i < saved_count; i++) {
@@ -2976,15 +2999,12 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                         }
                     }
                 }
-                if (!vm_bind_args(vm, box, vm->stack_entry->obj, argc)) {
+                if (!vm_bind_args(vm, box, vm->stack_entry->obj, argc, bound_args)) {
                     fprintf(stderr, "bytecode error at pc %zu: CALL arg bind failed\n", pc);
                     if (saved_args || saved_flags) {
                         for (uint32_t i = 0; i < saved_count; i++) {
                             if (saved_flags[i]) {
-                                vm_object_set_by_key_len(vm, &vm->global_entry->obj,
-                                                         box->arg_names[i],
-                                                         box->arg_lens[i],
-                                                         saved_args[i], 0);
+                                vm_global_rebind(vm, box->arg_names[i], box->arg_lens[i], saved_args[i]);
                             } else {
                                 vm_object_remove_by_key_len(vm->global_entry->obj,
                                                             box->arg_names[i],
@@ -2993,6 +3013,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                         }
                         free(saved_args);
                         free(saved_flags);
+                        free(bound_args);
                     }
                     return 0;
                 }
@@ -3000,10 +3021,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     if (saved_args || saved_flags) {
                         for (uint32_t i = 0; i < saved_count; i++) {
                             if (saved_flags[i]) {
-                                vm_object_set_by_key_len(vm, &vm->global_entry->obj,
-                                                         box->arg_names[i],
-                                                         box->arg_lens[i],
-                                                         saved_args[i], 0);
+                                vm_global_rebind(vm, box->arg_names[i], box->arg_lens[i], saved_args[i]);
                             } else {
                                 vm_object_remove_by_key_len(vm->global_entry->obj,
                                                             box->arg_names[i],
@@ -3012,16 +3030,14 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                         }
                         free(saved_args);
                         free(saved_flags);
+                        free(bound_args);
                     }
                     return 0;
                 }
                 if (saved_args || saved_flags) {
                     for (uint32_t i = 0; i < saved_count; i++) {
                         if (saved_flags[i]) {
-                            vm_object_set_by_key_len(vm, &vm->global_entry->obj,
-                                                     box->arg_names[i],
-                                                     box->arg_lens[i],
-                                                     saved_args[i], 0);
+                            vm_global_rebind(vm, box->arg_names[i], box->arg_lens[i], saved_args[i]);
                         } else {
                             vm_object_remove_by_key_len(vm->global_entry->obj,
                                                         box->arg_names[i],
@@ -3030,6 +3046,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     }
                     free(saved_args);
                     free(saved_flags);
+                    free(bound_args);
                 }
             } else {
                 fprintf(stderr, "bytecode error at pc %zu: CALL target not callable\n", pc);

@@ -5,3 +5,9 @@ b = 999;
 println("a = " + a);
 println("b = " + b);
 println("c = " + c);
+
+l = (ref){
+    ref = 125; 
+};
+l(b);
+println("\nb = " + b);
