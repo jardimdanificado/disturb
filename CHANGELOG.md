@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.14.2
+- Fix lambdas parameters overwriting in recursive calls.
+
 ## 0.14.1
 - Apply Papagaio processing to all string literals, with `\$` escape support.
 - Add `$pattern{}`/`$regex{}`/`$eval{}` tokens plus nested patterns and block sequences.

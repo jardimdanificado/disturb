@@ -21,7 +21,7 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | Table type | `table` (formerly `any`) is the generic container |
 | Null | Missing globals/keys return `null` |
 | Natives | Built-in and stored in `global` as tables |
-| Prototype | Shared methods live on `global.common` |
+| Common | Shared methods live on `global.common` |
 | this | Method calls bind `this` to the call target |
 
 ## Types and Literals

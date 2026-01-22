@@ -414,6 +414,24 @@ static ObjEntry *vm_object_find_direct(List *obj, const char *name, size_t len)
     return NULL;
 }
 
+static int vm_object_remove_by_key_len(List *obj, const char *name, size_t len)
+{
+    if (!obj) return 0;
+    Int start = 2;
+    Int type = urb_obj_type(obj);
+    if (type == URB_T_NATIVE || type == URB_T_LAMBDA) start = 3;
+    for (Int i = start; i < obj->size; i++) {
+        ObjEntry *entry = (ObjEntry*)obj->data[i].p;
+        ObjEntry *key = entry ? urb_obj_key(entry->obj) : NULL;
+        if (!key || urb_obj_type(key->obj) != URB_T_BYTE) continue;
+        if (urb_bytes_eq_bytes(key->obj, name, len)) {
+            urb_remove(obj, i);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static ObjEntry *vm_object_find_by_key_len(VM *vm, List *obj, const char *name, size_t len)
 {
     ObjEntry *entry = vm_object_find_direct(obj, name, len);
@@ -2704,12 +2722,82 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                     fprintf(stderr, "bytecode error at pc %zu: CALL null function\n", pc);
                     return 0;
                 }
+                ObjEntry **saved_args = NULL;
+                unsigned char *saved_flags = NULL;
+                uint32_t saved_count = box->argc;
+                if (saved_count > 0) {
+                    saved_args = (ObjEntry**)calloc(saved_count, sizeof(ObjEntry*));
+                    saved_flags = (unsigned char*)calloc(saved_count, sizeof(unsigned char));
+                    if (!saved_args || !saved_flags) {
+                        fprintf(stderr, "bytecode error at pc %zu: CALL out of memory\n", pc);
+                        free(saved_args);
+                        free(saved_flags);
+                        return 0;
+                    }
+                    for (uint32_t i = 0; i < saved_count; i++) {
+                        ObjEntry *existing = vm_object_find_direct(vm->global_entry->obj,
+                                                                   box->arg_names[i],
+                                                                   box->arg_lens[i]);
+                        if (existing) {
+                            saved_args[i] = existing;
+                            saved_flags[i] = 1;
+                        }
+                    }
+                }
                 if (!vm_bind_args(vm, box, vm->stack_entry->obj, argc)) {
                     fprintf(stderr, "bytecode error at pc %zu: CALL arg bind failed\n", pc);
+                    if (saved_args || saved_flags) {
+                        for (uint32_t i = 0; i < saved_count; i++) {
+                            if (saved_flags[i]) {
+                                vm_object_set_by_key_len(vm, vm->global_entry->obj,
+                                                         box->arg_names[i],
+                                                         box->arg_lens[i],
+                                                         saved_args[i], 0);
+                            } else {
+                                vm_object_remove_by_key_len(vm->global_entry->obj,
+                                                            box->arg_names[i],
+                                                            box->arg_lens[i]);
+                            }
+                        }
+                        free(saved_args);
+                        free(saved_flags);
+                    }
                     return 0;
                 }
                 if (!vm_exec_bytecode(vm, box->code, box->len)) {
+                    if (saved_args || saved_flags) {
+                        for (uint32_t i = 0; i < saved_count; i++) {
+                            if (saved_flags[i]) {
+                                vm_object_set_by_key_len(vm, vm->global_entry->obj,
+                                                         box->arg_names[i],
+                                                         box->arg_lens[i],
+                                                         saved_args[i], 0);
+                            } else {
+                                vm_object_remove_by_key_len(vm->global_entry->obj,
+                                                            box->arg_names[i],
+                                                            box->arg_lens[i]);
+                            }
+                        }
+                        free(saved_args);
+                        free(saved_flags);
+                    }
                     return 0;
+                }
+                if (saved_args || saved_flags) {
+                    for (uint32_t i = 0; i < saved_count; i++) {
+                        if (saved_flags[i]) {
+                            vm_object_set_by_key_len(vm, vm->global_entry->obj,
+                                                     box->arg_names[i],
+                                                     box->arg_lens[i],
+                                                     saved_args[i], 0);
+                        } else {
+                            vm_object_remove_by_key_len(vm->global_entry->obj,
+                                                        box->arg_names[i],
+                                                        box->arg_lens[i]);
+                        }
+                    }
+                    free(saved_args);
+                    free(saved_flags);
                 }
             } else {
                 fprintf(stderr, "bytecode error at pc %zu: CALL target not callable\n", pc);
