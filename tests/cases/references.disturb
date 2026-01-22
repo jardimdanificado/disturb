@@ -1,0 +1,14 @@
+a = {x = 1, y = {z = 2}};
+b = a;
+c = a.clone();
+d = a.copy();
+
+b.x = 9;
+b.y.z = 8;
+
+println(a.x);
+println(a.y.z);
+println(c.x);
+println(c.y.z);
+println(d.x);
+println(d.y.z);

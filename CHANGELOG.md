@@ -4,7 +4,7 @@
 - Fix lambdas parameters overwriting in recursive calls.
 - Allow assignment and `++`/`--` operators inside expressions (prefix returns updated value, postfix returns previous value).
 - Make GC fully manual: remove automatic collection and `gc.rate`, add `gc.free`, `gc.sweep`, and `gc.new`.
-- Switch assignments to reference semantics and add `clone` (shallow) and `copy` (deep) helpers.
+- Switch assignments to reference semantics, add `clone` (shallow) and `copy` (deep) helpers, and rebind function arguments per call to preserve recursion while keeping references.
 
 ## 0.14.1
 - Apply Papagaio processing to all string literals, with `\$` escape support.

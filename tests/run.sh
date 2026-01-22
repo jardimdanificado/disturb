@@ -39,6 +39,7 @@ run_case control_flow
 run_case resize
 run_case stress_deep
 run_case stress_large_list
+run_case references
 
 run_negative() {
   name=$1

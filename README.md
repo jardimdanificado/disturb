@@ -198,6 +198,21 @@ Tables/Arrays:
 Values:
 - `clone` (shallow copy), `copy` (deep copy)
 
+Examples:
+```disturb
+a = {x = 1, y = {z = 2}};
+b = a;
+c = a.clone();
+d = a.copy();
+
+b.x = 9;
+b.y.z = 8;
+
+println(a.x);   // 9
+println(c.x);   // 9 (shallow copy shares children)
+println(d.x);   // 1 (deep copy)
+```
+
 Formatting:
 - `pretty`
 
