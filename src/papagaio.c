@@ -260,7 +260,7 @@ static int apply_regex_placeholder(
     StrView close = { sym->close, strlen(sym->close) };
     StrView block;
     int next = extract_block(replacement, (int)pos, open, close, &block);
-    if (next == pos) return 0;
+    if ((size_t)next == pos) return 0;
     StrView trimmed = trim_view(block);
     const char *base = m->regex.src ? m->regex.src : "";
     size_t group_start = m->regex.match_start;
@@ -312,7 +312,7 @@ static int apply_eval_placeholder(
     StrView close = { sym->close, strlen(sym->close) };
     StrView block;
     int next = extract_block(replacement, (int)pos, open, close, &block);
-    if (next == pos) return 0;
+    if ((size_t)next == pos) return 0;
     StrView trimmed = trim_view(block);
     char *code = (char*)malloc(trimmed.len + 1);
     if (!code) return 0;

@@ -261,6 +261,7 @@ Notes:
 - `global.gc.collect()` runs a manual reachability collection and marks unreachable values for reuse.
 - `global.gc.free(value)` frees the value and replaces it with `null` (manual management).
 - `global.gc.sweep(value)` marks the value for reuse immediately and replaces it with `null`.
+- `global.gc.flush()` frees all values currently waiting for reuse.
 - `global.gc.new(size)` allocates a table with reserved capacity.
 - Comments are supported via `//` and `/* ... */`.
 

@@ -304,6 +304,23 @@ void vm_reuse_list(VM *vm, List *obj)
     vm_pool_push(vm, obj);
 }
 
+void vm_flush_reuse(VM *vm)
+{
+    if (!vm) return;
+    while (vm->free_lists) {
+        FreeNode *node = vm->free_lists;
+        vm->free_lists = node->next;
+        vm_free_list(node->obj);
+        free(node);
+    }
+    while (vm->free_bytes) {
+        FreeNode *node = vm->free_bytes;
+        vm->free_bytes = node->next;
+        vm_free_list(node->obj);
+        free(node);
+    }
+}
+
 static void vm_table_add_entry(VM *vm, ObjEntry *target, ObjEntry *entry)
 {
     if (!target) return;

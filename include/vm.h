@@ -66,6 +66,7 @@ ObjEntry *vm_make_table_value(VM *vm, Int reserve);
 List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve);
 void vm_free_list(List *obj);
 void vm_reuse_list(VM *vm, List *obj);
+void vm_flush_reuse(VM *vm);
 ObjEntry *vm_entry_key(const ObjEntry *entry);
 ObjEntry *vm_clone_entry_shallow(VM *vm, ObjEntry *src, ObjEntry *forced_key);
 ObjEntry *vm_clone_entry_deep(VM *vm, ObjEntry *src, ObjEntry *forced_key);

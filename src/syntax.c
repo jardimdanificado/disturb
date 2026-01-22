@@ -6,6 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__GNUC__)
+#define UNUSED_FN __attribute__((unused))
+#else
+#define UNUSED_FN
+#endif
+
 #define PAPAGAIO_ESCAPED_SIGIL '\x01'
 
 typedef enum {
@@ -931,7 +937,7 @@ static int parse_statement(Parser *p, Bytecode *bc);
 static int parse_switch_statement(Parser *p, Bytecode *bc);
 static int parse_switch_case(Parser *p, Bytecode *bc, const char *tmp_name, size_t tmp_len);
 static Expr *parse_func_literal(Parser *p);
-static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len);
+UNUSED_FN static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len);
 static int emit_expr(Bytecode *bc, Parser *p, Expr *e);
 static Expr *parse_cast_list(Parser *p, TokenKind closing, const char *close_msg);
 static void parser_error(Parser *p, const char *fmt, ...);
@@ -1307,7 +1313,7 @@ static Expr *parse_func_literal(Parser *p)
     return e;
 }
 
-static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len)
+UNUSED_FN static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len)
 {
     Expr *e = expr_new(p, EXPR_FUNC_LITERAL);
     if (!e) return NULL;

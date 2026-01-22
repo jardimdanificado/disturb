@@ -1355,6 +1355,15 @@ static void native_gc_new(VM *vm, List *stack, List *global)
     stack = push_entry(vm, stack, entry);
 }
 
+static void native_gc_flush(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    if (vm) vm_flush_reuse(vm);
+    if (vm) {
+        stack = push_entry(vm, stack, vm->null_entry);
+    }
+}
+
 static void native_append(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -2713,6 +2722,7 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "gcFree") == 0) return native_gc_free;
     if (strcmp(name, "gcSweep") == 0) return native_gc_sweep;
     if (strcmp(name, "gcNew") == 0) return native_gc_new;
+    if (strcmp(name, "gcFlush") == 0) return native_gc_flush;
     if (strcmp(name, "append") == 0) return native_append;
     if (strcmp(name, "add") == 0) return native_add;
     if (strcmp(name, "sub") == 0) return native_sub;
