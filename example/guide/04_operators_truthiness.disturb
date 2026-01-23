@@ -24,3 +24,6 @@ println("obj=" + {a = 1});
 x = null;
 x ?= "fallback";
 println(x);
+
+// Infinity is available as a global float constant.
+println(inf);

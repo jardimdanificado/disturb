@@ -1496,6 +1496,13 @@ void vm_init(VM *vm)
     vm->null_entry = vm_reg_alloc(vm, null_obj);
     vm_global_add(vm, vm->null_entry);
 
+    ObjEntry *inf_key = vm_make_key(vm, "inf");
+    ObjEntry *inf_entry = vm_make_float_value(vm, (Float)INFINITY);
+    if (inf_entry) {
+        inf_entry->key = inf_key;
+        vm_global_add(vm, inf_entry);
+    }
+
     ObjEntry *proto_key = vm_make_key(vm, "common");
     List *proto_obj = vm_alloc_list(vm, URB_T_TABLE, proto_key, 16);
     vm->common_entry = vm_reg_alloc(vm, proto_obj);

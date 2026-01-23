@@ -5,6 +5,7 @@
 - Allow assignment and `++`/`--` operators inside expressions (prefix returns updated value, postfix returns previous value).
 - Make GC fully manual: remove automatic collection and `gc.rate`, add `gc.free`, `gc.sweep`, `gc.new`, and `gc.flush`.
 - Switch assignments to reference semantics, add `clone` (shallow) and `copy` (deep) helpers, rebind function arguments per call, add local scope for lambda bodies, and make `gc.collect`/`gc.sweep` mark values for immediate reuse.
+- Add global `inf` float constant.
 
 ## 0.14.1
 - Apply Papagaio processing to all string literals, with `\$` escape support.

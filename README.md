@@ -44,6 +44,8 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 
 Notes:
 - `[]` builds an int list; if any element is float, the list is float. Use `.toInt()`/`.toFloat()` for explicit conversion.
+- Lists are homogeneous: an int list never mixes floats. If any element is fractional, the entire list becomes float and ints are converted.
+- Strings are int lists of bytes; `'c'` is a length-1 string and `"abc"` is length > 1. Use `.string` (type view) to treat an int list as text.
 - Table literals now use `{...}` exclusively; the `table` prefix is no longer supported.
 - Plain `{}` is reserved for tables, while `(args){...}` still introduces a lambda.
 - Compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`) and increment/decrement statements (`++i`, `i++`, `--i`, `i--`) mutate the left-hand target in place; increments add/subtract `1`.
@@ -65,6 +67,7 @@ Notes:
 - `a ?= b` assigns `b` only when `a` is `null`.
 - Assignment and `++`/`--` forms are expressions and return a value (prefix returns the updated value, postfix returns the previous value).
 - String indexing assignments accept either single-byte strings or numeric values `0-255`.
+- List indexing on int/float lists returns numeric scalars; string indexing returns a single-byte string.
 
 ## Control Flow
 
@@ -110,6 +113,7 @@ Rules:
 - Only `table` supports string/key indexing.
 - Indexing strings yields a single-byte string.
 - Indexing supports infinite nesting.
+- `inf` is a global float constant (positive infinity).
 
 ## Meta Properties
 
