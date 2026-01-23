@@ -242,7 +242,7 @@ IO(might not be available in all environments):
 - `read`, `write`
 
 Metaprogramming:
-- `parse`, `emit`, `evalBytecode`, `bytecodeToAst`, `astToSource`, `asm`, `disasm`, `eval`
+- `parse`, `emit`, `evalBytecode`, `bytecodeToAst`, `astToSource`, `eval`
 
 GC:
 - `gc`, `global.gc`
@@ -253,11 +253,17 @@ Notes:
 - `eval(code)` executes code in the current VM and returns `null`.
 - `parse(source)` compiles source into a bytecode AST (see below).
 - `emit(ast)` produces bytecode bytes from a bytecode AST.
-- `asm(text)` assembles textual bytecode into bytes.
-- `disasm(bytes)` disassembles bytecode into text.
 - `evalBytecode(bytes)` executes bytecode and returns `null`.
 - `bytecodeToAst(bytes)` decodes bytecode bytes into a bytecode AST.
 - `astToSource(ast)` returns a disassembly-style text view of the bytecode AST.
+
+A pure Disturb assembler/disassembler is available in `example/asm_lib.disturb`:
+
+```disturb
+eval(read("example/asm_lib.disturb"));
+bytes = asm("PUSH_INT 1\nPUSH_INT 2\nADD\n");
+println(disasm(bytes));
+```
 
 ## Bytecode AST
 

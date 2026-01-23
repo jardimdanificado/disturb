@@ -37,7 +37,7 @@ static void print_help(void)
     puts("  disturb --help");
     puts("");
     puts("notes:");
-    puts("  asm/disasm are available as native functions inside the language.");
+    puts("  asm/disasm are available in example/asm_lib.disturb.");
 }
 
 static void repl_update_state(const char *line, int *depth, int *in_single, int *in_double, int *escape)

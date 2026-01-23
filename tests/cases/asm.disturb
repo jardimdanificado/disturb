@@ -1,3 +1,5 @@
+eval(read("example/asm_lib.disturb"));
+
 src = read("tests/asm/input.asm");
 bytecode = asm(src);
 out = disasm(bytecode);
