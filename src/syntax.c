@@ -77,6 +77,7 @@ typedef struct {
     char *str;
     size_t str_len;
     int is_float;
+    int num_suffix;
     int line;
     int col;
 } Token;
@@ -115,6 +116,7 @@ struct Expr {
         struct {
             double number;
             int is_float;
+            int num_suffix;
         } lit_num;
         struct {
             char *data;
@@ -233,6 +235,7 @@ typedef struct {
     LabelEntry *labels;
     int label_count;
     int label_cap;
+    int strict_mode;
 } Parser;
 
 static void arena_init(Arena *a)
@@ -616,6 +619,7 @@ static Token next_token(Parser *p)
         }
         size_t len = (size_t)(end - (p->src + p->pos));
         int is_float = 0;
+        int num_suffix = 0;
         for (size_t i = 0; i < len; i++) {
             char ch = p->src[p->pos + i];
             if (ch == '.' || ch == 'e' || ch == 'E') {
@@ -623,11 +627,24 @@ static Token next_token(Parser *p)
                 break;
             }
         }
+        char suffix = p->src[p->pos + len];
+        char next = p->src[p->pos + len + 1];
+        if ((suffix == 'i' || suffix == 'u' || suffix == 'f') &&
+            !(isalnum((unsigned char)next) || next == '_')) {
+            num_suffix = suffix;
+            len += 1;
+            if (suffix == 'f') {
+                is_float = 1;
+            } else {
+                is_float = 0;
+            }
+        }
         for (size_t i = 0; i < len; i++) next_char(p);
         t.kind = TOK_NUMBER;
         t.number = v;
         t.len = len;
         t.is_float = is_float;
+        t.num_suffix = num_suffix;
         return t;
     }
 
@@ -1021,6 +1038,7 @@ static Expr *parse_primary(Parser *p)
         if (!e) return NULL;
         e->as.lit_num.number = p->current.number;
         e->as.lit_num.is_float = p->current.is_float;
+        e->as.lit_num.num_suffix = p->current.num_suffix;
         advance(p);
         return e;
     }
@@ -1138,6 +1156,8 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, 
     int count = 0;
     int cap = 0;
     int is_float = 0;
+    int saw_int = 0;
+    int saw_float = 0;
     Token tok = probe.current;
 
     if (tok.kind == closing) {
@@ -1165,7 +1185,18 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, 
             cap = next;
         }
         vals[count++] = tok.number;
-        if (tok.is_float) is_float = 1;
+        if (tok.is_float) {
+            is_float = 1;
+            saw_float = 1;
+        } else {
+            saw_int = 1;
+        }
+        if (p->strict_mode && saw_int && saw_float) {
+            token_free(&probe.current);
+            free(vals);
+            parser_error(p, "strict mode: mixed int/float list");
+            return 0;
+        }
         advance(&probe);
         tok = probe.current;
         if (tok.kind == TOK_COMMA) {
@@ -2820,6 +2851,50 @@ static int parse_each_statement(Parser *p, Bytecode *bc)
 
 static int parse_statement(Parser *p, Bytecode *bc)
 {
+    if (p->current.kind == TOK_IDENT &&
+        p->current.len == 3 && strncmp(p->current.start, "use", 3) == 0) {
+        Parser probe = *p;
+        Token next = next_token(&probe);
+        Token after = next_token(&probe);
+        int is_strict = next.kind == TOK_STRING &&
+                        next.str_len == 6 &&
+                        memcmp(next.str, "strict", 6) == 0 &&
+                        after.kind == TOK_SEMI;
+        if (!is_strict && next.kind == TOK_IDENT &&
+            next.len == 6 && memcmp(next.start, "strict", 6) == 0 &&
+            after.kind == TOK_SEMI) {
+            is_strict = 1;
+        }
+        token_free(&next);
+        token_free(&after);
+        if (is_strict) {
+            advance(p);
+            if (p->current.kind == TOK_STRING) {
+                if (p->current.str_len != 6 ||
+                    memcmp(p->current.str, "strict", 6) != 0) {
+                    parser_error(p, "expected \"strict\" after use");
+                    return 0;
+                }
+            } else if (p->current.kind == TOK_IDENT) {
+                if (p->current.len != 6 ||
+                    memcmp(p->current.start, "strict", 6) != 0) {
+                    parser_error(p, "expected strict after use");
+                    return 0;
+                }
+            } else {
+                parser_error(p, "expected strict after use");
+                return 0;
+            }
+            advance(p);
+            if (!expect(p, TOK_SEMI, "expected ';' after use strict")) return 0;
+            if (!bc_emit_u8(bc, BC_STRICT)) {
+                parser_error(p, "failed to emit STRICT");
+                return 0;
+            }
+            p->strict_mode = 1;
+            return 1;
+        }
+    }
     if (p->current.kind == TOK_IDENT && peek_kind(p, 1) == TOK_COLON) {
         const char *name = p->current.start;
         size_t len = p->current.len;
@@ -2912,6 +2987,7 @@ void vm_exec_line(VM *vm, const char *line)
     p.loop_cap = 0;
     arena_init(&p.arena);
     p.prev_kind = TOK_EOF;
+    p.strict_mode = 0;
     p.current = next_token(&p);
 
     Bytecode bc;
@@ -2960,6 +3036,7 @@ int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap)
     p.loop_cap = 0;
     arena_init(&p.arena);
     p.prev_kind = TOK_EOF;
+    p.strict_mode = 0;
     p.current = next_token(&p);
 
     bc_init(out);

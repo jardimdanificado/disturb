@@ -110,6 +110,7 @@ const char *bc_opcode_name(uint8_t op)
     case BC_SET_THIS: return "SET_THIS";
     case BC_CALL: return "CALL";
     case BC_CALL_EX: return "CALL_EX";
+    case BC_STRICT: return "STRICT";
     case BC_JMP: return "JMP";
     case BC_JMP_IF_FALSE: return "JMP_IF_FALSE";
     case BC_RETURN: return "RETURN";

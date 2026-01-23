@@ -33,6 +33,7 @@ struct ObjEntry {
     unsigned in_use : 1;
     unsigned mark : 1;
     unsigned is_string : 1;
+    unsigned explicit_string : 1;
 };
 
 struct VM {
@@ -52,6 +53,7 @@ struct VM {
     FreeNode *free_bytes;
     Int call_override_len;
     int has_call_override;
+    int strict_mode;
 };
 
 const char *urb_type_name(Int type);
@@ -66,8 +68,8 @@ Int vm_value_len_entry(const ObjEntry *entry);
 ObjEntry *vm_stack_peek(List *stack, Int from_top);
 ObjEntry *vm_global_find_by_key(List *global, const char *name);
 
-void print_entry(FILE *out, ObjEntry *entry);
-void print_plain_entry(FILE *out, ObjEntry *entry);
+void print_entry(FILE *out, VM *vm, ObjEntry *entry);
+void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry);
 
 ObjEntry *vm_make_int_value(VM *vm, Int value);
 ObjEntry *vm_make_float_value(VM *vm, Float value);

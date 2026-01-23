@@ -513,6 +513,8 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
             entry->key = obj ? urb_obj_key(obj) : NULL;
             entry->in_use = 1;
             entry->mark = 0;
+            entry->is_string = 0;
+            entry->explicit_string = 0;
             return entry;
         }
     }
@@ -533,6 +535,7 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
     entry->in_use = 1;
     entry->mark = 0;
     entry->is_string = 0;
+    entry->explicit_string = 0;
     return entry;
 }
 
@@ -565,7 +568,10 @@ static ObjEntry *vm_make_key(VM *vm, const char *name)
 {
     List *key_obj = vm_alloc_bytes(vm, URB_T_INT, NULL, name, strlen(name));
     ObjEntry *entry = vm_reg_alloc(vm, key_obj);
-    if (entry) entry->is_string = 1;
+    if (entry) {
+        entry->is_string = 1;
+        entry->explicit_string = 1;
+    }
     return entry;
 }
 
@@ -610,7 +616,10 @@ static ObjEntry *vm_make_key_len(VM *vm, const char *name, size_t len)
 {
     List *key_obj = vm_alloc_bytes(vm, URB_T_INT, NULL, name, len);
     ObjEntry *entry = vm_reg_alloc(vm, key_obj);
-    if (entry) entry->is_string = 1;
+    if (entry) {
+        entry->is_string = 1;
+        entry->explicit_string = 1;
+    }
     return entry;
 }
 
@@ -1352,7 +1361,7 @@ static void print_key(FILE *out, ObjEntry *entry)
     fwrite(urb_bytes_data(key_obj), 1, urb_bytes_len(key_obj), out);
 }
 
-void print_plain_entry(FILE *out, ObjEntry *entry)
+void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry)
 {
     if (!entry || !entry->in_use) {
         fputs("null", out);
@@ -1361,13 +1370,17 @@ void print_plain_entry(FILE *out, ObjEntry *entry)
 
     List *obj = entry->obj;
     Int type = urb_obj_type(obj);
+    int print_as_string = entry_is_string(entry);
+    if (vm && vm->strict_mode && print_as_string && !entry->explicit_string) {
+        print_as_string = 0;
+    }
 
     switch (type) {
     case URB_T_NULL:
         fputs("null", out);
         break;
     case URB_T_INT:
-        if (entry_is_string(entry)) {
+        if (print_as_string) {
             fwrite(urb_bytes_data(obj), 1, urb_bytes_len(obj), out);
             break;
         }
@@ -1417,7 +1430,7 @@ void print_plain_entry(FILE *out, ObjEntry *entry)
     }
 }
 
-void print_entry(FILE *out, ObjEntry *entry)
+void print_entry(FILE *out, VM *vm, ObjEntry *entry)
 {
     if (!entry || !entry->in_use) {
         fputs("null", out);
@@ -1426,6 +1439,10 @@ void print_entry(FILE *out, ObjEntry *entry)
 
     List *obj = entry->obj;
     Int type = urb_obj_type(obj);
+    int print_as_string = entry_is_string(entry);
+    if (vm && vm->strict_mode && print_as_string && !entry->explicit_string) {
+        print_as_string = 0;
+    }
 
     fputs("[", out);
     fputs(urb_type_name(type), out);
@@ -1438,7 +1455,7 @@ void print_entry(FILE *out, ObjEntry *entry)
         fputs("null", out);
         break;
     case URB_T_INT:
-        if (entry_is_string(entry)) {
+        if (print_as_string) {
             fputs("\"", out);
             fwrite(urb_bytes_data(obj), 1, urb_bytes_len(obj), out);
             fputs("\"", out);
@@ -1503,6 +1520,7 @@ void vm_init(VM *vm)
     vm->call_override_len = -1;
     vm->has_call_override = 0;
     vm->call_entry = NULL;
+    vm->strict_mode = 0;
 
     ObjEntry *global_key = vm_make_key(vm, "global");
     List *global_obj = vm_alloc_list(vm, URB_T_TABLE, global_key, 8);
@@ -1870,7 +1888,10 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
     }
 
     entry = vm_reg_alloc(vm, copy);
-    if (entry) entry->is_string = src->is_string;
+    if (entry) {
+        entry->is_string = src->is_string;
+        entry->explicit_string = src->explicit_string;
+    }
 
     if (*count == *cap) {
         size_t new_cap = *cap == 0 ? 8 : (*cap * 2);
@@ -1913,6 +1934,7 @@ ObjEntry *vm_clone_entry_shallow(VM *vm, ObjEntry *src, ObjEntry *forced_key)
     if (!entry) return NULL;
     entry->key = forced_key ? forced_key : vm_entry_key(src);
     entry->is_string = src->is_string;
+    entry->explicit_string = src->explicit_string;
     return entry;
 }
 
@@ -1975,6 +1997,7 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
     if (!entry) return NULL;
     entry->key = key_entry;
     entry->is_string = src->is_string;
+    entry->explicit_string = src->explicit_string;
     return entry;
 }
 
@@ -1987,7 +2010,10 @@ ObjEntry *vm_define_bytes(VM *vm, const char *key, const char *value)
 
     List *obj = vm_alloc_bytes(vm, URB_T_INT, key_entry, value, strlen(value));
     ObjEntry *entry = vm_reg_alloc(vm, obj);
-    if (entry) entry->is_string = 1;
+    if (entry) {
+        entry->is_string = 1;
+        entry->explicit_string = 0;
+    }
     vm_global_add(vm, entry);
     return entry;
 }
@@ -2151,7 +2177,7 @@ void vm_dump_global(VM *vm)
     List *global = vm->global_entry->obj;
     for (Int i = 2; i < global->size; i++) {
         ObjEntry *entry = (ObjEntry*)global->data[i].p;
-        print_entry(stdout, entry);
+        print_entry(stdout, vm, entry);
         fputs("\n", stdout);
     }
 }
@@ -2412,6 +2438,8 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             }
             break;
         }
+        case BC_STRICT:
+            break;
         case BC_JMP:
         case BC_JMP_IF_FALSE: {
             uint32_t target = 0;
@@ -2497,7 +2525,10 @@ static ObjEntry *vm_make_type_name(VM *vm, ObjEntry *target)
         }
     }
     ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, URB_T_INT, NULL, name, strlen(name)));
-    if (entry) entry->is_string = 1;
+    if (entry) {
+        entry->is_string = 1;
+        entry->explicit_string = 1;
+    }
     return entry;
 }
 
@@ -2533,7 +2564,10 @@ ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len)
 {
     List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, s, len);
     ObjEntry *entry = vm_reg_alloc(vm, obj);
-    if (entry) entry->is_string = 1;
+    if (entry) {
+        entry->is_string = 1;
+        entry->explicit_string = 0;
+    }
     return entry;
 }
 
@@ -2541,7 +2575,10 @@ ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len)
 {
     List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, s, len);
     ObjEntry *entry = vm_reg_alloc(vm, obj);
-    if (entry) entry->is_string = 1;
+    if (entry) {
+        entry->is_string = 1;
+        entry->explicit_string = 0;
+    }
     return entry;
 }
 
@@ -2563,7 +2600,8 @@ static ObjEntry *vm_make_view(VM *vm, ObjEntry *base, ViewType view)
     return vm_reg_alloc(vm, obj);
 }
 
-static List *vm_clone_obj_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *key_entry, int *out_is_string)
+static List *vm_clone_obj_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *key_entry,
+                                       int *out_is_string, int *out_explicit_string)
 {
     if (!src || !src->in_use) return NULL;
     List *obj = src->obj;
@@ -2602,6 +2640,7 @@ static List *vm_clone_obj_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *key_entr
     }
 
     if (out_is_string) *out_is_string = src->is_string;
+    if (out_explicit_string) *out_explicit_string = src->explicit_string;
     return copy;
 }
 
@@ -2678,6 +2717,7 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
         if (!out) return NULL;
         out->key = vm_entry_key(target);
         out->is_string = 1;
+        out->explicit_string = 1;
         return out;
     }
     {
@@ -3107,7 +3147,10 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
             }
             char c = urb_bytes_data(target->obj)[idx];
             ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, URB_T_INT, NULL, &c, 1));
-            if (entry) entry->is_string = 1;
+            if (entry) {
+                entry->is_string = 1;
+                entry->explicit_string = target->explicit_string;
+            }
             return entry;
         }
         Int count = vm_bytes_to_count(urb_bytes_len(target->obj), URB_T_INT);
@@ -3174,6 +3217,7 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
                 memcpy(urb_bytes_data(dst), urb_bytes_data(src), len_bytes);
             }
             found->is_string = value->is_string;
+            found->explicit_string = value->explicit_string;
             return 1;
         }
         if (found_type == URB_T_TABLE && value_type == URB_T_TABLE) {
@@ -3257,8 +3301,10 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         target->obj->data[0].i = next;
         if (next == URB_T_INT && (len == 4 || len == 6)) {
             target->is_string = 1;
+            target->explicit_string = 1;
         } else if (next == URB_T_INT || next == URB_T_FLOAT) {
             target->is_string = 0;
+            target->explicit_string = 0;
         }
         return 1;
     }
@@ -3273,14 +3319,16 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             return 1;
         }
         int is_string = 0;
+        int explicit_string = 0;
         ObjEntry *key_entry = vm_entry_key(target);
-        List *copy = vm_clone_obj_shallow_copy(vm, value, key_entry, &is_string);
+        List *copy = vm_clone_obj_shallow_copy(vm, value, key_entry, &is_string, &explicit_string);
         if (!copy) {
             fprintf(stderr, "bytecode error at pc %zu: value assignment failed\n", pc);
             return -1;
         }
         target->obj = copy;
         target->is_string = is_string;
+        target->explicit_string = explicit_string;
         return 1;
     }
     if (vm_key_is(index, "size")) {
@@ -3438,14 +3486,20 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 free(processed);
                 free(buf);
                 ObjEntry *entry = vm_reg_alloc(vm, obj);
-                if (entry) entry->is_string = 1;
+                if (entry) {
+                    entry->is_string = 1;
+                    entry->explicit_string = 0;
+                }
                 vm_stack_push_entry(vm, entry);
                 break;
             }
             List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, (const char*)buf, slen);
             free(buf);
             ObjEntry *entry = vm_reg_alloc(vm, obj);
-            if (entry) entry->is_string = 1;
+            if (entry) {
+                entry->is_string = 1;
+                entry->explicit_string = 0;
+            }
             vm_stack_push_entry(vm, entry);
             break;
         }
@@ -3944,6 +3998,9 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm->this_entry = value ? value : vm->null_entry;
             break;
         }
+        case BC_STRICT:
+            vm->strict_mode = 1;
+            break;
         case BC_CALL:
         case BC_CALL_EX: {
             unsigned char *name = NULL;
@@ -4119,10 +4176,21 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 vm_append_value_text(vm, left, &buf, 1);
                 vm_append_value_text(vm, right, &buf, 1);
                 ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, URB_T_INT, NULL, buf.data, buf.len));
-                if (entry) entry->is_string = 1;
+                if (entry) {
+                    entry->is_string = 1;
+                    entry->explicit_string = left->explicit_string || right->explicit_string;
+                }
                 sb_free(&buf);
                 vm_stack_push_entry(vm, entry);
                 break;
+            }
+            if (vm->strict_mode) {
+                Int lt = urb_obj_type(left->obj);
+                Int rt = urb_obj_type(right->obj);
+                if (lt == URB_T_NULL || rt == URB_T_NULL) {
+                    fprintf(stderr, "bytecode error at pc %zu: strict mode forbids null in numeric ops\n", pc);
+                    return 0;
+                }
             }
             if (op == BC_AND || op == BC_OR) {
                 int l = vm_entry_truthy(left);
@@ -4132,12 +4200,52 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 break;
             }
             if (op == BC_EQ || op == BC_NEQ) {
+                if (vm->strict_mode) {
+                    Int lt = urb_obj_type(left->obj);
+                    Int rt = urb_obj_type(right->obj);
+                    if ((lt == URB_T_INT || lt == URB_T_FLOAT) &&
+                        (rt == URB_T_INT && entry_is_string(right))) {
+                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
+                        return 0;
+                    }
+                    if ((rt == URB_T_INT || rt == URB_T_FLOAT) &&
+                        (lt == URB_T_INT && entry_is_string(left))) {
+                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
+                        return 0;
+                    }
+                    if ((lt == URB_T_INT || lt == URB_T_FLOAT) &&
+                        (rt == URB_T_INT || rt == URB_T_FLOAT) &&
+                        lt != rt) {
+                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids mixed numeric types\n", pc);
+                        return 0;
+                    }
+                }
                 int eq = vm_entry_equal(left, right);
                 int res = op == BC_EQ ? eq : !eq;
                 vm_stack_push_entry(vm, vm_make_int_value(vm, res ? 1 : 0));
                 break;
             }
             if (op == BC_LT || op == BC_LTE || op == BC_GT || op == BC_GTE) {
+                if (vm->strict_mode) {
+                    Int lt = urb_obj_type(left->obj);
+                    Int rt = urb_obj_type(right->obj);
+                    if ((lt == URB_T_INT || lt == URB_T_FLOAT) &&
+                        (rt == URB_T_INT && entry_is_string(right))) {
+                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
+                        return 0;
+                    }
+                    if ((rt == URB_T_INT || rt == URB_T_FLOAT) &&
+                        (lt == URB_T_INT && entry_is_string(left))) {
+                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
+                        return 0;
+                    }
+                    if ((lt == URB_T_INT || lt == URB_T_FLOAT) &&
+                        (rt == URB_T_INT || rt == URB_T_FLOAT) &&
+                        lt != rt) {
+                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids mixed numeric types\n", pc);
+                        return 0;
+                    }
+                }
                 int cmp = 0;
                 if (!vm_entry_compare(left, right, &cmp)) {
                     fprintf(stderr, "bytecode error at pc %zu: comparison expects matching number/string types\n", pc);
@@ -4160,6 +4268,10 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             int rf_is_float = 0;
             if (!vm_entry_number(left, &li, &lf, &lf_is_float, "OP", pc)) return 0;
             if (!vm_entry_number(right, &ri, &rf, &rf_is_float, "OP", pc)) return 0;
+            if (vm->strict_mode && lf_is_float != rf_is_float) {
+                fprintf(stderr, "bytecode error at pc %zu: strict mode forbids mixed numeric types\n", pc);
+                return 0;
+            }
             double l = lf_is_float ? (double)lf : (double)li;
             double r = rf_is_float ? (double)rf : (double)ri;
             double out = 0.0;
@@ -4177,6 +4289,10 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         case BC_NEG: {
             ObjEntry *value = vm_stack_pop_entry(vm, "NEG", pc);
             if (!value) return 0;
+            if (vm->strict_mode && urb_obj_type(value->obj) == URB_T_NULL) {
+                fprintf(stderr, "bytecode error at pc %zu: strict mode forbids null in numeric ops\n", pc);
+                return 0;
+            }
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;

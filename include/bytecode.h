@@ -28,6 +28,7 @@ enum {
     BC_SET_THIS,
     BC_CALL,
     BC_CALL_EX,
+    BC_STRICT,
     BC_JMP,
     BC_JMP_IF_FALSE,
     BC_RETURN,

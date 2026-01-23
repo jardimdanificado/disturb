@@ -49,6 +49,7 @@ Notes:
 - Table literals now use `{...}` exclusively; the `table` prefix is no longer supported.
 - Plain `{}` is reserved for tables, while `(args){...}` still introduces a lambda.
 - Compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`) and increment/decrement statements (`++i`, `i++`, `--i`, `i--`) mutate the left-hand target in place; increments add/subtract `1`.
+- Numeric suffixes: `1i` (int), `1u` (unsigned int, treated as int), `1f` (float).
 
 ## Expressions and Operators
 
@@ -68,6 +69,21 @@ Notes:
 - Assignment and `++`/`--` forms are expressions and return a value (prefix returns the updated value, postfix returns the previous value).
 - String indexing assignments accept either single-byte strings or numeric values `0-255`.
 - List indexing on int/float lists returns numeric scalars; string indexing returns a single-byte string.
+
+## Strict Mode
+
+Enable strict numeric rules at the top of a script:
+```
+use strict;
+```
+
+In strict mode:
+- Mixed int/float arithmetic and comparisons are errors.
+- Numeric list literals cannot mix ints and floats.
+- Numeric suffixes (`1i`, `1u`, `1f`) are honored for literal type selection.
+- Number/string comparisons are errors.
+- Using `null` in numeric ops is an error.
+- `print`/`println` only render text for `.string`; raw string literals print as int lists.
 
 ## Control Flow
 

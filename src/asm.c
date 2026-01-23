@@ -246,12 +246,21 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                 bc_free(out);
                 return 0;
             }
-        } else if (strcmp(ident, "LOAD_ROOT") == 0 || strcmp(ident, "LOAD_GLOBAL") == 0 ||
+        } else if (strcmp(ident, "LOAD_ROOT") == 0 || strcmp(ident, "STRICT") == 0 ||
+                   strcmp(ident, "LOAD_GLOBAL") == 0 ||
                    strcmp(ident, "STORE_GLOBAL") == 0 || strcmp(ident, "CALL") == 0 ||
                    strcmp(ident, "CALL_EX") == 0) {
             if (strcmp(ident, "LOAD_ROOT") == 0) {
                 if (!bc_emit_u8(out, BC_LOAD_ROOT)) {
                     err_set(err_buf, err_cap, "failed to emit LOAD_ROOT");
+                    bc_free(out);
+                    return 0;
+                }
+                goto line_done;
+            }
+            if (strcmp(ident, "STRICT") == 0) {
+                if (!bc_emit_u8(out, BC_STRICT)) {
+                    err_set(err_buf, err_cap, "failed to emit STRICT");
                     bc_free(out);
                     return 0;
                 }
@@ -568,6 +577,9 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
             free(buf);
             break;
         }
+        case BC_STRICT:
+            fputs("STRICT\n", out);
+            break;
         case BC_LOAD_ROOT:
             fputs("LOAD_ROOT\n", out);
             break;

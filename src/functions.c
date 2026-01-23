@@ -484,6 +484,12 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 bc_free(out);
                 return 0;
             }
+        } else if (op_len == 6 && memcmp(op_name, "STRICT", 6) == 0) {
+            if (!bc_emit_u8(out, BC_STRICT)) {
+                ast_err(err, err_cap, "failed to emit STRICT");
+                bc_free(out);
+                return 0;
+            }
         } else if (op_len == 4 && memcmp(op_name, "CALL", 4) == 0) {
             ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
             ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
@@ -941,6 +947,8 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
             }
             sb_append_char(out, ' ');
             sb_append_n(out, name, name_len);
+        } else if (op_len == 6 && memcmp(op_name, "STRICT", 6) == 0) {
+            // no args
         } else if (op_len == 4 && memcmp(op_name, "CALL", 4) == 0) {
             ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
             ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
@@ -1054,7 +1062,7 @@ static void native_print(VM *vm, List *stack, List *global)
     if (argc == 0) {
         if (stack->size > 2) {
             ObjEntry *entry = (ObjEntry*)stack->data[stack->size - 1].p;
-            print_plain_entry(stdout, entry);
+            print_plain_entry(stdout, vm, entry);
             return;
         }
         fputs("(stack empty)", stdout);
@@ -1063,7 +1071,7 @@ static void native_print(VM *vm, List *stack, List *global)
     for (uint32_t i = 0; i < argc; i++) {
         ObjEntry *entry = native_arg(stack, argc, i);
         if (i) fputc(' ', stdout);
-        print_entry(stdout, entry);
+        print_entry(stdout, vm, entry);
     }
     fputc('\n', stdout);
 }
@@ -1076,7 +1084,7 @@ static void native_println(VM *vm, List *stack, List *global)
     if (argc == 0) {
         if (stack->size > 2) {
             ObjEntry *entry = (ObjEntry*)stack->data[stack->size - 1].p;
-            print_plain_entry(stdout, entry);
+            print_plain_entry(stdout, vm, entry);
         }
         fputc('\n', stdout);
         return;
@@ -1084,7 +1092,7 @@ static void native_println(VM *vm, List *stack, List *global)
     for (uint32_t i = 0; i < argc; i++) {
         ObjEntry *entry = native_arg(stack, argc, i);
         if (i) fputc(' ', stdout);
-        print_plain_entry(stdout, entry);
+        print_plain_entry(stdout, vm, entry);
     }
     fputc('\n', stdout);
 }
