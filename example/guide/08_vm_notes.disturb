@@ -20,6 +20,17 @@ println({a = 1, b = {c = 2}}.pretty());
 // __argc is updated for native/user calls.
 println(__argc);
 
-// gc() triggers a collection; GC is manual only.
+// gc() is an alias for gc.collect(); GC is manual only.
 gc();
 global.gc.collect();
+
+// Manual reuse controls.
+tmp = {x = 1};
+gc.sweep(tmp);   // mark for reuse (no free)
+tmp = {y = 2};
+gc.free(tmp);    // force free (cannot on shared/protected entries)
+gc.flush();      // free all reuse pools
+
+// Allocate a fresh table with optional reserve size.
+buf = gc.new(4);
+println(buf.type);

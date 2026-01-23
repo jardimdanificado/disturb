@@ -13,6 +13,16 @@ c = 'x';
 
 // Strings are int lists with the .string view.
 b = "ABC";
+println(b.string);
+
+// Numeric suffixes pick a literal type.
+ai = 1i;
+af = 1f;
+println(ai);
+println(af);
+
+// Infinity is a global float constant.
+println(inf);
 
 // Tables are key/value pairs; values can be any type.
 obj = {a = 1, b = "hi", c = [9, 8]};
@@ -30,3 +40,7 @@ obj.type = "table";
 // name is the key name inside its parent.
 global.sample = obj;
 println(global.sample.name);
+
+// value copies or assigns entry content without changing identity.
+global.sample.value = {x = 9};
+println(global.sample.value.x);

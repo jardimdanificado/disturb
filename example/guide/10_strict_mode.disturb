@@ -1,0 +1,17 @@
+// 10_strict_mode.disturb
+// Strict mode (opt-in) for numeric discipline and string printing.
+
+use strict;
+
+// Use numeric suffixes to pick literal types.
+println(1i + 2i);
+println(1f + 2f);
+
+// Strings only print as text when explicitly viewed as .string.
+s = "hello";
+println(s.string);
+
+// In strict mode, mixed numeric types and mixed list literals are errors.
+// bad = 1 + 1f;
+// bad_list = [1, 2.5];
+// bad_cmp = "1" == 1;

@@ -41,6 +41,9 @@ run_case stress_deep
 run_case stress_large_list
 run_case references
 run_case locals
+run_case strict
+run_case value
+run_case asm
 
 run_negative() {
   name=$1
@@ -74,18 +77,7 @@ run_negative meta_readonly
 run_negative meta_size_float
 run_negative meta_capacity_string
 run_negative byte_range
-
-asm_out="tests/asm/out.bin"
-asm_dis="tests/asm/out.asm"
-echo "asm: assemble/disassemble"
-"$BIN" --asm tests/asm/input.asm "$asm_out"
-"$BIN" --disasm "$asm_out" "$asm_dis"
-if ! diff -u tests/asm/expected.asm "$asm_dis"; then
-  echo "asm test failed" >&2
-  exit 1
-fi
-rm -f "$asm_out" "$asm_dis"
-echo "asm: ok"
+run_negative strict_mixed_list
 
 if command -v valgrind >/dev/null 2>&1; then
   echo "valgrind: leak check (tests/cases/basic.disturb)"

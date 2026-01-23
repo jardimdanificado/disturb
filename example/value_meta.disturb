@@ -1,0 +1,13 @@
+a = {x = 1};
+b = a;
+
+// .value replaces the contents without changing identity.
+b.value = {y = 2};
+
+println("a.y = " + a.y);
+println("b.y = " + b.y);
+
+// .value reads a shallow copy with no key.
+c = b.value;
+println("c.y = " + c.y);
+println("c.name = " + c.name);

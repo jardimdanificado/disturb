@@ -1,0 +1,11 @@
+a = {x = 1};
+b = a;
+
+b.value = {y = 2};
+
+println(a.y);
+println(b.y);
+
+c = b.value;
+println(c.y);
+println(c.name);

@@ -1,6 +1,7 @@
 #include "vm.h"
 #include "papagaio.h"
 #include "papagaio_internal.h"
+#include "asm.h"
 #include <ctype.h>
 #include <math.h>
 #include <stdint.h>
@@ -135,6 +136,32 @@ static List *push_number(VM *vm, List *stack, double value)
 static List *push_string(VM *vm, List *stack, const char *s, size_t len)
 {
     return push_entry(vm, stack, vm_make_byte_value(vm, s, len));
+}
+
+static char *read_all_text(FILE *fp, size_t *out_len)
+{
+    size_t cap = 4096;
+    size_t len = 0;
+    char *buf = (char*)malloc(cap + 1);
+    if (!buf) return NULL;
+
+    int c;
+    while ((c = fgetc(fp)) != EOF) {
+        if (len + 1 >= cap) {
+            size_t next = cap * 2;
+            char *tmp = (char*)realloc(buf, next + 1);
+            if (!tmp) {
+                free(buf);
+                return NULL;
+            }
+            buf = tmp;
+            cap = next;
+        }
+        buf[len++] = (char)c;
+    }
+    buf[len] = 0;
+    if (out_len) *out_len = len;
+    return buf;
 }
 
 static int number_to_int(ObjEntry *entry, Int *out);
@@ -1361,6 +1388,79 @@ static void native_emit(VM *vm, List *stack, List *global)
     ObjEntry *bytes = vm_make_byte_value(vm, (const char*)bc.data, bc.len);
     bc_free(&bc);
     stack = push_entry(vm, stack, bytes);
+}
+
+static void native_asm(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    const char *data = NULL;
+    size_t len = 0;
+    if (!entry_as_string(target, &data, &len)) {
+        fprintf(stderr, "asm expects string data\n");
+        return;
+    }
+
+    char *src = (char*)malloc(len + 1);
+    if (!src) {
+        fprintf(stderr, "asm out of memory\n");
+        return;
+    }
+    memcpy(src, data, len);
+    src[len] = 0;
+
+    Bytecode bc;
+    char err[256];
+    err[0] = 0;
+    int ok = urb_assemble(src, &bc, err, sizeof(err));
+    free(src);
+    if (!ok) {
+        fprintf(stderr, "asm error: %s\n", err[0] ? err : "unknown error");
+        return;
+    }
+    ObjEntry *bytes = vm_make_byte_value(vm, (const char*)bc.data, bc.len);
+    bc_free(&bc);
+    stack = push_entry(vm, stack, bytes);
+}
+
+static void native_disasm(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    const char *data = NULL;
+    size_t len = 0;
+    if (!entry_as_string(target, &data, &len)) {
+        fprintf(stderr, "disasm expects byte/string data\n");
+        return;
+    }
+
+    FILE *mem = tmpfile();
+    if (!mem) {
+        fprintf(stderr, "disasm failed to open temp file\n");
+        return;
+    }
+    int ok = urb_disassemble((const unsigned char*)data, len, mem);
+    if (!ok) {
+        fclose(mem);
+        fprintf(stderr, "disasm error: invalid bytecode\n");
+        return;
+    }
+    fflush(mem);
+    fseek(mem, 0, SEEK_SET);
+
+    size_t out_len = 0;
+    char *out = read_all_text(mem, &out_len);
+    fclose(mem);
+    if (!out) {
+        fprintf(stderr, "disasm out of memory\n");
+        return;
+    }
+    if (out_len > 0 && out[out_len - 1] == '\n') {
+        out[--out_len] = 0;
+    }
+    ObjEntry *text = vm_make_byte_value(vm, out, out_len);
+    free(out);
+    stack = push_entry(vm, stack, text);
 }
 
 static void native_eval_bytecode(VM *vm, List *stack, List *global)
@@ -3047,6 +3147,8 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "eval") == 0) return native_eval;
     if (strcmp(name, "parse") == 0) return native_parse;
     if (strcmp(name, "emit") == 0) return native_emit;
+    if (strcmp(name, "asm") == 0) return native_asm;
+    if (strcmp(name, "disasm") == 0) return native_disasm;
     if (strcmp(name, "evalBytecode") == 0) return native_eval_bytecode;
     if (strcmp(name, "bytecodeToAst") == 0) return native_bytecode_to_ast;
     if (strcmp(name, "astToSource") == 0) return native_ast_to_source;

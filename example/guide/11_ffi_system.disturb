@@ -1,0 +1,21 @@
+// 11_ffi_system.disturb
+// FFI and system calls (optional build flags).
+
+// Requires building with ENABLE_FFI=1 and ENABLE_SYSTEM=1.
+// Example on Linux (libc path may differ on your system).
+libc = ffi.load("libc.so.6",
+  "puts: int (char*)",
+  "strlen: size_t (char*)"
+);
+
+println(libc.puts("hello from libc"));
+println(libc.strlen("count me"));
+
+// Arrays and pointers map to int[]/float[].
+buf = [1, 2, 3];
+
+// Array return length defaults to 0; override with !N.
+// data = libc.someArrayReturn!16();
+
+// system() is a thin wrapper around libc's system().
+system("echo disturb ffi");

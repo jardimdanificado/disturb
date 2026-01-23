@@ -10,6 +10,7 @@
 - Add build flags to disable IO (`ENABLE_IO`), system (`ENABLE_SYSTEM`), or FFI (`ENABLE_FFI`).
 - Add `.value` meta to copy/assign entry contents without changing identity.
 - Add `use strict;` numeric mode with `1i/1u/1f` suffixes and stricter int/float checks.
+- Add `asm`/`disasm` natives and remove CLI assembler/disassembler flags.
 
 ## 0.14.1
 - Apply Papagaio processing to all string literals, with `\$` escape support.

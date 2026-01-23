@@ -10,8 +10,7 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | `./disturb file.disturb` | Run source |
 | `./disturb` | Interactive REPL |
 | `./disturb --repl` | Interactive REPL |
-| `./disturb --asm input.asm output.bin` | Assemble to bytecode |
-| `./disturb --disasm input.bin output.asm` | Disassemble bytecode |
+| `./disturb --help` | Show CLI help |
 
 ## Core Model
 
@@ -243,7 +242,7 @@ IO(might not be available in all environments):
 - `read`, `write`
 
 Metaprogramming:
-- `parse`, `emit`, `evalBytecode`, `bytecodeToAst`, `astToSource`, `eval`
+- `parse`, `emit`, `evalBytecode`, `bytecodeToAst`, `astToSource`, `asm`, `disasm`, `eval`
 
 GC:
 - `gc`, `global.gc`
@@ -254,6 +253,8 @@ Notes:
 - `eval(code)` executes code in the current VM and returns `null`.
 - `parse(source)` compiles source into a bytecode AST (see below).
 - `emit(ast)` produces bytecode bytes from a bytecode AST.
+- `asm(text)` assembles textual bytecode into bytes.
+- `disasm(bytes)` disassembles bytecode into text.
 - `evalBytecode(bytes)` executes bytecode and returns `null`.
 - `bytecodeToAst(bytes)` decodes bytecode bytes into a bytecode AST.
 - `astToSource(ast)` returns a disassembly-style text view of the bytecode AST.
@@ -355,6 +356,8 @@ The tutorial-style examples live in `example/guide` and are numbered:
 - `example/guide/07_strings_bytes_io_eval.disturb`
 - `example/guide/08_vm_notes.disturb`
 - `example/guide/09_metaprogramming.disturb`
+- `example/guide/10_strict_mode.disturb`
+- `example/guide/11_ffi_system.disturb`
 
 ### Negative and Stress Tests
 

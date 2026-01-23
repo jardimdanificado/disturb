@@ -1,4 +1,3 @@
-#include "asm.h"
 #include "vm.h"
 
 #include <stdio.h>
@@ -30,35 +29,15 @@ static char *read_all_text(FILE *fp)
     return buf;
 }
 
-static unsigned char *read_all_bin(FILE *fp, size_t *out_len)
+static void print_help(void)
 {
-    size_t cap = 4096;
-    size_t len = 0;
-    unsigned char *buf = (unsigned char*)malloc(cap);
-    if (!buf) return NULL;
-
-    int c;
-    while ((c = fgetc(fp)) != EOF) {
-        if (len + 1 >= cap) {
-            size_t next = cap * 2;
-            unsigned char *tmp = (unsigned char*)realloc(buf, next);
-            if (!tmp) {
-                free(buf);
-                return NULL;
-            }
-            buf = tmp;
-            cap = next;
-        }
-        buf[len++] = (unsigned char)c;
-    }
-    *out_len = len;
-    return buf;
-}
-
-static int write_all_bin(FILE *fp, const unsigned char *data, size_t len)
-{
-    if (len == 0) return 1;
-    return fwrite(data, 1, len, fp) == len;
+    puts("usage:");
+    puts("  disturb [script.disturb] [args...]");
+    puts("  disturb --repl");
+    puts("  disturb --help");
+    puts("");
+    puts("notes:");
+    puts("  asm/disasm are available as native functions inside the language.");
 }
 
 static void repl_update_state(const char *line, int *depth, int *in_single, int *in_double, int *escape)
@@ -194,82 +173,8 @@ int main(int argc, char **argv)
         if (strcmp(argv[1], "--repl") == 0) {
             return repl_run(argc, argv);
         }
-        if (strcmp(argv[1], "--asm") == 0) {
-            if (argc < 3) {
-                fprintf(stderr, "usage: disturb --asm <input.asm> [output.bin]\n");
-                return 1;
-            }
-            FILE *fp = fopen(argv[2], "r");
-            if (!fp) {
-                perror("open");
-                return 1;
-            }
-            char *src = read_all_text(fp);
-            fclose(fp);
-            if (!src) {
-                fprintf(stderr, "failed to read asm file\n");
-                return 1;
-            }
-            Bytecode bc;
-            char err[256] = {0};
-            int ok = urb_assemble(src, &bc, err, sizeof(err));
-            free(src);
-            if (!ok) {
-                fprintf(stderr, "assemble error: %s\n", err[0] ? err : "unknown error");
-                return 1;
-            }
-            FILE *out = stdout;
-            if (argc > 3) {
-                out = fopen(argv[3], "wb");
-                if (!out) {
-                    perror("open");
-                    bc_free(&bc);
-                    return 1;
-                }
-            }
-            if (!write_all_bin(out, bc.data, bc.len)) {
-                fprintf(stderr, "failed to write bytecode\n");
-                if (out != stdout) fclose(out);
-                bc_free(&bc);
-                return 1;
-            }
-            if (out != stdout) fclose(out);
-            bc_free(&bc);
-            return 0;
-        }
-        if (strcmp(argv[1], "--disasm") == 0) {
-            if (argc < 3) {
-                fprintf(stderr, "usage: disturb --disasm <input.bin> [output.asm]\n");
-                return 1;
-            }
-            FILE *fp = fopen(argv[2], "rb");
-            if (!fp) {
-                perror("open");
-                return 1;
-            }
-            size_t len = 0;
-            unsigned char *data = read_all_bin(fp, &len);
-            fclose(fp);
-            if (!data) {
-                fprintf(stderr, "failed to read bytecode\n");
-                return 1;
-            }
-            FILE *out = stdout;
-            if (argc > 3) {
-                out = fopen(argv[3], "w");
-                if (!out) {
-                    perror("open");
-                    free(data);
-                    return 1;
-                }
-            }
-            int ok = urb_disassemble(data, len, out);
-            if (out != stdout) fclose(out);
-            free(data);
-            if (!ok) {
-                fprintf(stderr, "disassemble error: invalid bytecode\n");
-                return 1;
-            }
+        if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
+            print_help();
             return 0;
         }
 
