@@ -23,6 +23,15 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | Common | Shared methods live on `global.common` |
 | this | Method calls bind `this` to the call target |
 
+## Semantics and Oddities
+
+- Everything is an object backed by a list; even scalars are just length-1 lists.
+- Indexing a single-element list (`a[0]`) yields the same value as `a`, but not the same object identity.
+- `=` is reference assignment: collections store references, not copies.
+- Use `.clone()` for a shallow copy or `.copy()` for a deep copy when you want a snapshot.
+- Strings are int lists with a `.string` view; in strict mode you must use `.string` to print as text.
+- Missing keys/indexes resolve to `null` instead of throwing.
+
 ## Types and Literals
 
 | Type | Literal | Notes |
