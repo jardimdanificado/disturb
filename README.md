@@ -123,6 +123,7 @@ Every entry exposes meta properties via string keys:
 | --- | --- | --- |
 | `.name` | string | Key name in its parent (`global.a.name == "a"`) |
 | `.type` | string | `null`, `int`, `float`, `char`, `string`, `table`, `native`, `lambda`, `view` |
+| `.value` | any | Copy of the entry value (keyless) |
 | `.size` | int | Used slots (elements for int/float lists, bytes for strings) |
 | `.capacity` | int | Allocated slots (elements for int/float lists, bytes for strings) |
 
@@ -130,6 +131,7 @@ Notes:
 - `.name` and `.type` are writable. `.name = null` clears the key. `.type` is pure type punning (no conversion).
 - Setting `.size` changes used slots; if larger than capacity it reallocates.
 - Setting `.capacity` reallocates; the table remains in the same entry slot.
+- Setting `.value` replaces the entry contents without changing its key or identity.
 
 ## Bytecode
 

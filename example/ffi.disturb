@@ -1,0 +1,10 @@
+// FFI example (requires ENABLE_FFI=1 and a compatible shared library).
+// Adjust the library path to your system.
+
+lib = ffi.load("libc.so.6",
+  "i32 puts(char*)",
+  "char* getenv(char*)"
+);
+
+lib.puts("hello from ffi");
+println(lib.getenv("HOME"));

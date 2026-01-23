@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
+#include <limits.h>
 
 typedef enum {
     FFI_BASE_VOID = 0,
@@ -212,16 +214,42 @@ static int parse_base_type(const char *name, FfiBase *out)
 {
     if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
     if (strcmp(name, "char") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "schar") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "uchar") == 0 || strcmp(name, "u8") == 0) { *out = FFI_BASE_U8; return 1; }
+    if (strcmp(name, "int8_t") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "uint8_t") == 0) { *out = FFI_BASE_U8; return 1; }
     if (strcmp(name, "i8") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "i16") == 0 || strcmp(name, "short") == 0) { *out = FFI_BASE_I16; return 1; }
     if (strcmp(name, "u16") == 0 || strcmp(name, "ushort") == 0) { *out = FFI_BASE_U16; return 1; }
+    if (strcmp(name, "int16_t") == 0) { *out = FFI_BASE_I16; return 1; }
+    if (strcmp(name, "uint16_t") == 0) { *out = FFI_BASE_U16; return 1; }
     if (strcmp(name, "i32") == 0 || strcmp(name, "int") == 0) { *out = FFI_BASE_I32; return 1; }
     if (strcmp(name, "u32") == 0 || strcmp(name, "uint") == 0) { *out = FFI_BASE_U32; return 1; }
+    if (strcmp(name, "int32_t") == 0) { *out = FFI_BASE_I32; return 1; }
+    if (strcmp(name, "uint32_t") == 0) { *out = FFI_BASE_U32; return 1; }
     if (strcmp(name, "i64") == 0 || strcmp(name, "long") == 0 || strcmp(name, "longlong") == 0) { *out = FFI_BASE_I64; return 1; }
     if (strcmp(name, "u64") == 0 || strcmp(name, "ulong") == 0 || strcmp(name, "ulonglong") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "int64_t") == 0) { *out = FFI_BASE_I64; return 1; }
+    if (strcmp(name, "uint64_t") == 0) { *out = FFI_BASE_U64; return 1; }
     if (strcmp(name, "f32") == 0 || strcmp(name, "float") == 0) { *out = FFI_BASE_F32; return 1; }
     if (strcmp(name, "f64") == 0 || strcmp(name, "double") == 0) { *out = FFI_BASE_F64; return 1; }
+    if (strcmp(name, "size_t") == 0 || strcmp(name, "uintptr_t") == 0) {
+#if SIZE_MAX == UINT64_MAX
+        *out = FFI_BASE_U64;
+#else
+        *out = FFI_BASE_U32;
+#endif
+        return 1;
+    }
+    if (strcmp(name, "ssize_t") == 0 || strcmp(name, "intptr_t") == 0 ||
+        strcmp(name, "ptrdiff_t") == 0) {
+#if SIZE_MAX == UINT64_MAX
+        *out = FFI_BASE_I64;
+#else
+        *out = FFI_BASE_I32;
+#endif
+        return 1;
+    }
     return 0;
 }
 
@@ -241,11 +269,40 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
             snprintf(err, err_cap, "expected type after unsigned");
             return 0;
         }
-        size_t next_len = strlen(next);
-        if (next_len > sizeof(combined) - 2) next_len = sizeof(combined) - 2;
-        combined[0] = 'u';
-        memcpy(combined + 1, next, next_len);
-        combined[1 + next_len] = 0;
+        if (strcmp(next, "long") == 0) {
+            size_t old_pos = p->pos;
+            char next2[64];
+            if (sig_read_ident(p, next2, sizeof(next2)) && strcmp(next2, "long") == 0) {
+                snprintf(combined, sizeof(combined), "ulonglong");
+            } else {
+                p->pos = old_pos;
+                snprintf(combined, sizeof(combined), "ulong");
+            }
+        } else {
+            size_t next_len = strlen(next);
+            if (next_len > sizeof(combined) - 2) next_len = sizeof(combined) - 2;
+            combined[0] = 'u';
+            memcpy(combined + 1, next, next_len);
+            combined[1 + next_len] = 0;
+        }
+    } else if (strcmp(ident, "signed") == 0) {
+        char next[64];
+        if (!sig_read_ident(p, next, sizeof(next))) {
+            snprintf(err, err_cap, "expected type after signed");
+            return 0;
+        }
+        if (strcmp(next, "long") == 0) {
+            size_t old_pos = p->pos;
+            char next2[64];
+            if (sig_read_ident(p, next2, sizeof(next2)) && strcmp(next2, "long") == 0) {
+                snprintf(combined, sizeof(combined), "longlong");
+            } else {
+                p->pos = old_pos;
+                snprintf(combined, sizeof(combined), "long");
+            }
+        } else {
+            snprintf(combined, sizeof(combined), "%s", next);
+        }
     } else if (strcmp(ident, "long") == 0) {
         size_t old_pos = p->pos;
         char next[64];

@@ -2563,6 +2563,48 @@ static ObjEntry *vm_make_view(VM *vm, ObjEntry *base, ViewType view)
     return vm_reg_alloc(vm, obj);
 }
 
+static List *vm_clone_obj_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *key_entry, int *out_is_string)
+{
+    if (!src || !src->in_use) return NULL;
+    List *obj = src->obj;
+    Int type = urb_obj_type(obj);
+    List *copy = NULL;
+
+    switch (type) {
+    case URB_T_NULL:
+        copy = vm_alloc_list(vm, URB_T_NULL, key_entry, 0);
+        break;
+    case URB_T_INT:
+        copy = vm_alloc_bytes(vm, URB_T_INT, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
+        break;
+    case URB_T_FLOAT:
+        copy = vm_alloc_bytes(vm, URB_T_FLOAT, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
+        break;
+    case URB_T_VIEW: {
+        Int n = (Int)(obj->size - 2);
+        copy = vm_alloc_list(vm, URB_T_VIEW, key_entry, n);
+        for (Int i = 2; i < obj->size; i++) {
+            copy = urb_push(copy, obj->data[i]);
+        }
+        break;
+    }
+    case URB_T_TABLE:
+    case URB_T_NATIVE:
+    case URB_T_LAMBDA:
+    default: {
+        Int n = (Int)(obj->size - 2);
+        copy = vm_alloc_list(vm, type, key_entry, n);
+        for (Int i = 2; i < obj->size; i++) {
+            copy = urb_push(copy, obj->data[i]);
+        }
+        break;
+    }
+    }
+
+    if (out_is_string) *out_is_string = src->is_string;
+    return copy;
+}
+
 static Int vm_meta_size_entry(const ObjEntry *entry)
 {
     if (!entry || !entry->in_use) return 0;
@@ -2623,6 +2665,12 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
     }
     if (vm_key_is(index, "capacity")) {
         return vm_make_int_value(vm, vm_meta_capacity_entry(target));
+    }
+    if (vm_key_is(index, "value")) {
+        ObjEntry *out = vm_clone_entry_shallow_copy(vm, target, NULL);
+        if (!out) return NULL;
+        out->key = NULL;
+        return out;
     }
     if (vm_key_is(index, "string")) {
         if (urb_obj_type(target->obj) != URB_T_INT) return NULL;
@@ -3212,6 +3260,27 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         } else if (next == URB_T_INT || next == URB_T_FLOAT) {
             target->is_string = 0;
         }
+        return 1;
+    }
+    if (vm_key_is(index, "value")) {
+        if (!value) {
+            fprintf(stderr, "bytecode error at pc %zu: value expects a value\n", pc);
+            return -1;
+        }
+        if (value == vm->null_entry || urb_obj_type(value->obj) == URB_T_NULL) {
+            target->obj = vm->null_entry->obj;
+            target->is_string = 0;
+            return 1;
+        }
+        int is_string = 0;
+        ObjEntry *key_entry = vm_entry_key(target);
+        List *copy = vm_clone_obj_shallow_copy(vm, value, key_entry, &is_string);
+        if (!copy) {
+            fprintf(stderr, "bytecode error at pc %zu: value assignment failed\n", pc);
+            return -1;
+        }
+        target->obj = copy;
+        target->is_string = is_string;
         return 1;
     }
     if (vm_key_is(index, "size")) {
