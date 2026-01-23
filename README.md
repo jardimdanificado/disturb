@@ -301,6 +301,8 @@ Notes:
 - `global.gc.sweep(value)` marks the value for reuse immediately and replaces it with `null`.
 - `global.gc.flush()` frees all values currently waiting for reuse.
 - `global.gc.new(size)` allocates a table with reserved capacity.
+- `global.gc.debug()` prints the reuse pools (sizes and totals).
+- `global.gc.stats()` prints memory usage by reuse/inuse/noref blocks.
 - Comments are supported via `//` and `/* ... */`.
 
 Papagaio processing is applied to all string literals. Use `\$` to escape a literal `$`.
@@ -373,6 +375,8 @@ The tutorial-style examples live in `example/guide` and are numbered:
 - `example/guide/09_metaprogramming.disturb`
 - `example/guide/10_strict_mode.disturb`
 - `example/guide/11_ffi_system.disturb`
+- `example/guide/12_references_and_copy.disturb`
+- `example/guide/13_manual_gc.disturb`
 
 ### Negative and Stress Tests
 

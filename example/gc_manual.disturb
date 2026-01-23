@@ -1,0 +1,13 @@
+gc();
+gc.collect();
+
+tmp = {x = 1};
+gc.sweep(tmp);
+
+tmp = {y = 2};
+gc.free(tmp);
+
+gc.flush();
+
+buf = gc.new(4);
+println(buf.type);

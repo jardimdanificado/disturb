@@ -25,3 +25,10 @@ println(obj.add(7));
 // Calling a table by name invokes a method with the same name.
 fn = {fn = (a){ return a + 1; }};
 println(fn(9));
+
+// Each lambda call gets a local scope table.
+adder = (n){
+  local.msg = "local scope";
+  return n + 1;
+};
+println(adder(4));

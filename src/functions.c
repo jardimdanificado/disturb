@@ -1524,6 +1524,66 @@ static void native_gc_flush(VM *vm, List *stack, List *global)
     }
 }
 
+static void native_gc_debug(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    size_t total_bytes = 0;
+    size_t list_count = 0;
+    size_t bytes_count = 0;
+
+    fputs("gc.reuse.lists:\n", stdout);
+    if (vm) {
+        FreeNode *cur = vm->free_lists;
+        while (cur) {
+            List *obj = cur->obj;
+            size_t bytes = obj ? sizeof(List) + (size_t)obj->capacity * sizeof(Value) : 0;
+            fprintf(stdout, "  cap=%u bytes=%zu\n", obj ? (unsigned)obj->capacity : 0u, bytes);
+            total_bytes += bytes;
+            list_count++;
+            cur = cur->next;
+        }
+    }
+
+    fputs("gc.reuse.bytes:\n", stdout);
+    if (vm) {
+        FreeNode *cur = vm->free_bytes;
+        while (cur) {
+            List *obj = cur->obj;
+            size_t bytes_len = 0;
+            if (obj && obj->capacity >= 2) bytes_len = (size_t)obj->capacity - 2;
+            size_t bytes = obj ? sizeof(List) + 2 * sizeof(Value) + bytes_len : 0;
+            fprintf(stdout, "  cap=%u bytes=%zu\n", obj ? (unsigned)obj->capacity : 0u, bytes);
+            total_bytes += bytes;
+            bytes_count++;
+            cur = cur->next;
+        }
+    }
+
+    fprintf(stdout, "gc.reuse.total: lists=%zu bytes=%zu total_bytes=%zu\n",
+            list_count, bytes_count, total_bytes);
+    if (vm) {
+        stack = push_entry(vm, stack, vm->null_entry);
+    }
+}
+
+static void native_gc_stats(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    GcStats stats;
+    if (!vm || !vm_gc_stats(vm, &stats)) {
+        fprintf(stderr, "gc.stats failed\n");
+        return;
+    }
+    fprintf(stdout, "gc.stats.reuse: lists=%zu bytes=%zu total_bytes=%zu\n",
+            stats.reuse_list_count, stats.reuse_bytes_count, stats.reuse_bytes_total);
+    fprintf(stdout, "gc.stats.inuse: count=%zu bytes=%zu\n",
+            stats.inuse_count, stats.inuse_bytes);
+    fprintf(stdout, "gc.stats.noref: count=%zu bytes=%zu\n",
+            stats.noref_count, stats.noref_bytes);
+    fprintf(stdout, "gc.stats.total: bytes=%zu\n", stats.total_bytes);
+    stack = push_entry(vm, stack, vm->null_entry);
+}
+
 static void native_append(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -3056,6 +3116,8 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "gcSweep") == 0) return native_gc_sweep;
     if (strcmp(name, "gcNew") == 0) return native_gc_new;
     if (strcmp(name, "gcFlush") == 0) return native_gc_flush;
+    if (strcmp(name, "gcDebug") == 0) return native_gc_debug;
+    if (strcmp(name, "gcStats") == 0) return native_gc_stats;
     if (strcmp(name, "append") == 0) return native_append;
     if (strcmp(name, "add") == 0) return native_add;
     if (strcmp(name, "sub") == 0) return native_sub;

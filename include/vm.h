@@ -7,6 +7,7 @@
 typedef struct ObjEntry ObjEntry;
 typedef struct VM VM;
 typedef struct FreeNode FreeNode;
+typedef struct GcStats GcStats;
 
 typedef void (*NativeFn)(VM *vm, List *stack, List *global);
 
@@ -56,6 +57,22 @@ struct VM {
     int strict_mode;
 };
 
+struct FreeNode {
+    List *obj;
+    struct FreeNode *next;
+};
+
+struct GcStats {
+    size_t reuse_list_count;
+    size_t reuse_bytes_count;
+    size_t reuse_bytes_total;
+    size_t inuse_count;
+    size_t inuse_bytes;
+    size_t noref_count;
+    size_t noref_bytes;
+    size_t total_bytes;
+};
+
 const char *urb_type_name(Int type);
 Int urb_obj_type(const List *obj);
 ObjEntry *urb_obj_key(const List *obj);
@@ -82,6 +99,7 @@ List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve);
 void vm_free_list(List *obj);
 void vm_reuse_list(VM *vm, List *obj);
 void vm_flush_reuse(VM *vm);
+int vm_gc_stats(VM *vm, GcStats *out);
 ObjEntry *vm_entry_key(const ObjEntry *entry);
 ObjEntry *vm_clone_entry_shallow(VM *vm, ObjEntry *src, ObjEntry *forced_key);
 ObjEntry *vm_clone_entry_deep(VM *vm, ObjEntry *src, ObjEntry *forced_key);

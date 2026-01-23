@@ -1,0 +1,17 @@
+// 13_manual_gc.disturb
+// Manual GC controls and reuse.
+
+// gc() is an alias for gc.collect().
+gc();
+gc.collect();
+
+tmp = {x = 1};
+gc.sweep(tmp); // mark for reuse (no free)
+
+tmp = {y = 2};
+gc.free(tmp);  // force free (not allowed for shared/protected)
+
+gc.flush();    // release all reuse pools
+
+buf = gc.new(4);
+println(buf.type);

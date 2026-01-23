@@ -1,0 +1,18 @@
+a = {x = 1};
+b = a;
+b.x = 9;
+println("a.x = " + a.x);
+println("b.x = " + b.x);
+
+// Shallow copy
+c = a.clone();
+c.x = 2;
+println("a.x = " + a.x);
+println("c.x = " + c.x);
+
+// Deep copy
+d = {n = {v = 1}};
+e = d.copy();
+e.n.v = 5;
+println("d.n.v = " + d.n.v);
+println("e.n.v = " + e.n.v);

@@ -37,11 +37,6 @@ typedef enum {
     VIEW_F64
 } ViewType;
 
-struct FreeNode {
-    List *obj;
-    struct FreeNode *next;
-};
-
 int lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
     (void)opaque;
@@ -457,6 +452,155 @@ void vm_flush_reuse(VM *vm)
         vm_free_list(node->obj);
         free(node);
     }
+}
+
+static size_t vm_obj_alloc_bytes(const List *obj)
+{
+    if (!obj) return 0;
+    Int type = urb_obj_type(obj);
+    if (type == URB_T_INT || type == URB_T_FLOAT) {
+        size_t bytes_len = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
+        return sizeof(List) + 2 * sizeof(Value) + bytes_len;
+    }
+    return sizeof(List) + (size_t)obj->capacity * sizeof(Value);
+}
+
+int vm_gc_stats(VM *vm, GcStats *out)
+{
+    if (!vm || !out) return 0;
+    memset(out, 0, sizeof(*out));
+
+    for (FreeNode *cur = vm->free_lists; cur; cur = cur->next) {
+        out->reuse_list_count++;
+        out->reuse_bytes_total += vm_obj_alloc_bytes(cur->obj);
+    }
+    for (FreeNode *cur = vm->free_bytes; cur; cur = cur->next) {
+        out->reuse_bytes_count++;
+        out->reuse_bytes_total += vm_obj_alloc_bytes(cur->obj);
+    }
+
+    for (Int i = 0; i < vm->reg_count; i++) {
+        ObjEntry *entry = vm->reg[i];
+        if (!entry || !entry->in_use) continue;
+        entry->mark = 0;
+    }
+
+    ObjEntry *roots[] = {
+        vm->global_entry,
+        vm->stack_entry,
+        vm->local_entry,
+        vm->this_entry,
+        vm->common_entry,
+        vm->null_entry,
+        vm->argc_entry,
+        vm->gc_entry,
+    };
+    const size_t root_count = sizeof(roots) / sizeof(roots[0]);
+
+    for (size_t i = 0; i < root_count; i++) {
+        ObjEntry *root = roots[i];
+        if (!root || !root->in_use) continue;
+        if (root->mark) continue;
+        List *mark_stack = urb_new(16);
+        Value v;
+        v.p = root;
+        mark_stack = urb_push(mark_stack, v);
+        while (mark_stack->size > 0) {
+            ObjEntry *entry = (ObjEntry*)urb_pop(mark_stack).p;
+            if (!entry || !entry->in_use || entry->mark) continue;
+            entry->mark = 1;
+            ObjEntry *key = vm_entry_key(entry);
+            if (key && key->in_use && !key->mark) {
+                Value kv;
+                kv.p = key;
+                mark_stack = urb_push(mark_stack, kv);
+            }
+            if (!entry->obj) continue;
+            Int type = urb_obj_type(entry->obj);
+            if (type == URB_T_TABLE) {
+                List *obj = entry->obj;
+                for (Int j = 2; j < obj->size; j++) {
+                    ObjEntry *child = (ObjEntry*)obj->data[j].p;
+                    if (child && child->in_use && !child->mark) {
+                        Value cv;
+                        cv.p = child;
+                        mark_stack = urb_push(mark_stack, cv);
+                    }
+                }
+            }
+        }
+        urb_free(mark_stack);
+    }
+
+    size_t obj_cap = 0;
+    size_t obj_count = 0;
+    List **objs = NULL;
+    unsigned char *reachable = NULL;
+
+    for (Int i = 0; i < vm->reg_count; i++) {
+        ObjEntry *entry = vm->reg[i];
+        if (!entry || !entry->in_use || !entry->obj) continue;
+        List *obj = entry->obj;
+        size_t idx = 0;
+        for (; idx < obj_count; idx++) {
+            if (objs[idx] == obj) break;
+        }
+        if (idx == obj_count) {
+            if (obj_count == obj_cap) {
+                size_t next_cap = obj_cap ? obj_cap * 2 : 64;
+                List **next_objs = (List**)malloc(next_cap * sizeof(List*));
+                unsigned char *next_reach = (unsigned char*)malloc(next_cap);
+                if (!next_objs || !next_reach) {
+                    free(next_objs);
+                    free(next_reach);
+                    free(objs);
+                    free(reachable);
+                    for (Int j = 0; j < vm->reg_count; j++) {
+                        ObjEntry *reset = vm->reg[j];
+                        if (reset && reset->in_use) reset->mark = 0;
+                    }
+                    return 0;
+                }
+                if (obj_count > 0) {
+                    memcpy(next_objs, objs, obj_count * sizeof(List*));
+                    memcpy(next_reach, reachable, obj_count);
+                }
+                free(objs);
+                free(reachable);
+                objs = next_objs;
+                reachable = next_reach;
+                obj_cap = next_cap;
+            }
+            objs[obj_count] = obj;
+            reachable[obj_count] = entry->mark ? 1 : 0;
+            obj_count++;
+        } else if (entry->mark) {
+            reachable[idx] = 1;
+        }
+    }
+
+    for (size_t i = 0; i < obj_count; i++) {
+        size_t bytes = vm_obj_alloc_bytes(objs[i]);
+        if (reachable[i]) {
+            out->inuse_count++;
+            out->inuse_bytes += bytes;
+        } else {
+            out->noref_count++;
+            out->noref_bytes += bytes;
+        }
+    }
+
+    free(objs);
+    free(reachable);
+
+    for (Int i = 0; i < vm->reg_count; i++) {
+        ObjEntry *entry = vm->reg[i];
+        if (!entry || !entry->in_use) continue;
+        entry->mark = 0;
+    }
+
+    out->total_bytes = out->reuse_bytes_total + out->inuse_bytes + out->noref_bytes;
+    return 1;
 }
 
 static void vm_table_add_entry(VM *vm, ObjEntry *target, ObjEntry *entry)
@@ -1587,6 +1731,16 @@ void vm_init(VM *vm)
     ObjEntry *new_entry = vm_make_native_entry(vm, "new", "gcNew");
     if (new_entry) {
         gc_obj = urb_table_add(gc_obj, new_entry);
+        vm->gc_entry->obj = gc_obj;
+    }
+    ObjEntry *debug_entry = vm_make_native_entry(vm, "debug", "gcDebug");
+    if (debug_entry) {
+        gc_obj = urb_table_add(gc_obj, debug_entry);
+        vm->gc_entry->obj = gc_obj;
+    }
+    ObjEntry *stats_entry = vm_make_native_entry(vm, "stats", "gcStats");
+    if (stats_entry) {
+        gc_obj = urb_table_add(gc_obj, stats_entry);
         vm->gc_entry->obj = gc_obj;
     }
 

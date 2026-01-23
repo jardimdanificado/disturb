@@ -4,6 +4,7 @@
 - Fix lambdas parameters overwriting in recursive calls.
 - Allow assignment and `++`/`--` operators inside expressions (prefix returns updated value, postfix returns previous value).
 - Make GC fully manual: remove automatic collection and `gc.rate`, add `gc.free`, `gc.sweep`, `gc.new`, and `gc.flush`.
+- Add `gc.stats` to report reuse/inuse/noref memory totals.
 - Switch assignments to reference semantics, add `clone` (shallow) and `copy` (deep) helpers, rebind function arguments per call, add local scope for lambda bodies, and make `gc.collect`/`gc.sweep` mark values for immediate reuse.
 - Add global `inf` float constant.
 - Add optional FFI binding (`ffi.load`) with signature parsing and `name!N()` length overrides.
