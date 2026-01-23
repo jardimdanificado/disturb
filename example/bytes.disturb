@@ -1,12 +1,9 @@
-// Number arrays can be coerced into bytes via `.toByte()`.
-numbers = [65, 66, 67];
-b = numbers.toByte();
+// String literals are int lists with the .string view.
+b = "ABC";
 
 // Indexing yields a single-byte string.
 println(b[2]);
-println(b.toNumber());
 
 // Assigning a single byte updates the string in-place.
 b[1] = 68;
-println(b.toNumber());
-println(numbers);
+println(b);

@@ -1,16 +1,18 @@
 // 02_types_literals.disturb
-// Numbers, strings, bytes, tables, and meta.
+// Ints, floats, strings, tables, and meta.
 
-// Numbers are stored as number lists; single numbers are just length 1.
+// Ints are stored as int lists; single ints are just length 1.
 n = 42;
 list = [1, 2, 3];
+f = 3.14;
+flist = [1, 2.5];
 
 // Strings can be written as "..." or 'c' for single-byte.
 s = "text";
 c = 'x';
 
-// Convert number arrays into byte strings with `.toByte()`.
-b = [65, 66, 67].toByte();
+// Strings are int lists with the .string view.
+b = "ABC";
 
 // Tables are key/value pairs; values can be any type.
 obj = {a = 1, b = "hi", c = [9, 8]};
@@ -20,8 +22,8 @@ println(obj.type);
 println(obj.size);
 println(obj.capacity);
 
-// type can be reassigned within compatible layouts (list <-> list or byte <-> string).
-obj.type = "number";
+// type can be reassigned within compatible layouts (list <-> list).
+obj.type = "int";
 println(obj.type);
 obj.type = "table";
 

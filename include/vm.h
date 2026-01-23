@@ -12,12 +12,12 @@ typedef void (*NativeFn)(VM *vm, List *stack, List *global);
 
 enum {
     URB_T_NULL = 0,
-
-    URB_T_BYTE,
-    URB_T_NUMBER,
+    URB_T_INT,
+    URB_T_FLOAT,
     URB_T_TABLE,
     URB_T_NATIVE,
-    URB_T_LAMBDA
+    URB_T_LAMBDA,
+    URB_T_VIEW
 };
 
 struct ObjEntry {
@@ -25,6 +25,7 @@ struct ObjEntry {
     ObjEntry *key;
     unsigned in_use : 1;
     unsigned mark : 1;
+    unsigned is_string : 1;
 };
 
 struct VM {
@@ -50,8 +51,7 @@ char *urb_bytes_data(List *obj);
 size_t urb_bytes_len(const List *obj);
 List *urb_table_add(List *obj, ObjEntry *entry);
 List *urb_bytes_append(List *obj, const char *bytes, size_t len);
-Int urb_value_len(const List *obj);
-void urb_number_set_single(List *obj, Float value);
+Int vm_value_len_entry(const ObjEntry *entry);
 
 ObjEntry *vm_stack_peek(List *stack, Int from_top);
 ObjEntry *vm_global_find_by_key(List *global, const char *name);
@@ -59,7 +59,10 @@ ObjEntry *vm_global_find_by_key(List *global, const char *name);
 void print_entry(FILE *out, ObjEntry *entry);
 void print_plain_entry(FILE *out, ObjEntry *entry);
 
-ObjEntry *vm_make_number_value(VM *vm, Float value);
+ObjEntry *vm_make_int_value(VM *vm, Int value);
+ObjEntry *vm_make_float_value(VM *vm, Float value);
+ObjEntry *vm_make_int_list(VM *vm, Int count);
+ObjEntry *vm_make_float_list(VM *vm, Int count);
 ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_table_value(VM *vm, Int reserve);

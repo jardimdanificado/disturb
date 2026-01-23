@@ -28,8 +28,8 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 
 | Type | Literal | Notes |
 | --- | --- | --- |
-| number | `1`, `3.14` | Always floating point; arrays use `[]` |
-| byte | `[65, 66, 67].toByte()` | String/byte value built from explicit numbers |
+| int | `1` | Integer list values |
+| float | `3.14` | Float list values |
 | char | `'c'` | Single-byte string |
 | string | `"abc"` | String with length > 1 |
 | table | `{a = 1}` | Keyed container |
@@ -38,12 +38,12 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 
 | Form | Result |
 | --- | --- |
-| `[1, 2]` | Number list |
-| `[9, 1].toByte()` | Byte/string literal derived from numeric values |
+| `[1, 2]` | Int list |
+| `[1, 2.5]` | Float list |
 | `{a = b}` | Table with keys |
 
 Notes:
-- `[]` builds a number array; call `.toByte()` to coerce to a byte string and `.toNumber()` on byte strings to get numbers.
+- `[]` builds an int list; if any element is float, the list is float. Use `.toInt()`/`.toFloat()` for explicit conversion.
 - Table literals now use `{...}` exclusively; the `table` prefix is no longer supported.
 - Plain `{}` is reserved for tables, while `(args){...}` still introduces a lambda.
 - Compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`) and increment/decrement statements (`++i`, `i++`, `--i`, `i--`) mutate the left-hand target in place; increments add/subtract `1`.
@@ -59,12 +59,12 @@ Operators follow standard precedence with parentheses support:
 - Logical: `&&`, `||`
 
 Notes:
-- Logical and comparison operators return numbers (`1` or `0`).
-- `null` and numeric `0` are false; everything else is true.
-- `+` concatenates when either side is a string/char/byte; non-strings stringify to Disturb literals.
+- Logical and comparison operators return ints (`1` or `0`).
+- `null` and numeric `0` (int/float) are false; everything else is true.
+- `+` concatenates when either side is a string/char; non-strings stringify to Disturb literals.
 - `a ?= b` assigns `b` only when `a` is `null`.
 - Assignment and `++`/`--` forms are expressions and return a value (prefix returns the updated value, postfix returns the previous value).
-- Byte indexing assignments accept either byte-length strings/bytes or numeric values `0-255`.
+- String indexing assignments accept either single-byte strings or numeric values `0-255`.
 
 ## Control Flow
 
@@ -78,7 +78,7 @@ Supported control flow forms:
 
 Notes:
 - `each` iterates in index order. For tables, the entry key is available via `value.name`.
-- `switch (expr) { case literal: ... }` performs equality checks (strings/numbers) and exits after the first matching case; `default` runs if no case matches (no fall-through, so `break` is unnecessary).
+- `switch (expr) { case literal: ... }` performs equality checks (strings/ints/floats) and exits after the first matching case; `default` runs if no case matches (no fall-through, so `break` is unnecessary).
 - Performance: the current compiler emits a linear chain of comparisons, so runtime is similar to `if/else`. There is no jump-table optimization yet; dense integer switches would benefit if one is added.
 - Use `label:` definitions and `goto label;` statements for direct jumps; `goto` resolves labels at compile time.
 
@@ -108,7 +108,7 @@ Notes:
 
 Rules:
 - Only `table` supports string/key indexing.
-- Indexing strings/bytes yields a single-byte string.
+- Indexing strings yields a single-byte string.
 - Indexing supports infinite nesting.
 
 ## Meta Properties
@@ -118,9 +118,9 @@ Every entry exposes meta properties via string keys:
 | Property | Type | Description |
 | --- | --- | --- |
 | `.name` | string | Key name in its parent (`global.a.name == "a"`) |
-| `.type` | string | `null`, `number`, `byte`, `char`, `string`, `table`, `native` |
-| `.size` | number | Used slots (`list.size - 2`) |
-| `.capacity` | number | Allocated slots (`list.capacity - 2`) |
+| `.type` | string | `null`, `int`, `float`, `char`, `string`, `table`, `native`, `lambda`, `view` |
+| `.size` | int | Used slots (elements for int/float lists, bytes for strings) |
+| `.capacity` | int | Allocated slots (elements for int/float lists, bytes for strings) |
 
 Notes:
 - `.name` and `.type` are writable. `.name = null` clears the key. `.type` is pure type punning (no conversion).
@@ -133,12 +133,12 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 
 | Opcode | Stack effect | Purpose |
 | --- | --- | --- |
-| `PUSH_NUM` | `-- num` | Push number literal |
+| `PUSH_INT` | `-- int` | Push int literal |
+| `PUSH_FLOAT` | `-- float` | Push float literal |
 | `PUSH_CHAR` | `-- char` | Push char literal |
 | `PUSH_STRING` | `-- string` | Push string literal |
-| `PUSH_BYTE` | `-- byte` | Push byte literal |
-| `BUILD_NUMBER n` | `v… -- list` | Build number list |
-| `BUILD_BYTE n` | `v… -- list` | Build byte list |
+| `BUILD_INT n` | `v… -- list` | Build int list |
+| `BUILD_FLOAT n` | `v… -- list` | Build float list |
 | `BUILD_OBJECT n` | `k v… -- obj` | Build object |
 | `INDEX` | `obj idx -- value` | Indexing |
 | `STORE_INDEX` | `obj idx val --` | Assign by index/key |
@@ -244,15 +244,15 @@ Top-level shape:
 - `{type = "bytecode", ops = {...}}`
 
 Each `ops` item is a table with `op` and optional fields:
-- `PUSH_NUM`: `value` (number)
+- `PUSH_INT`: `value` (int)
+- `PUSH_FLOAT`: `value` (float)
 - `PUSH_CHAR`/`PUSH_STRING`: `value` (string)
-- `PUSH_BYTE`: `value` (0-255)
-- `BUILD_NUMBER`/`BUILD_BYTE`/`BUILD_OBJECT`: `count` (number)
-- `BUILD_NUMBER_LIT`: `values` (array of numbers)
+- `BUILD_INT`/`BUILD_FLOAT`/`BUILD_OBJECT`: `count` (int)
+- `BUILD_INT_LIT`/`BUILD_FLOAT_LIT`: `values` (array of numbers)
 - `BUILD_FUNCTION`: `argc`, `vararg`, `code` (byte string), `args` (array of `{name, default}`)
 - `LOAD_GLOBAL`/`STORE_GLOBAL`: `name` (string)
-- `CALL`: `name` (string), `argc` (number)
-- `JMP`/`JMP_IF_FALSE`: `target` (number)
+- `CALL`: `name` (string), `argc` (int)
+- `JMP`/`JMP_IF_FALSE`: `target` (int)
 
 Notes:
 - `astToSource` follows the disassembler format; `BUILD_FUNCTION` shows lengths, not raw bytes.

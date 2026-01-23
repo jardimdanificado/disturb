@@ -3,7 +3,7 @@
 
 data = {nums = [10, 20, 30], msg = "hi"};
 
-// Numeric indexing (0-based) for number lists and strings.
+// Numeric indexing (0-based) for int/float lists and strings.
 println(data.nums[1]);
 println(data.msg[0]);
 

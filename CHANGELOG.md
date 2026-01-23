@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.14.2
+## 0.15.0
 - Fix lambdas parameters overwriting in recursive calls.
 - Allow assignment and `++`/`--` operators inside expressions (prefix returns updated value, postfix returns previous value).
 - Make GC fully manual: remove automatic collection and `gc.rate`, add `gc.free`, `gc.sweep`, `gc.new`, and `gc.flush`.
@@ -13,7 +13,7 @@
 - Make `replace` a literal substring replacement and add `replaceAll`.
 
 ## 0.14.0
-- Simplify literal syntax: table literals always use `{...}` and byte strings are derived from number arrays via `[]/.toByte()` with `.toNumber()` available for coercion, preserving `(args){}` for lambdas.
+- Simplify literal syntax: table literals always use `{...}`; use `.toInt()`/`.toFloat()` for numeric conversions and keep `(args){}` for lambdas.
 - Add compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) plus prefix/postfix `++`/`--` statement forms for in-place updates.
 - Add switch/case statements (string/number selectors with `default` handling) plus label/goto support for unconditional jumps.
 

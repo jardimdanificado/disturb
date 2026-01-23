@@ -76,6 +76,7 @@ typedef struct {
     double number;
     char *str;
     size_t str_len;
+    int is_float;
     int line;
     int col;
 } Token;
@@ -113,6 +114,7 @@ struct Expr {
     union {
         struct {
             double number;
+            int is_float;
         } lit_num;
         struct {
             char *data;
@@ -138,6 +140,7 @@ struct Expr {
         struct {
             double *items;
             int count;
+            int is_float;
         } num_list;
         struct {
             ObjPair *pairs;
@@ -610,10 +613,19 @@ static Token next_token(Parser *p)
             return t;
         }
         size_t len = (size_t)(end - (p->src + p->pos));
+        int is_float = 0;
+        for (size_t i = 0; i < len; i++) {
+            char ch = p->src[p->pos + i];
+            if (ch == '.' || ch == 'e' || ch == 'E') {
+                is_float = 1;
+                break;
+            }
+        }
         for (size_t i = 0; i < len; i++) next_char(p);
         t.kind = TOK_NUMBER;
         t.number = v;
         t.len = len;
+        t.is_float = is_float;
         return t;
     }
 
@@ -932,7 +944,8 @@ static Expr *expr_new(Parser *p, ExprKind kind)
 }
 
 static Expr *parse_expr(Parser *p);
-static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, TokenKind closing, const char *close_msg);
+static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, int *out_is_float,
+                                  TokenKind closing, const char *close_msg);
 static int parse_statement(Parser *p, Bytecode *bc);
 static int parse_switch_statement(Parser *p, Bytecode *bc);
 static int parse_switch_case(Parser *p, Bytecode *bc, const char *tmp_name, size_t tmp_len);
@@ -1005,6 +1018,7 @@ static Expr *parse_primary(Parser *p)
         Expr *e = expr_new(p, EXPR_LITERAL_NUM);
         if (!e) return NULL;
         e->as.lit_num.number = p->current.number;
+        e->as.lit_num.is_float = p->current.is_float;
         advance(p);
         return e;
     }
@@ -1056,7 +1070,8 @@ static Expr *parse_cast_list(Parser *p, TokenKind closing, const char *close_msg
 {
     double *vals = NULL;
     int count = 0;
-    if (parse_number_list_fast(p, &vals, &count, closing, close_msg)) {
+    int is_float = 0;
+    if (parse_number_list_fast(p, &vals, &count, &is_float, closing, close_msg)) {
         Expr *e = expr_new(p, EXPR_LITERAL_NUMBER_LIST);
         if (!e) {
             free(vals);
@@ -1069,6 +1084,7 @@ static Expr *parse_cast_list(Parser *p, TokenKind closing, const char *close_msg
         }
         e->as.num_list.items = vals;
         e->as.num_list.count = count;
+        e->as.num_list.is_float = is_float;
         return e;
     }
 
@@ -1109,7 +1125,8 @@ static Expr *parse_cast_list(Parser *p, TokenKind closing, const char *close_msg
     return e;
 }
 
-static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, TokenKind closing, const char *close_msg)
+static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, int *out_is_float,
+                                  TokenKind closing, const char *close_msg)
 {
     Parser probe = *p;
     probe.current.str = NULL;
@@ -1118,11 +1135,13 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, 
     double *vals = NULL;
     int count = 0;
     int cap = 0;
+    int is_float = 0;
     Token tok = probe.current;
 
     if (tok.kind == closing) {
         *out_vals = NULL;
         *out_count = 0;
+        if (out_is_float) *out_is_float = 0;
         return 1;
     }
 
@@ -1144,6 +1163,7 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, 
             cap = next;
         }
         vals[count++] = tok.number;
+        if (tok.is_float) is_float = 1;
         advance(&probe);
         tok = probe.current;
         if (tok.kind == TOK_COMMA) {
@@ -1183,6 +1203,7 @@ static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, 
 
     *out_vals = vals;
     *out_count = count;
+    if (out_is_float) *out_is_float = is_float;
     return 1;
 }
 
@@ -1934,7 +1955,7 @@ static int emit_update_expr(Bytecode *bc, Parser *p, Expr *target, TokenKind op,
     if (name) {
         if (!emit_load_global_name(bc, p, name, name_len)) return 0;
         if (is_prefix) {
-            if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {
+            if (!bc_emit_u8(bc, BC_PUSH_INT) || !bc_emit_i64(bc, 1)) {
                 parser_error(p, "failed to emit number literal");
                 return 0;
             }
@@ -1954,7 +1975,7 @@ static int emit_update_expr(Bytecode *bc, Parser *p, Expr *target, TokenKind op,
             return 0;
         }
         if (!emit_store_global_name(bc, p, old_name, strlen(old_name))) return 0;
-        if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {
+        if (!bc_emit_u8(bc, BC_PUSH_INT) || !bc_emit_i64(bc, 1)) {
             parser_error(p, "failed to emit number literal");
             return 0;
         }
@@ -1995,8 +2016,8 @@ static int emit_update_expr(Bytecode *bc, Parser *p, Expr *target, TokenKind op,
     }
     if (!emit_store_global_name(bc, p, old_name, strlen(old_name))) return 0;
     if (!emit_load_global_name(bc, p, old_name, strlen(old_name))) return 0;
-    if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {
-        parser_error(p, "failed to emit number literal");
+    if (!bc_emit_u8(bc, BC_PUSH_INT) || !bc_emit_i64(bc, 1)) {
+        parser_error(p, "failed to emit int literal");
         return 0;
     }
     if (!emit_binary_op(bc, p, bin_op)) return 0;
@@ -2037,9 +2058,16 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
     if (!e) return 0;
     switch (e->kind) {
     case EXPR_LITERAL_NUM:
-        if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, e->as.lit_num.number)) {
-            parser_error(p, "failed to emit number literal");
-            return 0;
+        if (e->as.lit_num.is_float) {
+            if (!bc_emit_u8(bc, BC_PUSH_FLOAT) || !bc_emit_f64(bc, e->as.lit_num.number)) {
+                parser_error(p, "failed to emit float literal");
+                return 0;
+            }
+        } else {
+            if (!bc_emit_u8(bc, BC_PUSH_INT) || !bc_emit_i64(bc, (int64_t)e->as.lit_num.number)) {
+                parser_error(p, "failed to emit int literal");
+                return 0;
+            }
         }
         return 1;
     case EXPR_LITERAL_STRING:
@@ -2102,15 +2130,29 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
             }
         }
         if (all_literal) {
-            if (!bc_emit_u8(bc, BC_BUILD_NUMBER_LIT) || !bc_emit_u32(bc, (uint32_t)count)) {
-                parser_error(p, "failed to emit BUILD_NUMBER_LIT");
+            uint8_t op = e->as.cast_list.items[0]->as.lit_num.is_float ? BC_BUILD_FLOAT_LIT : BC_BUILD_INT_LIT;
+            for (int i = 1; i < count; i++) {
+                if (e->as.cast_list.items[i]->as.lit_num.is_float) {
+                    op = BC_BUILD_FLOAT_LIT;
+                    break;
+                }
+            }
+            if (!bc_emit_u8(bc, op) || !bc_emit_u32(bc, (uint32_t)count)) {
+                parser_error(p, "failed to emit BUILD_*_LIT");
                 return 0;
             }
             for (int i = 0; i < count; i++) {
                 double v = e->as.cast_list.items[i]->as.lit_num.number;
-                if (!bc_emit_f64(bc, v)) {
-                    parser_error(p, "failed to emit BUILD_NUMBER_LIT value");
-                    return 0;
+                if (op == BC_BUILD_FLOAT_LIT) {
+                    if (!bc_emit_f64(bc, v)) {
+                        parser_error(p, "failed to emit BUILD_FLOAT_LIT value");
+                        return 0;
+                    }
+                } else {
+                    if (!bc_emit_i64(bc, (int64_t)v)) {
+                        parser_error(p, "failed to emit BUILD_INT_LIT value");
+                        return 0;
+                    }
                 }
             }
             return 1;
@@ -2119,22 +2161,38 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         for (int i = 0; i < count; i++) {
             if (!emit_expr(bc, p, e->as.cast_list.items[i])) return 0;
         }
-        if (!bc_emit_u8(bc, BC_BUILD_NUMBER) || !bc_emit_u32(bc, (uint32_t)count)) {
-            parser_error(p, "failed to emit BUILD_NUMBER");
+        uint8_t op = BC_BUILD_INT;
+        for (int i = 0; i < count; i++) {
+            if (e->as.cast_list.items[i]->kind == EXPR_LITERAL_NUM &&
+                e->as.cast_list.items[i]->as.lit_num.is_float) {
+                op = BC_BUILD_FLOAT;
+                break;
+            }
+        }
+        if (!bc_emit_u8(bc, op) || !bc_emit_u32(bc, (uint32_t)count)) {
+            parser_error(p, "failed to emit BUILD_*");
             return 0;
         }
         return 1;
     }
     case EXPR_LITERAL_NUMBER_LIST: {
         int count = e->as.num_list.count;
-        if (!bc_emit_u8(bc, BC_BUILD_NUMBER_LIT) || !bc_emit_u32(bc, (uint32_t)count)) {
-            parser_error(p, "failed to emit BUILD_NUMBER_LIT");
+        uint8_t op = e->as.num_list.is_float ? BC_BUILD_FLOAT_LIT : BC_BUILD_INT_LIT;
+        if (!bc_emit_u8(bc, op) || !bc_emit_u32(bc, (uint32_t)count)) {
+            parser_error(p, "failed to emit BUILD_*_LIT");
             return 0;
         }
         for (int i = 0; i < count; i++) {
-            if (!bc_emit_f64(bc, e->as.num_list.items[i])) {
-                parser_error(p, "failed to emit BUILD_NUMBER_LIT value");
-                return 0;
+            if (op == BC_BUILD_FLOAT_LIT) {
+                if (!bc_emit_f64(bc, e->as.num_list.items[i])) {
+                    parser_error(p, "failed to emit BUILD_FLOAT_LIT value");
+                    return 0;
+                }
+            } else {
+                if (!bc_emit_i64(bc, (int64_t)e->as.num_list.items[i])) {
+                    parser_error(p, "failed to emit BUILD_INT_LIT value");
+                    return 0;
+                }
             }
         }
         return 1;
@@ -2595,7 +2653,7 @@ static int parse_each_statement(Parser *p, Bytecode *bc)
     if (!emit_expr(bc, p, iter)) { loop_pop(p); return 0; }
     if (!emit_store_global_name(bc, p, iter_name, iter_len)) { loop_pop(p); return 0; }
 
-    if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 0.0)) {
+    if (!bc_emit_u8(bc, BC_PUSH_INT) || !bc_emit_i64(bc, 0)) {
         parser_error(p, "failed to emit each index");
         loop_pop(p);
         return 0;
@@ -2649,7 +2707,7 @@ static int parse_each_statement(Parser *p, Bytecode *bc)
         }
     }
     if (!emit_load_global_name(bc, p, idx_name, idx_len)) { loop_pop(p); return 0; }
-    if (!bc_emit_u8(bc, BC_PUSH_NUM) || !bc_emit_f64(bc, 1.0)) {
+    if (!bc_emit_u8(bc, BC_PUSH_INT) || !bc_emit_i64(bc, 1)) {
         parser_error(p, "failed to emit each increment");
         loop_pop(p);
         return 0;

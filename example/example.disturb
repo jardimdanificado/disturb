@@ -9,6 +9,6 @@ global.i = "hello world!\n";
 println(global.i);
 println(global.e.a);
 
-// Indexing into number lists is numeric (0-based).
+// Indexing into int/float lists is numeric (0-based).
 x = global.e.b[1];
 println(x);

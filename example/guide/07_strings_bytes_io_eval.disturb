@@ -1,11 +1,11 @@
 // 07_strings_bytes_io_eval.disturb
 // Strings, bytes, and IO/eval.
 
-// Byte strings are created by converting a number array.
-bytes = [72, 105, 33].toByte();
+// String literals are int lists with the .string view.
+bytes = "Hi!";
 println(bytes);
 
-// String helpers work on bytes too.
+// String helpers work on strings too.
 println(bytes.lower());
 
 // read/write are plain bytes with no mode.

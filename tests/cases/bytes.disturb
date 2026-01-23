@@ -1,4 +1,4 @@
-b = [65, 66, 67].toByte();
+b = "ABC";
 
 println(b[2]);
 

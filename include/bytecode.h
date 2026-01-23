@@ -11,12 +11,12 @@ typedef struct {
 } Bytecode;
 
 enum {
-    BC_PUSH_NUM = 1,
+    BC_PUSH_INT = 1,
+    BC_PUSH_FLOAT,
     BC_PUSH_CHAR,
     BC_PUSH_STRING,
-    BC_PUSH_BYTE,
-    BC_BUILD_NUMBER,
-    BC_BUILD_BYTE,
+    BC_BUILD_INT,
+    BC_BUILD_FLOAT,
     BC_BUILD_OBJECT,
     BC_BUILD_FUNCTION,
     BC_INDEX,
@@ -34,7 +34,8 @@ enum {
     BC_DUP,
     BC_GC,
     BC_DUMP,
-    BC_BUILD_NUMBER_LIT,
+    BC_BUILD_INT_LIT,
+    BC_BUILD_FLOAT_LIT,
     BC_ADD,
     BC_SUB,
     BC_MUL,
@@ -56,6 +57,7 @@ void bc_init(Bytecode *bc);
 void bc_free(Bytecode *bc);
 int bc_emit_u8(Bytecode *bc, uint8_t v);
 int bc_emit_u32(Bytecode *bc, uint32_t v);
+int bc_emit_i64(Bytecode *bc, int64_t v);
 int bc_emit_f64(Bytecode *bc, double v);
 int bc_emit_bytes(Bytecode *bc, const unsigned char *bytes, size_t len);
 int bc_emit_string(Bytecode *bc, const char *s, size_t len);

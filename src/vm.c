@@ -28,6 +28,19 @@ typedef struct {
     size_t cap;
 } StrBuf;
 
+typedef enum {
+    VIEW_I8 = 0,
+    VIEW_U8,
+    VIEW_I16,
+    VIEW_U16,
+    VIEW_I32,
+    VIEW_U32,
+    VIEW_I64,
+    VIEW_U64,
+    VIEW_F32,
+    VIEW_F64
+} ViewType;
+
 struct FreeNode {
     List *obj;
     struct FreeNode *next;
@@ -111,12 +124,13 @@ const char *urb_type_name(Int type)
 {
     switch (type) {
     case URB_T_NULL: return "null";
-    case URB_T_BYTE: return "byte";
-    case URB_T_NUMBER: return "number";
+    case URB_T_INT: return "int";
+    case URB_T_FLOAT: return "float";
     case URB_T_TABLE: return "table";
     
     case URB_T_NATIVE: return "native";
     case URB_T_LAMBDA: return "lambda";
+    case URB_T_VIEW: return "view";
     default: return "unknown";
     }
 }
@@ -165,6 +179,129 @@ static int urb_bytes_eq_bytes(const List *obj, const char *s, size_t len)
 {
     if (urb_bytes_len(obj) != len) return 0;
     return memcmp(urb_bytes_data((List*)obj), s, len) == 0;
+}
+
+static int entry_is_string(const ObjEntry *entry)
+{
+    return entry && entry->is_string && urb_obj_type(entry->obj) == URB_T_INT;
+}
+
+static size_t vm_elem_size(Int type)
+{
+    if (type == URB_T_INT) return sizeof(Int);
+    if (type == URB_T_FLOAT) return sizeof(Float);
+    return 1;
+}
+
+static Int vm_bytes_to_count(size_t bytes_len, Int type)
+{
+    size_t elem = vm_elem_size(type);
+    if (elem == 0) return 0;
+    return (Int)(bytes_len / elem);
+}
+
+static int vm_read_int_at(const List *obj, Int index, Int *out)
+{
+    if (!obj || index < 0) return 0;
+    size_t bytes_len = urb_bytes_len((List*)obj);
+    size_t offset = (size_t)index * sizeof(Int);
+    if (offset + sizeof(Int) > bytes_len) return 0;
+    memcpy(out, urb_bytes_data((List*)obj) + offset, sizeof(Int));
+    return 1;
+}
+
+static int vm_write_int_at(List *obj, Int index, Int value)
+{
+    if (!obj || index < 0) return 0;
+    size_t bytes_len = urb_bytes_len(obj);
+    size_t offset = (size_t)index * sizeof(Int);
+    if (offset + sizeof(Int) > bytes_len) return 0;
+    memcpy(urb_bytes_data(obj) + offset, &value, sizeof(Int));
+    return 1;
+}
+
+static int vm_read_float_at(const List *obj, Int index, Float *out)
+{
+    if (!obj || index < 0) return 0;
+    size_t bytes_len = urb_bytes_len((List*)obj);
+    size_t offset = (size_t)index * sizeof(Float);
+    if (offset + sizeof(Float) > bytes_len) return 0;
+    memcpy(out, urb_bytes_data((List*)obj) + offset, sizeof(Float));
+    return 1;
+}
+
+static int vm_write_float_at(List *obj, Int index, Float value)
+{
+    if (!obj || index < 0) return 0;
+    size_t bytes_len = urb_bytes_len(obj);
+    size_t offset = (size_t)index * sizeof(Float);
+    if (offset + sizeof(Float) > bytes_len) return 0;
+    memcpy(urb_bytes_data(obj) + offset, &value, sizeof(Float));
+    return 1;
+}
+
+static void vm_set_int_single(List *obj, Int value)
+{
+    if (!obj) return;
+    size_t len = sizeof(Int);
+    if ((size_t)obj->capacity < len + 2) return;
+    obj->size = (UHalf)(len + 2);
+    memcpy(urb_bytes_data(obj), &value, sizeof(Int));
+}
+
+static void vm_set_float_single(List *obj, Float value)
+{
+    if (!obj) return;
+    size_t len = sizeof(Float);
+    if ((size_t)obj->capacity < len + 2) return;
+    obj->size = (UHalf)(len + 2);
+    memcpy(urb_bytes_data(obj), &value, sizeof(Float));
+}
+
+static int vm_view_from_name(const char *name, size_t len, ViewType *out)
+{
+    if (len == 2) {
+        if (memcmp(name, "i8", 2) == 0) { *out = VIEW_I8; return 1; }
+        if (memcmp(name, "u8", 2) == 0) { *out = VIEW_U8; return 1; }
+    }
+    if (len == 3) {
+        if (memcmp(name, "i16", 3) == 0) { *out = VIEW_I16; return 1; }
+        if (memcmp(name, "u16", 3) == 0) { *out = VIEW_U16; return 1; }
+        if (memcmp(name, "i32", 3) == 0) { *out = VIEW_I32; return 1; }
+        if (memcmp(name, "u32", 3) == 0) { *out = VIEW_U32; return 1; }
+        if (memcmp(name, "i64", 3) == 0) { *out = VIEW_I64; return 1; }
+        if (memcmp(name, "u64", 3) == 0) { *out = VIEW_U64; return 1; }
+        if (memcmp(name, "f32", 3) == 0) { *out = VIEW_F32; return 1; }
+        if (memcmp(name, "f64", 3) == 0) { *out = VIEW_F64; return 1; }
+    }
+    return 0;
+}
+
+static size_t vm_view_stride(ViewType view)
+{
+    switch (view) {
+    case VIEW_I8:
+    case VIEW_U8:
+        return 1;
+    case VIEW_I16:
+    case VIEW_U16:
+        return 2;
+    case VIEW_I32:
+    case VIEW_U32:
+    case VIEW_F32:
+        return 4;
+    case VIEW_I64:
+    case VIEW_U64:
+    case VIEW_F64:
+        return 8;
+    default:
+        return 1;
+    }
+}
+
+static int vm_view_is_float(ViewType view)
+{
+    return view == VIEW_F32 || view == VIEW_F64;
 }
 
 static List *urb_obj_new_list(Int type, ObjEntry *key_entry, Int reserve)
@@ -257,7 +394,7 @@ void vm_free_list(List *obj)
     urb_obj_free(obj);
 }
 
-static List *vm_alloc_bytes(VM *vm, ObjEntry *key_entry, const char *s, size_t len)
+static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s, size_t len)
 {
     size_t need = len + 2;
     FreeNode *prev = NULL;
@@ -268,7 +405,7 @@ static List *vm_alloc_bytes(VM *vm, ObjEntry *key_entry, const char *s, size_t l
             if (prev) prev->next = cur->next;
             else vm->free_bytes = cur->next;
             free(cur);
-            obj->data[0].i = URB_T_BYTE;
+            obj->data[0].i = type;
             obj->data[1].p = key_entry;
             obj->size = (UHalf)(len + 2);
             if ((size_t)obj->capacity < need) obj->capacity = (UHalf)need;
@@ -278,7 +415,7 @@ static List *vm_alloc_bytes(VM *vm, ObjEntry *key_entry, const char *s, size_t l
         prev = cur;
         cur = cur->next;
     }
-    return urb_obj_new_bytes(URB_T_BYTE, key_entry, s, len);
+    return urb_obj_new_bytes(type, key_entry, s, len);
 }
 
 static void vm_pool_push(VM *vm, List *obj)
@@ -290,7 +427,7 @@ static void vm_pool_push(VM *vm, List *obj)
         return;
     }
     node->obj = obj;
-    if (urb_obj_type(obj) == URB_T_BYTE) {
+    if (urb_obj_type(obj) == URB_T_INT || urb_obj_type(obj) == URB_T_FLOAT) {
         node->next = vm->free_bytes;
         vm->free_bytes = node;
     } else {
@@ -394,6 +531,7 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
     entry->key = obj ? urb_obj_key(obj) : NULL;
     entry->in_use = 1;
     entry->mark = 0;
+    entry->is_string = 0;
     return entry;
 }
 
@@ -424,8 +562,10 @@ void vm_release_entry(VM *vm, ObjEntry *entry)
 
 static ObjEntry *vm_make_key(VM *vm, const char *name)
 {
-    List *key_obj = vm_alloc_bytes(vm, NULL, name, strlen(name));
-    return vm_reg_alloc(vm, key_obj);
+    List *key_obj = vm_alloc_bytes(vm, URB_T_INT, NULL, name, strlen(name));
+    ObjEntry *entry = vm_reg_alloc(vm, key_obj);
+    if (entry) entry->is_string = 1;
+    return entry;
 }
 
 static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_name)
@@ -447,8 +587,10 @@ static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_na
 
 static ObjEntry *vm_make_key_len(VM *vm, const char *name, size_t len)
 {
-    List *key_obj = vm_alloc_bytes(vm, NULL, name, len);
-    return vm_reg_alloc(vm, key_obj);
+    List *key_obj = vm_alloc_bytes(vm, URB_T_INT, NULL, name, len);
+    ObjEntry *entry = vm_reg_alloc(vm, key_obj);
+    if (entry) entry->is_string = 1;
+    return entry;
 }
 
 static ObjEntry *vm_find_by_key(VM *vm, const char *name)
@@ -458,7 +600,7 @@ static ObjEntry *vm_find_by_key(VM *vm, const char *name)
         if (!entry || !entry->in_use) continue;
         ObjEntry *key = vm_entry_key(entry);
         if (!key) continue;
-        if (urb_obj_type(key->obj) != URB_T_BYTE) continue;
+        if (!entry_is_string(key)) continue;
         if (urb_bytes_eq_cstr(key->obj, name)) return entry;
     }
     return NULL;
@@ -476,7 +618,7 @@ int vm_global_remove_by_key(VM *vm, const char *name)
         ObjEntry *entry = (ObjEntry*)global->data[i].p;
         ObjEntry *key = vm_entry_key(entry);
         if (!key) continue;
-        if (urb_obj_type(key->obj) != URB_T_BYTE) continue;
+        if (!entry_is_string(key)) continue;
         if (urb_bytes_eq_cstr(key->obj, name)) {
             urb_remove(global, i);
             return 1;
@@ -570,7 +712,7 @@ ObjEntry *vm_global_find_by_key(List *global, const char *name)
         if (!entry) continue;
         ObjEntry *key = vm_entry_key(entry);
         if (!key) continue;
-        if (urb_obj_type(key->obj) != URB_T_BYTE) continue;
+        if (!entry_is_string(key)) continue;
         if (urb_bytes_eq_cstr(key->obj, name)) return entry;
     }
     return NULL;
@@ -587,7 +729,7 @@ static ObjEntry *vm_object_find_direct(List *obj, const char *name, size_t len)
         if (!entry) continue;
         ObjEntry *key = vm_entry_key(entry);
         if (!key) continue;
-        if (urb_obj_type(key->obj) != URB_T_BYTE) continue;
+        if (!entry_is_string(key)) continue;
         if (urb_bytes_eq_bytes(key->obj, name, len)) return entry;
     }
     return NULL;
@@ -605,30 +747,30 @@ static ObjEntry *vm_object_find_by_key_len(VM *vm, List *obj, const char *name, 
     return vm ? vm->null_entry : NULL;
 }
 
-Int urb_value_len(const List *obj)
+Int vm_value_len_entry(const ObjEntry *entry)
 {
+    if (!entry || !entry->in_use) return 0;
+    List *obj = entry->obj;
     Int type = urb_obj_type(obj);
     switch (type) {
     case URB_T_NULL:
         return 0;
-    case URB_T_BYTE:
-        return (Int)urb_bytes_len(obj);
-    case URB_T_NUMBER:
+    case URB_T_INT:
+        if (entry_is_string(entry)) {
+            return (Int)urb_bytes_len(obj);
+        }
+        return vm_bytes_to_count(urb_bytes_len(obj), URB_T_INT);
+    case URB_T_FLOAT:
+        return vm_bytes_to_count(urb_bytes_len(obj), URB_T_FLOAT);
     case URB_T_TABLE:
         return obj->size - 2;
     case URB_T_NATIVE:
+    case URB_T_LAMBDA:
+    case URB_T_VIEW:
         return obj->size > 2 ? 1 : 0;
     default:
         return obj->size - 2;
     }
-}
-
-void urb_number_set_single(List *obj, Float value)
-{
-    obj->size = 2;
-    Value v;
-    v.f = value;
-    obj = urb_push(obj, v);
 }
 
 static int vm_entry_truthy(const ObjEntry *entry)
@@ -636,18 +778,74 @@ static int vm_entry_truthy(const ObjEntry *entry)
     if (!entry || !entry->in_use) return 0;
     Int type = urb_obj_type(entry->obj);
     if (type == URB_T_NULL) return 0;
-    if (type == URB_T_NUMBER && entry->obj->size == 3 && entry->obj->data[2].f == 0) return 0;
+    if (type == URB_T_INT && !entry_is_string(entry)) {
+        size_t len = urb_bytes_len(entry->obj);
+        if (len == sizeof(Int)) {
+            Int v = 0;
+            if (vm_read_int_at(entry->obj, 0, &v) && v == 0) return 0;
+        }
+    }
+    if (type == URB_T_FLOAT) {
+        size_t len = urb_bytes_len(entry->obj);
+        if (len == sizeof(Float)) {
+            Float v = 0;
+            if (vm_read_float_at(entry->obj, 0, &v) && v == 0) return 0;
+        }
+    }
     return 1;
 }
 
-static int vm_entry_number(const ObjEntry *entry, Float *out, const char *op, size_t pc)
+static int vm_entry_number(const ObjEntry *entry, Int *out_i, Float *out_f, int *out_is_float,
+                           const char *op, size_t pc)
 {
-    if (!entry || urb_obj_type(entry->obj) != URB_T_NUMBER || entry->obj->size < 3) {
+    if (!entry || !entry->in_use) {
         fprintf(stderr, "bytecode error at pc %zu: %s expects number\n", pc, op);
         return 0;
     }
-    *out = entry->obj->data[2].f;
-    return 1;
+    Int type = urb_obj_type(entry->obj);
+    if (type == URB_T_INT) {
+        if (entry_is_string(entry)) {
+            fprintf(stderr, "bytecode error at pc %zu: %s expects number\n", pc, op);
+            return 0;
+        }
+        size_t len = urb_bytes_len(entry->obj);
+        if (len != sizeof(Int)) {
+            fprintf(stderr, "bytecode error at pc %zu: %s expects number\n", pc, op);
+            return 0;
+        }
+        Int v = 0;
+        if (!vm_read_int_at(entry->obj, 0, &v)) return 0;
+        if (out_i) *out_i = v;
+        if (out_f) *out_f = (Float)v;
+        if (out_is_float) *out_is_float = 0;
+        return 1;
+    }
+    if (type == URB_T_FLOAT) {
+        size_t len = urb_bytes_len(entry->obj);
+        if (len != sizeof(Float)) {
+            fprintf(stderr, "bytecode error at pc %zu: %s expects number\n", pc, op);
+            return 0;
+        }
+        Float v = 0;
+        if (!vm_read_float_at(entry->obj, 0, &v)) return 0;
+        if (out_i) *out_i = (Int)v;
+        if (out_f) *out_f = v;
+        if (out_is_float) *out_is_float = 1;
+        return 1;
+    }
+    fprintf(stderr, "bytecode error at pc %zu: %s expects number\n", pc, op);
+    return 0;
+}
+
+static ObjEntry *vm_make_number_result(VM *vm, double value)
+{
+    if (value >= (double)INT_MIN && value <= (double)INT_MAX) {
+        Int iv = (Int)value;
+        if ((double)iv == value) {
+            return vm_make_int_value(vm, iv);
+        }
+    }
+    return vm_make_float_value(vm, (Float)value);
 }
 
 static void sb_append_number(StrBuf *b, Float v)
@@ -660,6 +858,13 @@ static void sb_append_number(StrBuf *b, Float v)
     } else {
         snprintf(buf, sizeof(buf), "%.17g", (double)v);
     }
+    sb_append_n(b, buf, strlen(buf));
+}
+
+static void sb_append_int(StrBuf *b, Int v)
+{
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%lld", (long long)v);
     sb_append_n(b, buf, strlen(buf));
 }
 
@@ -689,7 +894,7 @@ static void sb_append_escaped(StrBuf *b, const char *s, size_t len)
 static void vm_append_key_text(StrBuf *b, ObjEntry *entry)
 {
     ObjEntry *key = vm_entry_key(entry);
-    if (!key || urb_obj_type(key->obj) != URB_T_BYTE) {
+    if (!key || !entry_is_string(key)) {
         sb_append_char(b, '_');
         return;
     }
@@ -709,41 +914,75 @@ static void vm_append_value_text(VM *vm, ObjEntry *entry, StrBuf *b, int raw_str
     case URB_T_NULL:
         sb_append_n(b, "null", 4);
         break;
-    case URB_T_BYTE: {
-        size_t len = urb_bytes_len(obj);
-        if (raw_string) {
-            sb_append_n(b, urb_bytes_data(obj), len);
+    case URB_T_INT: {
+        if (entry_is_string(entry)) {
+            size_t len = urb_bytes_len(obj);
+            if (raw_string) {
+                sb_append_n(b, urb_bytes_data(obj), len);
+                break;
+            }
+            if (len == 1) {
+                sb_append_char(b, '\'');
+                sb_append_escaped(b, urb_bytes_data(obj), len);
+                sb_append_char(b, '\'');
+            } else {
+                sb_append_char(b, '"');
+                sb_append_escaped(b, urb_bytes_data(obj), len);
+                sb_append_char(b, '"');
+            }
             break;
         }
-        if (len == 1) {
-            sb_append_char(b, '\'');
-            sb_append_escaped(b, urb_bytes_data(obj), len);
-            sb_append_char(b, '\'');
-        } else {
-            sb_append_char(b, '"');
-            sb_append_escaped(b, urb_bytes_data(obj), len);
-            sb_append_char(b, '"');
-        }
-        break;
-    }
-    case URB_T_NUMBER: {
-        Int count = obj->size - 2;
-        if (raw_string && count == 1) {
-            sb_append_number(b, obj->data[2].f);
-            break;
-        }
-        if (count == 1) {
-            sb_append_number(b, obj->data[2].f);
-            break;
-        }
+        Int count = vm_bytes_to_count(urb_bytes_len(obj), URB_T_INT);
         if (count == 0) {
             sb_append_n(b, "[]", 2);
             break;
         }
+        if (count == 1) {
+            Int v = 0;
+            if (vm_read_int_at(obj, 0, &v)) {
+                sb_append_int(b, v);
+            } else {
+                sb_append_n(b, "0", 1);
+            }
+            break;
+        }
         sb_append_char(b, '[');
         for (Int i = 0; i < count; i++) {
+            Int v = 0;
             if (i) sb_append_n(b, ", ", 2);
-            sb_append_number(b, obj->data[i + 2].f);
+            if (vm_read_int_at(obj, i, &v)) {
+                sb_append_int(b, v);
+            } else {
+                sb_append_n(b, "0", 1);
+            }
+        }
+        sb_append_char(b, ']');
+        break;
+    }
+    case URB_T_FLOAT: {
+        Int count = vm_bytes_to_count(urb_bytes_len(obj), URB_T_FLOAT);
+        if (count == 0) {
+            sb_append_n(b, "[]", 2);
+            break;
+        }
+        if (count == 1) {
+            Float v = 0;
+            if (vm_read_float_at(obj, 0, &v)) {
+                sb_append_number(b, v);
+            } else {
+                sb_append_n(b, "0", 1);
+            }
+            break;
+        }
+        sb_append_char(b, '[');
+        for (Int i = 0; i < count; i++) {
+            Float v = 0;
+            if (i) sb_append_n(b, ", ", 2);
+            if (vm_read_float_at(obj, i, &v)) {
+                sb_append_number(b, v);
+            } else {
+                sb_append_n(b, "0", 1);
+            }
         }
         sb_append_char(b, ']');
         break;
@@ -838,13 +1077,12 @@ static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int inden
     case URB_T_NULL:
         sb_append_n(b, "null", 4);
         break;
-    case URB_T_BYTE:
-    case URB_T_NUMBER: {
-        if (type == URB_T_BYTE) {
+    case URB_T_INT: {
+        if (entry_is_string(entry)) {
             vm_append_value_text(vm, entry, b, 0);
             break;
         }
-        Int count = obj->size - 2;
+        Int count = vm_bytes_to_count(urb_bytes_len(obj), URB_T_INT);
         if (count <= 1) {
             vm_append_value_text(vm, entry, b, 0);
             break;
@@ -852,14 +1090,42 @@ static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int inden
         sb_append_char(b, '[');
         sb_append_char(b, '\n');
         for (Int i = 0; i < count; i++) {
-        sb_append_indent(b, depth + 1, indent);
-        sb_append_number(b, obj->data[i + 2].f);
-        if (i + 1 < count) sb_append_char(b, ',');
-        sb_append_char(b, '\n');
+            Int v = 0;
+            sb_append_indent(b, depth + 1, indent);
+            if (vm_read_int_at(obj, i, &v)) {
+                sb_append_int(b, v);
+            } else {
+                sb_append_n(b, "0", 1);
+            }
+            if (i + 1 < count) sb_append_char(b, ',');
+            sb_append_char(b, '\n');
+        }
+        sb_append_indent(b, depth, indent);
+        sb_append_char(b, ']');
+        break;
     }
-    sb_append_indent(b, depth, indent);
-    sb_append_char(b, ']');
-    break;
+    case URB_T_FLOAT: {
+        Int count = vm_bytes_to_count(urb_bytes_len(obj), URB_T_FLOAT);
+        if (count <= 1) {
+            vm_append_value_text(vm, entry, b, 0);
+            break;
+        }
+        sb_append_char(b, '[');
+        sb_append_char(b, '\n');
+        for (Int i = 0; i < count; i++) {
+            Float v = 0;
+            sb_append_indent(b, depth + 1, indent);
+            if (vm_read_float_at(obj, i, &v)) {
+                sb_append_number(b, v);
+            } else {
+                sb_append_n(b, "0", 1);
+            }
+            if (i + 1 < count) sb_append_char(b, ',');
+            sb_append_char(b, '\n');
+        }
+        sb_append_indent(b, depth, indent);
+        sb_append_char(b, ']');
+        break;
     }
     case URB_T_TABLE: {
         if (pretty_seen_has(seen, obj)) {
@@ -928,26 +1194,65 @@ static int vm_entry_equal(ObjEntry *a, ObjEntry *b)
     if (!a || !b || !a->in_use || !b->in_use) return 0;
     Int at = urb_obj_type(a->obj);
     Int bt = urb_obj_type(b->obj);
-    if (at != bt) {
-        int a_str = (at == URB_T_BYTE || at == URB_T_BYTE);
-        int b_str = (bt == URB_T_BYTE || bt == URB_T_BYTE);
-        if (!a_str || !b_str) return 0;
-    }
-    if (at == URB_T_NUMBER && bt == URB_T_NUMBER) {
-        Int ac = a->obj->size - 2;
-        Int bc = b->obj->size - 2;
-        if (ac != bc) return 0;
-        for (Int i = 0; i < ac; i++) {
-            if (a->obj->data[i + 2].f != b->obj->data[i + 2].f) return 0;
+    if ((at == URB_T_INT && entry_is_string(a)) ||
+        (bt == URB_T_INT && entry_is_string(b))) {
+        if (!(at == URB_T_INT && entry_is_string(a) && bt == URB_T_INT && entry_is_string(b))) {
+            return 0;
         }
-        return 1;
-    }
-    if ((at == URB_T_BYTE || at == URB_T_BYTE) &&
-        (bt == URB_T_BYTE || bt == URB_T_BYTE)) {
         size_t al = urb_bytes_len(a->obj);
         size_t bl = urb_bytes_len(b->obj);
         if (al != bl) return 0;
         return memcmp(urb_bytes_data(a->obj), urb_bytes_data(b->obj), al) == 0;
+    }
+    if ((at == URB_T_INT || at == URB_T_FLOAT) &&
+        (bt == URB_T_INT || bt == URB_T_FLOAT)) {
+        size_t al = urb_bytes_len(a->obj);
+        size_t bl = urb_bytes_len(b->obj);
+        size_t asz = vm_elem_size(at);
+        size_t bsz = vm_elem_size(bt);
+        if (al == asz && bl == bsz) {
+            double av = 0.0;
+            double bv = 0.0;
+            if (at == URB_T_INT) {
+                Int v = 0;
+                if (!vm_read_int_at(a->obj, 0, &v)) return 0;
+                av = (double)v;
+            } else {
+                Float v = 0;
+                if (!vm_read_float_at(a->obj, 0, &v)) return 0;
+                av = (double)v;
+            }
+            if (bt == URB_T_INT) {
+                Int v = 0;
+                if (!vm_read_int_at(b->obj, 0, &v)) return 0;
+                bv = (double)v;
+            } else {
+                Float v = 0;
+                if (!vm_read_float_at(b->obj, 0, &v)) return 0;
+                bv = (double)v;
+            }
+            return av == bv;
+        }
+        if (at != bt) return 0;
+        Int ac = vm_bytes_to_count(al, at);
+        Int bc = vm_bytes_to_count(bl, bt);
+        if (ac != bc) return 0;
+        if (at == URB_T_INT) {
+            for (Int i = 0; i < ac; i++) {
+                Int av = 0;
+                Int bv = 0;
+                if (!vm_read_int_at(a->obj, i, &av) || !vm_read_int_at(b->obj, i, &bv)) return 0;
+                if (av != bv) return 0;
+            }
+        } else {
+            for (Int i = 0; i < ac; i++) {
+                Float av = 0;
+                Float bv = 0;
+                if (!vm_read_float_at(a->obj, i, &av) || !vm_read_float_at(b->obj, i, &bv)) return 0;
+                if (av != bv) return 0;
+            }
+        }
+        return 1;
     }
     if (at == URB_T_NULL) return 1;
     return 0;
@@ -958,21 +1263,11 @@ static int vm_entry_compare(ObjEntry *a, ObjEntry *b, int *out)
     if (!a || !b || !a->in_use || !b->in_use) return 0;
     Int at = urb_obj_type(a->obj);
     Int bt = urb_obj_type(b->obj);
-    if (at != bt) {
-        int a_str = (at == URB_T_BYTE || at == URB_T_BYTE);
-        int b_str = (bt == URB_T_BYTE || bt == URB_T_BYTE);
-        if (!a_str || !b_str) return 0;
-    }
-    if (at == URB_T_NUMBER && bt == URB_T_NUMBER) {
-        double av = a->obj->size >= 3 ? a->obj->data[2].f : 0.0;
-        double bv = b->obj->size >= 3 ? b->obj->data[2].f : 0.0;
-        if (av < bv) *out = -1;
-        else if (av > bv) *out = 1;
-        else *out = 0;
-        return 1;
-    }
-    if ((at == URB_T_BYTE || at == URB_T_BYTE) &&
-        (bt == URB_T_BYTE || bt == URB_T_BYTE)) {
+    if ((at == URB_T_INT && entry_is_string(a)) ||
+        (bt == URB_T_INT && entry_is_string(b))) {
+        if (!(at == URB_T_INT && entry_is_string(a) && bt == URB_T_INT && entry_is_string(b))) {
+            return 0;
+        }
         size_t al = urb_bytes_len(a->obj);
         size_t bl = urb_bytes_len(b->obj);
         size_t min = al < bl ? al : bl;
@@ -983,6 +1278,40 @@ static int vm_entry_compare(ObjEntry *a, ObjEntry *b, int *out)
         else if (al > bl) *out = 1;
         else *out = 0;
         return 1;
+    }
+    if ((at == URB_T_INT || at == URB_T_FLOAT) &&
+        (bt == URB_T_INT || bt == URB_T_FLOAT)) {
+        size_t al = urb_bytes_len(a->obj);
+        size_t bl = urb_bytes_len(b->obj);
+        size_t asz = vm_elem_size(at);
+        size_t bsz = vm_elem_size(bt);
+        if (al == asz && bl == bsz) {
+            double av = 0.0;
+            double bv = 0.0;
+            if (at == URB_T_INT) {
+                Int v = 0;
+                if (!vm_read_int_at(a->obj, 0, &v)) return 0;
+                av = (double)v;
+            } else {
+                Float v = 0;
+                if (!vm_read_float_at(a->obj, 0, &v)) return 0;
+                av = (double)v;
+            }
+            if (bt == URB_T_INT) {
+                Int v = 0;
+                if (!vm_read_int_at(b->obj, 0, &v)) return 0;
+                bv = (double)v;
+            } else {
+                Float v = 0;
+                if (!vm_read_float_at(b->obj, 0, &v)) return 0;
+                bv = (double)v;
+            }
+            if (av < bv) *out = -1;
+            else if (av > bv) *out = 1;
+            else *out = 0;
+            return 1;
+        }
+        return 0;
     }
     return 0;
 }
@@ -995,7 +1324,7 @@ static void print_key(FILE *out, ObjEntry *entry)
         return;
     }
     List *key_obj = key->obj;
-    if (urb_obj_type(key_obj) != URB_T_BYTE) {
+    if (!entry_is_string(key)) {
         fputs("<?>", out);
         return;
     }
@@ -1016,16 +1345,37 @@ void print_plain_entry(FILE *out, ObjEntry *entry)
     case URB_T_NULL:
         fputs("null", out);
         break;
-    case URB_T_BYTE:
-        fwrite(urb_bytes_data(obj), 1, urb_bytes_len(obj), out);
-        break;
-        break;
-    case URB_T_NUMBER:
-        for (Int i = 2; i < obj->size; i++) {
-            if (i > 2) fputs(" ", out);
-            fprintf(out, "%g", (double)obj->data[i].f);
+    case URB_T_INT:
+        if (entry_is_string(entry)) {
+            fwrite(urb_bytes_data(obj), 1, urb_bytes_len(obj), out);
+            break;
+        }
+        {
+            Int count = vm_bytes_to_count(urb_bytes_len(obj), URB_T_INT);
+            for (Int i = 0; i < count; i++) {
+                if (i > 0) fputs(" ", out);
+                Int v = 0;
+                if (vm_read_int_at(obj, i, &v)) {
+                    fprintf(out, "%lld", (long long)v);
+                } else {
+                    fputs("0", out);
+                }
+            }
         }
         break;
+    case URB_T_FLOAT: {
+        Int count = vm_bytes_to_count(urb_bytes_len(obj), URB_T_FLOAT);
+        for (Int i = 0; i < count; i++) {
+            if (i > 0) fputs(" ", out);
+            Float v = 0;
+            if (vm_read_float_at(obj, i, &v)) {
+                fprintf(out, "%g", (double)v);
+            } else {
+                fputs("0", out);
+            }
+        }
+        break;
+    }
     case URB_T_TABLE:
         for (Int i = 2; i < obj->size; i++) {
             if (i > 2) fputs(" ", out);
@@ -1066,18 +1416,39 @@ void print_entry(FILE *out, ObjEntry *entry)
     case URB_T_NULL:
         fputs("null", out);
         break;
-    case URB_T_BYTE:
-        fputs("\"", out);
-        fwrite(urb_bytes_data(obj), 1, urb_bytes_len(obj), out);
-        fputs("\"", out);
-        fwrite(urb_bytes_data(obj), 1, urb_bytes_len(obj), out);
-        fputs("\"", out);
+    case URB_T_INT:
+        if (entry_is_string(entry)) {
+            fputs("\"", out);
+            fwrite(urb_bytes_data(obj), 1, urb_bytes_len(obj), out);
+            fputs("\"", out);
+        } else {
+            fputs("[", out);
+            Int count = vm_bytes_to_count(urb_bytes_len(obj), URB_T_INT);
+            for (Int i = 0; i < count; i++) {
+                if (i > 0) fputs(" ", out);
+                Int v = 0;
+                if (vm_read_int_at(obj, i, &v)) {
+                    fprintf(out, "%lld", (long long)v);
+                } else {
+                    fputs("0", out);
+                }
+            }
+            fputs("]", out);
+        }
         break;
-    case URB_T_NUMBER:
+    case URB_T_FLOAT:
         fputs("[", out);
-        for (Int i = 2; i < obj->size; i++) {
-            if (i > 2) fputs(" ", out);
-            fprintf(out, "%g", (double)obj->data[i].f);
+        {
+            Int count = vm_bytes_to_count(urb_bytes_len(obj), URB_T_FLOAT);
+            for (Int i = 0; i < count; i++) {
+                if (i > 0) fputs(" ", out);
+                Float v = 0;
+                if (vm_read_float_at(obj, i, &v)) {
+                    fprintf(out, "%g", (double)v);
+                } else {
+                    fputs("0", out);
+                }
+            }
         }
         fputs("]", out);
         break;
@@ -1131,20 +1502,16 @@ void vm_init(VM *vm)
     vm_global_add(vm, vm->common_entry);
 
     ObjEntry *argc_key = vm_make_key(vm, "__argc");
-    List *argc_obj = vm_alloc_list(vm, URB_T_NUMBER, argc_key, 1);
-    Value argc_v;
-    argc_v.f = 0;
-    argc_obj = urb_push(argc_obj, argc_v);
+    List *argc_obj = vm_alloc_bytes(vm, URB_T_INT, argc_key, NULL, sizeof(Int));
+    vm_set_int_single(argc_obj, 0);
     vm->argc_entry = vm_reg_alloc(vm, argc_obj);
     vm_global_add(vm, vm->argc_entry);
 
     vm->this_entry = vm->null_entry;
 
     ObjEntry *len_key = vm_make_key(vm, "__len");
-    List *len_obj = vm_alloc_list(vm, URB_T_NUMBER, len_key, 1);
-    Value v;
-    v.f = 0;
-    len_obj = urb_push(len_obj, v);
+    List *len_obj = vm_alloc_bytes(vm, URB_T_INT, len_key, NULL, sizeof(Int));
+    vm_set_int_single(len_obj, 0);
     ObjEntry *len_entry = vm_reg_alloc(vm, len_obj);
     vm_global_add(vm, len_entry);
 
@@ -1187,9 +1554,9 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "copy", "copy");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
-    entry = vm_define_native(vm, "toByte", "toByte");
+    entry = vm_define_native(vm, "toInt", "toInt");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
-    entry = vm_define_native(vm, "toNumber", "toNumber");
+    entry = vm_define_native(vm, "toFloat", "toFloat");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "gc", "gc");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
@@ -1343,7 +1710,7 @@ typedef struct {
 static ObjEntry *vm_clone_key_entry(VM *vm, ObjEntry *key_entry)
 {
     if (!key_entry) return NULL;
-    if (urb_obj_type(key_entry->obj) != URB_T_BYTE) return NULL;
+    if (!entry_is_string(key_entry)) return NULL;
     return vm_make_key_len(vm, urb_bytes_data(key_entry->obj), urb_bytes_len(key_entry->obj));
 }
 
@@ -1369,12 +1736,15 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
     case URB_T_NULL:
         copy = vm_alloc_list(vm, URB_T_NULL, key_entry, 0);
         break;
-    case URB_T_BYTE:
-        copy = vm_alloc_bytes(vm, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
+    case URB_T_INT:
+        copy = vm_alloc_bytes(vm, URB_T_INT, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
         break;
-    case URB_T_NUMBER: {
+    case URB_T_FLOAT:
+        copy = vm_alloc_bytes(vm, URB_T_FLOAT, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
+        break;
+    case URB_T_VIEW: {
         Int n = (Int)(obj->size - 2);
-        copy = vm_alloc_list(vm, URB_T_NUMBER, key_entry, n);
+        copy = vm_alloc_list(vm, URB_T_VIEW, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             copy = urb_push(copy, obj->data[i]);
         }
@@ -1445,6 +1815,7 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
     }
 
     entry = vm_reg_alloc(vm, copy);
+    if (entry) entry->is_string = src->is_string;
 
     if (*count == *cap) {
         size_t new_cap = *cap == 0 ? 8 : (*cap * 2);
@@ -1486,6 +1857,7 @@ ObjEntry *vm_clone_entry_shallow(VM *vm, ObjEntry *src, ObjEntry *forced_key)
     ObjEntry *entry = vm_reg_alloc(vm, src->obj);
     if (!entry) return NULL;
     entry->key = forced_key ? forced_key : vm_entry_key(src);
+    entry->is_string = src->is_string;
     return entry;
 }
 
@@ -1501,12 +1873,15 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
     case URB_T_NULL:
         copy = vm_alloc_list(vm, URB_T_NULL, key_entry, 0);
         break;
-    case URB_T_BYTE:
-        copy = vm_alloc_bytes(vm, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
+    case URB_T_INT:
+        copy = vm_alloc_bytes(vm, URB_T_INT, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
         break;
-    case URB_T_NUMBER: {
+    case URB_T_FLOAT:
+        copy = vm_alloc_bytes(vm, URB_T_FLOAT, key_entry, urb_bytes_data(obj), urb_bytes_len(obj));
+        break;
+    case URB_T_VIEW: {
         Int n = (Int)(obj->size - 2);
-        copy = vm_alloc_list(vm, URB_T_NUMBER, key_entry, n);
+        copy = vm_alloc_list(vm, URB_T_VIEW, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             copy = urb_push(copy, obj->data[i]);
         }
@@ -1544,6 +1919,7 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
     ObjEntry *entry = vm_reg_alloc(vm, copy);
     if (!entry) return NULL;
     entry->key = key_entry;
+    entry->is_string = src->is_string;
     return entry;
 }
 
@@ -1554,8 +1930,9 @@ ObjEntry *vm_define_bytes(VM *vm, const char *key, const char *value)
         key_entry = vm_make_key(vm, key);
     }
 
-    List *obj = vm_alloc_bytes(vm, key_entry, value, strlen(value));
+    List *obj = vm_alloc_bytes(vm, URB_T_INT, key_entry, value, strlen(value));
     ObjEntry *entry = vm_reg_alloc(vm, obj);
+    if (entry) entry->is_string = 1;
     vm_global_add(vm, entry);
     return entry;
 }
@@ -1568,7 +1945,7 @@ ObjEntry *vm_define_byte(VM *vm, const char *key, char **items, int count, int s
     }
 
     size_t len = (size_t)(count - start);
-    List *obj = vm_alloc_bytes(vm, key_entry, NULL, len);
+    List *obj = vm_alloc_bytes(vm, URB_T_INT, key_entry, NULL, len);
     for (int i = start; i < count; i++) {
         char *end = NULL;
         long value = strtol(items[i], &end, 10);
@@ -1591,11 +1968,28 @@ ObjEntry *vm_define_number(VM *vm, const char *key, char **items, int count, int
     }
 
     Int n = (Int)(count - start);
-    List *obj = vm_alloc_list(vm, URB_T_NUMBER, key_entry, n);
+    int is_float = 0;
     for (int i = start; i < count; i++) {
-        Value v;
-        v.f = (Float)strtod(items[i], NULL);
-        obj = urb_push(obj, v);
+        char *end = NULL;
+        double v = strtod(items[i], &end);
+        if (!end || *end != 0) continue;
+        if (v != (double)(Int)v) {
+            is_float = 1;
+            break;
+        }
+    }
+
+    size_t elem_size = is_float ? sizeof(Float) : sizeof(Int);
+    List *obj = vm_alloc_bytes(vm, is_float ? URB_T_FLOAT : URB_T_INT, key_entry, NULL, (size_t)n * elem_size);
+    for (Int i = 0; i < n; i++) {
+        double v = strtod(items[start + i], NULL);
+        if (is_float) {
+            Float fv = (Float)v;
+            vm_write_float_at(obj, i, fv);
+        } else {
+            Int iv = (Int)v;
+            vm_write_int_at(obj, i, iv);
+        }
     }
 
     ObjEntry *entry = vm_reg_alloc(vm, obj);
@@ -1737,6 +2131,17 @@ static int bc_read_f64(const unsigned char *data, size_t len, size_t *pc, double
     return 1;
 }
 
+static int bc_read_i64(const unsigned char *data, size_t len, size_t *pc, int64_t *out)
+{
+    if (*pc + 8 > len) return 0;
+    uint64_t v = 0;
+    for (int i = 0; i < 8; i++) {
+        v |= (uint64_t)data[(*pc)++] << (i * 8);
+    }
+    *out = (int64_t)v;
+    return 1;
+}
+
 static int bc_read_string(const unsigned char *data, size_t len, size_t *pc, unsigned char **out, size_t *out_len)
 {
     uint32_t slen = 0;
@@ -1791,13 +2196,22 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         if (!node) return NULL;
 
         switch (op) {
-        case BC_PUSH_NUM: {
-            double v = 0.0;
-            if (!bc_read_f64(data, len, &pc, &v)) {
-                fprintf(stderr, "bytecodeToAst: truncated PUSH_NUM at pc %zu\n", pc);
+        case BC_PUSH_INT: {
+            int64_t v = 0;
+            if (!bc_read_i64(data, len, &pc, &v)) {
+                fprintf(stderr, "bytecodeToAst: truncated PUSH_INT at pc %zu\n", pc);
                 return NULL;
             }
-            ast_set_kv(vm, node, "value", vm_make_number_value(vm, (Float)v));
+            ast_set_kv(vm, node, "value", vm_make_int_value(vm, (Int)v));
+            break;
+        }
+        case BC_PUSH_FLOAT: {
+            double v = 0.0;
+            if (!bc_read_f64(data, len, &pc, &v)) {
+                fprintf(stderr, "bytecodeToAst: truncated PUSH_FLOAT at pc %zu\n", pc);
+                return NULL;
+            }
+            ast_set_kv(vm, node, "value", vm_make_float_value(vm, (Float)v));
             break;
         }
         case BC_PUSH_CHAR:
@@ -1812,43 +2226,45 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             free(buf);
             break;
         }
-        case BC_PUSH_BYTE: {
-            uint8_t v = 0;
-            if (!bc_read_u8(data, len, &pc, &v)) {
-                fprintf(stderr, "bytecodeToAst: truncated PUSH_BYTE at pc %zu\n", pc);
-                return NULL;
-            }
-            ast_set_kv(vm, node, "value", vm_make_number_value(vm, (Float)v));
-            break;
-        }
-        case BC_BUILD_NUMBER:
-        case BC_BUILD_BYTE:
+        case BC_BUILD_INT:
+        case BC_BUILD_FLOAT:
         case BC_BUILD_OBJECT: {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
                 fprintf(stderr, "bytecodeToAst: truncated BUILD_* at pc %zu\n", pc);
                 return NULL;
             }
-            ast_set_kv(vm, node, "count", vm_make_number_value(vm, (Float)count));
+            ast_set_kv(vm, node, "count", vm_make_int_value(vm, (Int)count));
             break;
         }
-        case BC_BUILD_NUMBER_LIT: {
+        case BC_BUILD_INT_LIT:
+        case BC_BUILD_FLOAT_LIT: {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
-                fprintf(stderr, "bytecodeToAst: truncated BUILD_NUMBER_LIT at pc %zu\n", pc);
+                fprintf(stderr, "bytecodeToAst: truncated BUILD_*_LIT at pc %zu\n", pc);
                 return NULL;
             }
             ObjEntry *values = vm_make_table_value(vm, (Int)count);
             for (uint32_t i = 0; i < count; i++) {
-                double v = 0.0;
-                if (!bc_read_f64(data, len, &pc, &v)) {
-                    fprintf(stderr, "bytecodeToAst: truncated BUILD_NUMBER_LIT value at pc %zu\n", pc);
-                    return NULL;
+                if (op == BC_BUILD_INT_LIT) {
+                    int64_t v = 0;
+                    if (!bc_read_i64(data, len, &pc, &v)) {
+                        fprintf(stderr, "bytecodeToAst: truncated BUILD_INT_LIT value at pc %zu\n", pc);
+                        return NULL;
+                    }
+                    values->obj = vm_update_shared_obj(vm, values->obj,
+                                                       urb_table_add(values->obj, vm_make_int_value(vm, (Int)v)));
+                } else {
+                    double v = 0.0;
+                    if (!bc_read_f64(data, len, &pc, &v)) {
+                        fprintf(stderr, "bytecodeToAst: truncated BUILD_FLOAT_LIT value at pc %zu\n", pc);
+                        return NULL;
+                    }
+                    values->obj = vm_update_shared_obj(vm, values->obj,
+                                                       urb_table_add(values->obj, vm_make_float_value(vm, (Float)v)));
                 }
-                values->obj = vm_update_shared_obj(vm, values->obj,
-                                                   urb_table_add(values->obj, vm_make_number_value(vm, (Float)v)));
             }
-            ast_set_kv(vm, node, "count", vm_make_number_value(vm, (Float)count));
+            ast_set_kv(vm, node, "count", vm_make_int_value(vm, (Int)count));
             ast_set_kv(vm, node, "values", values);
             break;
         }
@@ -1902,8 +2318,8 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                 free(name);
             }
 
-            ast_set_kv(vm, node, "argc", vm_make_number_value(vm, (Float)argc));
-            ast_set_kv(vm, node, "vararg", vm_make_number_value(vm, (Float)vararg));
+            ast_set_kv(vm, node, "argc", vm_make_int_value(vm, (Int)argc));
+            ast_set_kv(vm, node, "vararg", vm_make_int_value(vm, (Int)vararg));
             ast_set_kv(vm, node, "code", code);
             ast_set_kv(vm, node, "args", args);
             break;
@@ -1925,7 +2341,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                     fprintf(stderr, "bytecodeToAst: truncated CALL argc at pc %zu\n", pc);
                     return NULL;
                 }
-                ast_set_kv(vm, node, "argc", vm_make_number_value(vm, (Float)argc));
+                ast_set_kv(vm, node, "argc", vm_make_int_value(vm, (Int)argc));
             }
             break;
         }
@@ -1936,7 +2352,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                 fprintf(stderr, "bytecodeToAst: truncated jump at pc %zu\n", pc);
                 return NULL;
             }
-            ast_set_kv(vm, node, "target", vm_make_number_value(vm, (Float)target));
+            ast_set_kv(vm, node, "target", vm_make_int_value(vm, (Int)target));
             break;
         }
         case BC_INDEX:
@@ -1991,7 +2407,7 @@ static ObjEntry *vm_stack_pop_entry(VM *vm, const char *op, size_t pc)
 
 static int vm_key_is(ObjEntry *index, const char *name)
 {
-    if (!index || urb_obj_type(index->obj) != URB_T_BYTE) return 0;
+    if (!index || !entry_is_string(index)) return 0;
     return urb_bytes_eq_bytes(index->obj, name, strlen(name));
 }
 
@@ -2002,7 +2418,7 @@ static ObjEntry *vm_make_type_name(VM *vm, ObjEntry *target)
         name = "null";
     } else {
         Int type = urb_obj_type(target->obj);
-        if (type == URB_T_BYTE) {
+        if (type == URB_T_INT && entry_is_string(target)) {
             size_t len = urb_bytes_len(target->obj);
             if (len == 1) {
                 name = "char";
@@ -2013,28 +2429,53 @@ static ObjEntry *vm_make_type_name(VM *vm, ObjEntry *target)
             name = urb_type_name(type);
         }
     }
-    return vm_reg_alloc(vm, vm_alloc_bytes(vm, NULL, name, strlen(name)));
+    ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, URB_T_INT, NULL, name, strlen(name)));
+    if (entry) entry->is_string = 1;
+    return entry;
 }
 
-ObjEntry *vm_make_number_value(VM *vm, Float value)
+ObjEntry *vm_make_int_value(VM *vm, Int value)
 {
-    List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, 1);
-    Value v;
-    v.f = value;
-    obj = urb_push(obj, v);
+    List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, NULL, sizeof(Int));
+    vm_set_int_single(obj, value);
+    return vm_reg_alloc(vm, obj);
+}
+
+ObjEntry *vm_make_float_value(VM *vm, Float value)
+{
+    List *obj = vm_alloc_bytes(vm, URB_T_FLOAT, NULL, NULL, sizeof(Float));
+    vm_set_float_single(obj, value);
+    return vm_reg_alloc(vm, obj);
+}
+
+ObjEntry *vm_make_int_list(VM *vm, Int count)
+{
+    if (count < 0) return NULL;
+    List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
+    return vm_reg_alloc(vm, obj);
+}
+
+ObjEntry *vm_make_float_list(VM *vm, Int count)
+{
+    if (count < 0) return NULL;
+    List *obj = vm_alloc_bytes(vm, URB_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float));
     return vm_reg_alloc(vm, obj);
 }
 
 ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len)
 {
-    List *obj = vm_alloc_bytes(vm, NULL, s, len);
-    return vm_reg_alloc(vm, obj);
+    List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, s, len);
+    ObjEntry *entry = vm_reg_alloc(vm, obj);
+    if (entry) entry->is_string = 1;
+    return entry;
 }
 
 ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len)
 {
-    List *obj = vm_alloc_bytes(vm, NULL, s, len);
-    return vm_reg_alloc(vm, obj);
+    List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, s, len);
+    ObjEntry *entry = vm_reg_alloc(vm, obj);
+    if (entry) entry->is_string = 1;
+    return entry;
 }
 
 ObjEntry *vm_make_table_value(VM *vm, Int reserve)
@@ -2043,18 +2484,58 @@ ObjEntry *vm_make_table_value(VM *vm, Int reserve)
     return vm_reg_alloc(vm, obj);
 }
 
-static Int vm_meta_size(const List *obj)
+static ObjEntry *vm_make_view(VM *vm, ObjEntry *base, ViewType view)
 {
+    if (!base || !base->in_use) return NULL;
+    List *obj = vm_alloc_list(vm, URB_T_VIEW, NULL, 2);
+    Value v;
+    v.p = base;
+    obj = urb_push(obj, v);
+    v.i = (Int)view;
+    obj = urb_push(obj, v);
+    return vm_reg_alloc(vm, obj);
+}
+
+static Int vm_meta_size_entry(const ObjEntry *entry)
+{
+    if (!entry || !entry->in_use) return 0;
+    List *obj = entry->obj;
     Int type = urb_obj_type(obj);
     if (type == URB_T_NULL) return 0;
+    if (type == URB_T_TABLE) {
+        if (obj->size < 2) return 0;
+        return obj->size - 2;
+    }
+    if (type == URB_T_INT) {
+        if (entry_is_string(entry)) return (Int)urb_bytes_len(obj);
+        return vm_bytes_to_count(urb_bytes_len(obj), URB_T_INT);
+    }
+    if (type == URB_T_FLOAT) {
+        return vm_bytes_to_count(urb_bytes_len(obj), URB_T_FLOAT);
+    }
     if (obj->size < 2) return 0;
     return obj->size - 2;
 }
 
-static Int vm_meta_capacity(const List *obj)
+static Int vm_meta_capacity_entry(const ObjEntry *entry)
 {
+    if (!entry || !entry->in_use) return 0;
+    List *obj = entry->obj;
     Int type = urb_obj_type(obj);
     if (type == URB_T_NULL) return 0;
+    if (type == URB_T_TABLE) {
+        if (obj->capacity < 2) return 0;
+        return obj->capacity - 2;
+    }
+    if (type == URB_T_INT) {
+        size_t bytes = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
+        if (entry_is_string(entry)) return (Int)bytes;
+        return vm_bytes_to_count(bytes, URB_T_INT);
+    }
+    if (type == URB_T_FLOAT) {
+        size_t bytes = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
+        return vm_bytes_to_count(bytes, URB_T_FLOAT);
+    }
     if (obj->capacity < 2) return 0;
     return obj->capacity - 2;
 }
@@ -2062,7 +2543,7 @@ static Int vm_meta_capacity(const List *obj)
 static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t pc)
 {
     (void)pc;
-    if (!target || !index || urb_obj_type(index->obj) != URB_T_BYTE) return NULL;
+    if (!target || !index || !entry_is_string(index)) return NULL;
     if (vm_key_is(index, "name")) {
         ObjEntry *key = vm_entry_key(target);
         return key ? key : vm->null_entry;
@@ -2071,10 +2552,32 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
         return vm_make_type_name(vm, target);
     }
     if (vm_key_is(index, "size")) {
-        return vm_make_number_value(vm, (Float)vm_meta_size(target->obj));
+        return vm_make_int_value(vm, vm_meta_size_entry(target));
     }
     if (vm_key_is(index, "capacity")) {
-        return vm_make_number_value(vm, (Float)vm_meta_capacity(target->obj));
+        return vm_make_int_value(vm, vm_meta_capacity_entry(target));
+    }
+    if (vm_key_is(index, "string")) {
+        if (urb_obj_type(target->obj) != URB_T_INT) return NULL;
+        ObjEntry *out = vm_reg_alloc(vm, target->obj);
+        if (!out) return NULL;
+        out->key = vm_entry_key(target);
+        out->is_string = 1;
+        return out;
+    }
+    {
+        const char *name = urb_bytes_data(index->obj);
+        size_t len = urb_bytes_len(index->obj);
+        ViewType view;
+        if (vm_view_from_name(name, len, &view)) {
+            Int type = urb_obj_type(target->obj);
+            if (type == URB_T_INT && !vm_view_is_float(view)) {
+                return vm_make_view(vm, target, view);
+            }
+            if (type == URB_T_FLOAT && vm_view_is_float(view)) {
+                return vm_make_view(vm, target, view);
+            }
+        }
     }
     return NULL;
 }
@@ -2093,6 +2596,23 @@ static List *vm_resize_bytes(List *obj, Int new_size)
     }
     obj->size = (UHalf)(len + 2);
     obj->capacity = (UHalf)(len + 2);
+    return obj;
+}
+
+static List *vm_resize_bytes_capacity(List *obj, Int new_cap)
+{
+    if (new_cap < 0) return NULL;
+    size_t cap = (size_t)new_cap;
+    if (cap > urb_bytes_max() - 2) return NULL;
+    size_t bytes = sizeof(List) + 2 * sizeof(Value) + cap;
+    size_t old_len = urb_bytes_len(obj);
+    List *resized = (List*)realloc(obj, bytes);
+    if (!resized && cap > 0) return NULL;
+    if (resized) obj = resized;
+    obj->capacity = (UHalf)(cap + 2);
+    if (old_len > cap) {
+        obj->size = (UHalf)(cap + 2);
+    }
     return obj;
 }
 
@@ -2208,7 +2728,7 @@ static ObjEntry *vm_stack_arg(List *stack, uint32_t argc, uint32_t idx)
 static void vm_set_argc(VM *vm, uint32_t argc)
 {
     if (!vm || !vm->argc_entry) return;
-    urb_number_set_single(vm->argc_entry->obj, (Float)argc);
+    vm_set_int_single(vm->argc_entry->obj, (Int)argc);
 }
 
 static ObjEntry *vm_eval_default(VM *vm, List *stack, unsigned char *code, size_t len)
@@ -2242,7 +2762,7 @@ static void vm_release_local_scope(VM *vm, ObjEntry *local, List *stack)
     for (Int i = 2; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         ObjEntry *key = vm_entry_key(entry);
-        if (key && urb_obj_type(key->obj) == URB_T_BYTE &&
+        if (key && entry_is_string(key) &&
             urb_bytes_eq_cstr(key->obj, "local")) {
             continue;
         }
@@ -2297,15 +2817,20 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc, Ob
 
 static int vm_number_to_index(ObjEntry *entry, Int *out, const char *op, size_t pc)
 {
-    if (!entry || urb_obj_type(entry->obj) != URB_T_NUMBER || entry->obj->size < 3) {
+    Int iv = 0;
+    Float fv = 0;
+    int is_float = 0;
+    if (!vm_entry_number(entry, &iv, &fv, &is_float, op, pc)) {
         fprintf(stderr, "bytecode error at pc %zu: %s expects number index\n", pc, op);
         return 0;
     }
-    Float v = entry->obj->data[2].f;
-    Int iv = (Int)v;
-    if ((Float)iv != v) {
-        fprintf(stderr, "bytecode error at pc %zu: %s index must be integer\n", pc, op);
-        return 0;
+    if (is_float) {
+        Int fiv = (Int)fv;
+        if ((Float)fiv != fv) {
+            fprintf(stderr, "bytecode error at pc %zu: %s index must be integer\n", pc, op);
+            return 0;
+        }
+        iv = fiv;
     }
     *out = iv;
     return 1;
@@ -2325,12 +2850,106 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
     if (type == URB_T_NULL) {
         return vm->null_entry;
     }
+    if (type == URB_T_VIEW) {
+        if (!index) {
+            fprintf(stderr, "bytecode error at pc %zu: INDEX missing view index\n", pc);
+            return NULL;
+        }
+        ObjEntry *base = (ObjEntry*)target->obj->data[2].p;
+        ViewType view = (ViewType)target->obj->data[3].i;
+        if (!base || !base->in_use) {
+            fprintf(stderr, "bytecode error at pc %zu: INDEX view base missing\n", pc);
+            return NULL;
+        }
+        Int idx = 0;
+        if (!vm_number_to_index(index, &idx, "INDEX", pc)) return NULL;
+        if (idx < 0) {
+            fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
+            return vm->null_entry;
+        }
+        size_t stride = vm_view_stride(view);
+        size_t offset = (size_t)idx * stride;
+        size_t len = urb_bytes_len(base->obj);
+        if (offset + stride > len) {
+            fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
+            return vm->null_entry;
+        }
+        unsigned char *buf = (unsigned char*)urb_bytes_data(base->obj) + offset;
+        if (vm_view_is_float(view)) {
+            if (view == VIEW_F32) {
+                float fv = 0.0f;
+                memcpy(&fv, buf, sizeof(fv));
+                return vm_make_float_value(vm, (Float)fv);
+            }
+            if (view == VIEW_F64) {
+                double dv = 0.0;
+                memcpy(&dv, buf, sizeof(dv));
+                return vm_make_float_value(vm, (Float)dv);
+            }
+        } else {
+            Int out = 0;
+            switch (view) {
+            case VIEW_I8: {
+                int8_t v = 0;
+                memcpy(&v, buf, sizeof(v));
+                out = (Int)v;
+                break;
+            }
+            case VIEW_U8: {
+                uint8_t v = 0;
+                memcpy(&v, buf, sizeof(v));
+                out = (Int)v;
+                break;
+            }
+            case VIEW_I16: {
+                int16_t v = 0;
+                memcpy(&v, buf, sizeof(v));
+                out = (Int)v;
+                break;
+            }
+            case VIEW_U16: {
+                uint16_t v = 0;
+                memcpy(&v, buf, sizeof(v));
+                out = (Int)v;
+                break;
+            }
+            case VIEW_I32: {
+                int32_t v = 0;
+                memcpy(&v, buf, sizeof(v));
+                out = (Int)v;
+                break;
+            }
+            case VIEW_U32: {
+                uint32_t v = 0;
+                memcpy(&v, buf, sizeof(v));
+                out = (Int)v;
+                break;
+            }
+            case VIEW_I64: {
+                int64_t v = 0;
+                memcpy(&v, buf, sizeof(v));
+                out = (Int)v;
+                break;
+            }
+            case VIEW_U64: {
+                uint64_t v = 0;
+                memcpy(&v, buf, sizeof(v));
+                out = (Int)v;
+                break;
+            }
+            default:
+                break;
+            }
+            return vm_make_int_value(vm, out);
+        }
+        return vm->null_entry;
+    }
     if (type == URB_T_TABLE) {
         if (!index) {
             fprintf(stderr, "bytecode error at pc %zu: INDEX object missing key/index\n", pc);
             return NULL;
         }
-        if (urb_obj_type(index->obj) == URB_T_BYTE) {
+        if (entry_is_string(index)) {
             return vm_object_find_by_key_len(vm, target->obj,
                                              urb_bytes_data(index->obj),
                                              urb_bytes_len(index->obj));
@@ -2345,13 +2964,13 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
         return (ObjEntry*)target->obj->data[pos].p;
     }
 
-    if (type == URB_T_NATIVE && index && urb_obj_type(index->obj) == URB_T_BYTE) {
+    if (type == URB_T_NATIVE && index && entry_is_string(index)) {
         return vm_object_find_by_key_len(vm, target->obj,
                                          urb_bytes_data(index->obj),
                                          urb_bytes_len(index->obj));
     }
 
-    if (index && urb_obj_type(index->obj) == URB_T_BYTE) {
+    if (index && entry_is_string(index)) {
         if (vm && vm->common_entry) {
             ObjEntry *method = vm_object_find_direct(vm->common_entry->obj,
                                                      urb_bytes_data(index->obj),
@@ -2364,26 +2983,37 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
     Int idx = 0;
     if (!vm_number_to_index(index, &idx, "INDEX", pc)) return NULL;
 
-    if (type == URB_T_BYTE || type == URB_T_BYTE) {
-        size_t len = urb_bytes_len(target->obj);
-        if (idx < 0 || (size_t)idx >= len) {
+    if (type == URB_T_INT) {
+        if (entry_is_string(target)) {
+            size_t len = urb_bytes_len(target->obj);
+            if (idx < 0 || (size_t)idx >= len) {
+                fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
+                return vm->null_entry;
+            }
+            char c = urb_bytes_data(target->obj)[idx];
+            ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, URB_T_INT, NULL, &c, 1));
+            if (entry) entry->is_string = 1;
+            return entry;
+        }
+        Int count = vm_bytes_to_count(urb_bytes_len(target->obj), URB_T_INT);
+        if (idx < 0 || idx >= count) {
             fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
             return vm->null_entry;
         }
-        char c = urb_bytes_data(target->obj)[idx];
-        ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, NULL, &c, 1));
-        return entry;
+        Int v = 0;
+        if (!vm_read_int_at(target->obj, idx, &v)) return vm->null_entry;
+        return vm_make_int_value(vm, v);
     }
 
-    if (type == URB_T_NUMBER) {
-        Int pos = idx + 2;
-        if (idx < 0 || pos >= target->obj->size) {
+    if (type == URB_T_FLOAT) {
+        Int count = vm_bytes_to_count(urb_bytes_len(target->obj), URB_T_FLOAT);
+        if (idx < 0 || idx >= count) {
             fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
             return vm->null_entry;
         }
-        List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, 1);
-        obj = urb_push(obj, target->obj->data[pos]);
-        return vm_reg_alloc(vm, obj);
+        Float v = 0;
+        if (!vm_read_float_at(target->obj, idx, &v)) return vm->null_entry;
+        return vm_make_float_value(vm, v);
     }
 
     fprintf(stderr, "bytecode error at pc %zu: INDEX unsupported type %s\n",
@@ -2405,7 +3035,7 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
     for (Int i = start; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         ObjEntry *key = vm_entry_key(entry);
-        if (!key || urb_obj_type(key->obj) != URB_T_BYTE) continue;
+        if (!key || !entry_is_string(key)) continue;
         if (urb_bytes_eq_bytes(key->obj, name, len)) {
             found = entry;
             break;
@@ -2415,25 +3045,8 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
         if (found->obj == value->obj) return 1;
         Int found_type = urb_obj_type(found->obj);
         Int value_type = urb_obj_type(value->obj);
-        if (found_type == URB_T_NUMBER && value_type == URB_T_NUMBER) {
-            List *dst = found->obj;
-            List *src = value->obj;
-            size_t count = src->size >= 2 ? (size_t)(src->size - 2) : 0;
-            size_t cap = dst->capacity >= 2 ? (size_t)(dst->capacity - 2) : 0;
-            if (count > cap) {
-                List *old_dst = dst;
-                dst = vm_resize_list(dst, (Int)count, vm->null_entry);
-                if (!dst) return 0;
-                dst = vm_update_shared_obj(vm, old_dst, dst);
-                found->obj = dst;
-            }
-            dst->size = (UHalf)(count + 2);
-            for (size_t i = 0; i < count; i++) {
-                dst->data[i + 2] = src->data[i + 2];
-            }
-            return 1;
-        }
-        if (found_type == URB_T_BYTE && value_type == URB_T_BYTE) {
+        if ((found_type == URB_T_INT && value_type == URB_T_INT) ||
+            (found_type == URB_T_FLOAT && value_type == URB_T_FLOAT)) {
             List *dst = found->obj;
             List *src = value->obj;
             size_t len_bytes = urb_bytes_len(src);
@@ -2445,6 +3058,7 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
             if (len_bytes) {
                 memcpy(urb_bytes_data(dst), urb_bytes_data(src), len_bytes);
             }
+            found->is_string = value->is_string;
             return 1;
         }
         if (found_type == URB_T_TABLE && value_type == URB_T_TABLE) {
@@ -2491,13 +3105,13 @@ int vm_object_set_by_key(VM *vm, ObjEntry *target, const char *name, size_t len,
 
 static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc)
 {
-    if (!target || !index || urb_obj_type(index->obj) != URB_T_BYTE) return 0;
+    if (!target || !index || !entry_is_string(index)) return 0;
     if (vm_key_is(index, "name")) {
         if (!value || urb_obj_type(value->obj) == URB_T_NULL) {
             target->key = NULL;
             return 1;
         }
-        if (urb_obj_type(value->obj) != URB_T_BYTE && urb_obj_type(value->obj) != URB_T_BYTE) {
+        if (!entry_is_string(value)) {
             fprintf(stderr, "bytecode error at pc %zu: name expects string or null\n", pc);
             return -1;
         }
@@ -2506,7 +3120,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         return 1;
     }
     if (vm_key_is(index, "type")) {
-        if (!value || (urb_obj_type(value->obj) != URB_T_BYTE && urb_obj_type(value->obj) != URB_T_BYTE)) {
+        if (!value || !entry_is_string(value)) {
             fprintf(stderr, "bytecode error at pc %zu: type expects string\n", pc);
             return -1;
         }
@@ -2514,11 +3128,11 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         size_t len = urb_bytes_len(value->obj);
         Int next = -1;
         if (len == 4 && strncmp(name, "null", 4) == 0) next = URB_T_NULL;
-    else if (len == 6 && strncmp(name, "number", 6) == 0) next = URB_T_NUMBER;
-    else if (len == 5 && strncmp(name, "table", 5) == 0) next = URB_T_TABLE;
-        else if (len == 4 && strncmp(name, "char", 4) == 0) next = URB_T_BYTE;
-        else if (len == 6 && strncmp(name, "string", 6) == 0) next = URB_T_BYTE;
-        else if (len == 4 && strncmp(name, "byte", 4) == 0) next = URB_T_BYTE;
+        else if (len == 3 && strncmp(name, "int", 3) == 0) next = URB_T_INT;
+        else if (len == 5 && strncmp(name, "float", 5) == 0) next = URB_T_FLOAT;
+        else if (len == 5 && strncmp(name, "table", 5) == 0) next = URB_T_TABLE;
+        else if (len == 4 && strncmp(name, "char", 4) == 0) next = URB_T_INT;
+        else if (len == 6 && strncmp(name, "string", 6) == 0) next = URB_T_INT;
         else if (len == 6 && strncmp(name, "native", 6) == 0) next = URB_T_NATIVE;
         else if (len == 6 && strncmp(name, "lambda", 6) == 0) next = URB_T_LAMBDA;
         else {
@@ -2526,27 +3140,47 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             return -1;
         }
         target->obj->data[0].i = next;
+        if (next == URB_T_INT && (len == 4 || len == 6)) {
+            target->is_string = 1;
+        } else if (next == URB_T_INT || next == URB_T_FLOAT) {
+            target->is_string = 0;
+        }
         return 1;
     }
     if (vm_key_is(index, "size")) {
-        if (urb_obj_type(value->obj) != URB_T_NUMBER || value->obj->size < 3) {
+        Int iv = 0;
+        Float fv = 0;
+        int is_float = 0;
+        if (!vm_entry_number(value, &iv, &fv, &is_float, "size", pc)) {
             fprintf(stderr, "bytecode error at pc %zu: size expects number\n", pc);
             return -1;
         }
-        Int new_size = (Int)value->obj->data[2].f;
-        if ((Float)new_size != value->obj->data[2].f) {
+        if (is_float) {
+            Int cast = (Int)fv;
+            if ((Float)cast != fv) {
+                fprintf(stderr, "bytecode error at pc %zu: size expects integer\n", pc);
+                return -1;
+            }
+            iv = cast;
+        }
+        Int new_size = iv;
+        if (new_size < 0) {
             fprintf(stderr, "bytecode error at pc %zu: size expects integer\n", pc);
             return -1;
         }
         Int type = urb_obj_type(target->obj);
-        if (type == URB_T_BYTE || type == URB_T_BYTE) {
-            if (!vm_set_size_bytes(vm, target, new_size)) {
+        if (type == URB_T_INT || type == URB_T_FLOAT) {
+            Int bytes = new_size;
+            if (!(type == URB_T_INT && entry_is_string(target))) {
+                bytes = (Int)((size_t)new_size * vm_elem_size(type));
+            }
+            if (!vm_set_size_bytes(vm, target, bytes)) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize bytes\n", pc);
                 return -1;
             }
             return 1;
         }
-        if (type == URB_T_TABLE || type == URB_T_NUMBER) {
+        if (type == URB_T_TABLE) {
             if (!vm_set_size_list(vm, target, new_size, vm->null_entry)) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize list\n", pc);
                 return -1;
@@ -2557,30 +3191,42 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         return -1;
     }
     if (vm_key_is(index, "capacity")) {
-        if (urb_obj_type(value->obj) != URB_T_NUMBER || value->obj->size < 3) {
+        Int iv = 0;
+        Float fv = 0;
+        int is_float = 0;
+        if (!vm_entry_number(value, &iv, &fv, &is_float, "capacity", pc)) {
             fprintf(stderr, "bytecode error at pc %zu: capacity expects number\n", pc);
             return -1;
         }
-        Int new_cap = (Int)value->obj->data[2].f;
-        if ((Float)new_cap != value->obj->data[2].f) {
+        if (is_float) {
+            Int cast = (Int)fv;
+            if ((Float)cast != fv) {
+                fprintf(stderr, "bytecode error at pc %zu: capacity expects integer\n", pc);
+                return -1;
+            }
+            iv = cast;
+        }
+        Int new_cap = iv;
+        if (new_cap < 0) {
             fprintf(stderr, "bytecode error at pc %zu: capacity expects integer\n", pc);
             return -1;
         }
-        if (new_cap < 0) {
-            fprintf(stderr, "bytecode error at pc %zu: capacity expects non-negative\n", pc);
-            return -1;
-        }
         Int type = urb_obj_type(target->obj);
-        if (type == URB_T_BYTE || type == URB_T_BYTE) {
-            List *resized = vm_resize_bytes(target->obj, new_cap);
+        if (type == URB_T_INT || type == URB_T_FLOAT) {
+            Int bytes = new_cap;
+            if (!(type == URB_T_INT && entry_is_string(target))) {
+                bytes = (Int)((size_t)new_cap * vm_elem_size(type));
+            }
+            List *old_obj = target->obj;
+            List *resized = vm_resize_bytes_capacity(target->obj, bytes);
             if (!resized) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize bytes\n", pc);
                 return -1;
             }
-            target->obj = resized;
+            target->obj = vm_update_shared_obj(vm, old_obj, resized);
             return 1;
         }
-        if (type == URB_T_TABLE || type == URB_T_NUMBER) {
+        if (type == URB_T_TABLE) {
             size_t payload = (size_t)new_cap;
             size_t new_total = payload + 2;
             size_t bytes = sizeof(List) + new_total * sizeof(Value);
@@ -2624,17 +3270,22 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         }
 
         switch (op) {
-        case BC_PUSH_NUM: {
-            double v = 0.0;
-            if (!bc_read_f64(data, len, &pc, &v)) {
-                fprintf(stderr, "bytecode error at pc %zu: truncated PUSH_NUM\n", pc);
+        case BC_PUSH_INT: {
+            int64_t v = 0;
+            if (!bc_read_i64(data, len, &pc, &v)) {
+                fprintf(stderr, "bytecode error at pc %zu: truncated PUSH_INT\n", pc);
                 return 0;
             }
-            List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, 1);
-            Value val;
-            val.f = (Float)v;
-            obj = urb_push(obj, val);
-            vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
+            vm_stack_push_entry(vm, vm_make_int_value(vm, (Int)v));
+            break;
+        }
+        case BC_PUSH_FLOAT: {
+            double v = 0.0;
+            if (!bc_read_f64(data, len, &pc, &v)) {
+                fprintf(stderr, "bytecode error at pc %zu: truncated PUSH_FLOAT\n", pc);
+                return 0;
+            }
+            vm_stack_push_entry(vm, vm_make_float_value(vm, (Float)v));
             break;
         }
         case BC_PUSH_CHAR:
@@ -2647,96 +3298,96 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             }
             char *processed = papagaio_process_text(vm, (const char*)buf, slen);
             if (processed) {
-                List *obj = vm_alloc_bytes(vm, NULL, processed, strlen(processed));
+                List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, processed, strlen(processed));
                 free(processed);
                 free(buf);
-                vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
+                ObjEntry *entry = vm_reg_alloc(vm, obj);
+                if (entry) entry->is_string = 1;
+                vm_stack_push_entry(vm, entry);
                 break;
             }
-            List *obj = vm_alloc_bytes(vm, NULL, (const char*)buf, slen);
+            List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, (const char*)buf, slen);
             free(buf);
-            vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
+            ObjEntry *entry = vm_reg_alloc(vm, obj);
+            if (entry) entry->is_string = 1;
+            vm_stack_push_entry(vm, entry);
             break;
         }
-        case BC_PUSH_BYTE: {
-            uint8_t v = 0;
-            if (!bc_read_u8(data, len, &pc, &v)) {
-                fprintf(stderr, "bytecode error at pc %zu: truncated PUSH_BYTE\n", pc);
-                return 0;
-            }
-            unsigned char b = v;
-            List *obj = vm_alloc_bytes(vm, NULL, (const char*)&b, 1);
-            vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
-            break;
-        }
-        case BC_BUILD_NUMBER: {
+        case BC_BUILD_INT: {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
-                fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_NUMBER\n", pc);
+                fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_INT\n", pc);
                 return 0;
             }
-            List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, (Int)count);
-            Value *vals = (Value*)calloc(count, sizeof(Value));
-            if (!vals && count > 0) {
-                fprintf(stderr, "bytecode error at pc %zu: out of memory\n", pc);
-                return 0;
-            }
+            List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
             for (uint32_t i = 0; i < count; i++) {
-                ObjEntry *entry = vm_stack_pop_entry(vm, "BUILD_NUMBER", pc);
+                ObjEntry *entry = vm_stack_pop_entry(vm, "BUILD_INT", pc);
+                Int iv = 0;
+                Float fv = 0;
+                int is_float = 0;
                 if (!entry) return 0;
-                if (urb_obj_type(entry->obj) != URB_T_NUMBER || entry->obj->size < 3) {
-                    fprintf(stderr, "bytecode error at pc %zu: BUILD_NUMBER expects numbers\n", pc);
-                    free(vals);
+                if (!vm_entry_number(entry, &iv, &fv, &is_float, "BUILD_INT", pc) || is_float) {
+                    fprintf(stderr, "bytecode error at pc %zu: BUILD_INT expects int values\n", pc);
                     return 0;
                 }
-                vals[count - 1 - i] = entry->obj->data[2];
+                vm_write_int_at(obj, (Int)(count - 1 - i), iv);
             }
-            for (uint32_t i = 0; i < count; i++) {
-                obj = urb_push(obj, vals[i]);
-            }
-            free(vals);
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
-        case BC_BUILD_NUMBER_LIT: {
+        case BC_BUILD_FLOAT: {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
-                fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_NUMBER_LIT\n", pc);
+                fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_FLOAT\n", pc);
                 return 0;
             }
-            List *obj = vm_alloc_list(vm, URB_T_NUMBER, NULL, (Int)count);
+            List *obj = vm_alloc_bytes(vm, URB_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float));
+            for (uint32_t i = 0; i < count; i++) {
+                ObjEntry *entry = vm_stack_pop_entry(vm, "BUILD_FLOAT", pc);
+                Int iv = 0;
+                Float fv = 0;
+                int is_float = 0;
+                if (!entry) return 0;
+                if (!vm_entry_number(entry, &iv, &fv, &is_float, "BUILD_FLOAT", pc)) {
+                    return 0;
+                }
+                vm_write_float_at(obj, (Int)(count - 1 - i), is_float ? fv : (Float)iv);
+            }
+            vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
+            break;
+        }
+        case BC_BUILD_INT_LIT: {
+            uint32_t count = 0;
+            if (!bc_read_u32(data, len, &pc, &count)) {
+                fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_INT_LIT\n", pc);
+                return 0;
+            }
+            List *obj = vm_alloc_bytes(vm, URB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
+            for (uint32_t i = 0; i < count; i++) {
+                int64_t v = 0;
+                if (!bc_read_i64(data, len, &pc, &v)) {
+                    fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_INT_LIT value\n", pc);
+                    return 0;
+                }
+                vm_write_int_at(obj, (Int)i, (Int)v);
+            }
+            vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
+            break;
+        }
+        case BC_BUILD_FLOAT_LIT: {
+            uint32_t count = 0;
+            if (!bc_read_u32(data, len, &pc, &count)) {
+                fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_FLOAT_LIT\n", pc);
+                return 0;
+            }
+            List *obj = vm_alloc_bytes(vm, URB_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float));
             for (uint32_t i = 0; i < count; i++) {
                 double v = 0.0;
                 if (!bc_read_f64(data, len, &pc, &v)) {
-                    fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_NUMBER_LIT value\n", pc);
+                    fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_FLOAT_LIT value\n", pc);
                     return 0;
                 }
-                Value val;
-                val.f = (Float)v;
-                obj = urb_push(obj, val);
-            }
-            vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
-            break;
-        }
-        case BC_BUILD_BYTE: {
-            uint32_t count = 0;
-            if (!bc_read_u32(data, len, &pc, &count)) {
-                fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_BYTE\n", pc);
-                return 0;
-            }
-            if (count > 0xFFFFFFFFu) {
-                fprintf(stderr, "bytecode error at pc %zu: BUILD_BYTE count too large\n", pc);
-                return 0;
-            }
-            List *obj = vm_alloc_bytes(vm, NULL, NULL, count);
-            for (uint32_t i = 0; i < count; i++) {
-                ObjEntry *entry = vm_stack_pop_entry(vm, "BUILD_BYTE", pc);
-                if (!entry) return 0;
-                if (urb_obj_type(entry->obj) != URB_T_BYTE || urb_bytes_len(entry->obj) != 1) {
-                    fprintf(stderr, "bytecode error at pc %zu: BUILD_BYTE expects single-byte values\n", pc);
-                    return 0;
-                }
-                urb_bytes_data(obj)[count - 1 - i] = urb_bytes_data(entry->obj)[0];
+                vm_write_float_at(obj, (Int)i, (Float)v);
             }
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
@@ -2759,7 +3410,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             for (uint32_t i = 0; i < count; i++) {
                 ObjEntry *val = vm_stack_pop_entry(vm, "BUILD_OBJECT", pc);
                 ObjEntry *key = vm_stack_pop_entry(vm, "BUILD_OBJECT", pc);
-                if (!key || urb_obj_type(key->obj) != URB_T_BYTE) {
+                if (!key || !entry_is_string(key)) {
                     fprintf(stderr, "bytecode error at pc %zu: BUILD_OBJECT expects string keys\n", pc);
                     free(keys);
                     free(vals);
@@ -2925,7 +3576,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             if (meta > 0) break;
 
             Int type = urb_obj_type(target->obj);
-            if (type == URB_T_TABLE && urb_obj_type(index->obj) == URB_T_BYTE) {
+            if (type == URB_T_TABLE && entry_is_string(index)) {
                 if (!vm_object_set_by_key_len(vm, &target->obj,
                                               urb_bytes_data(index->obj),
                                               urb_bytes_len(index->obj),
@@ -2938,43 +3589,152 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             Int idx = 0;
             if (!vm_number_to_index(index, &idx, "STORE_INDEX", pc)) return 0;
 
-            if (type == URB_T_NUMBER) {
-                Int pos = idx + 2;
-                if (idx < 0 || pos >= target->obj->size) {
+            if (type == URB_T_VIEW) {
+                ObjEntry *base = (ObjEntry*)target->obj->data[2].p;
+                ViewType view = (ViewType)target->obj->data[3].i;
+                if (!base || !base->in_use) {
+                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX view base missing\n", pc);
+                    return 0;
+                }
+                if (idx < 0) {
                     fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
                     return 0;
                 }
-                if (urb_obj_type(value->obj) != URB_T_NUMBER || value->obj->size < 3) {
-                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects number\n", pc);
+                size_t stride = vm_view_stride(view);
+                size_t offset = (size_t)idx * stride;
+                size_t len = urb_bytes_len(base->obj);
+                if (offset + stride > len) {
+                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
                     return 0;
                 }
-                target->obj->data[pos] = value->obj->data[2];
+                unsigned char *buf = (unsigned char*)urb_bytes_data(base->obj) + offset;
+                Int iv = 0;
+                Float fv = 0;
+                int is_float = 0;
+                if (!vm_entry_number(value, &iv, &fv, &is_float, "STORE_INDEX", pc)) {
+                    return 0;
+                }
+                if (vm_view_is_float(view)) {
+                    if (view == VIEW_F32) {
+                        float out = is_float ? (float)fv : (float)iv;
+                        memcpy(buf, &out, sizeof(out));
+                        break;
+                    }
+                    if (view == VIEW_F64) {
+                        double out = is_float ? (double)fv : (double)iv;
+                        memcpy(buf, &out, sizeof(out));
+                        break;
+                    }
+                } else {
+                    switch (view) {
+                    case VIEW_I8: {
+                        int8_t v = (int8_t)(is_float ? fv : iv);
+                        memcpy(buf, &v, sizeof(v));
+                        break;
+                    }
+                    case VIEW_U8: {
+                        uint8_t v = (uint8_t)(is_float ? fv : iv);
+                        memcpy(buf, &v, sizeof(v));
+                        break;
+                    }
+                    case VIEW_I16: {
+                        int16_t v = (int16_t)(is_float ? fv : iv);
+                        memcpy(buf, &v, sizeof(v));
+                        break;
+                    }
+                    case VIEW_U16: {
+                        uint16_t v = (uint16_t)(is_float ? fv : iv);
+                        memcpy(buf, &v, sizeof(v));
+                        break;
+                    }
+                    case VIEW_I32: {
+                        int32_t v = (int32_t)(is_float ? fv : iv);
+                        memcpy(buf, &v, sizeof(v));
+                        break;
+                    }
+                    case VIEW_U32: {
+                        uint32_t v = (uint32_t)(is_float ? fv : iv);
+                        memcpy(buf, &v, sizeof(v));
+                        break;
+                    }
+                    case VIEW_I64: {
+                        int64_t v = (int64_t)(is_float ? fv : iv);
+                        memcpy(buf, &v, sizeof(v));
+                        break;
+                    }
+                    case VIEW_U64: {
+                        uint64_t v = (uint64_t)(is_float ? fv : iv);
+                        memcpy(buf, &v, sizeof(v));
+                        break;
+                    }
+                    default:
+                        break;
+                    }
+                }
                 break;
             }
 
-            if (type == URB_T_BYTE || type == URB_T_BYTE) {
-                size_t len = urb_bytes_len(target->obj);
-                if (idx < 0 || (size_t)idx >= len) {
-                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
-                    return 0;
-                }
-                Int vtype = urb_obj_type(value->obj);
-                if ((vtype == URB_T_BYTE || vtype == URB_T_BYTE) && urb_bytes_len(value->obj) == 1) {
-                    urb_bytes_data(target->obj)[idx] = urb_bytes_data(value->obj)[0];
-                    break;
-                }
-                if (vtype == URB_T_NUMBER && value->obj->size == 3) {
-                    double v = value->obj->data[2].f;
-                    Int iv = (Int)v;
-                    if (v < 0 || v > 255 || (double)iv != v) {
+            if (type == URB_T_INT) {
+                if (entry_is_string(target)) {
+                    size_t len = urb_bytes_len(target->obj);
+                    if (idx < 0 || (size_t)idx >= len) {
+                        fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
+                        return 0;
+                    }
+                    if (entry_is_string(value) && urb_bytes_len(value->obj) == 1) {
+                        urb_bytes_data(target->obj)[idx] = urb_bytes_data(value->obj)[0];
+                        break;
+                    }
+                    Int iv = 0;
+                    Float fv = 0;
+                    int is_float = 0;
+                    if (!vm_entry_number(value, &iv, &fv, &is_float, "STORE_INDEX", pc)) {
+                        return 0;
+                    }
+                    if (is_float) {
+                        Int cast = (Int)fv;
+                        if ((Float)cast != fv) {
+                            fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects byte-sized number\n", pc);
+                            return 0;
+                        }
+                        iv = cast;
+                    }
+                    if (iv < 0 || iv > 255) {
                         fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects byte-sized number\n", pc);
                         return 0;
                     }
                     urb_bytes_data(target->obj)[idx] = (unsigned char)iv;
                     break;
                 }
-                fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects single string element or byte-sized number\n", pc);
-                return 0;
+                Int count = vm_bytes_to_count(urb_bytes_len(target->obj), URB_T_INT);
+                if (idx < 0 || idx >= count) {
+                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
+                    return 0;
+                }
+                Int iv = 0;
+                Float fv = 0;
+                int is_float = 0;
+                if (!vm_entry_number(value, &iv, &fv, &is_float, "STORE_INDEX", pc) || is_float) {
+                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects int\n", pc);
+                    return 0;
+                }
+                vm_write_int_at(target->obj, idx, iv);
+                break;
+            }
+
+            if (type == URB_T_FLOAT) {
+                Int count = vm_bytes_to_count(urb_bytes_len(target->obj), URB_T_FLOAT);
+                if (idx < 0 || idx >= count) {
+                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
+                    return 0;
+                }
+                Int iv = 0;
+                Float fv = 0;
+                int is_float = 0;
+                if (!vm_entry_number(value, &iv, &fv, &is_float, "STORE_INDEX", pc)) {
+                    return 0;
+                }
+                vm_write_float_at(target->obj, idx, is_float ? fv : (Float)iv);
                 break;
             }
 
@@ -3062,9 +3822,9 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 return 0;
             }
             ObjEntry *old_this = vm->this_entry;
-            Float old_argc = 0;
-            if (vm->argc_entry && vm->argc_entry->obj->size >= 3) {
-                old_argc = vm->argc_entry->obj->data[2].f;
+            Int old_argc = 0;
+            if (vm->argc_entry) {
+                vm_read_int_at(vm->argc_entry->obj, 0, &old_argc);
             }
             vm_set_argc(vm, argc);
             Int stack_before = vm->stack_entry->obj->size;
@@ -3074,7 +3834,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 if (this_type == URB_T_TABLE) {
                     target = vm_object_find_by_key_len(vm, vm->this_entry->obj, (char*)name, name_len);
                     if (target == vm->null_entry) target = NULL;
-                } else if (this_type == URB_T_NUMBER || this_type == URB_T_BYTE || this_type == URB_T_BYTE) {
+                } else if (this_type == URB_T_INT || this_type == URB_T_FLOAT || this_type == URB_T_VIEW) {
                     if (vm->common_entry) {
                         target = vm_object_find_direct(vm->common_entry->obj, (char*)name, name_len);
                     }
@@ -3141,7 +3901,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             }
             vm->this_entry = old_this;
             if (vm->argc_entry && vm->argc_entry->obj->size >= 3) {
-                vm->argc_entry->obj->data[2].f = old_argc;
+                vm_set_int_single(vm->argc_entry->obj, old_argc);
             }
             break;
         }
@@ -3193,16 +3953,14 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             ObjEntry *right = vm_stack_pop_entry(vm, "OP", pc);
             ObjEntry *left = vm_stack_pop_entry(vm, "OP", pc);
             if (!left || !right) return 0;
-            Int lt = urb_obj_type(left->obj);
-            Int rt = urb_obj_type(right->obj);
             if (op == BC_ADD &&
-                ((lt == URB_T_BYTE || lt == URB_T_BYTE) ||
-                 (rt == URB_T_BYTE || rt == URB_T_BYTE))) {
+                (entry_is_string(left) || entry_is_string(right))) {
                 StrBuf buf;
                 sb_init(&buf);
                 vm_append_value_text(vm, left, &buf, 1);
                 vm_append_value_text(vm, right, &buf, 1);
-                ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, NULL, buf.data, buf.len));
+                ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, URB_T_INT, NULL, buf.data, buf.len));
+                if (entry) entry->is_string = 1;
                 sb_free(&buf);
                 vm_stack_push_entry(vm, entry);
                 break;
@@ -3211,13 +3969,13 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 int l = vm_entry_truthy(left);
                 int r = vm_entry_truthy(right);
                 int res = op == BC_AND ? (l && r) : (l || r);
-                vm_stack_push_entry(vm, vm_make_number_value(vm, (Float)(res ? 1 : 0)));
+                vm_stack_push_entry(vm, vm_make_int_value(vm, res ? 1 : 0));
                 break;
             }
             if (op == BC_EQ || op == BC_NEQ) {
                 int eq = vm_entry_equal(left, right);
                 int res = op == BC_EQ ? eq : !eq;
-                vm_stack_push_entry(vm, vm_make_number_value(vm, (Float)(res ? 1 : 0)));
+                vm_stack_push_entry(vm, vm_make_int_value(vm, res ? 1 : 0));
                 break;
             }
             if (op == BC_LT || op == BC_LTE || op == BC_GT || op == BC_GTE) {
@@ -3231,39 +3989,48 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 else if (op == BC_LTE) res = cmp <= 0;
                 else if (op == BC_GT) res = cmp > 0;
                 else if (op == BC_GTE) res = cmp >= 0;
-                vm_stack_push_entry(vm, vm_make_number_value(vm, (Float)(res ? 1 : 0)));
+                vm_stack_push_entry(vm, vm_make_int_value(vm, res ? 1 : 0));
                 break;
             }
 
-            Float lv = 0;
-            Float rv = 0;
-            if (!vm_entry_number(left, &lv, "OP", pc)) return 0;
-            if (!vm_entry_number(right, &rv, "OP", pc)) return 0;
-            Float out = 0;
+            Int li = 0;
+            Int ri = 0;
+            Float lf = 0;
+            Float rf = 0;
+            int lf_is_float = 0;
+            int rf_is_float = 0;
+            if (!vm_entry_number(left, &li, &lf, &lf_is_float, "OP", pc)) return 0;
+            if (!vm_entry_number(right, &ri, &rf, &rf_is_float, "OP", pc)) return 0;
+            double l = lf_is_float ? (double)lf : (double)li;
+            double r = rf_is_float ? (double)rf : (double)ri;
+            double out = 0.0;
             switch (op) {
-            case BC_ADD: out = lv + rv; break;
-            case BC_SUB: out = lv - rv; break;
-            case BC_MUL: out = lv * rv; break;
-            case BC_DIV: out = lv / rv; break;
-            case BC_MOD: out = (Float)fmod((double)lv, (double)rv); break;
+            case BC_ADD: out = l + r; break;
+            case BC_SUB: out = l - r; break;
+            case BC_MUL: out = l * r; break;
+            case BC_DIV: out = l / r; break;
+            case BC_MOD: out = fmod(l, r); break;
             default: break;
             }
-            vm_stack_push_entry(vm, vm_make_number_value(vm, out));
+            vm_stack_push_entry(vm, vm_make_number_result(vm, out));
             break;
         }
         case BC_NEG: {
             ObjEntry *value = vm_stack_pop_entry(vm, "NEG", pc);
             if (!value) return 0;
-            Float v = 0;
-            if (!vm_entry_number(value, &v, "NEG", pc)) return 0;
-            vm_stack_push_entry(vm, vm_make_number_value(vm, -v));
+            Int iv = 0;
+            Float fv = 0;
+            int is_float = 0;
+            if (!vm_entry_number(value, &iv, &fv, &is_float, "NEG", pc)) return 0;
+            double out = is_float ? -(double)fv : -(double)iv;
+            vm_stack_push_entry(vm, vm_make_number_result(vm, out));
             break;
         }
         case BC_NOT: {
             ObjEntry *value = vm_stack_pop_entry(vm, "NOT", pc);
             if (!value) return 0;
             int res = vm_entry_truthy(value) ? 0 : 1;
-            vm_stack_push_entry(vm, vm_make_number_value(vm, (Float)res));
+            vm_stack_push_entry(vm, vm_make_int_value(vm, res));
             break;
         }
         case BC_POP:
@@ -3276,7 +4043,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 return 0;
             }
             Int type = urb_obj_type(top->obj);
-            if (type == URB_T_NUMBER || type == URB_T_BYTE) {
+            if (type == URB_T_INT || type == URB_T_FLOAT) {
                 ObjEntry *dup = vm_clone_entry_deep(vm, top, NULL);
                 if (!dup) return 0;
                 vm_stack_push_entry(vm, dup);

@@ -2,7 +2,7 @@
 x = null;
 if (x) { println("yes"); } else { println("no"); }
 
-// Non-zero numbers are true.
+// Non-zero ints/floats are true.
 x = 2;
 if (x) { println("ok"); }
 

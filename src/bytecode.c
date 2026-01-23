@@ -49,6 +49,16 @@ int bc_emit_u32(Bytecode *bc, uint32_t v)
     return 1;
 }
 
+int bc_emit_i64(Bytecode *bc, int64_t v)
+{
+    if (!bc_grow(bc, 8)) return 0;
+    uint64_t u = (uint64_t)v;
+    for (int i = 0; i < 8; i++) {
+        bc->data[bc->len++] = (unsigned char)((u >> (i * 8)) & 0xFF);
+    }
+    return 1;
+}
+
 int bc_emit_f64(Bytecode *bc, double v)
 {
     if (!bc_grow(bc, 8)) return 0;
@@ -83,12 +93,12 @@ int bc_emit_string(Bytecode *bc, const char *s, size_t len)
 const char *bc_opcode_name(uint8_t op)
 {
     switch (op) {
-    case BC_PUSH_NUM: return "PUSH_NUM";
+    case BC_PUSH_INT: return "PUSH_INT";
+    case BC_PUSH_FLOAT: return "PUSH_FLOAT";
     case BC_PUSH_CHAR: return "PUSH_CHAR";
     case BC_PUSH_STRING: return "PUSH_STRING";
-    case BC_PUSH_BYTE: return "PUSH_BYTE";
-    case BC_BUILD_NUMBER: return "BUILD_NUMBER";
-    case BC_BUILD_BYTE: return "BUILD_BYTE";
+    case BC_BUILD_INT: return "BUILD_INT";
+    case BC_BUILD_FLOAT: return "BUILD_FLOAT";
     case BC_BUILD_OBJECT: return "BUILD_OBJECT";
     case BC_BUILD_FUNCTION: return "BUILD_FUNCTION";
     case BC_INDEX: return "INDEX";
@@ -106,7 +116,8 @@ const char *bc_opcode_name(uint8_t op)
     case BC_DUP: return "DUP";
     case BC_GC: return "GC";
     case BC_DUMP: return "DUMP";
-    case BC_BUILD_NUMBER_LIT: return "BUILD_NUMBER_LIT";
+    case BC_BUILD_INT_LIT: return "BUILD_INT_LIT";
+    case BC_BUILD_FLOAT_LIT: return "BUILD_FLOAT_LIT";
     case BC_ADD: return "ADD";
     case BC_SUB: return "SUB";
     case BC_MUL: return "MUL";

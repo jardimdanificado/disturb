@@ -1,5 +1,6 @@
 #include "asm.h"
 #include <ctype.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -112,6 +113,16 @@ static int parse_double(const char **p, double *out)
     return 1;
 }
 
+static int parse_i64(const char **p, int64_t *out)
+{
+    char *end = NULL;
+    long long v = strtoll(*p, &end, 10);
+    if (!end || end == *p) return 0;
+    *out = (int64_t)v;
+    *p = end;
+    return 1;
+}
+
 int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_cap)
 {
     bc_init(out);
@@ -129,15 +140,27 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
         }
         s = skip_ws(s);
 
-        if (strcmp(ident, "PUSH_NUM") == 0) {
-            double v = 0.0;
-            if (!parse_double(&s, &v)) {
-                err_set(err_buf, err_cap, "PUSH_NUM expects a number");
+        if (strcmp(ident, "PUSH_INT") == 0) {
+            int64_t v = 0;
+            if (!parse_i64(&s, &v)) {
+                err_set(err_buf, err_cap, "PUSH_INT expects an integer");
                 bc_free(out);
                 return 0;
             }
-            if (!bc_emit_u8(out, BC_PUSH_NUM) || !bc_emit_f64(out, v)) {
-                err_set(err_buf, err_cap, "failed to emit PUSH_NUM");
+            if (!bc_emit_u8(out, BC_PUSH_INT) || !bc_emit_i64(out, v)) {
+                err_set(err_buf, err_cap, "failed to emit PUSH_INT");
+                bc_free(out);
+                return 0;
+            }
+        } else if (strcmp(ident, "PUSH_FLOAT") == 0) {
+            double v = 0.0;
+            if (!parse_double(&s, &v)) {
+                err_set(err_buf, err_cap, "PUSH_FLOAT expects a number");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_PUSH_FLOAT) || !bc_emit_f64(out, v)) {
+                err_set(err_buf, err_cap, "failed to emit PUSH_FLOAT");
                 bc_free(out);
                 return 0;
             }
@@ -162,45 +185,48 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                 bc_free(out);
                 return 0;
             }
-        } else if (strcmp(ident, "PUSH_BYTE") == 0) {
-            uint32_t v = 0;
-            if (!parse_u32(&s, &v) || v > 255) {
-                err_set(err_buf, err_cap, "PUSH_BYTE expects 0-255");
-                bc_free(out);
-                return 0;
-            }
-            if (!bc_emit_u8(out, BC_PUSH_BYTE) || !bc_emit_u8(out, (uint8_t)v)) {
-                err_set(err_buf, err_cap, "failed to emit PUSH_BYTE");
-                bc_free(out);
-                return 0;
-            }
-        } else if (strcmp(ident, "BUILD_NUMBER_LIT") == 0) {
+        } else if (strcmp(ident, "BUILD_INT_LIT") == 0 || strcmp(ident, "BUILD_FLOAT_LIT") == 0) {
             uint32_t count = 0;
             if (!parse_u32(&s, &count)) {
-                err_set(err_buf, err_cap, "BUILD_NUMBER_LIT expects a count");
+                err_set(err_buf, err_cap, "BUILD_*_LIT expects a count");
                 bc_free(out);
                 return 0;
             }
-            if (!bc_emit_u8(out, BC_BUILD_NUMBER_LIT) || !bc_emit_u32(out, count)) {
-                err_set(err_buf, err_cap, "failed to emit BUILD_NUMBER_LIT");
+            uint8_t op = strcmp(ident, "BUILD_INT_LIT") == 0 ? BC_BUILD_INT_LIT : BC_BUILD_FLOAT_LIT;
+            if (!bc_emit_u8(out, op) || !bc_emit_u32(out, count)) {
+                err_set(err_buf, err_cap, "failed to emit BUILD_*_LIT");
                 bc_free(out);
                 return 0;
             }
             for (uint32_t i = 0; i < count; i++) {
-                double v = 0.0;
                 s = skip_ws(s);
-                if (!parse_double(&s, &v)) {
-                    err_set(err_buf, err_cap, "BUILD_NUMBER_LIT expects values");
-                    bc_free(out);
-                    return 0;
-                }
-                if (!bc_emit_f64(out, v)) {
-                    err_set(err_buf, err_cap, "failed to emit BUILD_NUMBER_LIT value");
-                    bc_free(out);
-                    return 0;
+                if (op == BC_BUILD_INT_LIT) {
+                    int64_t v = 0;
+                    if (!parse_i64(&s, &v)) {
+                        err_set(err_buf, err_cap, "BUILD_INT_LIT expects integers");
+                        bc_free(out);
+                        return 0;
+                    }
+                    if (!bc_emit_i64(out, v)) {
+                        err_set(err_buf, err_cap, "failed to emit BUILD_INT_LIT value");
+                        bc_free(out);
+                        return 0;
+                    }
+                } else {
+                    double v = 0.0;
+                    if (!parse_double(&s, &v)) {
+                        err_set(err_buf, err_cap, "BUILD_FLOAT_LIT expects numbers");
+                        bc_free(out);
+                        return 0;
+                    }
+                    if (!bc_emit_f64(out, v)) {
+                        err_set(err_buf, err_cap, "failed to emit BUILD_FLOAT_LIT value");
+                        bc_free(out);
+                        return 0;
+                    }
                 }
             }
-        } else if (strcmp(ident, "BUILD_NUMBER") == 0 || strcmp(ident, "BUILD_BYTE") == 0 ||
+        } else if (strcmp(ident, "BUILD_INT") == 0 || strcmp(ident, "BUILD_FLOAT") == 0 ||
                    strcmp(ident, "BUILD_OBJECT") == 0 || strcmp(ident, "BUILD_FUNCTION") == 0) {
             uint32_t count = 0;
             if (!parse_u32(&s, &count)) {
@@ -213,8 +239,8 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                 bc_free(out);
                 return 0;
             }
-            uint8_t op = strcmp(ident, "BUILD_NUMBER") == 0 ? BC_BUILD_NUMBER :
-                         strcmp(ident, "BUILD_BYTE") == 0 ? BC_BUILD_BYTE : BC_BUILD_OBJECT;
+            uint8_t op = strcmp(ident, "BUILD_INT") == 0 ? BC_BUILD_INT :
+                         strcmp(ident, "BUILD_FLOAT") == 0 ? BC_BUILD_FLOAT : BC_BUILD_OBJECT;
             if (!bc_emit_u8(out, op) || !bc_emit_u32(out, count)) {
                 err_set(err_buf, err_cap, "failed to emit BUILD_*");
                 bc_free(out);
@@ -346,6 +372,18 @@ static int read_u32(const unsigned char *data, size_t len, size_t *pc, uint32_t 
     return 1;
 }
 
+static int read_i64(const unsigned char *data, size_t len, size_t *pc, int64_t *out)
+{
+    if (*pc + 8 > len) return 0;
+    uint64_t v = 0;
+    for (int i = 0; i < 8; i++) {
+        v |= ((uint64_t)data[*pc + i]) << (i * 8);
+    }
+    *pc += 8;
+    *out = (int64_t)v;
+    return 1;
+}
+
 static int read_f64(const unsigned char *data, size_t len, size_t *pc, double *out)
 {
     if (*pc + 8 > len) return 0;
@@ -400,10 +438,16 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
         uint8_t op = 0;
         if (!read_u8(data, len, &pc, &op)) return 0;
         switch (op) {
-        case BC_PUSH_NUM: {
+        case BC_PUSH_INT: {
+            int64_t v = 0;
+            if (!read_i64(data, len, &pc, &v)) return 0;
+            fprintf(out, "PUSH_INT %" PRId64 "\n", v);
+            break;
+        }
+        case BC_PUSH_FLOAT: {
             double v = 0.0;
             if (!read_f64(data, len, &pc, &v)) return 0;
-            fprintf(out, "PUSH_NUM %.17g\n", v);
+            fprintf(out, "PUSH_FLOAT %.17g\n", v);
             break;
         }
         case BC_PUSH_CHAR:
@@ -417,19 +461,13 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
             free(buf);
             break;
         }
-        case BC_PUSH_BYTE: {
-            uint8_t v = 0;
-            if (!read_u8(data, len, &pc, &v)) return 0;
-            fprintf(out, "PUSH_BYTE %u\n", (unsigned)v);
-            break;
-        }
-        case BC_BUILD_NUMBER:
-        case BC_BUILD_BYTE:
+        case BC_BUILD_INT:
+        case BC_BUILD_FLOAT:
         case BC_BUILD_OBJECT: {
             uint32_t count = 0;
             if (!read_u32(data, len, &pc, &count)) return 0;
-            const char *name = op == BC_BUILD_NUMBER ? "BUILD_NUMBER" :
-                               op == BC_BUILD_BYTE ? "BUILD_BYTE" : "BUILD_OBJECT";
+            const char *name = op == BC_BUILD_INT ? "BUILD_INT" :
+                               op == BC_BUILD_FLOAT ? "BUILD_FLOAT" : "BUILD_OBJECT";
             fprintf(out, "%s %u\n", name, (unsigned)count);
             break;
         }
@@ -460,14 +498,22 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
             fputc('\n', out);
             break;
         }
-        case BC_BUILD_NUMBER_LIT: {
+        case BC_BUILD_INT_LIT:
+        case BC_BUILD_FLOAT_LIT: {
             uint32_t count = 0;
             if (!read_u32(data, len, &pc, &count)) return 0;
-            fprintf(out, "BUILD_NUMBER_LIT %u", (unsigned)count);
+            fprintf(out, "%s %u", op == BC_BUILD_INT_LIT ? "BUILD_INT_LIT" : "BUILD_FLOAT_LIT",
+                    (unsigned)count);
             for (uint32_t i = 0; i < count; i++) {
-                double v = 0.0;
-                if (!read_f64(data, len, &pc, &v)) return 0;
-                fprintf(out, " %.17g", v);
+                if (op == BC_BUILD_INT_LIT) {
+                    int64_t v = 0;
+                    if (!read_i64(data, len, &pc, &v)) return 0;
+                    fprintf(out, " %" PRId64, v);
+                } else {
+                    double v = 0.0;
+                    if (!read_f64(data, len, &pc, &v)) return 0;
+                    fprintf(out, " %.17g", v);
+                }
             }
             fputc('\n', out);
             break;

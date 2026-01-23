@@ -31,6 +31,11 @@ typedef struct {
     size_t len;
 } EvalBlock;
 
+static int entry_is_string(ObjEntry *entry)
+{
+    return entry && entry->is_string && urb_obj_type(entry->obj) == URB_T_INT;
+}
+
 static Symbols make_default_symbols(const char *sigil, const char *open, const char *close)
 {
     Symbols sym;
@@ -126,7 +131,7 @@ static char *papagaio_eval_code(VM *vm, const char *code, size_t len,
     ObjEntry *old_this = NULL;
     if (vm) {
         ObjEntry *old_match = vm_global_find_by_key(vm->global_entry->obj, "match");
-        if (old_match && urb_obj_type(old_match->obj) == URB_T_BYTE) {
+        if (old_match && entry_is_string(old_match)) {
             old_match_len = urb_bytes_len(old_match->obj);
             old_match_buf = (char*)malloc(old_match_len + 1);
             if (old_match_buf) {

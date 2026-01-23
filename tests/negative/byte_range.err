@@ -1,1 +1,1 @@
-toByte expects integer values 0-255
+toInt expects a float list
