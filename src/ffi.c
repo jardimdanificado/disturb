@@ -241,8 +241,7 @@ static int parse_base_type(const char *name, FfiBase *out)
 #endif
         return 1;
     }
-    if (strcmp(name, "ssize_t") == 0 || strcmp(name, "intptr_t") == 0 ||
-        strcmp(name, "ptrdiff_t") == 0) {
+    if (strcmp(name, "intptr_t") == 0 || strcmp(name, "ptrdiff_t") == 0) {
 #if SIZE_MAX == UINT64_MAX
         *out = FFI_BASE_I64;
 #else
