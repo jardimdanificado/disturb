@@ -7,10 +7,6 @@
 #include <string.h>
 
 typedef struct {
-    NativeFn fn;
-} NativeBox;
-
-typedef struct {
     unsigned char *code;
     size_t len;
     uint32_t argc;
@@ -361,7 +357,12 @@ static void urb_obj_clear(List *obj)
 {
     if (urb_obj_type(obj) == URB_T_NATIVE && obj->size >= 3) {
         NativeBox *box = (NativeBox*)obj->data[2].p;
-        if (box) free(box);
+        if (box) {
+            if (box->free_data && box->data) {
+                box->free_data(box->data);
+            }
+            free(box);
+        }
     }
     if (urb_obj_type(obj) == URB_T_LAMBDA && obj->size >= 3) {
         FunctionBox *box = (FunctionBox*)obj->data[2].p;
@@ -579,6 +580,26 @@ static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_na
     List *obj = vm_alloc_list(vm, URB_T_NATIVE, key_entry, 1);
     NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
     box->fn = fn;
+    box->data = NULL;
+    box->free_data = NULL;
+    box->clone_data = NULL;
+    Value v;
+    v.p = box;
+    obj = urb_push(obj, v);
+    return vm_reg_alloc(vm, obj);
+}
+
+ObjEntry *vm_make_native_entry_data(VM *vm, const char *key, NativeFn fn, void *data,
+                                    void (*free_data)(void *), void (*clone_data)(void *))
+{
+    ObjEntry *key_entry = key ? vm_make_key(vm, key) : NULL;
+    if (!fn) return NULL;
+    List *obj = vm_alloc_list(vm, URB_T_NATIVE, key_entry, 1);
+    NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
+    box->fn = fn;
+    box->data = data;
+    box->free_data = free_data;
+    box->clone_data = clone_data;
     Value v;
     v.p = box;
     obj = urb_push(obj, v);
@@ -1479,6 +1500,9 @@ void vm_init(VM *vm)
     memset(vm, 0, sizeof(*vm));
     vm_reg_init(vm);
     vm->gc_entry = NULL;
+    vm->call_override_len = -1;
+    vm->has_call_override = 0;
+    vm->call_entry = NULL;
 
     ObjEntry *global_key = vm_make_key(vm, "global");
     List *global_obj = vm_alloc_list(vm, URB_T_TABLE, global_key, 8);
@@ -1567,10 +1591,16 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "gc", "gc");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    #ifdef DISTURB_ENABLE_IO
     entry = vm_define_native(vm, "read", "read");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "write", "write");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    #endif
+    #ifdef DISTURB_ENABLE_SYSTEM
+    entry = vm_define_native(vm, "system", "system");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    #endif
     entry = vm_define_native(vm, "eval", "eval");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "parse", "parse");
@@ -1671,6 +1701,18 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "remove", "remove");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+
+    #ifdef DISTURB_ENABLE_FFI
+    ObjEntry *ffi_key = vm_make_key(vm, "ffi");
+    List *ffi_obj = vm_alloc_list(vm, URB_T_TABLE, ffi_key, 1);
+    ObjEntry *ffi_entry = vm_reg_alloc(vm, ffi_obj);
+    vm_global_add(vm, ffi_entry);
+    ObjEntry *load_entry = vm_make_native_entry(vm, "load", "ffiLoad");
+    if (load_entry) {
+        ffi_obj = urb_table_add(ffi_obj, load_entry);
+        ffi_entry->obj = ffi_obj;
+    }
+    #endif
 }
 
 void vm_free(VM *vm)
@@ -1767,6 +1809,12 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         NativeBox *src_box = obj->size >= 3 ? (NativeBox*)obj->data[2].p : NULL;
         NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
         box->fn = src_box ? src_box->fn : NULL;
+        box->data = src_box ? src_box->data : NULL;
+        box->free_data = src_box ? src_box->free_data : NULL;
+        box->clone_data = src_box ? src_box->clone_data : NULL;
+        if (box->clone_data && box->data) {
+            box->clone_data(box->data);
+        }
         Value v;
         v.p = box;
         copy = urb_push(copy, v);
@@ -2043,6 +2091,9 @@ ObjEntry *vm_define_native(VM *vm, const char *key, const char *fn_name)
     List *obj = vm_alloc_list(vm, URB_T_NATIVE, key_entry, 1);
     NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
     box->fn = fn;
+    box->data = NULL;
+    box->free_data = NULL;
+    box->clone_data = NULL;
     Value v;
     v.p = box;
     obj = urb_push(obj, v);
@@ -2333,7 +2384,8 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         }
         case BC_LOAD_GLOBAL:
         case BC_STORE_GLOBAL:
-        case BC_CALL: {
+        case BC_CALL:
+        case BC_CALL_EX: {
             unsigned char *name = NULL;
             size_t name_len = 0;
             if (!bc_read_string(data, len, &pc, &name, &name_len)) {
@@ -2342,13 +2394,21 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             }
             ast_set_kv(vm, node, "name", vm_make_bytes_value(vm, (const char*)name, name_len));
             free(name);
-            if (op == BC_CALL) {
+            if (op == BC_CALL || op == BC_CALL_EX) {
                 uint32_t argc = 0;
                 if (!bc_read_u32(data, len, &pc, &argc)) {
                     fprintf(stderr, "bytecodeToAst: truncated CALL argc at pc %zu\n", pc);
                     return NULL;
                 }
                 ast_set_kv(vm, node, "argc", vm_make_int_value(vm, (Int)argc));
+                if (op == BC_CALL_EX) {
+                    uint32_t override_len = 0;
+                    if (!bc_read_u32(data, len, &pc, &override_len)) {
+                        fprintf(stderr, "bytecodeToAst: truncated CALL_EX override at pc %zu\n", pc);
+                        return NULL;
+                    }
+                    ast_set_kv(vm, node, "override", vm_make_int_value(vm, (Int)override_len));
+                }
             }
             break;
         }
@@ -3815,7 +3875,8 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm->this_entry = value ? value : vm->null_entry;
             break;
         }
-        case BC_CALL: {
+        case BC_CALL:
+        case BC_CALL_EX: {
             unsigned char *name = NULL;
             size_t name_len = 0;
             if (!bc_read_string(data, len, &pc, &name, &name_len)) {
@@ -3828,14 +3889,31 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 free(name);
                 return 0;
             }
+            Int override_len = -1;
+            int has_override = 0;
+            if (op == BC_CALL_EX) {
+                uint32_t override_u32 = 0;
+                if (!bc_read_u32(data, len, &pc, &override_u32)) {
+                    fprintf(stderr, "bytecode error at pc %zu: truncated CALL_EX override\n", pc);
+                    free(name);
+                    return 0;
+                }
+                override_len = (Int)override_u32;
+                has_override = 1;
+            }
             ObjEntry *old_this = vm->this_entry;
             Int old_argc = 0;
             if (vm->argc_entry) {
                 vm_read_int_at(vm->argc_entry->obj, 0, &old_argc);
             }
             vm_set_argc(vm, argc);
+            Int old_override = vm->call_override_len;
+            int old_has_override = vm->has_call_override;
+            vm->call_override_len = override_len;
+            vm->has_call_override = has_override;
             Int stack_before = vm->stack_entry->obj->size;
             ObjEntry *target = NULL;
+            ObjEntry *old_call_entry = vm->call_entry;
             if (vm->this_entry && vm->this_entry->in_use) {
                 Int this_type = urb_obj_type(vm->this_entry->obj);
                 if (this_type == URB_T_TABLE) {
@@ -3857,6 +3935,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             }
             free(name);
             if (urb_obj_type(target->obj) == URB_T_NATIVE) {
+                vm->call_entry = target;
                 if (target->obj->size < 3) {
                     fprintf(stderr, "bytecode error at pc %zu: CALL missing function\n", pc);
                     return 0;
@@ -3869,6 +3948,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 }
                 fn(vm, vm->stack_entry->obj, vm->global_entry->obj);
             } else if (urb_obj_type(target->obj) == URB_T_LAMBDA) {
+                vm->call_entry = target;
                 if (target->obj->size < 3) {
                     fprintf(stderr, "bytecode error at pc %zu: CALL missing function\n", pc);
                     return 0;
@@ -3907,6 +3987,9 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 vm_stack_push_entry(vm, vm->null_entry);
             }
             vm->this_entry = old_this;
+            vm->call_override_len = old_override;
+            vm->has_call_override = old_has_override;
+            vm->call_entry = old_call_entry;
             if (vm->argc_entry && vm->argc_entry->obj->size >= 3) {
                 vm_set_int_single(vm->argc_entry->obj, old_argc);
             }

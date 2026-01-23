@@ -247,7 +247,8 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                 return 0;
             }
         } else if (strcmp(ident, "LOAD_ROOT") == 0 || strcmp(ident, "LOAD_GLOBAL") == 0 ||
-                   strcmp(ident, "STORE_GLOBAL") == 0 || strcmp(ident, "CALL") == 0) {
+                   strcmp(ident, "STORE_GLOBAL") == 0 || strcmp(ident, "CALL") == 0 ||
+                   strcmp(ident, "CALL_EX") == 0) {
             if (strcmp(ident, "LOAD_ROOT") == 0) {
                 if (!bc_emit_u8(out, BC_LOAD_ROOT)) {
                     err_set(err_buf, err_cap, "failed to emit LOAD_ROOT");
@@ -262,19 +263,36 @@ int urb_assemble(const char *source, Bytecode *out, char *err_buf, size_t err_ca
                 bc_free(out);
                 return 0;
             }
-            if (strcmp(ident, "CALL") == 0) {
+            if (strcmp(ident, "CALL") == 0 || strcmp(ident, "CALL_EX") == 0) {
                 uint32_t argc = 0;
                 if (!parse_u32(&s, &argc)) {
                     err_set(err_buf, err_cap, "CALL expects arg count");
                     bc_free(out);
                     return 0;
                 }
-                if (!bc_emit_u8(out, BC_CALL) ||
-                    !bc_emit_string(out, name, strlen(name)) ||
-                    !bc_emit_u32(out, argc)) {
-                    err_set(err_buf, err_cap, "failed to emit CALL");
-                    bc_free(out);
-                    return 0;
+                if (strcmp(ident, "CALL_EX") == 0) {
+                    uint32_t override_len = 0;
+                    if (!parse_u32(&s, &override_len)) {
+                        err_set(err_buf, err_cap, "CALL_EX expects override length");
+                        bc_free(out);
+                        return 0;
+                    }
+                    if (!bc_emit_u8(out, BC_CALL_EX) ||
+                        !bc_emit_string(out, name, strlen(name)) ||
+                        !bc_emit_u32(out, argc) ||
+                        !bc_emit_u32(out, override_len)) {
+                        err_set(err_buf, err_cap, "failed to emit CALL_EX");
+                        bc_free(out);
+                        return 0;
+                    }
+                } else {
+                    if (!bc_emit_u8(out, BC_CALL) ||
+                        !bc_emit_string(out, name, strlen(name)) ||
+                        !bc_emit_u32(out, argc)) {
+                        err_set(err_buf, err_cap, "failed to emit CALL");
+                        bc_free(out);
+                        return 0;
+                    }
                 }
             } else {
                 uint8_t op = strcmp(ident, "LOAD_GLOBAL") == 0 ? BC_LOAD_GLOBAL : BC_STORE_GLOBAL;
@@ -520,19 +538,30 @@ int urb_disassemble(const unsigned char *data, size_t len, FILE *out)
         }
         case BC_LOAD_GLOBAL:
         case BC_STORE_GLOBAL:
-        case BC_CALL: {
+        case BC_CALL:
+        case BC_CALL_EX: {
             unsigned char *buf = NULL;
             size_t slen = 0;
             if (!read_string(data, len, &pc, &buf, &slen)) return 0;
             const char *name = op == BC_LOAD_GLOBAL ? "LOAD_GLOBAL" :
-                               op == BC_STORE_GLOBAL ? "STORE_GLOBAL" : "CALL";
-            if (op == BC_CALL) {
+                               op == BC_STORE_GLOBAL ? "STORE_GLOBAL" :
+                               op == BC_CALL_EX ? "CALL_EX" : "CALL";
+            if (op == BC_CALL || op == BC_CALL_EX) {
                 uint32_t argc = 0;
                 if (!read_u32(data, len, &pc, &argc)) {
                     free(buf);
                     return 0;
                 }
-                fprintf(out, "%s %s %u\n", name, buf, (unsigned)argc);
+                if (op == BC_CALL_EX) {
+                    uint32_t override_len = 0;
+                    if (!read_u32(data, len, &pc, &override_len)) {
+                        free(buf);
+                        return 0;
+                    }
+                    fprintf(out, "%s %s %u %u\n", name, buf, (unsigned)argc, (unsigned)override_len);
+                } else {
+                    fprintf(out, "%s %s %u\n", name, buf, (unsigned)argc);
+                }
             } else {
                 fprintf(out, "%s %s\n", name, buf);
             }

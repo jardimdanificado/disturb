@@ -283,6 +283,39 @@ Papagaio tokens:
 
 `print`/`println` with no arguments prints the top of the stack if present.
 
+## FFI
+
+FFI is optional (see build flags below). Load a shared library and bind C-style signatures:
+
+```disturb
+lib = ffi.load("libmylib.so",
+  "i32 add(i32, i32)",
+  "char* getenv(char*)",
+  "i32[] make()"
+);
+
+println(lib.add(1, 2));
+println(lib.getenv("HOME"));
+println(lib.make!64()); // override return length for int[]/float[]
+```
+
+Signature notes:
+- `int[]`/`float[]` inputs pass a pointer to the list data (length is not passed).
+- `int[]`/`float[]` return defaults to length `0`; use `name!N()` to override.
+- `int[N]` return defaults to `N`, and can be overridden by `name!N()`.
+- `char*`/`unsigned char*` map to Disturb strings (copied on return).
+- `void*` maps to a Disturb int (uintptr).
+
+## Build Flags
+
+Optional features can be disabled at build time:
+
+```bash
+make ENABLE_IO=0        # disable read/write
+make ENABLE_SYSTEM=0    # disable system()
+make ENABLE_FFI=0       # disable ffi.load
+```
+
 ## Tests
 
 | Command | Purpose |

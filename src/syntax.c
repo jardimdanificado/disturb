@@ -159,6 +159,8 @@ struct Expr {
             Expr *callee;
             Expr **args;
             int argc;
+            int has_override;
+            Int override_len;
         } call;
         struct {
             TokenKind op;
@@ -1409,6 +1411,67 @@ static Expr *parse_postfix(Parser *p)
             expr = e;
             continue;
         }
+        if (p->current.kind == TOK_BANG &&
+            peek_kind(p, 1) == TOK_NUMBER &&
+            peek_kind(p, 2) == TOK_LPAREN) {
+            if (expr->kind != EXPR_NAME && expr->kind != EXPR_MEMBER) {
+                parser_error(p, "call target must be a name or member");
+                return NULL;
+            }
+            advance(p);
+            Token number_tok = p->current;
+            if (!match(p, TOK_NUMBER)) {
+                parser_error(p, "expected number after '!'");
+                return NULL;
+            }
+            char tmp[64];
+            size_t nlen = number_tok.len < sizeof(tmp) - 1 ? number_tok.len : sizeof(tmp) - 1;
+            memcpy(tmp, number_tok.start, nlen);
+            tmp[nlen] = 0;
+            char *endptr = NULL;
+            long long override = strtoll(tmp, &endptr, 10);
+            if (!tmp[0] || (endptr && *endptr != 0) || override < 0) {
+                parser_error(p, "invalid call override length");
+                return NULL;
+            }
+            if (!expect(p, TOK_LPAREN, "expected '(' after call override")) return NULL;
+            Expr **args = NULL;
+            int argc = 0;
+            int cap = 0;
+            if (p->current.kind != TOK_RPAREN) {
+                for (;;) {
+                    Expr *arg = parse_expr(p);
+                    if (!arg) return NULL;
+                    if (argc == cap) {
+                        int next = cap == 0 ? 4 : cap * 2;
+                        Expr **tmp_args = (Expr**)realloc(args, (size_t)next * sizeof(Expr*));
+                        if (!tmp_args) {
+                            parser_error(p, "out of memory");
+                            return NULL;
+                        }
+                        args = tmp_args;
+                        cap = next;
+                    }
+                    args[argc++] = arg;
+                    if (match(p, TOK_COMMA)) continue;
+                    break;
+                }
+            }
+            if (!expect(p, TOK_RPAREN, "expected ')' after arguments")) return NULL;
+            if (args && !arena_track(&p->arena, args)) {
+                parser_error(p, "out of memory");
+                return NULL;
+            }
+            Expr *call = expr_new(p, EXPR_CALL);
+            if (!call) return NULL;
+            call->as.call.callee = expr;
+            call->as.call.args = args;
+            call->as.call.argc = argc;
+            call->as.call.has_override = 1;
+            call->as.call.override_len = (Int)override;
+            expr = call;
+            continue;
+        }
         if (match(p, TOK_LPAREN)) {
             if (expr->kind != EXPR_NAME && expr->kind != EXPR_MEMBER) {
                 parser_error(p, "call target must be a name or member");
@@ -1446,6 +1509,8 @@ static Expr *parse_postfix(Parser *p)
             call->as.call.callee = expr;
             call->as.call.args = args;
             call->as.call.argc = argc;
+            call->as.call.has_override = 0;
+            call->as.call.override_len = 0;
             expr = call;
             continue;
         }
@@ -2256,11 +2321,21 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         }
         const char *name = callee->kind == EXPR_NAME ? callee->as.name.name : callee->as.member.name;
         size_t len = callee->kind == EXPR_NAME ? callee->as.name.len : callee->as.member.len;
-        if (!bc_emit_u8(bc, BC_CALL) ||
-            !bc_emit_string(bc, name, len) ||
-            !bc_emit_u32(bc, argc)) {
-            parser_error(p, "failed to emit CALL");
-            return 0;
+        if (e->as.call.has_override) {
+            if (!bc_emit_u8(bc, BC_CALL_EX) ||
+                !bc_emit_string(bc, name, len) ||
+                !bc_emit_u32(bc, argc) ||
+                !bc_emit_u32(bc, (uint32_t)e->as.call.override_len)) {
+                parser_error(p, "failed to emit CALL_EX");
+                return 0;
+            }
+        } else {
+            if (!bc_emit_u8(bc, BC_CALL) ||
+                !bc_emit_string(bc, name, len) ||
+                !bc_emit_u32(bc, argc)) {
+                parser_error(p, "failed to emit CALL");
+                return 0;
+            }
         }
         return 1;
     }

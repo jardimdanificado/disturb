@@ -6,6 +6,8 @@
 - Make GC fully manual: remove automatic collection and `gc.rate`, add `gc.free`, `gc.sweep`, `gc.new`, and `gc.flush`.
 - Switch assignments to reference semantics, add `clone` (shallow) and `copy` (deep) helpers, rebind function arguments per call, add local scope for lambda bodies, and make `gc.collect`/`gc.sweep` mark values for immediate reuse.
 - Add global `inf` float constant.
+- Add optional FFI binding (`ffi.load`) with signature parsing and `name!N()` length overrides.
+- Add build flags to disable IO (`ENABLE_IO`), system (`ENABLE_SYSTEM`), or FFI (`ENABLE_FFI`).
 
 ## 0.14.1
 - Apply Papagaio processing to all string literals, with `\$` escape support.

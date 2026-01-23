@@ -10,6 +10,13 @@ typedef struct FreeNode FreeNode;
 
 typedef void (*NativeFn)(VM *vm, List *stack, List *global);
 
+typedef struct NativeBox {
+    NativeFn fn;
+    void *data;
+    void (*free_data)(void *data);
+    void (*clone_data)(void *data);
+} NativeBox;
+
 enum {
     URB_T_NULL = 0,
     URB_T_INT,
@@ -40,8 +47,11 @@ struct VM {
     ObjEntry *argc_entry;
     ObjEntry *this_entry;
     ObjEntry *gc_entry;
+    ObjEntry *call_entry;
     FreeNode *free_lists;
     FreeNode *free_bytes;
+    Int call_override_len;
+    int has_call_override;
 };
 
 const char *urb_type_name(Int type);
@@ -100,6 +110,9 @@ void vm_pop_stack(VM *vm);
 void vm_call_native(VM *vm, const char *key);
 int vm_global_remove_by_key(VM *vm, const char *name);
 int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len);
+
+ObjEntry *vm_make_native_entry_data(VM *vm, const char *key, NativeFn fn, void *data,
+                                    void (*free_data)(void *), void (*clone_data)(void *));
 
 NativeFn vm_lookup_native(const char *name);
 

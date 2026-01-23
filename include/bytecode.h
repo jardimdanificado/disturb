@@ -27,6 +27,7 @@ enum {
     BC_STORE_GLOBAL,
     BC_SET_THIS,
     BC_CALL,
+    BC_CALL_EX,
     BC_JMP,
     BC_JMP_IF_FALSE,
     BC_RETURN,

@@ -8,6 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef DISTURB_ENABLE_FFI
+void native_ffi_load(VM *vm, List *stack, List *global);
+#endif
+
 static int entry_is_string(ObjEntry *entry)
 {
     return entry && entry->is_string && urb_obj_type(entry->obj) == URB_T_INT;
@@ -500,6 +504,30 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 bc_free(out);
                 return 0;
             }
+        } else if (op_len == 7 && memcmp(op_name, "CALL_EX", 7) == 0) {
+            ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
+            ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
+            ObjEntry *override_entry = object_find_by_key(op_entry->obj, "override");
+            const char *name = NULL;
+            size_t name_len = 0;
+            uint32_t argc = 0;
+            uint32_t override_len = 0;
+            if (!name_entry || !argc_entry || !override_entry ||
+                !entry_as_string(name_entry, &name, &name_len) ||
+                !entry_as_u32(argc_entry, &argc) ||
+                !entry_as_u32(override_entry, &override_len)) {
+                ast_err(err, err_cap, "CALL_EX expects name, argc, and override");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_CALL_EX) ||
+                !bc_emit_string(out, name, name_len) ||
+                !bc_emit_u32(out, argc) ||
+                !bc_emit_u32(out, override_len)) {
+                ast_err(err, err_cap, "failed to emit CALL_EX");
+                bc_free(out);
+                return 0;
+            }
         } else if (op_len == 3 && memcmp(op_name, "JMP", 3) == 0) {
             ObjEntry *target_entry = object_find_by_key(op_entry->obj, "target");
             uint32_t target = 0;
@@ -930,6 +958,26 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
             char buf[32];
             snprintf(buf, sizeof(buf), " %u", (unsigned)argc);
             sb_append_n(out, buf, strlen(buf));
+        } else if (op_len == 7 && memcmp(op_name, "CALL_EX", 7) == 0) {
+            ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
+            ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
+            ObjEntry *override_entry = object_find_by_key(op_entry->obj, "override");
+            const char *name = NULL;
+            size_t name_len = 0;
+            uint32_t argc = 0;
+            uint32_t override_len = 0;
+            if (!name_entry || !argc_entry || !override_entry ||
+                !entry_as_string(name_entry, &name, &name_len) ||
+                !entry_as_u32(argc_entry, &argc) ||
+                !entry_as_u32(override_entry, &override_len)) {
+                ast_err(err, err_cap, "CALL_EX expects name, argc, and override");
+                return 0;
+            }
+            sb_append_char(out, ' ');
+            sb_append_n(out, name, name_len);
+            char buf[64];
+            snprintf(buf, sizeof(buf), " %u %u", (unsigned)argc, (unsigned)override_len);
+            sb_append_n(out, buf, strlen(buf));
         } else if (op_len == 3 && memcmp(op_name, "JMP", 3) == 0) {
             ObjEntry *target_entry = object_find_by_key(op_entry->obj, "target");
             uint32_t target = 0;
@@ -1140,6 +1188,7 @@ static void native_to_float(VM *vm, List *stack, List *global)
     stack = push_entry(vm, stack, entry);
 }
 
+#ifdef DISTURB_ENABLE_IO
 static void native_read(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -1205,6 +1254,31 @@ static void native_write(VM *vm, List *stack, List *global)
     free(path_buf);
     push_number(vm, stack, ok ? 1.0f : 0.0f);
 }
+#endif
+
+#ifdef DISTURB_ENABLE_SYSTEM
+static void native_system(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *arg0 = native_arg(stack, argc, 0);
+    const char *cmd = NULL;
+    size_t cmd_len = 0;
+    if (!entry_as_string(arg0, &cmd, &cmd_len)) {
+        fprintf(stderr, "system expects a string\n");
+        return;
+    }
+    char *buf = (char*)malloc(cmd_len + 1);
+    if (!buf) {
+        fprintf(stderr, "system out of memory\n");
+        return;
+    }
+    memcpy(buf, cmd, cmd_len);
+    buf[cmd_len] = 0;
+    int rc = system(buf);
+    free(buf);
+    push_number(vm, stack, (double)rc);
+}
+#endif
 
 static void native_eval(VM *vm, List *stack, List *global)
 {
@@ -2952,8 +3026,16 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "copy") == 0) return native_copy;
     if (strcmp(name, "toInt") == 0) return native_to_int;
     if (strcmp(name, "toFloat") == 0) return native_to_float;
+    #ifdef DISTURB_ENABLE_IO
     if (strcmp(name, "read") == 0) return native_read;
     if (strcmp(name, "write") == 0) return native_write;
+    #endif
+    #ifdef DISTURB_ENABLE_SYSTEM
+    if (strcmp(name, "system") == 0) return native_system;
+    #endif
+    #ifdef DISTURB_ENABLE_FFI
+    if (strcmp(name, "ffiLoad") == 0) return native_ffi_load;
+    #endif
     if (strcmp(name, "eval") == 0) return native_eval;
     if (strcmp(name, "parse") == 0) return native_parse;
     if (strcmp(name, "emit") == 0) return native_emit;
