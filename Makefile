@@ -21,7 +21,7 @@ ifeq ($(ENABLE_FFI),1)
 endif
 
 SRC = lib/libregexp/cutils.c lib/libregexp/libunicode.c lib/libregexp/libregexp.c \
-      src/vm.c src/bytecode.c src/asm.c src/syntax.c src/functions.c src/papagaio.c src/cli.c
+      src/vm.c src/bytecode.c src/syntax.c src/functions.c src/papagaio.c src/cli.c
 ifeq ($(ENABLE_FFI),1)
 	SRC += src/ffi.c
 endif
@@ -35,7 +35,7 @@ disturb: $(OBJ)
 lib/libregexp/%.o: lib/libregexp/%.c
 	$(CC) $(CFLAGS) $(LIBREGEXP_CFLAGS) -c $< -o $@
 
-%.o: %.c include/vm.h include/urb.h include/papagaio.h include/bytecode.h include/asm.h
+%.o: %.c include/vm.h include/urb.h include/papagaio.h include/bytecode.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
