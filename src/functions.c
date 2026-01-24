@@ -14,27 +14,27 @@ void native_ffi_load(VM *vm, List *stack, List *global);
 
 static int entry_is_string(ObjEntry *entry)
 {
-    return entry && entry->is_string && urb_obj_type(entry->obj) == URB_T_INT;
+    return entry && entry->is_string && disturb_obj_type(entry->obj) == DISTURB_T_INT;
 }
 
 static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *out_is_float)
 {
     if (!entry || !entry->in_use) return 0;
-    Int type = urb_obj_type(entry->obj);
-    if (type == URB_T_INT) {
+    Int type = disturb_obj_type(entry->obj);
+    if (type == DISTURB_T_INT) {
         if (entry_is_string(entry)) return 0;
-        if (urb_bytes_len(entry->obj) != sizeof(Int)) return 0;
+        if (disturb_bytes_len(entry->obj) != sizeof(Int)) return 0;
         Int v = 0;
-        memcpy(&v, urb_bytes_data(entry->obj), sizeof(Int));
+        memcpy(&v, disturb_bytes_data(entry->obj), sizeof(Int));
         if (out_i) *out_i = v;
         if (out_f) *out_f = (Float)v;
         if (out_is_float) *out_is_float = 0;
         return 1;
     }
-    if (type == URB_T_FLOAT) {
-        if (urb_bytes_len(entry->obj) != sizeof(Float)) return 0;
+    if (type == DISTURB_T_FLOAT) {
+        if (disturb_bytes_len(entry->obj) != sizeof(Float)) return 0;
         Float v = 0;
-        memcpy(&v, urb_bytes_data(entry->obj), sizeof(Float));
+        memcpy(&v, disturb_bytes_data(entry->obj), sizeof(Float));
         if (out_i) *out_i = (Int)v;
         if (out_f) *out_f = v;
         if (out_is_float) *out_is_float = 1;
@@ -45,12 +45,12 @@ static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *o
 
 static void write_int_bytes(List *obj, Int index, Int value)
 {
-    memcpy(urb_bytes_data(obj) + (size_t)index * sizeof(Int), &value, sizeof(Int));
+    memcpy(disturb_bytes_data(obj) + (size_t)index * sizeof(Int), &value, sizeof(Int));
 }
 
 static void write_float_bytes(List *obj, Int index, Float value)
 {
-    memcpy(urb_bytes_data(obj) + (size_t)index * sizeof(Float), &value, sizeof(Float));
+    memcpy(disturb_bytes_data(obj) + (size_t)index * sizeof(Float), &value, sizeof(Float));
 }
 
 static uint32_t native_argc(VM *vm, List *global)
@@ -86,8 +86,8 @@ static ObjEntry *native_target(VM *vm, List *stack, uint32_t argc)
 {
     ObjEntry *self = native_this(vm);
     if (self) {
-        Int type = urb_obj_type(self->obj);
-        if (type == URB_T_TABLE || type == URB_T_INT || type == URB_T_FLOAT) {
+        Int type = disturb_obj_type(self->obj);
+        if (type == DISTURB_T_TABLE || type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
             return self;
         }
     }
@@ -107,15 +107,15 @@ static int entry_as_number(ObjEntry *entry, Float *out)
 static int entry_as_string(ObjEntry *entry, const char **out, size_t *len)
 {
     if (!entry || !entry_is_string(entry)) return 0;
-    *out = urb_bytes_data(entry->obj);
-    *len = urb_bytes_len(entry->obj);
+    *out = disturb_bytes_data(entry->obj);
+    *len = disturb_bytes_len(entry->obj);
     return 1;
 }
 
 static List *push_entry(VM *vm, List *stack, ObjEntry *entry)
 {
     List *old_stack = stack;
-    stack = urb_table_add(stack, entry);
+    stack = disturb_table_add(stack, entry);
     stack = vm_update_shared_obj(vm, old_stack, stack);
     if (vm && vm->stack_entry) vm->stack_entry->obj = stack;
     return stack;
@@ -141,14 +141,14 @@ static int number_to_int(ObjEntry *entry, Int *out);
 
 static ObjEntry *object_find_by_key_len(List *obj, const char *name, size_t len)
 {
-    if (!obj || urb_obj_type(obj) != URB_T_TABLE) return NULL;
+    if (!obj || disturb_obj_type(obj) != DISTURB_T_TABLE) return NULL;
     for (Int i = 2; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         if (!entry) continue;
         ObjEntry *key = vm_entry_key(entry);
         if (!key || !entry_is_string(key)) continue;
-        if (urb_bytes_len(key->obj) == len &&
-            memcmp(urb_bytes_data(key->obj), name, len) == 0) {
+        if (disturb_bytes_len(key->obj) == len &&
+            memcmp(disturb_bytes_data(key->obj), name, len) == 0) {
             return entry;
         }
     }
@@ -181,7 +181,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
         ast_err(err, err_cap, "emit expects an AST table");
         return 0;
     }
-    if (urb_obj_type(ast->obj) != URB_T_TABLE) {
+    if (disturb_obj_type(ast->obj) != DISTURB_T_TABLE) {
         ast_err(err, err_cap, "emit expects an AST table");
         return 0;
     }
@@ -198,7 +198,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
     }
 
     ObjEntry *ops_entry = object_find_by_key(ast->obj, "ops");
-    if (!ops_entry || urb_obj_type(ops_entry->obj) != URB_T_TABLE) {
+    if (!ops_entry || disturb_obj_type(ops_entry->obj) != DISTURB_T_TABLE) {
         ast_err(err, err_cap, "emit expects ops array");
         return 0;
     }
@@ -208,7 +208,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
     List *ops = ops_entry->obj;
     for (Int i = 2; i < ops->size; i++) {
         ObjEntry *op_entry = (ObjEntry*)ops->data[i].p;
-        if (!op_entry || urb_obj_type(op_entry->obj) != URB_T_TABLE) {
+        if (!op_entry || disturb_obj_type(op_entry->obj) != DISTURB_T_TABLE) {
             ast_err(err, err_cap, "emit expects op tables");
             bc_free(out);
             return 0;
@@ -323,7 +323,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
         } else if ((op_len == 13 && memcmp(op_name, "BUILD_INT_LIT", 13) == 0) ||
                    (op_len == 15 && memcmp(op_name, "BUILD_FLOAT_LIT", 15) == 0)) {
             ObjEntry *values_entry = object_find_by_key(op_entry->obj, "values");
-            if (!values_entry || urb_obj_type(values_entry->obj) != URB_T_TABLE) {
+            if (!values_entry || disturb_obj_type(values_entry->obj) != DISTURB_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_*_LIT expects values");
                 bc_free(out);
                 return 0;
@@ -392,7 +392,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 bc_free(out);
                 return 0;
             }
-            if (urb_obj_type(args_entry->obj) != URB_T_TABLE) {
+            if (disturb_obj_type(args_entry->obj) != DISTURB_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_FUNCTION expects args array");
                 bc_free(out);
                 return 0;
@@ -414,7 +414,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
             }
             for (uint32_t j = 0; j < argc; j++) {
                 ObjEntry *arg = (ObjEntry*)args->data[2 + j].p;
-                if (!arg || urb_obj_type(arg->obj) != URB_T_TABLE) {
+                if (!arg || disturb_obj_type(arg->obj) != DISTURB_T_TABLE) {
                     ast_err(err, err_cap, "BUILD_FUNCTION arg must be table");
                     bc_free(out);
                     return 0;
@@ -430,7 +430,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 ObjEntry *def_entry = object_find_by_key(arg->obj, "default");
                 const char *def = NULL;
                 size_t def_len = 0;
-                if (def_entry && urb_obj_type(def_entry->obj) != URB_T_NULL) {
+                if (def_entry && disturb_obj_type(def_entry->obj) != DISTURB_T_NULL) {
                     if (!entry_as_string(def_entry, &def, &def_len)) {
                         ast_err(err, err_cap, "BUILD_FUNCTION default must be bytes");
                         bc_free(out);
@@ -740,19 +740,19 @@ static void sb_append_escaped(StrBuf *b, const char *s, size_t len, char quote)
 
 static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t err_cap)
 {
-    if (!vm || !ast || urb_obj_type(ast->obj) != URB_T_TABLE) {
+    if (!vm || !ast || disturb_obj_type(ast->obj) != DISTURB_T_TABLE) {
         ast_err(err, err_cap, "astToSource expects AST object");
         return 0;
     }
     ObjEntry *ops_entry = object_find_by_key(ast->obj, "ops");
-    if (!ops_entry || urb_obj_type(ops_entry->obj) != URB_T_TABLE) {
+    if (!ops_entry || disturb_obj_type(ops_entry->obj) != DISTURB_T_TABLE) {
         ast_err(err, err_cap, "astToSource expects ops array");
         return 0;
     }
     List *ops = ops_entry->obj;
     for (Int i = 2; i < ops->size; i++) {
         ObjEntry *op_entry = (ObjEntry*)ops->data[i].p;
-        if (!op_entry || urb_obj_type(op_entry->obj) != URB_T_TABLE) {
+        if (!op_entry || disturb_obj_type(op_entry->obj) != DISTURB_T_TABLE) {
             ast_err(err, err_cap, "astToSource expects op objects");
             return 0;
         }
@@ -843,7 +843,7 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
         } else if ((op_len == 13 && memcmp(op_name, "BUILD_INT_LIT", 13) == 0) ||
                    (op_len == 15 && memcmp(op_name, "BUILD_FLOAT_LIT", 15) == 0)) {
             ObjEntry *values_entry = object_find_by_key(op_entry->obj, "values");
-            if (!values_entry || urb_obj_type(values_entry->obj) != URB_T_TABLE) {
+            if (!values_entry || disturb_obj_type(values_entry->obj) != DISTURB_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_*_LIT expects values");
                 return 0;
             }
@@ -894,14 +894,14 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
             snprintf(head, sizeof(head), " %u %u %u", (unsigned)argc, (unsigned)vararg, (unsigned)code_len);
             sb_append_n(out, head, strlen(head));
 
-            if (urb_obj_type(args_entry->obj) != URB_T_TABLE) {
+            if (disturb_obj_type(args_entry->obj) != DISTURB_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_FUNCTION expects args array");
                 return 0;
             }
             List *args = args_entry->obj;
             for (uint32_t j = 0; j < argc; j++) {
                 ObjEntry *arg = (ObjEntry*)args->data[2 + j].p;
-                if (!arg || urb_obj_type(arg->obj) != URB_T_TABLE) {
+                if (!arg || disturb_obj_type(arg->obj) != DISTURB_T_TABLE) {
                     ast_err(err, err_cap, "BUILD_FUNCTION arg must be object");
                     return 0;
                 }
@@ -914,7 +914,7 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
                 }
                 ObjEntry *def_entry = object_find_by_key(arg->obj, "default");
                 size_t def_len = 0;
-                if (def_entry && urb_obj_type(def_entry->obj) != URB_T_NULL) {
+                if (def_entry && disturb_obj_type(def_entry->obj) != DISTURB_T_NULL) {
                     const char *def = NULL;
                     if (!entry_as_string(def_entry, &def, &def_len)) {
                         ast_err(err, err_cap, "BUILD_FUNCTION default must be bytes");
@@ -1151,7 +1151,7 @@ static void native_to_int(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || urb_obj_type(target->obj) != URB_T_FLOAT) {
+    if (!target || disturb_obj_type(target->obj) != DISTURB_T_FLOAT) {
         fprintf(stderr, "toInt expects a float list\n");
         return;
     }
@@ -1161,7 +1161,7 @@ static void native_to_int(VM *vm, List *stack, List *global)
     List *obj = entry->obj;
     for (Int i = 0; i < count; i++) {
         Float v = 0;
-        memcpy(&v, urb_bytes_data(target->obj) + (size_t)i * sizeof(Float), sizeof(Float));
+        memcpy(&v, disturb_bytes_data(target->obj) + (size_t)i * sizeof(Float), sizeof(Float));
         write_int_bytes(obj, i, (Int)v);
     }
     stack = push_entry(vm, stack, entry);
@@ -1171,25 +1171,25 @@ static void native_to_float(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || urb_obj_type(target->obj) != URB_T_INT) {
+    if (!target || disturb_obj_type(target->obj) != DISTURB_T_INT) {
         fprintf(stderr, "toFloat expects an int list\n");
         return;
     }
-    size_t bytes_len = urb_bytes_len(target->obj);
+    size_t bytes_len = disturb_bytes_len(target->obj);
     Int count = entry_is_string(target) ? (Int)bytes_len : (Int)(bytes_len / sizeof(Int));
     ObjEntry *entry = vm_make_float_list(vm, count);
     if (!entry) return;
     List *obj = entry->obj;
     if (entry_is_string(target)) {
         for (Int i = 0; i < count; i++) {
-            unsigned char b = (unsigned char)urb_bytes_data(target->obj)[i];
+            unsigned char b = (unsigned char)disturb_bytes_data(target->obj)[i];
             Float v = (Float)b;
             write_float_bytes(obj, i, v);
         }
     } else {
         for (Int i = 0; i < count; i++) {
             Int v = 0;
-            memcpy(&v, urb_bytes_data(target->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+            memcpy(&v, disturb_bytes_data(target->obj) + (size_t)i * sizeof(Int), sizeof(Int));
             write_float_bytes(obj, i, (Float)v);
         }
     }
@@ -1248,8 +1248,8 @@ static void native_write(VM *vm, List *stack, List *global)
     size_t data_len = 0;
     if (!entry_as_string(data_entry, &data, &data_len)) {
         string_entry = vm_stringify_value(vm, data_entry, 1);
-        data = urb_bytes_data(string_entry->obj);
-        data_len = urb_bytes_len(string_entry->obj);
+        data = disturb_bytes_data(string_entry->obj);
+        data_len = disturb_bytes_len(string_entry->obj);
     }
     char *path_buf = (char*)malloc(path_len + 1);
     if (!path_buf) {
@@ -1469,7 +1469,7 @@ static void native_gc_free(VM *vm, List *stack, List *global)
     if (target->obj) {
         vm_free_list(target->obj);
     }
-    target->obj = vm_alloc_list(vm, URB_T_NULL, key_entry, 0);
+    target->obj = vm_alloc_list(vm, DISTURB_T_NULL, key_entry, 0);
     target->key = key_entry;
     target->mark = 0;
     push_number(vm, stack, 1);
@@ -1492,7 +1492,7 @@ static void native_gc_sweep(VM *vm, List *stack, List *global)
     if (target->obj && !gc_entry_shared(vm, target)) {
         vm_reuse_list(vm, target->obj);
     }
-    target->obj = vm_alloc_list(vm, URB_T_NULL, key_entry, 0);
+    target->obj = vm_alloc_list(vm, DISTURB_T_NULL, key_entry, 0);
     target->key = key_entry;
     target->mark = 0;
     push_number(vm, stack, 1);
@@ -1608,9 +1608,9 @@ static void native_append(VM *vm, List *stack, List *global)
     }
 
     dst->obj = vm_update_shared_obj(vm, dst->obj,
-                                    urb_bytes_append(dst->obj,
-                                                     urb_bytes_data(src->obj),
-                                                     urb_bytes_len(src->obj)));
+                                    disturb_bytes_append(dst->obj,
+                                                     disturb_bytes_data(src->obj),
+                                                     disturb_bytes_len(src->obj)));
 }
 
 static int native_number_seed(VM *vm, List *stack, List *global, Float *out, uint32_t *start)
@@ -1979,7 +1979,7 @@ static int list_index_valid(List *obj, Int index)
 
 static Int bytes_list_count(const ObjEntry *entry, size_t elem_size)
 {
-    size_t len = urb_bytes_len(entry->obj);
+    size_t len = disturb_bytes_len(entry->obj);
     if (elem_size == 0) return 0;
     return (Int)(len / elem_size);
 }
@@ -2002,15 +2002,15 @@ static Int bytes_list_insert_index(Int count, Int index)
 
 static List *bytes_list_insert(VM *vm, ObjEntry *target, size_t offset, const void *data, size_t len)
 {
-    size_t old_len = urb_bytes_len(target->obj);
+    size_t old_len = disturb_bytes_len(target->obj);
     size_t new_len = old_len + len;
     size_t bytes = sizeof(List) + 2 * sizeof(Value) + new_len;
     List *old_obj = target->obj;
     List *obj = (List*)realloc(target->obj, bytes);
     if (!obj) return NULL;
     obj = vm_update_shared_obj(vm, old_obj, obj);
-    memmove(urb_bytes_data(obj) + offset + len, urb_bytes_data(obj) + offset, old_len - offset);
-    memcpy(urb_bytes_data(obj) + offset, data, len);
+    memmove(disturb_bytes_data(obj) + offset + len, disturb_bytes_data(obj) + offset, old_len - offset);
+    memcpy(disturb_bytes_data(obj) + offset, data, len);
     obj->size = (UHalf)(new_len + 2);
     obj->capacity = obj->size;
     target->obj = obj;
@@ -2020,11 +2020,11 @@ static List *bytes_list_insert(VM *vm, ObjEntry *target, size_t offset, const vo
 static int bytes_list_remove(VM *vm, ObjEntry *target, size_t offset, void *out, size_t len)
 {
     (void)vm;
-    size_t old_len = urb_bytes_len(target->obj);
+    size_t old_len = disturb_bytes_len(target->obj);
     if (offset + len > old_len) return 0;
-    if (out) memcpy(out, urb_bytes_data(target->obj) + offset, len);
-    memmove(urb_bytes_data(target->obj) + offset,
-            urb_bytes_data(target->obj) + offset + len,
+    if (out) memcpy(out, disturb_bytes_data(target->obj) + offset, len);
+    memmove(disturb_bytes_data(target->obj) + offset,
+            disturb_bytes_data(target->obj) + offset + len,
             old_len - offset - len);
     size_t new_len = old_len - len;
     target->obj->size = (UHalf)(new_len + 2);
@@ -2040,8 +2040,8 @@ static void native_slice(VM *vm, List *stack, List *global)
         fprintf(stderr, "slice expects a string target\n");
         return;
     }
-    const char *s = urb_bytes_data(target->obj);
-    size_t len = urb_bytes_len(target->obj);
+    const char *s = disturb_bytes_data(target->obj);
+    size_t len = disturb_bytes_len(target->obj);
     Int start = 0;
     Int end = (Int)len;
     if (argc >= 1) {
@@ -2076,8 +2076,8 @@ static void native_substr(VM *vm, List *stack, List *global)
         fprintf(stderr, "substr expects a string target\n");
         return;
     }
-    const char *s = urb_bytes_data(target->obj);
-    size_t len = urb_bytes_len(target->obj);
+    const char *s = disturb_bytes_data(target->obj);
+    size_t len = disturb_bytes_len(target->obj);
     Int start = 0;
     Int count = (Int)len;
     if (argc >= 1) {
@@ -2111,10 +2111,10 @@ static void native_upper(VM *vm, List *stack, List *global)
         fprintf(stderr, "upper expects a string target\n");
         return;
     }
-    size_t len = urb_bytes_len(target->obj);
+    size_t len = disturb_bytes_len(target->obj);
     char *buf = (char*)malloc(len);
     for (size_t i = 0; i < len; i++) {
-        buf[i] = (char)toupper((unsigned char)urb_bytes_data(target->obj)[i]);
+        buf[i] = (char)toupper((unsigned char)disturb_bytes_data(target->obj)[i]);
     }
     push_string(vm, stack, buf, len);
     free(buf);
@@ -2128,10 +2128,10 @@ static void native_lower(VM *vm, List *stack, List *global)
         fprintf(stderr, "lower expects a string target\n");
         return;
     }
-    size_t len = urb_bytes_len(target->obj);
+    size_t len = disturb_bytes_len(target->obj);
     char *buf = (char*)malloc(len);
     for (size_t i = 0; i < len; i++) {
-        buf[i] = (char)tolower((unsigned char)urb_bytes_data(target->obj)[i]);
+        buf[i] = (char)tolower((unsigned char)disturb_bytes_data(target->obj)[i]);
     }
     push_string(vm, stack, buf, len);
     free(buf);
@@ -2145,8 +2145,8 @@ static void native_trim(VM *vm, List *stack, List *global)
         fprintf(stderr, "trim expects a string target\n");
         return;
     }
-    const char *s = urb_bytes_data(target->obj);
-    size_t len = urb_bytes_len(target->obj);
+    const char *s = disturb_bytes_data(target->obj);
+    size_t len = disturb_bytes_len(target->obj);
     size_t start = 0;
     size_t end = len;
     while (start < len && isspace((unsigned char)s[start])) start++;
@@ -2169,8 +2169,8 @@ static void native_starts_with(VM *vm, List *stack, List *global)
         fprintf(stderr, "startsWith expects a string\n");
         return;
     }
-    const char *s = urb_bytes_data(target->obj);
-    size_t len = urb_bytes_len(target->obj);
+    const char *s = disturb_bytes_data(target->obj);
+    size_t len = disturb_bytes_len(target->obj);
     int ok = nlen <= len && memcmp(s, needle, nlen) == 0;
     push_number(vm, stack, ok ? 1 : 0);
 }
@@ -2190,8 +2190,8 @@ static void native_ends_with(VM *vm, List *stack, List *global)
         fprintf(stderr, "endsWith expects a string\n");
         return;
     }
-    const char *s = urb_bytes_data(target->obj);
-    size_t len = urb_bytes_len(target->obj);
+    const char *s = disturb_bytes_data(target->obj);
+    size_t len = disturb_bytes_len(target->obj);
     int ok = nlen <= len && memcmp(s + (len - nlen), needle, nlen) == 0;
     push_number(vm, stack, ok ? 1 : 0);
 }
@@ -2204,8 +2204,8 @@ static void native_split(VM *vm, List *stack, List *global)
         fprintf(stderr, "split expects a string target\n");
         return;
     }
-    const char *s = urb_bytes_data(target->obj);
-    size_t len = urb_bytes_len(target->obj);
+    const char *s = disturb_bytes_data(target->obj);
+    size_t len = disturb_bytes_len(target->obj);
     const char *delim = "";
     size_t dlen = 0;
     if (argc >= 1) {
@@ -2220,7 +2220,7 @@ static void native_split(VM *vm, List *stack, List *global)
     if (dlen == 0) {
         for (size_t i = 0; i < len; i++) {
             ObjEntry *part = vm_make_byte_value(vm, s + i, 1);
-            out->obj = urb_table_add(out->obj, part);
+            out->obj = disturb_table_add(out->obj, part);
         }
         stack = push_entry(vm, stack, out);
         return;
@@ -2231,7 +2231,7 @@ static void native_split(VM *vm, List *stack, List *global)
         size_t next = pos;
         while (next + dlen <= len && memcmp(s + next, delim, dlen) != 0) next++;
         ObjEntry *part = vm_make_byte_value(vm, s + pos, next - pos);
-        out->obj = urb_table_add(out->obj, part);
+        out->obj = disturb_table_add(out->obj, part);
         pos = next + dlen;
         if (next + dlen > len) break;
     }
@@ -2242,7 +2242,7 @@ static void native_join(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || urb_obj_type(target->obj) != URB_T_TABLE) {
+    if (!target || disturb_obj_type(target->obj) != DISTURB_T_TABLE) {
         fprintf(stderr, "join expects a table/array target\n");
         return;
     }
@@ -2250,8 +2250,8 @@ static void native_join(VM *vm, List *stack, List *global)
     size_t dlen = 0;
     ObjEntry *arg0 = native_arg(stack, argc, 0);
     if (arg0 && entry_is_string(arg0)) {
-        delim = urb_bytes_data(arg0->obj);
-        dlen = urb_bytes_len(arg0->obj);
+        delim = disturb_bytes_data(arg0->obj);
+        dlen = disturb_bytes_len(arg0->obj);
     }
 
     StrBuf buf;
@@ -2260,7 +2260,7 @@ static void native_join(VM *vm, List *stack, List *global)
         ObjEntry *entry = (ObjEntry*)target->obj->data[i].p;
         if (i > 2 && dlen) sb_append_n(&buf, delim, dlen);
         ObjEntry *str = vm_stringify_value(vm, entry, 1);
-        sb_append_n(&buf, urb_bytes_data(str->obj), urb_bytes_len(str->obj));
+        sb_append_n(&buf, disturb_bytes_data(str->obj), disturb_bytes_len(str->obj));
     }
     push_string(vm, stack, buf.data, buf.len);
     sb_free(&buf);
@@ -2299,8 +2299,8 @@ static void native_replace_impl(VM *vm, List *stack, List *global, int replace_a
         return;
     }
 
-    const char *hay = urb_bytes_data(target->obj);
-    size_t hlen = urb_bytes_len(target->obj);
+    const char *hay = disturb_bytes_data(target->obj);
+    size_t hlen = disturb_bytes_len(target->obj);
     if (nlen == 0 || hlen == 0) {
         push_string(vm, stack, hay, hlen);
         return;
@@ -2354,8 +2354,8 @@ static void native_papagaio(VM *vm, List *stack, List *global)
         fprintf(stderr, "papagaio expects a string target\n");
         return;
     }
-    const char *input = urb_bytes_data(target->obj);
-    size_t input_len = urb_bytes_len(target->obj);
+    const char *input = disturb_bytes_data(target->obj);
+    size_t input_len = disturb_bytes_len(target->obj);
     char *out = papagaio_process_text(vm, input, input_len);
     if (!out) {
         fprintf(stderr, "papagaio failed\n");
@@ -2399,8 +2399,8 @@ static void native_find(VM *vm, List *stack, List *global)
         }
     }
 
-    const char *hay = urb_bytes_data(target->obj);
-    size_t hlen_sz = urb_bytes_len(target->obj);
+    const char *hay = disturb_bytes_data(target->obj);
+    size_t hlen_sz = disturb_bytes_len(target->obj);
     Int hlen = (Int)hlen_sz;
 
     start = clamp_index(start, hlen);
@@ -2443,8 +2443,8 @@ static void native_rfind(VM *vm, List *stack, List *global)
         return;
     }
 
-    const char *hay = urb_bytes_data(target->obj);
-    size_t hlen_sz = urb_bytes_len(target->obj);
+    const char *hay = disturb_bytes_data(target->obj);
+    size_t hlen_sz = disturb_bytes_len(target->obj);
     Int hlen = (Int)hlen_sz;
 
     // start aqui é o "limite superior" (posição onde a busca reversa pode começar).
@@ -2514,8 +2514,8 @@ static void native_contains(VM *vm, List *stack, List *global)
         }
     }
 
-    const char *hay = urb_bytes_data(target->obj);
-    size_t hlen = urb_bytes_len(target->obj);
+    const char *hay = disturb_bytes_data(target->obj);
+    size_t hlen = disturb_bytes_len(target->obj);
     Int hlen_i = (Int)hlen;
     start = clamp_index(start, hlen_i);
 
@@ -2535,7 +2535,7 @@ static void native_contains(VM *vm, List *stack, List *global)
 static ObjEntry *native_object_target(VM *vm, List *stack, uint32_t argc)
 {
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || urb_obj_type(target->obj) != URB_T_TABLE) return NULL;
+    if (!target || disturb_obj_type(target->obj) != DISTURB_T_TABLE) return NULL;
     return target;
 }
 
@@ -2552,8 +2552,8 @@ static void native_keys(VM *vm, List *stack, List *global)
         ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
         ObjEntry *key = vm_entry_key(child);
         if (!key || !entry_is_string(key)) continue;
-        ObjEntry *entry = vm_make_byte_value(vm, urb_bytes_data(key->obj), urb_bytes_len(key->obj));
-        out->obj = urb_table_add(out->obj, entry);
+        ObjEntry *entry = vm_make_byte_value(vm, disturb_bytes_data(key->obj), disturb_bytes_len(key->obj));
+        out->obj = disturb_table_add(out->obj, entry);
     }
     stack = push_entry(vm, stack, out);
 }
@@ -2570,7 +2570,7 @@ static void native_values(VM *vm, List *stack, List *global)
     for (Int i = 2; i < target->obj->size; i++) {
         ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
         if (!child) continue;
-        out->obj = urb_table_add(out->obj, child);
+        out->obj = disturb_table_add(out->obj, child);
     }
     stack = push_entry(vm, stack, out);
 }
@@ -2585,15 +2585,15 @@ static void native_has(VM *vm, List *stack, List *global)
         return;
     }
 
-    Int type = urb_obj_type(target->obj);
-    if (entry_is_string(idx) && type == URB_T_TABLE) {
-        const char *key = urb_bytes_data(idx->obj);
-        size_t len = urb_bytes_len(idx->obj);
+    Int type = disturb_obj_type(target->obj);
+    if (entry_is_string(idx) && type == DISTURB_T_TABLE) {
+        const char *key = disturb_bytes_data(idx->obj);
+        size_t len = disturb_bytes_len(idx->obj);
         for (Int i = 2; i < target->obj->size; i++) {
             ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
             ObjEntry *k = vm_entry_key(child);
             if (!k || !entry_is_string(k)) continue;
-            if (urb_bytes_len(k->obj) == len && memcmp(urb_bytes_data(k->obj), key, len) == 0) {
+            if (disturb_bytes_len(k->obj) == len && memcmp(disturb_bytes_data(k->obj), key, len) == 0) {
                 push_number(vm, stack, 1);
                 return;
             }
@@ -2602,7 +2602,7 @@ static void native_has(VM *vm, List *stack, List *global)
         return;
     }
 
-    if (urb_obj_type(idx->obj) == URB_T_INT || urb_obj_type(idx->obj) == URB_T_FLOAT) {
+    if (disturb_obj_type(idx->obj) == DISTURB_T_INT || disturb_obj_type(idx->obj) == DISTURB_T_FLOAT) {
         Int i = 0;
         if (!number_to_int(idx, &i)) {
             fprintf(stderr, "has expects integer index\n");
@@ -2631,16 +2631,16 @@ static void native_delete(VM *vm, List *stack, List *global)
         return;
     }
 
-    Int type = urb_obj_type(target->obj);
-    if (entry_is_string(idx) && type == URB_T_TABLE) {
-        const char *key = urb_bytes_data(idx->obj);
-        size_t len = urb_bytes_len(idx->obj);
+    Int type = disturb_obj_type(target->obj);
+    if (entry_is_string(idx) && type == DISTURB_T_TABLE) {
+        const char *key = disturb_bytes_data(idx->obj);
+        size_t len = disturb_bytes_len(idx->obj);
         for (Int i = 2; i < target->obj->size; i++) {
             ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
             ObjEntry *k = vm_entry_key(child);
             if (!k || !entry_is_string(k)) continue;
-            if (urb_bytes_len(k->obj) == len && memcmp(urb_bytes_data(k->obj), key, len) == 0) {
-                urb_remove(target->obj, i);
+            if (disturb_bytes_len(k->obj) == len && memcmp(disturb_bytes_data(k->obj), key, len) == 0) {
+                disturb_remove(target->obj, i);
                 push_number(vm, stack, 1);
                 return;
             }
@@ -2649,7 +2649,7 @@ static void native_delete(VM *vm, List *stack, List *global)
         return;
     }
 
-    if (urb_obj_type(idx->obj) == URB_T_INT || urb_obj_type(idx->obj) == URB_T_FLOAT) {
+    if (disturb_obj_type(idx->obj) == DISTURB_T_INT || disturb_obj_type(idx->obj) == DISTURB_T_FLOAT) {
         Int i = 0;
         if (!number_to_int(idx, &i)) {
             fprintf(stderr, "delete expects integer index\n");
@@ -2659,12 +2659,12 @@ static void native_delete(VM *vm, List *stack, List *global)
             push_number(vm, stack, 0);
             return;
         }
-        if (type == URB_T_TABLE) {
-            urb_remove(target->obj, list_pos_from_index(target->obj, i));
+        if (type == DISTURB_T_TABLE) {
+            disturb_remove(target->obj, list_pos_from_index(target->obj, i));
             push_number(vm, stack, 1);
             return;
         }
-        if (type == URB_T_INT) {
+        if (type == DISTURB_T_INT) {
             Int count = bytes_list_count(target, entry_is_string(target) ? 1 : sizeof(Int));
             Int pos = 0;
             if (!bytes_list_index(count, i, &pos)) {
@@ -2679,7 +2679,7 @@ static void native_delete(VM *vm, List *stack, List *global)
             push_number(vm, stack, 1);
             return;
         }
-        if (type == URB_T_FLOAT) {
+        if (type == DISTURB_T_FLOAT) {
             Int count = bytes_list_count(target, sizeof(Float));
             Int pos = 0;
             if (!bytes_list_index(count, i, &pos)) {
@@ -2704,23 +2704,23 @@ static void native_push(VM *vm, List *stack, List *global)
         return;
     }
     uint32_t start = native_this(vm) ? 0 : 1;
-    Int type = urb_obj_type(target->obj);
+    Int type = disturb_obj_type(target->obj);
     for (uint32_t i = start; i < argc; i++) {
         ObjEntry *arg = native_arg(stack, argc, i);
         if (!arg) continue;
-        if (type == URB_T_TABLE) {
+        if (type == DISTURB_T_TABLE) {
             target->obj = vm_update_shared_obj(vm, target->obj,
-                                               urb_table_add(target->obj, arg));
-        } else if (type == URB_T_INT && entry_is_string(target)) {
+                                               disturb_table_add(target->obj, arg));
+        } else if (type == DISTURB_T_INT && entry_is_string(target)) {
             if (!entry_is_string(arg)) {
                 fprintf(stderr, "push expects string values\n");
                 return;
             }
             target->obj = vm_update_shared_obj(vm, target->obj,
-                                               urb_bytes_append(target->obj,
-                                                                urb_bytes_data(arg->obj),
-                                                                urb_bytes_len(arg->obj)));
-        } else if (type == URB_T_INT) {
+                                               disturb_bytes_append(target->obj,
+                                                                disturb_bytes_data(arg->obj),
+                                                                disturb_bytes_len(arg->obj)));
+        } else if (type == DISTURB_T_INT) {
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;
@@ -2736,12 +2736,12 @@ static void native_push(VM *vm, List *stack, List *global)
                 }
                 iv = cast;
             }
-            size_t offset = urb_bytes_len(target->obj);
+            size_t offset = disturb_bytes_len(target->obj);
             if (!bytes_list_insert(vm, target, offset, &iv, sizeof(Int))) {
                 fprintf(stderr, "push failed to grow list\n");
                 return;
             }
-        } else if (type == URB_T_FLOAT) {
+        } else if (type == DISTURB_T_FLOAT) {
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;
@@ -2750,7 +2750,7 @@ static void native_push(VM *vm, List *stack, List *global)
                 return;
             }
             Float out = is_float ? fv : (Float)iv;
-            size_t offset = urb_bytes_len(target->obj);
+            size_t offset = disturb_bytes_len(target->obj);
             if (!bytes_list_insert(vm, target, offset, &out, sizeof(Float))) {
                 fprintf(stderr, "push failed to grow list\n");
                 return;
@@ -2767,26 +2767,26 @@ static void native_pop(VM *vm, List *stack, List *global)
         fprintf(stderr, "pop expects target\n");
         return;
     }
-    Int type = urb_obj_type(target->obj);
-    if (type == URB_T_TABLE) {
+    Int type = disturb_obj_type(target->obj);
+    if (type == DISTURB_T_TABLE) {
         if (target->obj->size <= 2) return;
-        Value v = urb_pop(target->obj);
+        Value v = disturb_pop(target->obj);
         ObjEntry *entry = (ObjEntry*)v.p;
         if (entry) {
             stack = push_entry(vm, stack, entry);
         }
         return;
     }
-    if (type == URB_T_INT && entry_is_string(target)) {
-        size_t len = urb_bytes_len(target->obj);
+    if (type == DISTURB_T_INT && entry_is_string(target)) {
+        size_t len = disturb_bytes_len(target->obj);
         if (!len) return;
-        char c = urb_bytes_data(target->obj)[len - 1];
+        char c = disturb_bytes_data(target->obj)[len - 1];
         target->obj->size = (UHalf)(len - 1 + 2);
         target->obj->capacity = target->obj->size;
         push_string(vm, stack, &c, 1);
         return;
     }
-    if (type == URB_T_INT) {
+    if (type == DISTURB_T_INT) {
         Int count = bytes_list_count(target, sizeof(Int));
         if (count <= 0) return;
         Int idx = count - 1;
@@ -2796,7 +2796,7 @@ static void native_pop(VM *vm, List *stack, List *global)
         push_number(vm, stack, (double)iv);
         return;
     }
-    if (type == URB_T_FLOAT) {
+    if (type == DISTURB_T_FLOAT) {
         Int count = bytes_list_count(target, sizeof(Float));
         if (count <= 0) return;
         Int idx = count - 1;
@@ -2816,27 +2816,27 @@ static void native_shift(VM *vm, List *stack, List *global)
         fprintf(stderr, "shift expects target\n");
         return;
     }
-    Int type = urb_obj_type(target->obj);
-    if (type == URB_T_TABLE) {
+    Int type = disturb_obj_type(target->obj);
+    if (type == DISTURB_T_TABLE) {
         if (target->obj->size <= 2) return;
-        Value v = urb_remove(target->obj, 2);
+        Value v = disturb_remove(target->obj, 2);
         ObjEntry *entry = (ObjEntry*)v.p;
         if (entry) {
             stack = push_entry(vm, stack, entry);
         }
         return;
     }
-    if (type == URB_T_INT && entry_is_string(target)) {
-        size_t len = urb_bytes_len(target->obj);
+    if (type == DISTURB_T_INT && entry_is_string(target)) {
+        size_t len = disturb_bytes_len(target->obj);
         if (!len) return;
-        char c = urb_bytes_data(target->obj)[0];
-        memmove(urb_bytes_data(target->obj), urb_bytes_data(target->obj) + 1, len - 1);
+        char c = disturb_bytes_data(target->obj)[0];
+        memmove(disturb_bytes_data(target->obj), disturb_bytes_data(target->obj) + 1, len - 1);
         target->obj->size = (UHalf)(len - 1 + 2);
         target->obj->capacity = target->obj->size;
         push_string(vm, stack, &c, 1);
         return;
     }
-    if (type == URB_T_INT) {
+    if (type == DISTURB_T_INT) {
         Int count = bytes_list_count(target, sizeof(Int));
         if (count <= 0) return;
         Int iv = 0;
@@ -2844,7 +2844,7 @@ static void native_shift(VM *vm, List *stack, List *global)
         push_number(vm, stack, (double)iv);
         return;
     }
-    if (type == URB_T_FLOAT) {
+    if (type == DISTURB_T_FLOAT) {
         Int count = bytes_list_count(target, sizeof(Float));
         if (count <= 0) return;
         Float fv = 0;
@@ -2863,31 +2863,31 @@ static void native_unshift(VM *vm, List *stack, List *global)
         return;
     }
     uint32_t start = native_this(vm) ? 0 : 1;
-    Int type = urb_obj_type(target->obj);
+    Int type = disturb_obj_type(target->obj);
     for (uint32_t i = argc; i-- > start;) {
         ObjEntry *arg = native_arg(stack, argc, i);
         if (!arg) continue;
-        if (type == URB_T_TABLE) {
+        if (type == DISTURB_T_TABLE) {
             Value v;
             v.p = arg;
             target->obj = vm_update_shared_obj(vm, target->obj,
-                                               urb_insert(target->obj, 2, v));
-        } else if (type == URB_T_INT && entry_is_string(target)) {
+                                               disturb_insert(target->obj, 2, v));
+        } else if (type == DISTURB_T_INT && entry_is_string(target)) {
             if (!entry_is_string(arg)) {
                 fprintf(stderr, "unshift expects string values\n");
                 return;
             }
-            size_t len = urb_bytes_len(target->obj);
-            size_t add = urb_bytes_len(arg->obj);
+            size_t len = disturb_bytes_len(target->obj);
+            size_t add = disturb_bytes_len(arg->obj);
             size_t bytes = sizeof(List) + 2 * sizeof(Value) + len + add;
             List *old_obj = target->obj;
             target->obj = (List*)realloc(target->obj, bytes);
             target->obj = vm_update_shared_obj(vm, old_obj, target->obj);
-            memmove(urb_bytes_data(target->obj) + add, urb_bytes_data(target->obj), len);
-            memcpy(urb_bytes_data(target->obj), urb_bytes_data(arg->obj), add);
+            memmove(disturb_bytes_data(target->obj) + add, disturb_bytes_data(target->obj), len);
+            memcpy(disturb_bytes_data(target->obj), disturb_bytes_data(arg->obj), add);
             target->obj->size = (UHalf)(len + add + 2);
             target->obj->capacity = target->obj->size;
-        } else if (type == URB_T_INT) {
+        } else if (type == DISTURB_T_INT) {
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;
@@ -2907,7 +2907,7 @@ static void native_unshift(VM *vm, List *stack, List *global)
                 fprintf(stderr, "unshift failed to grow list\n");
                 return;
             }
-        } else if (type == URB_T_FLOAT) {
+        } else if (type == DISTURB_T_FLOAT) {
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;
@@ -2939,30 +2939,30 @@ static void native_insert(VM *vm, List *stack, List *global)
         fprintf(stderr, "insert expects integer index\n");
         return;
     }
-    Int type = urb_obj_type(target->obj);
-    if (type == URB_T_TABLE) {
+    Int type = disturb_obj_type(target->obj);
+    if (type == DISTURB_T_TABLE) {
         Value v;
         v.p = val;
         target->obj = vm_update_shared_obj(vm, target->obj,
-                                           urb_insert(target->obj,
+                                           disturb_insert(target->obj,
                                                       list_pos_from_index(target->obj, index), v));
         return;
     }
-    if (type == URB_T_INT && entry_is_string(target)) {
+    if (type == DISTURB_T_INT && entry_is_string(target)) {
         if (!entry_is_string(val)) {
             fprintf(stderr, "insert expects string value\n");
             return;
         }
-        size_t len = urb_bytes_len(target->obj);
-        size_t add = urb_bytes_len(val->obj);
+        size_t len = disturb_bytes_len(target->obj);
+        size_t add = disturb_bytes_len(val->obj);
         Int insert_at = bytes_list_insert_index((Int)len, index);
-        if (!bytes_list_insert(vm, target, (size_t)insert_at, urb_bytes_data(val->obj), add)) {
+        if (!bytes_list_insert(vm, target, (size_t)insert_at, disturb_bytes_data(val->obj), add)) {
             fprintf(stderr, "insert failed to grow string\n");
             return;
         }
         return;
     }
-    if (type == URB_T_INT) {
+    if (type == DISTURB_T_INT) {
         Int iv = 0;
         Float fv = 0;
         int is_float = 0;
@@ -2987,7 +2987,7 @@ static void native_insert(VM *vm, List *stack, List *global)
         }
         return;
     }
-    if (type == URB_T_FLOAT) {
+    if (type == DISTURB_T_FLOAT) {
         Int iv = 0;
         Float fv = 0;
         int is_float = 0;
@@ -3016,19 +3016,19 @@ static void native_remove(VM *vm, List *stack, List *global)
         fprintf(stderr, "remove expects target and index\n");
         return;
     }
-    Int type = urb_obj_type(target->obj);
-    if (type == URB_T_TABLE) {
+    Int type = disturb_obj_type(target->obj);
+    if (type == DISTURB_T_TABLE) {
         if (entry_is_string(idx)) {
-            size_t key_len = urb_bytes_len(idx->obj);
+            size_t key_len = disturb_bytes_len(idx->obj);
             for (Int i = 2; i < target->obj->size; i++) {
                 ObjEntry *entry = (ObjEntry*)target->obj->data[i].p;
                 ObjEntry *key = vm_entry_key(entry);
                 if (!key || !entry_is_string(key)) continue;
-                if (urb_bytes_len(key->obj) != key_len ||
-                    memcmp(urb_bytes_data(key->obj), urb_bytes_data(idx->obj), key_len) != 0) {
+                if (disturb_bytes_len(key->obj) != key_len ||
+                    memcmp(disturb_bytes_data(key->obj), disturb_bytes_data(idx->obj), key_len) != 0) {
                     continue;
                 }
-                Value v = urb_remove(target->obj, i);
+                Value v = disturb_remove(target->obj, i);
                 entry = (ObjEntry*)v.p;
                 if (entry) {
                     stack = push_entry(vm, stack, entry);
@@ -3043,7 +3043,7 @@ static void native_remove(VM *vm, List *stack, List *global)
             return;
         }
         if (target->obj->size <= 2) return;
-        Value v = urb_remove(target->obj, list_pos_from_index(target->obj, index));
+        Value v = disturb_remove(target->obj, list_pos_from_index(target->obj, index));
         ObjEntry *entry = (ObjEntry*)v.p;
         if (entry) {
             stack = push_entry(vm, stack, entry);
@@ -3055,8 +3055,8 @@ static void native_remove(VM *vm, List *stack, List *global)
         fprintf(stderr, "remove expects integer index\n");
         return;
     }
-    if (type == URB_T_INT && entry_is_string(target)) {
-        size_t len = urb_bytes_len(target->obj);
+    if (type == DISTURB_T_INT && entry_is_string(target)) {
+        size_t len = disturb_bytes_len(target->obj);
         Int pos = 0;
         if (!bytes_list_index((Int)len, index, &pos)) return;
         char c = 0;
@@ -3064,7 +3064,7 @@ static void native_remove(VM *vm, List *stack, List *global)
         push_string(vm, stack, &c, 1);
         return;
     }
-    if (type == URB_T_INT) {
+    if (type == DISTURB_T_INT) {
         Int count = bytes_list_count(target, sizeof(Int));
         Int pos = 0;
         if (!bytes_list_index(count, index, &pos)) return;
@@ -3073,7 +3073,7 @@ static void native_remove(VM *vm, List *stack, List *global)
         push_number(vm, stack, (double)iv);
         return;
     }
-    if (type == URB_T_FLOAT) {
+    if (type == DISTURB_T_FLOAT) {
         Int count = bytes_list_count(target, sizeof(Float));
         Int pos = 0;
         if (!bytes_list_index(count, index, &pos)) return;

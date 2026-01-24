@@ -35,7 +35,7 @@ disturb: $(OBJ)
 lib/libregexp/%.o: lib/libregexp/%.c
 	$(CC) $(CFLAGS) $(LIBREGEXP_CFLAGS) -c $< -o $@
 
-%.o: %.c include/vm.h include/urb.h include/papagaio.h include/bytecode.h
+%.o: %.c include/vm.h include/papagaio.h include/bytecode.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:

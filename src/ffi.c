@@ -71,27 +71,27 @@ static void ffi_function_release(void *data)
 
 static int entry_is_string(ObjEntry *entry)
 {
-    return entry && entry->is_string && urb_obj_type(entry->obj) == URB_T_INT;
+    return entry && entry->is_string && disturb_obj_type(entry->obj) == DISTURB_T_INT;
 }
 
 static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *out_is_float)
 {
     if (!entry || !entry->in_use) return 0;
-    Int type = urb_obj_type(entry->obj);
-    if (type == URB_T_INT) {
+    Int type = disturb_obj_type(entry->obj);
+    if (type == DISTURB_T_INT) {
         if (entry_is_string(entry)) return 0;
-        if (urb_bytes_len(entry->obj) != sizeof(Int)) return 0;
+        if (disturb_bytes_len(entry->obj) != sizeof(Int)) return 0;
         Int v = 0;
-        memcpy(&v, urb_bytes_data(entry->obj), sizeof(Int));
+        memcpy(&v, disturb_bytes_data(entry->obj), sizeof(Int));
         if (out_i) *out_i = v;
         if (out_f) *out_f = (Float)v;
         if (out_is_float) *out_is_float = 0;
         return 1;
     }
-    if (type == URB_T_FLOAT) {
-        if (urb_bytes_len(entry->obj) != sizeof(Float)) return 0;
+    if (type == DISTURB_T_FLOAT) {
+        if (disturb_bytes_len(entry->obj) != sizeof(Float)) return 0;
         Float v = 0;
-        memcpy(&v, urb_bytes_data(entry->obj), sizeof(Float));
+        memcpy(&v, disturb_bytes_data(entry->obj), sizeof(Float));
         if (out_i) *out_i = (Int)v;
         if (out_f) *out_f = v;
         if (out_is_float) *out_is_float = 1;
@@ -103,7 +103,7 @@ static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *o
 static int entry_as_cstr(ObjEntry *entry, const char **out)
 {
     if (!entry || !entry_is_string(entry)) return 0;
-    *out = urb_bytes_data(entry->obj);
+    *out = disturb_bytes_data(entry->obj);
     return 1;
 }
 
@@ -465,7 +465,7 @@ static void ffi_fill_int_list(ObjEntry *entry, const void *ptr, int count, size_
 {
     (void)is_signed;
     if (!entry || !ptr || count <= 0) return;
-    char *dst = urb_bytes_data(entry->obj);
+    char *dst = disturb_bytes_data(entry->obj);
     for (int i = 0; i < count; i++) {
         int64_t v = 0;
         memcpy(&v, (const char*)ptr + (size_t)i * elem_size, elem_size);
@@ -476,7 +476,7 @@ static void ffi_fill_int_list(ObjEntry *entry, const void *ptr, int count, size_
 static void ffi_fill_float_list(ObjEntry *entry, const void *ptr, int count, size_t elem_size)
 {
     if (!entry || !ptr || count <= 0) return;
-    char *dst = urb_bytes_data(entry->obj);
+    char *dst = disturb_bytes_data(entry->obj);
     for (int i = 0; i < count; i++) {
         double v = 0.0;
         memcpy(&v, (const char*)ptr + (size_t)i * elem_size, elem_size);
@@ -511,7 +511,7 @@ static void ffi_push_entry(VM *vm, ObjEntry *entry)
 {
     if (!vm || !vm->stack_entry || !entry) return;
     List *old_stack = vm->stack_entry->obj;
-    List *stack = urb_table_add(old_stack, entry);
+    List *stack = disturb_table_add(old_stack, entry);
     stack = vm_update_shared_obj(vm, old_stack, stack);
     vm->stack_entry->obj = stack;
 }
@@ -527,7 +527,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         }
     }
     ObjEntry *self = vm && vm->call_entry ? vm->call_entry : NULL;
-    if (!self || urb_obj_type(self->obj) != URB_T_NATIVE || self->obj->size < 3) {
+    if (!self || disturb_obj_type(self->obj) != DISTURB_T_NATIVE || self->obj->size < 3) {
         fprintf(stderr, "ffi: invalid function\n");
         return;
     }
@@ -572,10 +572,10 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             continue;
         }
         if (t->base == FFI_BASE_PTR || t->is_ptr || t->is_array) {
-            if (!arg || urb_obj_type(arg->obj) == URB_T_NULL) {
+            if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
                 values[i].p = NULL;
-            } else if (urb_obj_type(arg->obj) == URB_T_INT || urb_obj_type(arg->obj) == URB_T_FLOAT) {
-                values[i].p = urb_bytes_data(arg->obj);
+            } else if (disturb_obj_type(arg->obj) == DISTURB_T_INT || disturb_obj_type(arg->obj) == DISTURB_T_FLOAT) {
+                values[i].p = disturb_bytes_data(arg->obj);
             } else {
                 values[i].p = NULL;
             }
@@ -778,7 +778,7 @@ void native_ffi_load(VM *vm, List *stack, List *global)
             ffi_function_release(fn);
             continue;
         }
-        table->obj = vm_update_shared_obj(vm, table->obj, urb_table_add(table->obj, entry));
+        table->obj = vm_update_shared_obj(vm, table->obj, disturb_table_add(table->obj, entry));
     }
     ffi_push_entry(vm, table);
 }
