@@ -199,6 +199,21 @@ int main(int argc, char **argv)
             vm_free(&vm);
             return 1;
         }
+        /* Support scripts with a shebang (#!): if the first two characters
+           are "#!" strip the first line so the interpreter doesn't try to
+           parse it as Disturb source. We do the removal in-place so the
+           original buffer can be freed later as usual. */
+        if (src[0] == '#' && src[1] == '!') {
+            char *nl = strchr(src, '\n');
+            if (!nl) {
+                /* file only contained shebang line: make empty source */
+                src[0] = '\0';
+            } else {
+                size_t offset = (size_t)(nl - src) + 1;
+                size_t remaining = strlen(src + offset);
+                memmove(src, src + offset, remaining + 1);
+            }
+        }
         vm_exec_line(&vm, src);
         free(src);
         fclose(fp);

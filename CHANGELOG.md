@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.1
+
+- Added shebang support.
+
 ## 0.15.0
 - Fix lambdas parameters overwriting in recursive calls.
 - Allow assignment and `++`/`--` operators inside expressions (prefix returns updated value, postfix returns previous value).
