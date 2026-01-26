@@ -1,2 +1,0 @@
-#!/usr/bin/env disturb
-println(1 + 2);
