@@ -19,6 +19,12 @@ Disturb means Distributable Urb, at least that was the original idea, but we are
 
 `--urb` compiles source to Disturb bytecode and executes it through a URB-based compatibility runtime. This is an early implementation focused on performance. Safety checks and GC are intentionally omitted.
 
+Status summary (URB):
+- Implemented: core bytecode execution, objects/strings/tables, methods, eval/parse/emit, papagaio, IO/system/FFI (when enabled at build).
+- Partially implemented: manual GC APIs (`gc.free`, `gc.new`).
+- No-ops / stripped at translation: `gc.collect`, `gc.sweep`, `gc.debug`, `gc.stats`, `gc.flush`, and `BC_GC` bytecode.
+- Not implemented: safety checks and strict-mode enforcement beyond the minimal compatibility behavior.
+
 ## Core Model
 
 | Concept | Behavior |

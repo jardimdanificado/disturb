@@ -93,6 +93,7 @@ struct UrbVM {
     UEntry *argc_entry;
     UEntry *this_entry;
     UEntry *call_entry;
+    UEntry *gc_entry;
     int strict_mode;
     Int call_override_len;
     int has_call_override;
@@ -3981,6 +3982,28 @@ static int opcode_from_name(const char *name, size_t len)
     return -1;
 }
 
+static int is_urb_noop_call(const char *name, size_t len)
+{
+    if (!name) return 0;
+    if (len == 9 && strncmp(name, "gcCollect", 9) == 0) return 1;
+    if (len == 7 && strncmp(name, "gcSweep", 7) == 0) return 1;
+    if (len == 7 && strncmp(name, "gcDebug", 7) == 0) return 1;
+    if (len == 7 && strncmp(name, "gcStats", 7) == 0) return 1;
+    if (len == 7 && strncmp(name, "gcFlush", 7) == 0) return 1;
+    return 0;
+}
+
+static int is_gc_method_name(const char *name, size_t len)
+{
+    if (!name) return 0;
+    if (len == 7 && strncmp(name, "collect", 7) == 0) return 1;
+    if (len == 5 && strncmp(name, "sweep", 5) == 0) return 1;
+    if (len == 5 && strncmp(name, "debug", 5) == 0) return 1;
+    if (len == 5 && strncmp(name, "stats", 5) == 0) return 1;
+    if (len == 5 && strncmp(name, "flush", 5) == 0) return 1;
+    return 0;
+}
+
 static UEntry *table_get(UEntry *table, const char *name)
 {
     return table_find_by_key_len(table, name, strlen(name));
@@ -4324,22 +4347,9 @@ static void native_gc_free(UrbVM *vm, List *stack, UEntry *global)
 
 static void native_gc_sweep(UrbVM *vm, List *stack, UEntry *global)
 {
+    (void)vm;
     (void)global;
-    uint32_t argc = native_argc(vm);
-    UEntry *target = native_arg(stack, argc, 0);
-    if (!target || !target->obj) {
-        fprintf(stderr, "gc.sweep expects a value\n");
-        return;
-    }
-    if (target == vm->global_entry || target == vm->stack_entry ||
-        target == vm->null_entry || target == vm->common_entry ||
-        target == vm->argc_entry) {
-        fprintf(stderr, "gc.sweep cannot sweep protected values\n");
-        return;
-    }
-    uobj_free(target->obj);
-    target->obj = uobj_new(U_T_NULL);
-    stack_push_entry(stack, uent_make_int_scalar(1));
+    stack_push_entry(stack, g_vm->null_entry);
 }
 
 static void native_gc_new(UrbVM *vm, List *stack, UEntry *global)
@@ -4764,6 +4774,22 @@ static void op_call(List *stack)
         stack_push_entry(stack, g_vm->null_entry);
         return;
     }
+    if (g_vm && g_vm->gc_entry && g_vm->this_entry == g_vm->gc_entry) {
+        size_t nlen = entry_bytes_len(name);
+        const char *n = (const char*)entry_bytes_data(name);
+        if ((nlen == 7 && strncmp(n, "collect", 7) == 0) ||
+            (nlen == 5 && strncmp(n, "sweep", 5) == 0) ||
+            (nlen == 5 && strncmp(n, "debug", 5) == 0) ||
+            (nlen == 5 && strncmp(n, "stats", 5) == 0) ||
+            (nlen == 5 && strncmp(n, "flush", 5) == 0)) {
+            for (Int i = 0; i < argc; i++) {
+                if (stack->size == 0) break;
+                urb_pop(stack);
+            }
+            stack_push_entry(stack, g_vm->null_entry);
+            return;
+        }
+    }
     UEntry *target = NULL;
     if (g_vm->this_entry) {
         int this_type = g_vm->this_entry->obj ? g_vm->this_entry->obj->type : U_T_NULL;
@@ -4800,6 +4826,22 @@ static void op_call_ex(List *stack)
     if (!name || !entry_is_string(name)) {
         stack_push_entry(stack, g_vm->null_entry);
         return;
+    }
+    if (g_vm && g_vm->gc_entry && g_vm->this_entry == g_vm->gc_entry) {
+        size_t nlen = entry_bytes_len(name);
+        const char *n = (const char*)entry_bytes_data(name);
+        if ((nlen == 7 && strncmp(n, "collect", 7) == 0) ||
+            (nlen == 5 && strncmp(n, "sweep", 5) == 0) ||
+            (nlen == 5 && strncmp(n, "debug", 5) == 0) ||
+            (nlen == 5 && strncmp(n, "stats", 5) == 0) ||
+            (nlen == 5 && strncmp(n, "flush", 5) == 0)) {
+            for (Int i = 0; i < argc; i++) {
+                if (stack->size == 0) break;
+                urb_pop(stack);
+            }
+            stack_push_entry(stack, g_vm->null_entry);
+            return;
+        }
     }
     UEntry *target = NULL;
     if (g_vm->this_entry) {
@@ -5426,6 +5468,8 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
     PatchVec returns = {0};
 
     size_t pc = 0;
+    int pending_gc_load = 0;
+    int gc_this_active = 0;
     while (pc < len) {
         pc_to_mem[pc] = vec.len;
         uint8_t op = 0;
@@ -5582,21 +5626,35 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
         }
         case BC_INDEX:
             vec_push(&vec, op_token(OP_INDEX));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_STORE_INDEX:
             vec_push(&vec, op_token(OP_STORE_INDEX));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_LOAD_ROOT:
             vec_push(&vec, op_token(OP_LOAD_ROOT));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_LOAD_THIS:
             vec_push(&vec, op_token(OP_LOAD_THIS));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_LOAD_GLOBAL:
         case BC_STORE_GLOBAL: {
             unsigned char *name = NULL;
             size_t name_len = 0;
             if (!bc_read_string(data, len, &pc, &name, &name_len)) break;
+            if (op == BC_LOAD_GLOBAL && name_len == 2 && memcmp(name, "gc", 2) == 0) {
+                pending_gc_load = 1;
+            } else {
+                pending_gc_load = 0;
+            }
+            gc_this_active = 0;
             Value val;
             val.p = uent_make_bytes((const char*)name, name_len, 1, 1);
             free(name);
@@ -5606,6 +5664,8 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
         }
         case BC_SET_THIS:
             vec_push(&vec, op_token(OP_SET_THIS));
+            gc_this_active = pending_gc_load;
+            pending_gc_load = 0;
             break;
         case BC_CALL:
         case BC_CALL_EX: {
@@ -5614,6 +5674,34 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
             if (!bc_read_string(data, len, &pc, &name, &name_len)) break;
             uint32_t argc = 0;
             if (!bc_read_u32(data, len, &pc, &argc)) break;
+            if (gc_this_active && is_gc_method_name((const char*)name, name_len)) {
+                free(name);
+                if (op == BC_CALL_EX) {
+                    uint32_t override_len = 0;
+                    if (!bc_read_u32(data, len, &pc, &override_len)) break;
+                }
+                for (uint32_t i = 0; i < argc; i++) {
+                    vec_push(&vec, op_token(OP_POP));
+                }
+                Value val; val.p = g_vm ? g_vm->null_entry : uent_make_null();
+                vec_push(&vec, val);
+                gc_this_active = 0;
+                pending_gc_load = 0;
+                break;
+            }
+            if (is_urb_noop_call((const char*)name, name_len)) {
+                free(name);
+                if (op == BC_CALL_EX) {
+                    uint32_t override_len = 0;
+                    if (!bc_read_u32(data, len, &pc, &override_len)) break;
+                }
+                for (uint32_t i = 0; i < argc; i++) {
+                    vec_push(&vec, op_token(OP_POP));
+                }
+                Value val; val.p = g_vm ? g_vm->null_entry : uent_make_null();
+                vec_push(&vec, val);
+                break;
+            }
             Value name_val; name_val.p = uent_make_bytes((const char*)name, name_len, 1, 1);
             free(name);
             vec_push(&vec, name_val);
@@ -5628,10 +5716,14 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
             } else {
                 vec_push(&vec, op_token(OP_CALL));
             }
+            gc_this_active = 0;
+            pending_gc_load = 0;
             break;
         }
         case BC_STRICT:
             vec_push(&vec, op_token(OP_STRICT));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_JMP: {
             uint32_t target = 0;
@@ -5641,6 +5733,8 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
             vec_push(&vec, t);
             vec_push(&vec, (Value){.i = ALIAS_GOTO});
             patch_push(&patches, t_index, target);
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         }
         case BC_JMP_IF_FALSE: {
@@ -5654,6 +5748,8 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
             vec_push(&vec, op_token(OP_SWAP));
             vec_push(&vec, (Value){.i = ALIAS_GOIF});
             patch_push(&patches, t_index, target);
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         }
         case BC_RETURN: {
@@ -5662,66 +5758,105 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
             vec_push(&vec, t);
             vec_push(&vec, (Value){.i = ALIAS_GOTO});
             patch_push(&returns, t_index, (size_t)-1);
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         }
         case BC_POP:
             vec_push(&vec, op_token(OP_POP));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_DUP:
             vec_push(&vec, op_token(OP_DUP));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_GC:
-            vec_push(&vec, op_token(OP_GC));
             break;
         case BC_DUMP:
             vec_push(&vec, op_token(OP_DUMP));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_ADD:
             vec_push(&vec, op_token(OP_ADD));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_SUB:
             vec_push(&vec, op_token(OP_SUB));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_MUL:
             vec_push(&vec, op_token(OP_MUL));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_DIV:
             vec_push(&vec, op_token(OP_DIV));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_MOD:
             vec_push(&vec, op_token(OP_MOD));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_NEG:
             vec_push(&vec, op_token(OP_NEG));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_NOT:
             vec_push(&vec, op_token(OP_NOT));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_EQ:
             vec_push(&vec, op_token(OP_EQ));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_NEQ:
             vec_push(&vec, op_token(OP_NEQ));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_LT:
             vec_push(&vec, op_token(OP_LT));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_LTE:
             vec_push(&vec, op_token(OP_LTE));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_GT:
             vec_push(&vec, op_token(OP_GT));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_GTE:
             vec_push(&vec, op_token(OP_GTE));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_AND:
             vec_push(&vec, op_token(OP_AND));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         case BC_OR:
             vec_push(&vec, op_token(OP_OR));
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         default:
+            pending_gc_load = 0;
+            gc_this_active = 0;
             break;
         }
     }
@@ -5784,6 +5919,7 @@ static void vm_init(UrbVM *vm)
 
     UEntry *gc_entry = uent_make_table(8);
     table_set_by_key_len(vm->global_entry, "gc", 2, gc_entry);
+    vm->gc_entry = gc_entry;
 
 #ifdef DISTURB_ENABLE_FFI
     UEntry *ffi_entry = uent_make_table(1);
