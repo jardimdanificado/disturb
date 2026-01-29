@@ -154,5 +154,5 @@ asm = (text){
 };
 
 disasm = (bytes){
-  return astToSource(bytecodeToAst(bytes)).trim();
+  return emit(bytes).trim();
 };

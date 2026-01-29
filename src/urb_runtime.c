@@ -2708,7 +2708,7 @@ static void native_parse(UrbVM *vm, List *stack, UEntry *global)
 {
     (void)vm;
     (void)global;
-    fprintf(stderr, "parse is deprecated and not supported in URB runtime\n");
+    fprintf(stderr, "parse is not supported in URB runtime\n");
     push_entry(stack, g_vm->null_entry);
 }
 
@@ -2716,23 +2716,7 @@ static void native_emit(UrbVM *vm, List *stack, UEntry *global)
 {
     (void)vm;
     (void)global;
-    fprintf(stderr, "emit is deprecated and not supported in URB runtime\n");
-    push_entry(stack, g_vm->null_entry);
-}
-
-static void native_bytecode_to_ast(UrbVM *vm, List *stack, UEntry *global)
-{
-    (void)vm;
-    (void)global;
-    fprintf(stderr, "bytecodeToAst is deprecated and not supported in URB runtime\n");
-    push_entry(stack, g_vm->null_entry);
-}
-
-static void native_ast_to_source(UrbVM *vm, List *stack, UEntry *global)
-{
-    (void)vm;
-    (void)global;
-    fprintf(stderr, "astToSource is deprecated and not supported in URB runtime\n");
+    fprintf(stderr, "emit is not supported in URB runtime\n");
     push_entry(stack, g_vm->null_entry);
 }
 
@@ -4223,8 +4207,6 @@ static void vm_init(UrbVM *vm)
     register_native(vm, "parse", native_parse, 1);
     register_native(vm, "emit", native_emit, 1);
     register_native(vm, "evalBytecode", native_eval_bytecode, 1);
-    register_native(vm, "bytecodeToAst", native_bytecode_to_ast, 1);
-    register_native(vm, "astToSource", native_ast_to_source, 1);
 
     register_native(vm, "append", native_append, 1);
     register_native(vm, "add", native_add, 1);

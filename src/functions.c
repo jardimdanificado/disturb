@@ -1385,30 +1385,52 @@ static void native_parse(VM *vm, List *stack, List *global)
         return;
     }
     free(buf);
-
-    ObjEntry *ast = vm_bytecode_to_ast(vm, bc.data, bc.len);
+    ObjEntry *bytes = vm_make_byte_value(vm, (const char*)bc.data, bc.len);
     bc_free(&bc);
-    if (!ast) {
-        fprintf(stderr, "parse failed to build AST\n");
-        return;
-    }
-    stack = push_entry(vm, stack, ast);
+    stack = push_entry(vm, stack, bytes);
 }
 
 static void native_emit(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_target(vm, stack, argc);
-    Bytecode bc;
-    char err[256];
-    err[0] = 0;
-    if (!ast_to_bytecode(vm, target, &bc, err, sizeof(err))) {
-        fprintf(stderr, "%s\n", err[0] ? err : "emit failed");
+    const char *data = NULL;
+    size_t len = 0;
+    if (entry_as_string(target, &data, &len)) {
+        ObjEntry *ast = vm_bytecode_to_ast(vm, (const unsigned char*)data, len);
+        if (!ast) {
+            fprintf(stderr, "emit failed to decode bytecode\n");
+            return;
+        }
+        StrBuf out;
+        sb_init(&out);
+        char err[256];
+        err[0] = 0;
+        if (!ast_to_source(vm, ast, &out, err, sizeof(err))) {
+            fprintf(stderr, "%s\n", err[0] ? err : "emit failed");
+            sb_free(&out);
+            return;
+        }
+        push_string(vm, stack, out.data, out.len);
+        sb_free(&out);
         return;
     }
-    ObjEntry *bytes = vm_make_byte_value(vm, (const char*)bc.data, bc.len);
-    bc_free(&bc);
-    stack = push_entry(vm, stack, bytes);
+
+    if (target && target->obj && disturb_obj_type(target->obj) == DISTURB_T_TABLE) {
+        Bytecode bc;
+        char err[256];
+        err[0] = 0;
+        if (!ast_to_bytecode(vm, target, &bc, err, sizeof(err))) {
+            fprintf(stderr, "%s\n", err[0] ? err : "emit failed");
+            return;
+        }
+        ObjEntry *bytes = vm_make_byte_value(vm, (const char*)bc.data, bc.len);
+        bc_free(&bc);
+        stack = push_entry(vm, stack, bytes);
+        return;
+    }
+
+    fprintf(stderr, "emit expects bytecode bytes\n");
 }
 
 static void native_eval_bytecode(VM *vm, List *stack, List *global)
@@ -1423,41 +1445,6 @@ static void native_eval_bytecode(VM *vm, List *stack, List *global)
     }
     vm_exec_bytecode(vm, (const unsigned char*)data, len);
     stack = push_entry(vm, stack, vm->null_entry);
-}
-
-static void native_bytecode_to_ast(VM *vm, List *stack, List *global)
-{
-    uint32_t argc = native_argc(vm, global);
-    ObjEntry *target = native_target(vm, stack, argc);
-    const char *data = NULL;
-    size_t len = 0;
-    if (!entry_as_string(target, &data, &len)) {
-        fprintf(stderr, "bytecodeToAst expects byte/string data\n");
-        return;
-    }
-    ObjEntry *ast = vm_bytecode_to_ast(vm, (const unsigned char*)data, len);
-    if (!ast) {
-        fprintf(stderr, "bytecodeToAst failed\n");
-        return;
-    }
-    stack = push_entry(vm, stack, ast);
-}
-
-static void native_ast_to_source(VM *vm, List *stack, List *global)
-{
-    uint32_t argc = native_argc(vm, global);
-    ObjEntry *target = native_target(vm, stack, argc);
-    StrBuf out;
-    sb_init(&out);
-    char err[256];
-    err[0] = 0;
-    if (!ast_to_source(vm, target, &out, err, sizeof(err))) {
-        fprintf(stderr, "%s\n", err[0] ? err : "astToSource failed");
-        sb_free(&out);
-        return;
-    }
-    push_string(vm, stack, out.data, out.len);
-    sb_free(&out);
 }
 
 static void native_gc(VM *vm, List *stack, List *global)
@@ -3156,8 +3143,6 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "parse") == 0) return native_parse;
     if (strcmp(name, "emit") == 0) return native_emit;
     if (strcmp(name, "evalBytecode") == 0) return native_eval_bytecode;
-    if (strcmp(name, "bytecodeToAst") == 0) return native_bytecode_to_ast;
-    if (strcmp(name, "astToSource") == 0) return native_ast_to_source;
     if (strcmp(name, "gc") == 0) return native_gc;
     if (strcmp(name, "gcCollect") == 0) return native_gc_collect;
     if (strcmp(name, "gcFree") == 0) return native_gc_free;

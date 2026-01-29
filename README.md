@@ -259,7 +259,7 @@ IO(might not be available in all environments):
 - `read`, `write`
 
 Metaprogramming:
-- `parse`, `emit`, `evalBytecode`, `bytecodeToAst`, `astToSource`, `eval`
+- `parse`, `emit`, `evalBytecode`, `eval`
 
 GC:
 - `gc`, `global.gc`
@@ -268,11 +268,9 @@ Notes:
 - `read(path)` returns a string with file contents.
 - `write(path, data)` writes a stringified value and returns `1` on success.
 - `eval(code)` executes code in the current VM and returns `null`.
-- `parse(source)` compiles source into a bytecode AST (see below).
-- `emit(ast)` produces bytecode bytes from a bytecode AST.
+- `parse(source)` compiles source into bytecode bytes.
+- `emit(bytecode)` returns a disassembly-style text view of bytecode bytes.
 - `evalBytecode(bytes)` executes bytecode and returns `null`.
-- `bytecodeToAst(bytes)` decodes bytecode bytes into a bytecode AST.
-- `astToSource(ast)` returns a disassembly-style text view of the bytecode AST.
 
 A pure Disturb assembler/disassembler is available in `example/asm_lib.disturb`:
 
@@ -282,27 +280,11 @@ bytes = asm("PUSH_INT 1\nPUSH_INT 2\nADD\n");
 println(disasm(bytes));
 ```
 
-## Bytecode AST
+## Bytecode Text
 
-Metaprogramming functions use a bytecode-level AST, not a syntax AST.
+`emit(bytecode)` returns a disassembly-style text format. `example/asm_lib.disturb` can assemble that text back into bytecode bytes.
 
-Top-level shape:
-- `{type = "bytecode", ops = {...}}`
-
-Each `ops` item is a table with `op` and optional fields:
-- `PUSH_INT`: `value` (int)
-- `PUSH_FLOAT`: `value` (float)
-- `PUSH_CHAR`/`PUSH_STRING`/`PUSH_CHAR_RAW`/`PUSH_STRING_RAW`: `value` (string)
-- `BUILD_INT`/`BUILD_FLOAT`/`BUILD_OBJECT`: `count` (int)
-- `BUILD_INT_LIT`/`BUILD_FLOAT_LIT`: `values` (array of numbers)
-- `BUILD_FUNCTION`: `argc`, `vararg`, `code` (byte string), `args` (array of `{name, default}`)
-- `LOAD_GLOBAL`/`STORE_GLOBAL`: `name` (string)
-- `CALL`: `name` (string), `argc` (int)
-- `JMP`/`JMP_IF_FALSE`: `target` (int)
-
-Notes:
-- `astToSource` follows the disassembler format; `BUILD_FUNCTION` shows lengths, not raw bytes.
-- `emit` consumes AST objects directly, so include `code`/`default` byte strings in `BUILD_FUNCTION`.
+The internal bytecode AST is no longer a public API.
 - `gc()` runs a collection.
 - `global.gc.collect()` runs a manual reachability collection and marks unreachable values for reuse.
 - `global.gc.free(value)` frees the value and replaces it with `null` (manual management).

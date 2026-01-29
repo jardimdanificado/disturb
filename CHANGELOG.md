@@ -2,7 +2,9 @@
 
 ## 0.16.0
 - disturb urb runtime.
+- Add `--urb-compile` and `--urb-run` for precompiled bytecode execution.
 - Add raw string/char bytecode opcodes to skip papagaio when literals contain no `$`.
+- Update metaprogramming: `parse` returns bytecode bytes, `emit` renders bytecode text; remove public bytecode AST helpers.
 
 ## 0.15.1
 - Added shebang support.

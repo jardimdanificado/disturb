@@ -1,24 +1,16 @@
 // 09_metaprogramming.disturb
-// Bytecode AST and bytecode evaluation.
+// Bytecode compilation and evaluation.
 
-// parse() compiles source into a bytecode AST.
+// parse() compiles source into bytecode bytes.
 code = "println(1 + 2);";
-ast = parse(code);
-println(ast.type);
-println(len(ast.ops));
+bytecode = parse(code);
+println(len(bytecode));
 
-// astToSource() renders a disassembly-like view.
-println(astToSource(ast));
-
-// emit() produces bytecode bytes from the AST.
-bytecode = emit(ast);
+// emit() renders a disassembly-like view of bytecode bytes.
+println(emit(bytecode));
 
 // evalBytecode() executes bytecode bytes.
 evalBytecode(bytecode);
-
-// bytecodeToAst() decodes raw bytecode.
-ast2 = bytecodeToAst(bytecode);
-println(ast2.type);
 
 // asm()/disasm() are provided by example/asm_lib.disturb.
 eval(read("example/asm_lib.disturb"));
