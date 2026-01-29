@@ -135,6 +135,8 @@ const char *bc_opcode_name(uint8_t op)
     case BC_GTE: return "GTE";
     case BC_AND: return "AND";
     case BC_OR: return "OR";
+    case BC_PUSH_CHAR_RAW: return "PUSH_CHAR_RAW";
+    case BC_PUSH_STRING_RAW: return "PUSH_STRING_RAW";
     default: return "UNKNOWN";
     }
 }

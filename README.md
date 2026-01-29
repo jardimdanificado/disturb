@@ -11,6 +11,7 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | `./disturb` | Interactive REPL |
 | `./disturb --repl` | Interactive REPL |
 | `./disturb --urb file.disturb` | Run with URB runtime compatibility layer |
+| `./disturb --urb-run file.urbc` | Run Disturb bytecode through URB |
 | `./disturb --help` | Show CLI help |
 
 ## URB runtime (experimental)
@@ -172,6 +173,8 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 | `PUSH_FLOAT` | `-- float` | Push float literal |
 | `PUSH_CHAR` | `-- char` | Push char literal |
 | `PUSH_STRING` | `-- string` | Push string literal |
+| `PUSH_CHAR_RAW` | `-- char` | Push char literal (no papagaio) |
+| `PUSH_STRING_RAW` | `-- string` | Push string literal (no papagaio) |
 | `BUILD_INT n` | `v… -- list` | Build int list |
 | `BUILD_FLOAT n` | `v… -- list` | Build float list |
 | `BUILD_OBJECT n` | `k v… -- obj` | Build object |
@@ -289,7 +292,7 @@ Top-level shape:
 Each `ops` item is a table with `op` and optional fields:
 - `PUSH_INT`: `value` (int)
 - `PUSH_FLOAT`: `value` (float)
-- `PUSH_CHAR`/`PUSH_STRING`: `value` (string)
+- `PUSH_CHAR`/`PUSH_STRING`/`PUSH_CHAR_RAW`/`PUSH_STRING_RAW`: `value` (string)
 - `BUILD_INT`/`BUILD_FLOAT`/`BUILD_OBJECT`: `count` (int)
 - `BUILD_INT_LIT`/`BUILD_FLOAT_LIT`: `values` (array of numbers)
 - `BUILD_FUNCTION`: `argc`, `vararg`, `code` (byte string), `args` (array of `{name, default}`)
@@ -310,7 +313,7 @@ Notes:
 - `global.gc.stats()` prints memory usage by reuse/inuse/noref blocks.
 - Comments are supported via `//` and `/* ... */`.
 
-Papagaio processing is applied to all string literals. Use `\$` to escape a literal `$`.
+Papagaio processing is applied to string literals that contain `$` (including escaped `\$`, which the parser stores as a papagaio-escape sigil). Literals without `$` compile to raw string opcodes and skip papagaio. Use `\$` to escape a literal `$`.
 
 `replace` and `replaceAll` perform literal substring replacement (first match vs all matches). For Papagaio patterns on runtime strings, use `papagaio(text)` with `$pattern{...}{...}` directives embedded in the text:
 - `papagaio("$pattern{hello $name}{Oi $name}hello Joao")`

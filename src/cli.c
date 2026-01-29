@@ -209,7 +209,9 @@ int main(int argc, char **argv)
             }
             free(src);
             fclose(fp);
-            int ok = urb_exec_bytecode(bc.data, bc.len);
+            int script_argc = argc - 3;
+            char **script_argv = argv + 3;
+            int ok = urb_exec_bytecode(bc.data, bc.len, script_argc, script_argv);
             bc_free(&bc);
             return ok ? 0 : 1;
         }

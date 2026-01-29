@@ -267,6 +267,20 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 bc_free(out);
                 return 0;
             }
+        } else if (op_len == 13 && memcmp(op_name, "PUSH_CHAR_RAW", 13) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!val || !entry_as_string(val, &s, &slen) || slen != 1) {
+                ast_err(err, err_cap, "PUSH_CHAR_RAW expects single character");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_PUSH_CHAR_RAW) || !bc_emit_string(out, s, slen)) {
+                ast_err(err, err_cap, "failed to emit PUSH_CHAR_RAW");
+                bc_free(out);
+                return 0;
+            }
         } else if (op_len == 11 && memcmp(op_name, "PUSH_STRING", 11) == 0) {
             ObjEntry *val = object_find_by_key(op_entry->obj, "value");
             const char *s = NULL;
@@ -278,6 +292,20 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
             }
             if (!bc_emit_u8(out, BC_PUSH_STRING) || !bc_emit_string(out, s, slen)) {
                 ast_err(err, err_cap, "failed to emit PUSH_STRING");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 15 && memcmp(op_name, "PUSH_STRING_RAW", 15) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!val || !entry_as_string(val, &s, &slen)) {
+                ast_err(err, err_cap, "PUSH_STRING_RAW expects value");
+                bc_free(out);
+                return 0;
+            }
+            if (!bc_emit_u8(out, BC_PUSH_STRING_RAW) || !bc_emit_string(out, s, slen)) {
+                ast_err(err, err_cap, "failed to emit PUSH_STRING_RAW");
                 bc_free(out);
                 return 0;
             }
@@ -800,12 +828,32 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
             }
             sb_append_char(out, ' ');
             sb_append_escaped(out, s, slen, '\'');
+        } else if (op_len == 13 && memcmp(op_name, "PUSH_CHAR_RAW", 13) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!val || !entry_as_string(val, &s, &slen) || slen != 1) {
+                ast_err(err, err_cap, "PUSH_CHAR_RAW expects single character");
+                return 0;
+            }
+            sb_append_char(out, ' ');
+            sb_append_escaped(out, s, slen, '\'');
         } else if (op_len == 11 && memcmp(op_name, "PUSH_STRING", 11) == 0) {
             ObjEntry *val = object_find_by_key(op_entry->obj, "value");
             const char *s = NULL;
             size_t slen = 0;
             if (!val || !entry_as_string(val, &s, &slen)) {
                 ast_err(err, err_cap, "PUSH_STRING expects value");
+                return 0;
+            }
+            sb_append_char(out, ' ');
+            sb_append_escaped(out, s, slen, '"');
+        } else if (op_len == 15 && memcmp(op_name, "PUSH_STRING_RAW", 15) == 0) {
+            ObjEntry *val = object_find_by_key(op_entry->obj, "value");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!val || !entry_as_string(val, &s, &slen)) {
+                ast_err(err, err_cap, "PUSH_STRING_RAW expects value");
                 return 0;
             }
             sb_append_char(out, ' ');

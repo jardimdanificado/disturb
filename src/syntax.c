@@ -2149,6 +2149,15 @@ static char *arena_format_temp(Arena *a, const char *prefix, int id)
     return out;
 }
 
+static int literal_needs_papagaio(const char *s, size_t len)
+{
+    if (!s || len == 0) return 0;
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] == '$' || s[i] == PAPAGAIO_ESCAPED_SIGIL) return 1;
+    }
+    return 0;
+}
+
 static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
 {
     if (!e) return 0;
@@ -2167,17 +2176,27 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         }
         return 1;
     case EXPR_LITERAL_STRING:
-        if (!bc_emit_u8(bc, BC_PUSH_STRING) ||
-            !bc_emit_string(bc, e->as.lit_str.data, e->as.lit_str.len)) {
-            parser_error(p, "failed to emit string literal");
-            return 0;
+        {
+            uint8_t op = literal_needs_papagaio(e->as.lit_str.data, e->as.lit_str.len)
+                ? BC_PUSH_STRING
+                : BC_PUSH_STRING_RAW;
+            if (!bc_emit_u8(bc, op) ||
+                !bc_emit_string(bc, e->as.lit_str.data, e->as.lit_str.len)) {
+                parser_error(p, "failed to emit string literal");
+                return 0;
+            }
         }
         return 1;
     case EXPR_LITERAL_CHAR:
-        if (!bc_emit_u8(bc, BC_PUSH_CHAR) ||
-            !bc_emit_string(bc, e->as.lit_str.data, e->as.lit_str.len)) {
-            parser_error(p, "failed to emit char literal");
-            return 0;
+        {
+            uint8_t op = literal_needs_papagaio(e->as.lit_str.data, e->as.lit_str.len)
+                ? BC_PUSH_CHAR
+                : BC_PUSH_CHAR_RAW;
+            if (!bc_emit_u8(bc, op) ||
+                !bc_emit_string(bc, e->as.lit_str.data, e->as.lit_str.len)) {
+                parser_error(p, "failed to emit char literal");
+                return 0;
+            }
         }
         return 1;
     case EXPR_NAME:

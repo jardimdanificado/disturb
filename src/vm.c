@@ -2453,7 +2453,9 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             break;
         }
         case BC_PUSH_CHAR:
-        case BC_PUSH_STRING: {
+        case BC_PUSH_STRING:
+        case BC_PUSH_CHAR_RAW:
+        case BC_PUSH_STRING_RAW: {
             unsigned char *buf = NULL;
             size_t slen = 0;
             if (!bc_read_string(data, len, &pc, &buf, &slen)) {
@@ -3646,6 +3648,24 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 }
                 vm_stack_push_entry(vm, entry);
                 break;
+            }
+            List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, (const char*)buf, slen);
+            free(buf);
+            ObjEntry *entry = vm_reg_alloc(vm, obj);
+            if (entry) {
+                entry->is_string = 1;
+                entry->explicit_string = 0;
+            }
+            vm_stack_push_entry(vm, entry);
+            break;
+        }
+        case BC_PUSH_CHAR_RAW:
+        case BC_PUSH_STRING_RAW: {
+            unsigned char *buf = NULL;
+            size_t slen = 0;
+            if (!bc_read_string(data, len, &pc, &buf, &slen)) {
+                fprintf(stderr, "bytecode error at pc %zu: truncated string\n", pc);
+                return 0;
             }
             List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, (const char*)buf, slen);
             free(buf);

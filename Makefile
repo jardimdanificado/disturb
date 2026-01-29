@@ -22,7 +22,7 @@ endif
 
 SRC = lib/libregexp/cutils.c lib/libregexp/libunicode.c lib/libregexp/libregexp.c \
       src/vm.c src/bytecode.c src/syntax.c src/functions.c src/papagaio.c src/cli.c \
-      src/urb_runtime.c
+      src/urb_runtime.c src/urb_bridge.c
 ifeq ($(ENABLE_FFI),1)
 	SRC += src/ffi.c
 endif

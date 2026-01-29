@@ -4,6 +4,6 @@
 #include <stddef.h>
 
 /* Execute Disturb bytecode using URB runtime compatibility layer. */
-int urb_exec_bytecode(const unsigned char *data, size_t len);
+int urb_exec_bytecode(const unsigned char *data, size_t len, int argc, char **argv);
 
 #endif

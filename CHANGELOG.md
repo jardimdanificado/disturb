@@ -1,8 +1,11 @@
 # Changelog
 
+## 0.16.0
+- disturb urb runtime.
+- Add raw string/char bytecode opcodes to skip papagaio when literals contain no `$`.
+
 ## 0.15.1
 - Added shebang support.
-- disturb urb runtime.
 
 ## 0.15.0
 - Fix lambdas parameters overwriting in recursive calls.

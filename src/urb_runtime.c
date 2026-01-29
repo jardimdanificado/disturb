@@ -1,6 +1,7 @@
 #include "urb_runtime.h"
 #include "bytecode.h"
 #include "urb.h"
+#include "urb_bridge.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -8,6 +9,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap);
 
 typedef struct UObj UObj;
 typedef struct UEntry UEntry;
@@ -90,6 +93,25 @@ struct UrbVM {
 
 static UrbVM *g_vm = NULL;
 
+static UObj *uobj_new(int type);
+static UEntry *uent_new(UObj *obj);
+static int table_set_by_key_len(UEntry *table, const char *name, size_t len, UEntry *value);
+static void stack_push_entry(List *stack, UEntry *entry);
+static void exec_bytecode_in_vm(UrbVM *vm, const unsigned char *data, size_t len, List *stack);
+
+static void register_native(UrbVM *v, const char *name, UrbNativeFn fn, int to_common)
+{
+    UObj *native_obj = uobj_new(U_T_NATIVE);
+    UNative *box = (UNative*)calloc(1, sizeof(UNative));
+    box->fn = fn;
+    native_obj->as.native.native = box;
+    UEntry *entry = uent_new(native_obj);
+    table_set_by_key_len(v->global_entry, name, strlen(name), entry);
+    if (to_common && v->common_entry) {
+        table_set_by_key_len(v->common_entry, name, strlen(name), entry);
+    }
+}
+
 static const char *u_type_name(int type)
 {
     switch (type) {
@@ -165,6 +187,11 @@ static UEntry *uent_make_bytes(const char *s, size_t len, int is_string, int exp
         entry->explicit_string = explicit_string ? 1 : 0;
     }
     return entry;
+}
+
+static UEntry *uent_make_string(const char *s, size_t len)
+{
+    return uent_make_bytes(s, len, 1, 1);
 }
 
 static UEntry *uent_make_int_list(Int count)
@@ -249,6 +276,18 @@ static int entry_read_float(const UEntry *entry, Int index, Float *out)
     if (off + sizeof(Float) > entry->obj->as.bytes.len) return 0;
     memcpy(out, entry->obj->as.bytes.data + off, sizeof(Float));
     return 1;
+}
+
+static int entry_is_scalar_int(const UEntry *entry)
+{
+    return entry && entry->obj && entry->obj->type == U_T_INT &&
+           entry->obj->as.bytes.len == sizeof(Int);
+}
+
+static int entry_is_scalar_float(const UEntry *entry)
+{
+    return entry && entry->obj && entry->obj->type == U_T_FLOAT &&
+           entry->obj->as.bytes.len == sizeof(Float);
 }
 
 static void entry_write_int(UEntry *entry, Int index, Int value)
@@ -423,6 +462,115 @@ static int entry_number_to_int(const UEntry *entry, Int *out)
         iv = cast;
     }
     *out = iv;
+    return 1;
+}
+
+static int entry_as_number(UEntry *entry, Float *out)
+{
+    Int iv = 0;
+    Float fv = 0;
+    int is_float = 0;
+    if (!entry_number(entry, &iv, &fv, &is_float)) return 0;
+    *out = is_float ? fv : (Float)iv;
+    return 1;
+}
+
+static int entry_as_string(UEntry *entry, const char **out, size_t *len)
+{
+    if (!entry || !entry_is_string(entry)) return 0;
+    *out = (const char*)entry_bytes_data(entry);
+    *len = entry_bytes_len(entry);
+    return 1;
+}
+
+static void push_entry(List *stack, UEntry *entry)
+{
+    if (!stack || !entry) return;
+    stack_push_entry(stack, entry);
+}
+
+static void push_number(List *stack, double value)
+{
+    if (!stack) return;
+    if (value >= (double)INT_MIN && value <= (double)INT_MAX) {
+        Int iv = (Int)value;
+        if ((double)iv == value) {
+            push_entry(stack, uent_make_int_scalar(iv));
+            return;
+        }
+    }
+    push_entry(stack, uent_make_float_scalar((Float)value));
+}
+
+static void push_string(List *stack, const char *s, size_t len)
+{
+    push_entry(stack, uent_make_bytes(s, len, 1, 1));
+}
+
+static Int list_pos_from_index(UEntry *obj, Int index)
+{
+    if (!obj || !obj->obj || obj->obj->type != U_T_TABLE) return 0;
+    Int size = (Int)obj->obj->as.table.size;
+    if (index < 0) index = size + index;
+    return index;
+}
+
+static int list_index_valid(UEntry *obj, Int index)
+{
+    if (!obj || !obj->obj || obj->obj->type != U_T_TABLE) return 0;
+    Int size = (Int)obj->obj->as.table.size;
+    if (index < 0) index = size + index;
+    return index >= 0 && index < size;
+}
+
+static Int bytes_list_count(UEntry *entry, size_t elem_size)
+{
+    size_t len = entry_bytes_len(entry);
+    if (elem_size == 0) return 0;
+    return (Int)(len / elem_size);
+}
+
+static int bytes_list_index(Int count, Int index, Int *out_index)
+{
+    if (index < 0) index = count + index;
+    if (index < 0 || index >= count) return 0;
+    *out_index = index;
+    return 1;
+}
+
+static Int bytes_list_insert_index(Int count, Int index)
+{
+    if (index < 0) index = count + index;
+    if (index < 0) return 0;
+    if (index > count) return count;
+    return index;
+}
+
+static int bytes_list_insert(UEntry *target, size_t offset, const void *data, size_t len)
+{
+    if (!target || !target->obj) return 0;
+    size_t old_len = target->obj->as.bytes.len;
+    size_t new_len = old_len + len;
+    unsigned char *buf = (unsigned char*)realloc(target->obj->as.bytes.data, new_len);
+    if (!buf && new_len > 0) return 0;
+    target->obj->as.bytes.data = buf;
+    memmove(buf + offset + len, buf + offset, old_len - offset);
+    memcpy(buf + offset, data, len);
+    target->obj->as.bytes.len = new_len;
+    return 1;
+}
+
+static int bytes_list_remove(UEntry *target, size_t offset, void *out, size_t len)
+{
+    if (!target || !target->obj) return 0;
+    size_t old_len = target->obj->as.bytes.len;
+    if (offset + len > old_len) return 0;
+    if (out) memcpy(out, target->obj->as.bytes.data + offset, len);
+    memmove(target->obj->as.bytes.data + offset,
+            target->obj->as.bytes.data + offset + len,
+            old_len - offset - len);
+    target->obj->as.bytes.len = old_len - len;
+    target->obj->as.bytes.data = (unsigned char*)realloc(target->obj->as.bytes.data, target->obj->as.bytes.len);
     return 1;
 }
 
@@ -790,6 +938,17 @@ static void print_plain_entry(FILE *out, UrbVM *vm, UEntry *entry)
             fwrite(entry_bytes_data(entry), 1, entry_bytes_len(entry), out);
             break;
         }
+        if (entry_is_scalar_int(entry)) {
+            Int v = 0;
+            char buf[32];
+            if (entry_read_int(entry, 0, &v)) {
+                int n = snprintf(buf, sizeof(buf), "%lld", (long long)v);
+                if (n > 0) fwrite(buf, 1, (size_t)n, out);
+            } else {
+                fputs("0", out);
+            }
+            break;
+        }
         {
             Int count = entry_bytes_count(entry, U_T_INT);
             for (Int i = 0; i < count; i++) {
@@ -801,6 +960,17 @@ static void print_plain_entry(FILE *out, UrbVM *vm, UEntry *entry)
         }
         break;
     case U_T_FLOAT: {
+        if (entry_is_scalar_float(entry)) {
+            Float v = 0;
+            char buf[48];
+            if (entry_read_float(entry, 0, &v)) {
+                int n = snprintf(buf, sizeof(buf), "%g", (double)v);
+                if (n > 0) fwrite(buf, 1, (size_t)n, out);
+            } else {
+                fputs("0", out);
+            }
+            break;
+        }
         Int count = entry_bytes_count(entry, U_T_FLOAT);
         for (Int i = 0; i < count; i++) {
             if (i) fputs(" ", out);
@@ -866,12 +1036,23 @@ static void print_entry(FILE *out, UrbVM *vm, UEntry *entry)
             fputs("\"", out);
         } else {
             fputs("[", out);
-            Int count = entry_bytes_count(entry, U_T_INT);
-            for (Int i = 0; i < count; i++) {
-                if (i) fputs(" ", out);
+            if (entry_is_scalar_int(entry)) {
                 Int v = 0;
-                if (entry_read_int(entry, i, &v)) fprintf(out, "%lld", (long long)v);
-                else fputs("0", out);
+                char buf[32];
+                if (entry_read_int(entry, 0, &v)) {
+                    int n = snprintf(buf, sizeof(buf), "%lld", (long long)v);
+                    if (n > 0) fwrite(buf, 1, (size_t)n, out);
+                } else {
+                    fputs("0", out);
+                }
+            } else {
+                Int count = entry_bytes_count(entry, U_T_INT);
+                for (Int i = 0; i < count; i++) {
+                    if (i) fputs(" ", out);
+                    Int v = 0;
+                    if (entry_read_int(entry, i, &v)) fprintf(out, "%lld", (long long)v);
+                    else fputs("0", out);
+                }
             }
             fputs("]", out);
         }
@@ -879,12 +1060,23 @@ static void print_entry(FILE *out, UrbVM *vm, UEntry *entry)
     case U_T_FLOAT:
         fputs("[", out);
         {
-            Int count = entry_bytes_count(entry, U_T_FLOAT);
-            for (Int i = 0; i < count; i++) {
-                if (i) fputs(" ", out);
+            if (entry_is_scalar_float(entry)) {
                 Float v = 0;
-                if (entry_read_float(entry, i, &v)) fprintf(out, "%g", (double)v);
-                else fputs("0", out);
+                char buf[48];
+                if (entry_read_float(entry, 0, &v)) {
+                    int n = snprintf(buf, sizeof(buf), "%g", (double)v);
+                    if (n > 0) fwrite(buf, 1, (size_t)n, out);
+                } else {
+                    fputs("0", out);
+                }
+            } else {
+                Int count = entry_bytes_count(entry, U_T_FLOAT);
+                for (Int i = 0; i < count; i++) {
+                    if (i) fputs(" ", out);
+                    Float v = 0;
+                    if (entry_read_float(entry, i, &v)) fprintf(out, "%g", (double)v);
+                    else fputs("0", out);
+                }
             }
         }
         fputs("]", out);
@@ -914,6 +1106,39 @@ static void print_entry(FILE *out, UrbVM *vm, UEntry *entry)
         fputs("<data>", out);
         break;
     }
+}
+
+static int print_fast_scalar_plain(FILE *out, UrbVM *vm, UEntry *entry, int newline)
+{
+    if (!entry || !entry->obj) return 0;
+    int type = entry->obj->type;
+    if (type == U_T_INT) {
+        int print_as_string = entry_is_string(entry);
+        if (vm && vm->strict_mode && print_as_string && !entry->explicit_string) {
+            print_as_string = 0;
+        }
+        if (print_as_string || !entry_is_scalar_int(entry)) return 0;
+        Int v = 0;
+        if (!entry_read_int(entry, 0, &v)) return 0;
+        char buf[40];
+        int n = snprintf(buf, sizeof(buf), newline ? "%lld\n" : "%lld", (long long)v);
+        if (n > 0) fwrite(buf, 1, (size_t)n, out);
+        return 1;
+    }
+    if (type == U_T_FLOAT) {
+        int print_as_string = entry_is_string(entry);
+        if (vm && vm->strict_mode && print_as_string && !entry->explicit_string) {
+            print_as_string = 0;
+        }
+        if (print_as_string || !entry_is_scalar_float(entry)) return 0;
+        Float v = 0;
+        if (!entry_read_float(entry, 0, &v)) return 0;
+        char buf[64];
+        int n = snprintf(buf, sizeof(buf), newline ? "%g\n" : "%g", (double)v);
+        if (n > 0) fwrite(buf, 1, (size_t)n, out);
+        return 1;
+    }
+    return 0;
 }
 
 static UEntry *stack_pop_entry(List *stack)
@@ -1007,6 +1232,10 @@ static void native_print(UrbVM *vm, List *stack, UEntry *global)
         fputs("(stack empty)", stdout);
         return;
     }
+    if (argc == 1) {
+        UEntry *entry = native_arg(stack, argc, 0);
+        if (print_fast_scalar_plain(stdout, vm, entry, 1)) return;
+    }
     for (uint32_t i = 0; i < argc; i++) {
         UEntry *entry = native_arg(stack, argc, i);
         if (i) fputc(' ', stdout);
@@ -1027,6 +1256,10 @@ static void native_println(UrbVM *vm, List *stack, UEntry *global)
         fputc('\n', stdout);
         return;
     }
+    if (argc == 1) {
+        UEntry *entry = native_arg(stack, argc, 0);
+        if (print_fast_scalar_plain(stdout, vm, entry, 1)) return;
+    }
     for (uint32_t i = 0; i < argc; i++) {
         UEntry *entry = native_arg(stack, argc, i);
         if (i) fputc(' ', stdout);
@@ -1043,6 +1276,1569 @@ static void native_len(UrbVM *vm, List *stack, UEntry *global)
     if (!target) return;
     Int length = entry_value_len(target);
     stack_push_entry(stack, uent_make_int_scalar(length));
+}
+
+static void native_pretty(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target) return;
+    StrBuf buf;
+    sb_init(&buf);
+    append_value_text(vm, target, &buf, 0);
+    push_string(stack, buf.data, buf.len);
+    sb_free(&buf);
+}
+
+static UEntry *entry_clone_shallow_copy(UEntry *src)
+{
+    if (!src || !src->obj) return NULL;
+    if (src->obj->type == U_T_INT || src->obj->type == U_T_FLOAT) {
+        UObj *obj = uobj_new(src->obj->type);
+        obj->as.bytes.len = src->obj->as.bytes.len;
+        if (obj->as.bytes.len) {
+            obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.len);
+            memcpy(obj->as.bytes.data, src->obj->as.bytes.data, obj->as.bytes.len);
+        }
+        UEntry *out = uent_new(obj);
+        out->is_string = src->is_string;
+        out->explicit_string = src->explicit_string;
+        out->key = src->key;
+        return out;
+    }
+    if (src->obj->type == U_T_TABLE) {
+        UEntry *out = uent_make_table((Int)src->obj->as.table.size);
+        for (size_t i = 0; i < src->obj->as.table.size; i++) {
+            UEntry *child = src->obj->as.table.items[i];
+            if (!child) continue;
+            table_add_entry(out, entry_clone_shallow(child, child->key));
+        }
+        return out;
+    }
+    return entry_clone_shallow((UEntry*)src, src->key);
+}
+
+static UEntry *entry_clone_deep_copy(UEntry *src)
+{
+    if (!src || !src->obj) return NULL;
+    if (src->obj->type == U_T_INT || src->obj->type == U_T_FLOAT) {
+        return entry_clone_shallow_copy(src);
+    }
+    if (src->obj->type == U_T_TABLE) {
+        UEntry *out = uent_make_table((Int)src->obj->as.table.size);
+        for (size_t i = 0; i < src->obj->as.table.size; i++) {
+            UEntry *child = src->obj->as.table.items[i];
+            if (!child) continue;
+            UEntry *deep = entry_clone_deep_copy(child);
+            if (!deep) continue;
+            deep->key = child->key;
+            table_add_entry(out, deep);
+        }
+        return out;
+    }
+    return entry_clone_shallow((UEntry*)src, src->key);
+}
+
+static void native_clone(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target) return;
+    UEntry *out = entry_clone_shallow_copy(target);
+    if (!out) return;
+    push_entry(stack, out);
+}
+
+static void native_copy(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target) return;
+    UEntry *out = entry_clone_deep_copy(target);
+    if (!out) return;
+    push_entry(stack, out);
+}
+
+static void native_to_int(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target || !target->obj || target->obj->type != U_T_FLOAT) {
+        fprintf(stderr, "toInt expects a float list\n");
+        return;
+    }
+    Int count = entry_value_len(target);
+    UEntry *entry = uent_make_int_list(count);
+    if (!entry) return;
+    for (Int i = 0; i < count; i++) {
+        Float v = 0;
+        entry_read_float(target, i, &v);
+        entry_write_int(entry, i, (Int)v);
+    }
+    push_entry(stack, entry);
+}
+
+static void native_to_float(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target || !target->obj || target->obj->type != U_T_INT) {
+        fprintf(stderr, "toFloat expects an int list\n");
+        return;
+    }
+    size_t bytes_len = entry_bytes_len(target);
+    Int count = entry_is_string(target) ? (Int)bytes_len : (Int)(bytes_len / sizeof(Int));
+    UEntry *entry = uent_make_float_list(count);
+    if (!entry) return;
+    if (entry_is_string(target)) {
+        for (Int i = 0; i < count; i++) {
+            unsigned char b = (unsigned char)entry_bytes_data(target)[i];
+            entry_write_float(entry, i, (Float)b);
+        }
+    } else {
+        for (Int i = 0; i < count; i++) {
+            Int v = 0;
+            entry_read_int(target, i, &v);
+            entry_write_float(entry, i, (Float)v);
+        }
+    }
+    push_entry(stack, entry);
+}
+
+static void native_append(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *self = native_this(vm);
+    UEntry *dst = NULL;
+    UEntry *src = NULL;
+    if (self) {
+        dst = self;
+        src = native_arg(stack, argc, 0);
+    } else {
+        dst = native_arg(stack, argc, 0);
+        src = native_arg(stack, argc, 1);
+    }
+    if (!dst || !src || !entry_is_string(dst) || !entry_is_string(src)) {
+        fprintf(stderr, "append expects string values\n");
+        return;
+    }
+    size_t old_len = entry_bytes_len(dst);
+    size_t add = entry_bytes_len(src);
+    size_t new_len = old_len + add;
+    dst->obj->as.bytes.data = (unsigned char*)realloc(dst->obj->as.bytes.data, new_len);
+    memcpy(dst->obj->as.bytes.data + old_len, entry_bytes_data(src), add);
+    dst->obj->as.bytes.len = new_len;
+}
+
+static int native_number_seed(UrbVM *vm, List *stack, UEntry *global, Float *out, uint32_t *start)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *self = native_this(vm);
+    if (self && entry_as_number(self, out)) {
+        *start = 0;
+        return 1;
+    }
+    UEntry *arg0 = native_arg(stack, argc, 0);
+    if (!arg0 || !entry_as_number(arg0, out)) return 0;
+    *start = 1;
+    return 1;
+}
+
+static int native_unary_number(UrbVM *vm, List *stack, UEntry *global, Float *out)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *self = native_this(vm);
+    if (self && entry_as_number(self, out)) return 1;
+    UEntry *arg0 = native_arg(stack, argc, 0);
+    if (!arg0 || !entry_as_number(arg0, out)) return 0;
+    return 1;
+}
+
+static void native_add(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float acc = 0;
+    uint32_t start = 0;
+    if (!native_number_seed(vm, stack, global, &acc, &start)) {
+        fprintf(stderr, "add expects numbers\n");
+        return;
+    }
+    uint32_t argc = native_argc(vm);
+    for (uint32_t i = start; i < argc; i++) {
+        UEntry *arg = native_arg(stack, argc, i);
+        Float v = 0;
+        if (!entry_as_number(arg, &v)) {
+            fprintf(stderr, "add expects numbers\n");
+            return;
+        }
+        acc += v;
+    }
+    push_number(stack, acc);
+}
+
+static void native_sub(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float acc = 0;
+    uint32_t start = 0;
+    if (!native_number_seed(vm, stack, global, &acc, &start)) {
+        fprintf(stderr, "sub expects numbers\n");
+        return;
+    }
+    uint32_t argc = native_argc(vm);
+    for (uint32_t i = start; i < argc; i++) {
+        UEntry *arg = native_arg(stack, argc, i);
+        Float v = 0;
+        if (!entry_as_number(arg, &v)) {
+            fprintf(stderr, "sub expects numbers\n");
+            return;
+        }
+        acc -= v;
+    }
+    push_number(stack, acc);
+}
+
+static void native_mul(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float acc = 0;
+    uint32_t start = 0;
+    if (!native_number_seed(vm, stack, global, &acc, &start)) {
+        fprintf(stderr, "mul expects numbers\n");
+        return;
+    }
+    uint32_t argc = native_argc(vm);
+    for (uint32_t i = start; i < argc; i++) {
+        UEntry *arg = native_arg(stack, argc, i);
+        Float v = 0;
+        if (!entry_as_number(arg, &v)) {
+            fprintf(stderr, "mul expects numbers\n");
+            return;
+        }
+        acc *= v;
+    }
+    push_number(stack, acc);
+}
+
+static void native_div(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float acc = 0;
+    uint32_t start = 0;
+    if (!native_number_seed(vm, stack, global, &acc, &start)) {
+        fprintf(stderr, "div expects numbers\n");
+        return;
+    }
+    uint32_t argc = native_argc(vm);
+    for (uint32_t i = start; i < argc; i++) {
+        UEntry *arg = native_arg(stack, argc, i);
+        Float v = 0;
+        if (!entry_as_number(arg, &v)) {
+            fprintf(stderr, "div expects numbers\n");
+            return;
+        }
+        acc /= v;
+    }
+    push_number(stack, acc);
+}
+
+static void native_mod(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *self = native_this(vm);
+    Float a = 0;
+    Float b = 0;
+    if (self && entry_as_number(self, &a)) {
+        UEntry *arg0 = native_arg(stack, argc, 0);
+        if (!arg0 || !entry_as_number(arg0, &b)) {
+            fprintf(stderr, "mod expects numbers\n");
+            return;
+        }
+    } else {
+        UEntry *arg0 = native_arg(stack, argc, 0);
+        UEntry *arg1 = native_arg(stack, argc, 1);
+        if (!arg0 || !arg1 || !entry_as_number(arg0, &a) || !entry_as_number(arg1, &b)) {
+            fprintf(stderr, "mod expects numbers\n");
+            return;
+        }
+    }
+    push_number(stack, (Float)fmod((double)a, (double)b));
+}
+
+static void native_pow(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *self = native_this(vm);
+    Float base = 0;
+    Float expv = 0;
+    if (self && entry_as_number(self, &base)) {
+        UEntry *arg0 = native_arg(stack, argc, 0);
+        if (!arg0 || !entry_as_number(arg0, &expv)) {
+            fprintf(stderr, "pow expects numbers\n");
+            return;
+        }
+    } else {
+        UEntry *arg0 = native_arg(stack, argc, 0);
+        UEntry *arg1 = native_arg(stack, argc, 1);
+        if (!arg0 || !arg1 || !entry_as_number(arg0, &base) || !entry_as_number(arg1, &expv)) {
+            fprintf(stderr, "pow expects numbers\n");
+            return;
+        }
+    }
+    push_number(stack, (Float)pow((double)base, (double)expv));
+}
+
+static void native_min(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float acc = 0;
+    uint32_t start = 0;
+    if (!native_number_seed(vm, stack, global, &acc, &start)) {
+        fprintf(stderr, "min expects numbers\n");
+        return;
+    }
+    uint32_t argc = native_argc(vm);
+    for (uint32_t i = start; i < argc; i++) {
+        UEntry *arg = native_arg(stack, argc, i);
+        Float v = 0;
+        if (!entry_as_number(arg, &v)) {
+            fprintf(stderr, "min expects numbers\n");
+            return;
+        }
+        if (v < acc) acc = v;
+    }
+    push_number(stack, acc);
+}
+
+static void native_max(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float acc = 0;
+    uint32_t start = 0;
+    if (!native_number_seed(vm, stack, global, &acc, &start)) {
+        fprintf(stderr, "max expects numbers\n");
+        return;
+    }
+    uint32_t argc = native_argc(vm);
+    for (uint32_t i = start; i < argc; i++) {
+        UEntry *arg = native_arg(stack, argc, i);
+        Float v = 0;
+        if (!entry_as_number(arg, &v)) {
+            fprintf(stderr, "max expects numbers\n");
+            return;
+        }
+        if (v > acc) acc = v;
+    }
+    push_number(stack, acc);
+}
+
+static void native_abs(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "abs expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)fabs((double)v));
+}
+
+static void native_floor(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "floor expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)floor((double)v));
+}
+
+static void native_ceil(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "ceil expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)ceil((double)v));
+}
+
+static void native_round(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "round expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)round((double)v));
+}
+
+static void native_sqrt(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "sqrt expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)sqrt((double)v));
+}
+
+static void native_sin(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "sin expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)sin((double)v));
+}
+
+static void native_cos(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "cos expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)cos((double)v));
+}
+
+static void native_tan(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "tan expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)tan((double)v));
+}
+
+static void native_asin(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "asin expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)asin((double)v));
+}
+
+static void native_acos(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "acos expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)acos((double)v));
+}
+
+static void native_atan(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "atan expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)atan((double)v));
+}
+
+static void native_log(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "log expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)log((double)v));
+}
+
+static void native_exp(UrbVM *vm, List *stack, UEntry *global)
+{
+    Float v = 0;
+    if (!native_unary_number(vm, stack, global, &v)) {
+        fprintf(stderr, "exp expects a number\n");
+        return;
+    }
+    push_number(stack, (Float)exp((double)v));
+}
+
+static UEntry *native_string_target(UrbVM *vm, List *stack, uint32_t argc)
+{
+    UEntry *self = native_this(vm);
+    if (self && entry_is_string(self)) return self;
+    UEntry *arg0 = native_arg(stack, argc, 0);
+    if (arg0 && entry_is_string(arg0)) return arg0;
+    return NULL;
+}
+
+static Int clamp_index(Int i, Int len)
+{
+    if (i < 0) i = len + i;
+    if (i < 0) i = 0;
+    if (i > len) i = len;
+    return i;
+}
+
+static void native_slice(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    UEntry *start_entry = native_arg(stack, argc, 0);
+    UEntry *end_entry = native_arg(stack, argc, 1);
+    if (!target) {
+        fprintf(stderr, "slice expects a string target\n");
+        return;
+    }
+    Int start = 0;
+    Int end = (Int)entry_bytes_len(target);
+    if (start_entry && !entry_number_to_int(start_entry, &start)) {
+        fprintf(stderr, "slice expects integer start\n");
+        return;
+    }
+    if (end_entry && !entry_number_to_int(end_entry, &end)) {
+        fprintf(stderr, "slice expects integer end\n");
+        return;
+    }
+    Int len = (Int)entry_bytes_len(target);
+    start = clamp_index(start, len);
+    end = clamp_index(end, len);
+    if (end < start) end = start;
+    size_t out_len = (size_t)(end - start);
+    push_string(stack, (const char*)entry_bytes_data(target) + start, out_len);
+}
+
+static void native_substr(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    UEntry *start_entry = native_arg(stack, argc, 0);
+    UEntry *len_entry = native_arg(stack, argc, 1);
+    if (!target) {
+        fprintf(stderr, "substr expects a string target\n");
+        return;
+    }
+    Int start = 0;
+    Int count = (Int)entry_bytes_len(target);
+    if (start_entry && !entry_number_to_int(start_entry, &start)) {
+        fprintf(stderr, "substr expects integer start\n");
+        return;
+    }
+    if (len_entry && !entry_number_to_int(len_entry, &count)) {
+        fprintf(stderr, "substr expects integer len\n");
+        return;
+    }
+    Int len = (Int)entry_bytes_len(target);
+    if (start < 0) start = len + start;
+    if (start < 0) start = 0;
+    if (start > len) start = len;
+    if (count < 0) count = 0;
+    if (start + count > len) count = len - start;
+    push_string(stack, (const char*)entry_bytes_data(target) + start, (size_t)count);
+}
+
+static void native_upper(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    if (!target) {
+        fprintf(stderr, "upper expects a string target\n");
+        return;
+    }
+    size_t len = entry_bytes_len(target);
+    char *buf = (char*)malloc(len);
+    if (!buf && len > 0) return;
+    for (size_t i = 0; i < len; i++) {
+        buf[i] = (char)toupper((unsigned char)entry_bytes_data(target)[i]);
+    }
+    push_string(stack, buf, len);
+    free(buf);
+}
+
+static void native_lower(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    if (!target) {
+        fprintf(stderr, "lower expects a string target\n");
+        return;
+    }
+    size_t len = entry_bytes_len(target);
+    char *buf = (char*)malloc(len);
+    if (!buf && len > 0) return;
+    for (size_t i = 0; i < len; i++) {
+        buf[i] = (char)tolower((unsigned char)entry_bytes_data(target)[i]);
+    }
+    push_string(stack, buf, len);
+    free(buf);
+}
+
+static void native_trim(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    if (!target) {
+        fprintf(stderr, "trim expects a string target\n");
+        return;
+    }
+    const char *s = (const char*)entry_bytes_data(target);
+    size_t len = entry_bytes_len(target);
+    size_t start = 0;
+    while (start < len && isspace((unsigned char)s[start])) start++;
+    size_t end = len;
+    while (end > start && isspace((unsigned char)s[end - 1])) end--;
+    push_string(stack, s + start, end - start);
+}
+
+static int starts_with(const char *hay, size_t hlen, const char *needle, size_t nlen)
+{
+    if (nlen > hlen) return 0;
+    return memcmp(hay, needle, nlen) == 0;
+}
+
+static int ends_with(const char *hay, size_t hlen, const char *needle, size_t nlen)
+{
+    if (nlen > hlen) return 0;
+    return memcmp(hay + hlen - nlen, needle, nlen) == 0;
+}
+
+static size_t find_substring(const char *hay, size_t hlen, const char *needle, size_t nlen, size_t start)
+{
+    if (nlen == 0) return start <= hlen ? start : SIZE_MAX;
+    if (nlen > hlen) return SIZE_MAX;
+    for (size_t i = start; i + nlen <= hlen; i++) {
+        if (memcmp(hay + i, needle, nlen) == 0) return i;
+    }
+    return SIZE_MAX;
+}
+
+static void native_starts_with(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    UEntry *arg0 = native_arg(stack, argc, 0);
+    if (!target || !arg0 || !entry_is_string(arg0)) {
+        fprintf(stderr, "startsWith expects string values\n");
+        return;
+    }
+    const char *s = (const char*)entry_bytes_data(target);
+    size_t slen = entry_bytes_len(target);
+    const char *n = (const char*)entry_bytes_data(arg0);
+    size_t nlen = entry_bytes_len(arg0);
+    push_number(stack, starts_with(s, slen, n, nlen) ? 1 : 0);
+}
+
+static void native_ends_with(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    UEntry *arg0 = native_arg(stack, argc, 0);
+    if (!target || !arg0 || !entry_is_string(arg0)) {
+        fprintf(stderr, "endsWith expects string values\n");
+        return;
+    }
+    const char *s = (const char*)entry_bytes_data(target);
+    size_t slen = entry_bytes_len(target);
+    const char *n = (const char*)entry_bytes_data(arg0);
+    size_t nlen = entry_bytes_len(arg0);
+    push_number(stack, ends_with(s, slen, n, nlen) ? 1 : 0);
+}
+
+static void native_find(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    UEntry *arg0 = native_arg(stack, argc, 0);
+    if (!target || !arg0 || !entry_is_string(arg0)) {
+        fprintf(stderr, "find expects string values\n");
+        return;
+    }
+    const char *hay = (const char*)entry_bytes_data(target);
+    size_t hlen = entry_bytes_len(target);
+    const char *needle = (const char*)entry_bytes_data(arg0);
+    size_t nlen = entry_bytes_len(arg0);
+    size_t pos = find_substring(hay, hlen, needle, nlen, 0);
+    push_number(stack, pos == SIZE_MAX ? -1 : (Int)pos);
+}
+
+static void native_rfind(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    UEntry *arg0 = native_arg(stack, argc, 0);
+    if (!target || !arg0 || !entry_is_string(arg0)) {
+        fprintf(stderr, "rfind expects string values\n");
+        return;
+    }
+    const char *hay = (const char*)entry_bytes_data(target);
+    size_t hlen = entry_bytes_len(target);
+    const char *needle = (const char*)entry_bytes_data(arg0);
+    size_t nlen = entry_bytes_len(arg0);
+    size_t pos = SIZE_MAX;
+    if (nlen <= hlen) {
+        for (size_t i = hlen - nlen + 1; i-- > 0;) {
+            if (memcmp(hay + i, needle, nlen) == 0) {
+                pos = i;
+                break;
+            }
+            if (i == 0) break;
+        }
+    }
+    push_number(stack, pos == SIZE_MAX ? -1 : (Int)pos);
+}
+
+static void native_contains(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    UEntry *arg0 = native_arg(stack, argc, 0);
+    if (!target || !arg0 || !entry_is_string(arg0)) {
+        fprintf(stderr, "contains expects string values\n");
+        return;
+    }
+    const char *hay = (const char*)entry_bytes_data(target);
+    size_t hlen = entry_bytes_len(target);
+    const char *needle = (const char*)entry_bytes_data(arg0);
+    size_t nlen = entry_bytes_len(arg0);
+    size_t pos = find_substring(hay, hlen, needle, nlen, 0);
+    push_number(stack, pos == SIZE_MAX ? 0 : 1);
+}
+
+static void native_replace_impl(UrbVM *vm, List *stack, UEntry *global, int replace_all, const char *name)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    UEntry *needle = native_arg(stack, argc, 0);
+    UEntry *repl = native_arg(stack, argc, 1);
+    if (!target || !needle || !repl || !entry_is_string(needle) || !entry_is_string(repl)) {
+        fprintf(stderr, "%s expects string values\n", name);
+        return;
+    }
+    const char *hay = (const char*)entry_bytes_data(target);
+    size_t hlen = entry_bytes_len(target);
+    const char *n = (const char*)entry_bytes_data(needle);
+    size_t nlen = entry_bytes_len(needle);
+    const char *r = (const char*)entry_bytes_data(repl);
+    size_t rlen = entry_bytes_len(repl);
+    if (nlen == 0) {
+        push_string(stack, hay, hlen);
+        return;
+    }
+    StrBuf out;
+    sb_init(&out);
+    size_t pos = 0;
+    size_t match = find_substring(hay, hlen, n, nlen, 0);
+    if (match == SIZE_MAX) {
+        push_string(stack, hay, hlen);
+        sb_free(&out);
+        return;
+    }
+    while (match != SIZE_MAX) {
+        sb_append_n(&out, hay + pos, match - pos);
+        sb_append_n(&out, r, rlen);
+        pos = match + nlen;
+        if (!replace_all) break;
+        match = find_substring(hay, hlen, n, nlen, pos);
+    }
+    sb_append_n(&out, hay + pos, hlen - pos);
+    push_string(stack, out.data, out.len);
+    sb_free(&out);
+}
+
+static void native_replace(UrbVM *vm, List *stack, UEntry *global)
+{
+    native_replace_impl(vm, stack, global, 0, "replace");
+}
+
+static void native_replace_all(UrbVM *vm, List *stack, UEntry *global)
+{
+    native_replace_impl(vm, stack, global, 1, "replaceAll");
+}
+
+static void native_split(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    UEntry *sep = native_arg(stack, argc, 0);
+    if (!target || !sep || !entry_is_string(sep)) {
+        fprintf(stderr, "split expects string values\n");
+        return;
+    }
+    const char *s = (const char*)entry_bytes_data(target);
+    size_t slen = entry_bytes_len(target);
+    const char *d = (const char*)entry_bytes_data(sep);
+    size_t dlen = entry_bytes_len(sep);
+    UEntry *out = uent_make_table(8);
+    if (dlen == 0) {
+        for (size_t i = 0; i < slen; i++) {
+            push_entry(stack, out);
+            UEntry *part = uent_make_bytes(s + i, 1, 1, 1);
+            table_add_entry(out, part);
+        }
+        push_entry(stack, out);
+        return;
+    }
+    size_t pos = 0;
+    size_t next = find_substring(s, slen, d, dlen, 0);
+    while (next != SIZE_MAX) {
+        UEntry *part = uent_make_bytes(s + pos, next - pos, 1, 1);
+        table_add_entry(out, part);
+        pos = next + dlen;
+        next = find_substring(s, slen, d, dlen, pos);
+    }
+    UEntry *part = uent_make_bytes(s + pos, slen - pos, 1, 1);
+    table_add_entry(out, part);
+    push_entry(stack, out);
+}
+
+static void native_join(UrbVM *vm, List *stack, UEntry *global)
+{
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    UEntry *sep = native_arg(stack, argc, 0);
+    if (!target || !target->obj || target->obj->type != U_T_TABLE || !sep || !entry_is_string(sep)) {
+        fprintf(stderr, "join expects a list and separator string\n");
+        return;
+    }
+    const char *delim = (const char*)entry_bytes_data(sep);
+    size_t dlen = entry_bytes_len(sep);
+    StrBuf buf;
+    sb_init(&buf);
+    for (size_t i = 0; i < target->obj->as.table.size; i++) {
+        UEntry *part = target->obj->as.table.items[i];
+        if (!part || !entry_is_string(part)) continue;
+        if (i) sb_append_n(&buf, delim, dlen);
+        sb_append_n(&buf, (const char*)entry_bytes_data(part), entry_bytes_len(part));
+    }
+    push_string(stack, buf.data, buf.len);
+    sb_free(&buf);
+}
+
+static void native_papagaio(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_string_target(vm, stack, argc);
+    if (!target) {
+        fprintf(stderr, "papagaio expects a string target\n");
+        return;
+    }
+    const char *input = (const char*)entry_bytes_data(target);
+    size_t input_len = entry_bytes_len(target);
+    char *out = urb_bridge_papagaio(input, input_len);
+    if (!out) {
+        fprintf(stderr, "papagaio failed\n");
+        return;
+    }
+    push_string(stack, out, strlen(out));
+    free(out);
+}
+
+static void native_keys(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target || !target->obj || target->obj->type != U_T_TABLE) {
+        fprintf(stderr, "keys expects a table\n");
+        return;
+    }
+    UEntry *out = uent_make_table((Int)target->obj->as.table.size);
+    for (size_t i = 0; i < target->obj->as.table.size; i++) {
+        UEntry *child = target->obj->as.table.items[i];
+        UEntry *key = child ? child->key : NULL;
+        if (!key) continue;
+        table_add_entry(out, entry_clone_shallow(key, NULL));
+    }
+    push_entry(stack, out);
+}
+
+static void native_values(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target || !target->obj || target->obj->type != U_T_TABLE) {
+        fprintf(stderr, "values expects a table\n");
+        return;
+    }
+    UEntry *out = uent_make_table((Int)target->obj->as.table.size);
+    for (size_t i = 0; i < target->obj->as.table.size; i++) {
+        UEntry *child = target->obj->as.table.items[i];
+        if (!child) continue;
+        table_add_entry(out, entry_clone_shallow(child, NULL));
+    }
+    push_entry(stack, out);
+}
+
+static void native_has(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    UEntry *idx = native_arg(stack, argc, 0);
+    if (!target || !idx) {
+        fprintf(stderr, "has expects target and key\n");
+        return;
+    }
+    if (target->obj && target->obj->type == U_T_TABLE && entry_is_string(idx)) {
+        UEntry *entry = table_find_by_key_len(target,
+                                              (const char*)entry_bytes_data(idx),
+                                              entry_bytes_len(idx));
+        push_number(stack, entry ? 1 : 0);
+        return;
+    }
+    push_number(stack, 0);
+}
+
+static void native_delete(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    UEntry *idx = native_arg(stack, argc, 0);
+    if (!target || !idx || !target->obj || target->obj->type != U_T_TABLE) {
+        fprintf(stderr, "delete expects table and key\n");
+        return;
+    }
+    if (!entry_is_string(idx)) {
+        fprintf(stderr, "delete expects string key\n");
+        return;
+    }
+    size_t key_len = entry_bytes_len(idx);
+    for (size_t i = 0; i < target->obj->as.table.size; i++) {
+        UEntry *entry = target->obj->as.table.items[i];
+        UEntry *key = entry ? entry->key : NULL;
+        if (!entry_is_string(key)) continue;
+        if (entry_bytes_len(key) == key_len &&
+            memcmp(entry_bytes_data(key), entry_bytes_data(idx), key_len) == 0) {
+            memmove(&target->obj->as.table.items[i],
+                    &target->obj->as.table.items[i + 1],
+                    (target->obj->as.table.size - i - 1) * sizeof(UEntry*));
+            target->obj->as.table.size--;
+            return;
+        }
+    }
+}
+
+static void native_push(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target || !target->obj) {
+        fprintf(stderr, "push expects target\n");
+        return;
+    }
+    uint32_t start = native_this(vm) ? 0 : 1;
+    int type = target->obj->type;
+    for (uint32_t i = start; i < argc; i++) {
+        UEntry *arg = native_arg(stack, argc, i);
+        if (!arg) continue;
+        if (type == U_T_TABLE) {
+            table_add_entry(target, entry_clone_shallow(arg, NULL));
+        } else if (type == U_T_INT && entry_is_string(target)) {
+            if (!entry_is_string(arg)) {
+                fprintf(stderr, "push expects string values\n");
+                return;
+            }
+            size_t add = entry_bytes_len(arg);
+            size_t old_len = entry_bytes_len(target);
+            target->obj->as.bytes.data = (unsigned char*)realloc(target->obj->as.bytes.data, old_len + add);
+            memcpy(target->obj->as.bytes.data + old_len, entry_bytes_data(arg), add);
+            target->obj->as.bytes.len = old_len + add;
+        } else if (type == U_T_INT) {
+            Int iv = 0;
+            Float fv = 0;
+            int is_float = 0;
+            if (!entry_number(arg, &iv, &fv, &is_float) || is_float) {
+                fprintf(stderr, "push expects int values\n");
+                return;
+            }
+            size_t offset = entry_bytes_len(target);
+            if (!bytes_list_insert(target, offset, &iv, sizeof(Int))) return;
+        } else if (type == U_T_FLOAT) {
+            Int iv = 0;
+            Float fv = 0;
+            int is_float = 0;
+            if (!entry_number(arg, &iv, &fv, &is_float)) {
+                fprintf(stderr, "push expects number values\n");
+                return;
+            }
+            Float out = is_float ? fv : (Float)iv;
+            size_t offset = entry_bytes_len(target);
+            if (!bytes_list_insert(target, offset, &out, sizeof(Float))) return;
+        }
+    }
+}
+
+static void native_pop(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target || !target->obj) {
+        fprintf(stderr, "pop expects target\n");
+        return;
+    }
+    int type = target->obj->type;
+    if (type == U_T_TABLE) {
+        if (target->obj->as.table.size == 0) return;
+        UEntry *entry = target->obj->as.table.items[target->obj->as.table.size - 1];
+        target->obj->as.table.size--;
+        push_entry(stack, entry ? entry : g_vm->null_entry);
+        return;
+    }
+    if (type == U_T_INT && entry_is_string(target)) {
+        size_t len = entry_bytes_len(target);
+        if (len == 0) return;
+        char c = (char)entry_bytes_data(target)[len - 1];
+        bytes_list_remove(target, len - 1, NULL, 1);
+        push_string(stack, &c, 1);
+        return;
+    }
+    if (type == U_T_INT) {
+        Int count = bytes_list_count(target, sizeof(Int));
+        if (count <= 0) return;
+        Int v = 0;
+        bytes_list_remove(target, (size_t)(count - 1) * sizeof(Int), &v, sizeof(Int));
+        push_number(stack, (double)v);
+        return;
+    }
+    if (type == U_T_FLOAT) {
+        Int count = bytes_list_count(target, sizeof(Float));
+        if (count <= 0) return;
+        Float v = 0;
+        bytes_list_remove(target, (size_t)(count - 1) * sizeof(Float), &v, sizeof(Float));
+        push_number(stack, (double)v);
+        return;
+    }
+}
+
+static void native_shift(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target || !target->obj) {
+        fprintf(stderr, "shift expects target\n");
+        return;
+    }
+    int type = target->obj->type;
+    if (type == U_T_TABLE) {
+        if (target->obj->as.table.size == 0) return;
+        UEntry *entry = target->obj->as.table.items[0];
+        memmove(&target->obj->as.table.items[0],
+                &target->obj->as.table.items[1],
+                (target->obj->as.table.size - 1) * sizeof(UEntry*));
+        target->obj->as.table.size--;
+        push_entry(stack, entry ? entry : g_vm->null_entry);
+        return;
+    }
+    if (type == U_T_INT && entry_is_string(target)) {
+        size_t len = entry_bytes_len(target);
+        if (len == 0) return;
+        char c = (char)entry_bytes_data(target)[0];
+        bytes_list_remove(target, 0, NULL, 1);
+        push_string(stack, &c, 1);
+        return;
+    }
+    if (type == U_T_INT) {
+        Int v = 0;
+        if (!bytes_list_remove(target, 0, &v, sizeof(Int))) return;
+        push_number(stack, (double)v);
+        return;
+    }
+    if (type == U_T_FLOAT) {
+        Float v = 0;
+        if (!bytes_list_remove(target, 0, &v, sizeof(Float))) return;
+        push_number(stack, (double)v);
+        return;
+    }
+}
+
+static void native_unshift(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    if (!target || !target->obj) {
+        fprintf(stderr, "unshift expects target\n");
+        return;
+    }
+    uint32_t start = native_this(vm) ? 0 : 1;
+    int type = target->obj->type;
+    for (uint32_t i = argc; i-- > start;) {
+        UEntry *arg = native_arg(stack, argc, i);
+        if (!arg) continue;
+        if (type == U_T_TABLE) {
+            if (target->obj->as.table.size == target->obj->as.table.cap) {
+                size_t next = target->obj->as.table.cap == 0 ? 8 : target->obj->as.table.cap * 2;
+                target->obj->as.table.items = (UEntry**)realloc(target->obj->as.table.items, next * sizeof(UEntry*));
+                target->obj->as.table.cap = next;
+            }
+            memmove(&target->obj->as.table.items[1],
+                    &target->obj->as.table.items[0],
+                    target->obj->as.table.size * sizeof(UEntry*));
+            target->obj->as.table.items[0] = entry_clone_shallow(arg, NULL);
+            target->obj->as.table.size++;
+        } else if (type == U_T_INT && entry_is_string(target)) {
+            if (!entry_is_string(arg)) {
+                fprintf(stderr, "unshift expects string values\n");
+                return;
+            }
+            size_t add = entry_bytes_len(arg);
+            bytes_list_insert(target, 0, entry_bytes_data(arg), add);
+        } else if (type == U_T_INT) {
+            Int iv = 0;
+            Float fv = 0;
+            int is_float = 0;
+            if (!entry_number(arg, &iv, &fv, &is_float) || is_float) {
+                fprintf(stderr, "unshift expects int values\n");
+                return;
+            }
+            bytes_list_insert(target, 0, &iv, sizeof(Int));
+        } else if (type == U_T_FLOAT) {
+            Int iv = 0;
+            Float fv = 0;
+            int is_float = 0;
+            if (!entry_number(arg, &iv, &fv, &is_float)) {
+                fprintf(stderr, "unshift expects number values\n");
+                return;
+            }
+            Float out = is_float ? fv : (Float)iv;
+            bytes_list_insert(target, 0, &out, sizeof(Float));
+        }
+    }
+}
+
+static void native_insert(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    UEntry *idx = native_arg(stack, argc, 0);
+    UEntry *val = native_arg(stack, argc, 1);
+    if (!target || !idx || !val || !target->obj) {
+        fprintf(stderr, "insert expects target, index, value\n");
+        return;
+    }
+    Int index = 0;
+    if (!entry_number_to_int(idx, &index)) {
+        fprintf(stderr, "insert expects integer index\n");
+        return;
+    }
+    int type = target->obj->type;
+    if (type == U_T_TABLE) {
+        if (target->obj->as.table.size == target->obj->as.table.cap) {
+            size_t next = target->obj->as.table.cap == 0 ? 8 : target->obj->as.table.cap * 2;
+            target->obj->as.table.items = (UEntry**)realloc(target->obj->as.table.items, next * sizeof(UEntry*));
+            target->obj->as.table.cap = next;
+        }
+        Int pos = list_pos_from_index(target, index);
+        if (pos < 0) pos = 0;
+        if ((size_t)pos > target->obj->as.table.size) pos = (Int)target->obj->as.table.size;
+        memmove(&target->obj->as.table.items[pos + 1],
+                &target->obj->as.table.items[pos],
+                (target->obj->as.table.size - (size_t)pos) * sizeof(UEntry*));
+        target->obj->as.table.items[pos] = entry_clone_shallow(val, NULL);
+        target->obj->as.table.size++;
+        return;
+    }
+    if (type == U_T_INT && entry_is_string(target)) {
+        if (!entry_is_string(val)) {
+            fprintf(stderr, "insert expects string value\n");
+            return;
+        }
+        size_t len = entry_bytes_len(target);
+        Int insert_at = bytes_list_insert_index((Int)len, index);
+        bytes_list_insert(target, (size_t)insert_at, entry_bytes_data(val), entry_bytes_len(val));
+        return;
+    }
+    if (type == U_T_INT) {
+        Int iv = 0;
+        Float fv = 0;
+        int is_float = 0;
+        if (!entry_number(val, &iv, &fv, &is_float) || is_float) {
+            fprintf(stderr, "insert expects int value\n");
+            return;
+        }
+        Int count = bytes_list_count(target, sizeof(Int));
+        Int insert_at = bytes_list_insert_index(count, index);
+        bytes_list_insert(target, (size_t)insert_at * sizeof(Int), &iv, sizeof(Int));
+        return;
+    }
+    if (type == U_T_FLOAT) {
+        Int iv = 0;
+        Float fv = 0;
+        int is_float = 0;
+        if (!entry_number(val, &iv, &fv, &is_float)) {
+            fprintf(stderr, "insert expects number value\n");
+            return;
+        }
+        Float out = is_float ? fv : (Float)iv;
+        Int count = bytes_list_count(target, sizeof(Float));
+        Int insert_at = bytes_list_insert_index(count, index);
+        bytes_list_insert(target, (size_t)insert_at * sizeof(Float), &out, sizeof(Float));
+        return;
+    }
+}
+
+static void native_remove(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    UEntry *idx = native_arg(stack, argc, 0);
+    if (!target || !idx || !target->obj) {
+        fprintf(stderr, "remove expects target and index\n");
+        return;
+    }
+    int type = target->obj->type;
+    if (type == U_T_TABLE) {
+        if (entry_is_string(idx)) {
+            size_t key_len = entry_bytes_len(idx);
+            for (size_t i = 0; i < target->obj->as.table.size; i++) {
+                UEntry *entry = target->obj->as.table.items[i];
+                UEntry *key = entry ? entry->key : NULL;
+                if (!entry_is_string(key)) continue;
+                if (entry_bytes_len(key) == key_len &&
+                    memcmp(entry_bytes_data(key), entry_bytes_data(idx), key_len) == 0) {
+                    UEntry *ret = entry;
+                    memmove(&target->obj->as.table.items[i],
+                            &target->obj->as.table.items[i + 1],
+                            (target->obj->as.table.size - i - 1) * sizeof(UEntry*));
+                    target->obj->as.table.size--;
+                    push_entry(stack, ret);
+                    return;
+                }
+            }
+            return;
+        }
+        Int index = 0;
+        if (!entry_number_to_int(idx, &index)) {
+            fprintf(stderr, "remove expects string key or integer index\n");
+            return;
+        }
+        if (!list_index_valid(target, index)) return;
+        Int pos = list_pos_from_index(target, index);
+        UEntry *ret = target->obj->as.table.items[pos];
+        memmove(&target->obj->as.table.items[pos],
+                &target->obj->as.table.items[pos + 1],
+                (target->obj->as.table.size - (size_t)pos - 1) * sizeof(UEntry*));
+        target->obj->as.table.size--;
+        push_entry(stack, ret);
+        return;
+    }
+    Int index = 0;
+    if (!entry_number_to_int(idx, &index)) {
+        fprintf(stderr, "remove expects integer index\n");
+        return;
+    }
+    if (type == U_T_INT && entry_is_string(target)) {
+        size_t len = entry_bytes_len(target);
+        Int pos = 0;
+        if (!bytes_list_index((Int)len, index, &pos)) return;
+        char c = 0;
+        bytes_list_remove(target, (size_t)pos, &c, 1);
+        push_string(stack, &c, 1);
+        return;
+    }
+    if (type == U_T_INT) {
+        Int count = bytes_list_count(target, sizeof(Int));
+        Int pos = 0;
+        if (!bytes_list_index(count, index, &pos)) return;
+        Int iv = 0;
+        bytes_list_remove(target, (size_t)pos * sizeof(Int), &iv, sizeof(Int));
+        push_number(stack, (double)iv);
+        return;
+    }
+    if (type == U_T_FLOAT) {
+        Int count = bytes_list_count(target, sizeof(Float));
+        Int pos = 0;
+        if (!bytes_list_index(count, index, &pos)) return;
+        Float fv = 0;
+        bytes_list_remove(target, (size_t)pos * sizeof(Float), &fv, sizeof(Float));
+        push_number(stack, (double)fv);
+        return;
+    }
+}
+
+static void native_read(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_arg(stack, argc, 0);
+    const char *path = NULL;
+    size_t path_len = 0;
+    if (!target || !entry_as_string(target, &path, &path_len)) {
+        fprintf(stderr, "read expects a string path\n");
+        return;
+    }
+    char *path_buf = (char*)malloc(path_len + 1);
+    memcpy(path_buf, path, path_len);
+    path_buf[path_len] = 0;
+    FILE *fp = fopen(path_buf, "rb");
+    free(path_buf);
+    if (!fp) {
+        fprintf(stderr, "read failed\n");
+        return;
+    }
+    size_t cap = 4096;
+    size_t len = 0;
+    char *buf = (char*)malloc(cap);
+    int c;
+    while ((c = fgetc(fp)) != EOF) {
+        if (len + 1 > cap) {
+            size_t next = cap * 2;
+            char *tmp = (char*)realloc(buf, next);
+            if (!tmp) break;
+            buf = tmp;
+            cap = next;
+        }
+        buf[len++] = (char)c;
+    }
+    fclose(fp);
+    push_string(stack, buf, len);
+    free(buf);
+}
+
+static void native_write(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *path_entry = native_arg(stack, argc, 0);
+    UEntry *data_entry = native_arg(stack, argc, 1);
+    const char *path = NULL;
+    size_t path_len = 0;
+    const char *data = NULL;
+    size_t data_len = 0;
+    if (!path_entry || !data_entry ||
+        !entry_as_string(path_entry, &path, &path_len) ||
+        !entry_as_string(data_entry, &data, &data_len)) {
+        fprintf(stderr, "write expects path and data strings\n");
+        return;
+    }
+    char *path_buf = (char*)malloc(path_len + 1);
+    memcpy(path_buf, path, path_len);
+    path_buf[path_len] = 0;
+    FILE *fp = fopen(path_buf, "wb");
+    free(path_buf);
+    if (!fp) {
+        fprintf(stderr, "write failed\n");
+        return;
+    }
+    fwrite(data, 1, data_len, fp);
+    fclose(fp);
+    push_entry(stack, g_vm->null_entry);
+}
+
+static void native_system(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *cmd_entry = native_arg(stack, argc, 0);
+    const char *cmd = NULL;
+    size_t cmd_len = 0;
+    if (!cmd_entry || !entry_as_string(cmd_entry, &cmd, &cmd_len)) {
+        fprintf(stderr, "system expects a string command\n");
+        return;
+    }
+    char *cmd_buf = (char*)malloc(cmd_len + 1);
+    memcpy(cmd_buf, cmd, cmd_len);
+    cmd_buf[cmd_len] = 0;
+    int res = system(cmd_buf);
+    free(cmd_buf);
+    push_number(stack, res);
+}
+
+static void native_ffi_load(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    fprintf(stderr, "ffiLoad is not supported in URB runtime yet\n");
+    push_entry(stack, g_vm->null_entry);
+}
+
+static void native_eval(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    const char *src = NULL;
+    size_t src_len = 0;
+    if (!target || !entry_as_string(target, &src, &src_len)) {
+        fprintf(stderr, "eval expects string source\n");
+        return;
+    }
+    Bytecode bc;
+    char err[256];
+    err[0] = 0;
+    if (!vm_compile_source(src, &bc, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "eval compile failed");
+        return;
+    }
+    Int before = stack->size;
+    exec_bytecode_in_vm(vm, bc.data, bc.len, stack);
+    bc_free(&bc);
+    if (stack->size == (UHalf)before) {
+        push_entry(stack, g_vm->null_entry);
+    }
+}
+
+static void native_eval_bytecode(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    const char *data = NULL;
+    size_t len = 0;
+    if (!target || !entry_as_string(target, &data, &len)) {
+        fprintf(stderr, "evalBytecode expects byte/string data\n");
+        return;
+    }
+    exec_bytecode_in_vm(vm, (const unsigned char*)data, len, stack);
+    push_entry(stack, g_vm->null_entry);
+}
+
+static void native_parse(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    fprintf(stderr, "parse is deprecated and not supported in URB runtime\n");
+    push_entry(stack, g_vm->null_entry);
+}
+
+static void native_emit(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    fprintf(stderr, "emit is deprecated and not supported in URB runtime\n");
+    push_entry(stack, g_vm->null_entry);
+}
+
+static void native_bytecode_to_ast(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    fprintf(stderr, "bytecodeToAst is deprecated and not supported in URB runtime\n");
+    push_entry(stack, g_vm->null_entry);
+}
+
+static void native_ast_to_source(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    fprintf(stderr, "astToSource is deprecated and not supported in URB runtime\n");
+    push_entry(stack, g_vm->null_entry);
+}
+
+static void native_gc_collect(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    stack_push_entry(stack, g_vm->null_entry);
+}
+
+static void uobj_free(UObj *obj)
+{
+    if (!obj) return;
+    if (obj->type == U_T_INT || obj->type == U_T_FLOAT) {
+        free(obj->as.bytes.data);
+    } else if (obj->type == U_T_TABLE) {
+        free(obj->as.table.items);
+    } else if (obj->type == U_T_NATIVE) {
+        UNative *n = obj->as.native.native;
+        if (n && n->free_data) n->free_data(n->data);
+        free(n);
+    } else if (obj->type == U_T_LAMBDA) {
+        UFunc *fn = obj->as.lambda.func;
+        if (fn) {
+            for (uint32_t i = 0; i < fn->argc; i++) {
+                free(fn->arg_names ? fn->arg_names[i] : NULL);
+                if (fn->default_mem && fn->default_mem[i]) urb_free(fn->default_mem[i]);
+            }
+            free(fn->arg_names);
+            free(fn->arg_lens);
+            free(fn->default_mem);
+            free(fn->has_default);
+            free(fn);
+        }
+    }
+    free(obj);
+}
+
+static void native_gc_free(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_arg(stack, argc, 0);
+    if (!target || !target->obj) {
+        fprintf(stderr, "gc.free expects a value\n");
+        return;
+    }
+    if (target == vm->global_entry || target == vm->stack_entry ||
+        target == vm->null_entry || target == vm->common_entry ||
+        target == vm->argc_entry) {
+        fprintf(stderr, "gc.free cannot free protected values\n");
+        return;
+    }
+    uobj_free(target->obj);
+    target->obj = uobj_new(U_T_NULL);
+    stack_push_entry(stack, uent_make_int_scalar(1));
+}
+
+static void native_gc_sweep(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_arg(stack, argc, 0);
+    if (!target || !target->obj) {
+        fprintf(stderr, "gc.sweep expects a value\n");
+        return;
+    }
+    if (target == vm->global_entry || target == vm->stack_entry ||
+        target == vm->null_entry || target == vm->common_entry ||
+        target == vm->argc_entry) {
+        fprintf(stderr, "gc.sweep cannot sweep protected values\n");
+        return;
+    }
+    uobj_free(target->obj);
+    target->obj = uobj_new(U_T_NULL);
+    stack_push_entry(stack, uent_make_int_scalar(1));
+}
+
+static void native_gc_new(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    Int size = 0;
+    if (argc >= 1) {
+        UEntry *arg0 = native_arg(stack, argc, 0);
+        if (!entry_number_to_int(arg0, &size) || size < 0) {
+            fprintf(stderr, "gc.new expects non-negative size\n");
+            return;
+        }
+    }
+    UEntry *entry = uent_make_table(size);
+    stack_push_entry(stack, entry);
+}
+
+static void native_gc_debug(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    stack_push_entry(stack, g_vm->null_entry);
+}
+
+static void native_gc_stats(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    stack_push_entry(stack, g_vm->null_entry);
 }
 
 static UEntry *object_find_by_key(UrbVM *vm, UEntry *obj, const char *name, size_t len)
@@ -2069,6 +3865,26 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
             unsigned char *buf = NULL;
             size_t slen = 0;
             if (!bc_read_string(data, len, &pc, &buf, &slen)) break;
+            char *processed = urb_bridge_papagaio((const char*)buf, slen);
+            if (processed) {
+                Value val;
+                val.p = uent_make_bytes(processed, strlen(processed), 1, 0);
+                free(processed);
+                free(buf);
+                vec_push(&vec, val);
+                break;
+            }
+            Value val;
+            val.p = uent_make_bytes((const char*)buf, slen, 1, 0);
+            free(buf);
+            vec_push(&vec, val);
+            break;
+        }
+        case BC_PUSH_CHAR_RAW:
+        case BC_PUSH_STRING_RAW: {
+            unsigned char *buf = NULL;
+            size_t slen = 0;
+            if (!bc_read_string(data, len, &pc, &buf, &slen)) break;
             Value val;
             val.p = uent_make_bytes((const char*)buf, slen, 1, 0);
             free(buf);
@@ -2347,6 +4163,16 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
     return prog;
 }
 
+static void exec_bytecode_in_vm(UrbVM *vm, const unsigned char *data, size_t len, List *stack)
+{
+    if (!vm || !data || len == 0) return;
+    UrbProgram program = translate_bytecode(data, len, vm->exec);
+    if (program.mem) {
+        urb_interpret(vm->exec, program.mem, stack);
+        urb_free(program.mem);
+    }
+}
+
 static void vm_init(UrbVM *vm)
 {
     memset(vm, 0, sizeof(*vm));
@@ -2369,34 +4195,126 @@ static void vm_init(UrbVM *vm)
     table_set_by_key_len(vm->global_entry, "common", 6, vm->common_entry);
     table_set_by_key_len(vm->global_entry, "__argc", 6, vm->argc_entry);
 
-    UObj *native_obj = uobj_new(U_T_NATIVE);
-    UNative *print_native = (UNative*)calloc(1, sizeof(UNative));
-    print_native->fn = native_print;
-    native_obj->as.native.native = print_native;
-    UEntry *print_entry = uent_new(native_obj);
-    table_set_by_key_len(vm->global_entry, "print", 5, print_entry);
+    UEntry *gc_entry = uent_make_table(8);
+    table_set_by_key_len(vm->global_entry, "gc", 2, gc_entry);
 
-    native_obj = uobj_new(U_T_NATIVE);
-    UNative *println_native = (UNative*)calloc(1, sizeof(UNative));
-    println_native->fn = native_println;
-    native_obj->as.native.native = println_native;
-    UEntry *println_entry = uent_new(native_obj);
-    table_set_by_key_len(vm->global_entry, "println", 7, println_entry);
+    register_native(vm, "print", native_print, 1);
+    register_native(vm, "println", native_println, 1);
+    register_native(vm, "len", native_len, 1);
+    register_native(vm, "pretty", native_pretty, 1);
+    register_native(vm, "clone", native_clone, 1);
+    register_native(vm, "copy", native_copy, 1);
+    register_native(vm, "toInt", native_to_int, 1);
+    register_native(vm, "toFloat", native_to_float, 1);
+    register_native(vm, "gc", native_gc_collect, 1);
 
-    native_obj = uobj_new(U_T_NATIVE);
-    UNative *len_native = (UNative*)calloc(1, sizeof(UNative));
-    len_native->fn = native_len;
-    native_obj->as.native.native = len_native;
-    UEntry *len_entry = uent_new(native_obj);
-    table_set_by_key_len(vm->global_entry, "len", 3, len_entry);
+    #ifdef DISTURB_ENABLE_IO
+    register_native(vm, "read", native_read, 1);
+    register_native(vm, "write", native_write, 1);
+    #endif
+    #ifdef DISTURB_ENABLE_SYSTEM
+    register_native(vm, "system", native_system, 1);
+    #endif
+    #ifdef DISTURB_ENABLE_FFI
+    register_native(vm, "ffiLoad", native_ffi_load, 1);
+    #endif
+
+    register_native(vm, "eval", native_eval, 1);
+    register_native(vm, "parse", native_parse, 1);
+    register_native(vm, "emit", native_emit, 1);
+    register_native(vm, "evalBytecode", native_eval_bytecode, 1);
+    register_native(vm, "bytecodeToAst", native_bytecode_to_ast, 1);
+    register_native(vm, "astToSource", native_ast_to_source, 1);
+
+    register_native(vm, "append", native_append, 1);
+    register_native(vm, "add", native_add, 1);
+    register_native(vm, "sub", native_sub, 1);
+    register_native(vm, "mul", native_mul, 1);
+    register_native(vm, "div", native_div, 1);
+    register_native(vm, "mod", native_mod, 1);
+    register_native(vm, "pow", native_pow, 1);
+    register_native(vm, "min", native_min, 1);
+    register_native(vm, "max", native_max, 1);
+    register_native(vm, "abs", native_abs, 1);
+    register_native(vm, "floor", native_floor, 1);
+    register_native(vm, "ceil", native_ceil, 1);
+    register_native(vm, "round", native_round, 1);
+    register_native(vm, "sqrt", native_sqrt, 1);
+    register_native(vm, "sin", native_sin, 1);
+    register_native(vm, "cos", native_cos, 1);
+    register_native(vm, "tan", native_tan, 1);
+    register_native(vm, "asin", native_asin, 1);
+    register_native(vm, "acos", native_acos, 1);
+    register_native(vm, "atan", native_atan, 1);
+    register_native(vm, "log", native_log, 1);
+    register_native(vm, "exp", native_exp, 1);
+    register_native(vm, "slice", native_slice, 1);
+    register_native(vm, "substr", native_substr, 1);
+    register_native(vm, "split", native_split, 1);
+    register_native(vm, "join", native_join, 1);
+    register_native(vm, "upper", native_upper, 1);
+    register_native(vm, "lower", native_lower, 1);
+    register_native(vm, "trim", native_trim, 1);
+    register_native(vm, "startsWith", native_starts_with, 1);
+    register_native(vm, "endsWith", native_ends_with, 1);
+    register_native(vm, "find", native_find, 1);
+    register_native(vm, "rfind", native_rfind, 1);
+    register_native(vm, "contains", native_contains, 1);
+    register_native(vm, "replace", native_replace, 1);
+    register_native(vm, "replaceAll", native_replace_all, 1);
+    register_native(vm, "papagaio", native_papagaio, 1);
+    register_native(vm, "keys", native_keys, 1);
+    register_native(vm, "values", native_values, 1);
+    register_native(vm, "has", native_has, 1);
+    register_native(vm, "delete", native_delete, 1);
+    register_native(vm, "push", native_push, 1);
+    register_native(vm, "pop", native_pop, 1);
+    register_native(vm, "shift", native_shift, 1);
+    register_native(vm, "unshift", native_unshift, 1);
+    register_native(vm, "insert", native_insert, 1);
+    register_native(vm, "remove", native_remove, 1);
+
+    register_native(vm, "gcCollect", native_gc_collect, 0);
+    register_native(vm, "gcFree", native_gc_free, 0);
+    register_native(vm, "gcSweep", native_gc_sweep, 0);
+    register_native(vm, "gcNew", native_gc_new, 0);
+    register_native(vm, "gcDebug", native_gc_debug, 0);
+    register_native(vm, "gcStats", native_gc_stats, 0);
+
+    table_set_by_key_len(gc_entry, "collect", 7, table_find_by_key_len(vm->global_entry, "gcCollect", 9));
+    table_set_by_key_len(gc_entry, "free", 4, table_find_by_key_len(vm->global_entry, "gcFree", 6));
+    table_set_by_key_len(gc_entry, "sweep", 5, table_find_by_key_len(vm->global_entry, "gcSweep", 7));
+    table_set_by_key_len(gc_entry, "new", 3, table_find_by_key_len(vm->global_entry, "gcNew", 5));
+    table_set_by_key_len(gc_entry, "debug", 5, table_find_by_key_len(vm->global_entry, "gcDebug", 7));
+    table_set_by_key_len(gc_entry, "stats", 5, table_find_by_key_len(vm->global_entry, "gcStats", 7));
 }
 
-int urb_exec_bytecode(const unsigned char *data, size_t len)
+static void vm_set_args(UrbVM *vm, int argc, char **argv)
+{
+    if (!vm) return;
+    UEntry *args = uent_make_table(argc);
+    char buf[32];
+    for (int i = 0; i < argc; i++) {
+        snprintf(buf, sizeof(buf), "arg_%d", i);
+        UEntry *arg_val = uent_make_string(argv[i], strlen(argv[i]));
+        table_set_by_key_len(vm->global_entry, buf, strlen(buf), arg_val);
+        table_add_entry(args, entry_clone_shallow(arg_val, NULL));
+    }
+    table_set_by_key_len(vm->global_entry, "args", 4, args);
+    snprintf(buf, sizeof(buf), "%d", argc);
+    table_set_by_key_len(vm->global_entry, "argc", 4, uent_make_string(buf, strlen(buf)));
+}
+
+int urb_exec_bytecode(const unsigned char *data, size_t len, int argc, char **argv)
 {
     if (!data || len == 0) return 0;
     UrbVM vm;
     vm_init(&vm);
     g_vm = &vm;
+    // Match Disturb behavior: ensure stdout is fully buffered for heavy println loops.
+    // This significantly reduces per-line overhead when output is redirected.
+    setvbuf(stdout, NULL, _IOFBF, 1 << 20);
+    vm_set_args(&vm, argc, argv);
 
     UrbProgram program = translate_bytecode(data, len, vm.exec);
 
