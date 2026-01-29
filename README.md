@@ -10,7 +10,12 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | `./disturb file.disturb` | Run source |
 | `./disturb` | Interactive REPL |
 | `./disturb --repl` | Interactive REPL |
+| `./disturb --urb file.disturb` | Run with URB runtime compatibility layer |
 | `./disturb --help` | Show CLI help |
+
+## URB runtime (experimental)
+
+`--urb` compiles source to Disturb bytecode and executes it through a URB-based compatibility runtime. This is an early, minimal core implementation focused on basic ops and printing. Safety checks and GC are intentionally omitted.
 
 ## Core Model
 

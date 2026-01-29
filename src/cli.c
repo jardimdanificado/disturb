@@ -1,4 +1,5 @@
 #include "vm.h"
+#include "urb_runtime.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +35,7 @@ static void print_help(void)
     puts("usage:");
     puts("  disturb [script.disturb] [args...]");
     puts("  disturb --repl");
+    puts("  disturb --urb [script.disturb]");
     puts("  disturb --help");
     puts("");
     puts("notes:");
@@ -170,6 +172,47 @@ static int repl_run(int argc, char **argv)
 int main(int argc, char **argv)
 {
     if (argc > 1) {
+        if (strcmp(argv[1], "--urb") == 0) {
+            if (argc < 3) {
+                fprintf(stderr, "disturb --urb expects a source file\n");
+                return 1;
+            }
+            FILE *fp = fopen(argv[2], "r");
+            if (!fp) {
+                perror("open");
+                return 1;
+            }
+            char *src = read_all_text(fp);
+            if (!src) {
+                fprintf(stderr, "failed to read file\n");
+                fclose(fp);
+                return 1;
+            }
+            if (src[0] == '#' && src[1] == '!') {
+                char *nl = strchr(src, '\n');
+                if (!nl) {
+                    src[0] = '\0';
+                } else {
+                    size_t offset = (size_t)(nl - src) + 1;
+                    size_t remaining = strlen(src + offset);
+                    memmove(src, src + offset, remaining + 1);
+                }
+            }
+            Bytecode bc;
+            char err[256];
+            err[0] = 0;
+            if (!vm_compile_source(src, &bc, err, sizeof(err))) {
+                fprintf(stderr, "%s\n", err[0] ? err : "compile error");
+                free(src);
+                fclose(fp);
+                return 1;
+            }
+            free(src);
+            fclose(fp);
+            int ok = urb_exec_bytecode(bc.data, bc.len);
+            bc_free(&bc);
+            return ok ? 0 : 1;
+        }
         if (strcmp(argv[1], "--repl") == 0) {
             return repl_run(argc, argv);
         }
@@ -181,9 +224,8 @@ int main(int argc, char **argv)
         VM vm;
         vm_init(&vm);
         
-        // Adiciona apenas os argumentos do script (após o nome do arquivo)
-        int script_argc = argc - 2;  // argc - programa - arquivo
-        char **script_argv = argv + 2;  // argv[2] em diante
+        int script_argc = argc - 2;
+        char **script_argv = argv + 2;
         vm_add_args(&vm, script_argc, script_argv);
         
         FILE *fp = fopen(argv[1], "r");
@@ -199,14 +241,10 @@ int main(int argc, char **argv)
             vm_free(&vm);
             return 1;
         }
-        /* Support scripts with a shebang (#!): if the first two characters
-           are "#!" strip the first line so the interpreter doesn't try to
-           parse it as Disturb source. We do the removal in-place so the
-           original buffer can be freed later as usual. */
+
         if (src[0] == '#' && src[1] == '!') {
             char *nl = strchr(src, '\n');
             if (!nl) {
-                /* file only contained shebang line: make empty source */
                 src[0] = '\0';
             } else {
                 size_t offset = (size_t)(nl - src) + 1;

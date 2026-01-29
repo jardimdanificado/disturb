@@ -1,0 +1,16 @@
+.vscode
+ub
+valgrind*
+urb
+urbc
+bruter.h
+*.exe
+*.urbin
+build
+.tmp
+makeself
+quickjs
+# interpreter
+rapper
+# assembler
+beatmaker

@@ -1,0 +1,18 @@
+// Example compatible with current URB runtime scope (core ops + print/println/len)
+
+global.title = "urb demo";
+println(global.title);
+
+// arithmetic
+a = 10;
+b = 32;
+sum = a + b;
+println(sum);
+
+// strings + concatenation
+msg = "sum = " + sum;
+println(msg);
+
+// list literals and len
+nums = [1, 2, 3, 4];
+println(len(nums));

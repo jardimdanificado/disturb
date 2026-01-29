@@ -1,0 +1,62 @@
+$eval{papagaio.counter = 0;return ""}
+
+$pattern {if $block condition{(}{)} $block iftrue{}{} else $block iffalse{}{}} 
+{
+    counter++
+    goif($condition, if_counter_true)
+    goto(if_counter_false)
+    private if_counter_true {
+        $iftrue
+    }
+    private if_counter_false {
+        $iffalse
+    }
+}
+
+$pattern {do $block code{}{} while $block condition{(}{)}}
+{
+    counter++
+    public dowhile_counter {
+        $code
+    }
+    goif($condition, dowhile_counter)
+}
+
+$pattern {while $block condition{(}{)} $block code{}{}}
+{
+    counter++
+    private while_counter {
+        $code
+    }
+    goif($condition, while_counter)
+}
+
+$pattern {$name $block vars{(}{)}}
+{
+    $eval{
+        let splited = `$vars`.split(",");
+        let result = [];
+        while(splited.length > 0)
+        {
+            result.push(splited.pop().trim())
+        }
+        return result.join(' ') + " $name";
+    }
+}
+
+$pattern {private $name $block code{}{}} 
+{
+    goto($name.end)
+    public $name {$code}
+}
+
+$pattern {public $name $block code{}{}} 
+{
+    $name:
+    $code
+    $name.end:
+}
+
+
+$pattern {counter++} {$eval{papagaio.counter++;return ""}}
+$pattern {counter} {$eval{return papagaio.counter}}

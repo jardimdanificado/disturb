@@ -3,7 +3,7 @@ ENABLE_IO ?= 1
 ENABLE_SYSTEM ?= 1
 ENABLE_FFI ?= 1
 
-CFLAGS = -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp
+CFLAGS = -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp -Ilib/urb
 LIBREGEXP_CFLAGS = -Wno-unused-parameter -Wno-sign-compare -Wno-pedantic
 LDFLAGS = -lm
 
@@ -21,7 +21,8 @@ ifeq ($(ENABLE_FFI),1)
 endif
 
 SRC = lib/libregexp/cutils.c lib/libregexp/libunicode.c lib/libregexp/libregexp.c \
-      src/vm.c src/bytecode.c src/syntax.c src/functions.c src/papagaio.c src/cli.c
+      src/vm.c src/bytecode.c src/syntax.c src/functions.c src/papagaio.c src/cli.c \
+      src/urb_runtime.c
 ifeq ($(ENABLE_FFI),1)
 	SRC += src/ffi.c
 endif

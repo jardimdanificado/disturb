@@ -1,0 +1,172 @@
+#!/bin/bash
+
+# Criar arquivo temporário
+TEMP_FILE=$(mktemp -d)
+trap "rm -rf $TEMP_FILE" EXIT
+
+# Coletar arquivos .c e .papagaio do diretório
+declare -a C_FILES
+declare -a PAPAGAIO_FILES
+
+for file in *.c; do [ -f "$file" ] && C_FILES+=("$file"); done
+for file in *.papagaio; do [ -f "$file" ] && PAPAGAIO_FILES+=("$file"); done
+
+# Adicionar arquivos dos argumentos
+if [ $# -gt 0 ]; then
+    for arg in "$@"; do
+        if [[ "$arg" == *.c ]]; then
+            C_FILES+=("$arg")
+        elif [[ "$arg" == *.papagaio ]]; then
+            PAPAGAIO_FILES+=("$arg")
+        fi
+    done
+fi
+
+{
+    echo 'C {
+$eval{
+    function parseNumericString(s) {
+        const str = s.trim();
+        if (str === "") {
+            return NaN;
+        }
+        if (/^[+-]?\d+(?:\.\d+)?[fF]$/.test(str)) {
+            return Number(str.slice(0, -1));
+        }
+        if (/^[+-]?(?:\d*\.\d+|\d+\.\d*)$/.test(str)) {
+            return Number(str);
+        }
+        if (/^[+-]?\d+(?:\.\d+)?[eE][+-]?\d+$/.test(str)) {
+            return Number(str);
+        }
+        if (/^[+-]?\d+$/.test(str)) {
+            return BigInt(str);
+        }
+        if (/^[+-]?0[xX][0-9a-fA-F]+$/.test(str) ||
+            /^[+-]?0[bB][01]+$/.test(str) ||
+            /^[+-]?0[oO][0-7]+$/.test(str)) {
+            return BigInt(str);
+        }
+        return NaN;
+    }
+    function isNumeric(x) {
+        return (
+            typeof x === "number" && !Number.isNaN(x) ||
+            typeof x === "bigint"
+        );
+    }
+    this.counter = 0;
+    this.funcs = [];
+    this.labels = [];
+    this.output = "#include \"urb.h\"\n\n";
+    this.assemble = (stuff) => {
+        stuff = stuff.trim();
+        let funcs = this.funcs.join(" ").replaceAll("URB_", "").replaceAll("urb_", "").split(" ");
+        let code = this.content.replaceAll("\n", " ").trim().split(" ");
+        let result = "\nList *mem = urb_new(" + code.length + ");\n";
+        for (let i = 0; i < code.length;i++)
+        {
+            if (code[i].endsWith(":"))
+            {
+                this.labels.push({index: i, name: code[i].replace(":", "")});
+                code = code.filter((word, index) => index != i);
+                i--;
+            }
+        }
+        for (const token of code)
+        {
+            result += "\t";
+            if (isNumeric(parseNumericString(token)))
+            {
+                result += "urb_push(mem, (Value){.i = " + parseNumericString(token) + "});\n"
+            }
+            else if (token[0] == "@")
+            {
+                result += "urb_push(mem, (Value){.u = " + "(" + "INT_MAX - " + token.slice(1) + " )" + "});\n"
+            }
+            else
+            {
+                let found = false;
+                for (const label of this.labels)
+                {
+                    if (label.name == token)
+                    {
+                        result += "urb_push(mem, (Value){.u = " + label.index + "});\n";
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                {
+                    for (const funcname of funcs)
+                    {
+                        if (funcname == token)
+                        {
+                            result += "urb_push(mem, (Value){.u = (INT_MIN + OP_CODES_OFFSET + " + funcs.indexOf(token) + ")});\n"
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+    this.exit = () =>{
+        this.output += "\nint main(int argc, char* argv[]){\n";
+        this.output += this.assemble(this.content);
+        this.output += "\n\tList *exec = urb_new(" + this.funcs.length + ");\n";
+        for (const name of this.funcs)
+        {
+            this.output += "\turb_push(exec, (Value){.p = " + name + "});\n";
+        }
+        this.output += "\turb_interpret(exec, mem, NULL);\n";
+        this.output += "\turb_free(exec);\n";
+        this.output += "}\n";
+        this.content = this.output;
+        return "";
+    }
+    return ""
+}
+$pattern{C $block c_code{}{}}
+{
+    $pattern {\n} {\\n}
+    $eval{
+        this.output = this.output + " " + `$c_code`;
+        return "";
+    }
+    $pattern{void $funcname(List * stack) $block conteudo{} {}}
+    {
+        $eval{
+            this.funcs.push("$funcname");
+            return this.match;
+        }
+    }
+}
+'
+    for file in "${C_FILES[@]}"; do cat "$file"; done
+    echo "}"
+    for file in "${PAPAGAIO_FILES[@]}"; do cat "$file"; done
+} > "$TEMP_FILE/a.papagaio"
+
+# Coletar arquivos .urb do diretório
+declare -a URB_FILES
+
+for file in *.urb; do [ -f "$file" ] && URB_FILES+=("$file"); done
+
+# Adicionar arquivos .urb dos argumentos
+if [ $# -gt 0 ]; then
+    for arg in "$@"; do
+        if [[ "$arg" == *.urb ]]; then
+            URB_FILES+=("$arg")
+        fi
+    done
+fi
+
+# Se houver arquivos .urb, processa com papagaio; senão mostra o a.papagaio
+if [ ${#URB_FILES[@]} -gt 0 ]; then
+    papagaio "$TEMP_FILE/a.papagaio" "${URB_FILES[@]}"
+else
+    cat "$TEMP_FILE/a.papagaio"
+fi
+# gcc "$TEMP_FILE/a.c" -o a.out
