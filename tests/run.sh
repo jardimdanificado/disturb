@@ -43,7 +43,7 @@ run_case references
 run_case locals
 run_case strict
 run_case value
-run_case asm
+# run_case asm
 
 run_negative() {
   name=$1

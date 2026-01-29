@@ -2,6 +2,8 @@
 
 Disturb is a stack-oriented VM with a C-like source syntax that compiles to a compact RPN bytecode. The language focuses on safety and explicit behavior: everything lives under the global table, and missing lookups return a null table.
 
+Disturb means Distributable Urb, at least that was the original idea, but we are quite far from that.
+
 ## Quick Start
 
 | Command | Purpose |
@@ -11,12 +13,11 @@ Disturb is a stack-oriented VM with a C-like source syntax that compiles to a co
 | `./disturb` | Interactive REPL |
 | `./disturb --repl` | Interactive REPL |
 | `./disturb --urb file.disturb` | Run with URB runtime compatibility layer |
-| `./disturb --urb-run file.urbc` | Run Disturb bytecode through URB |
 | `./disturb --help` | Show CLI help |
 
 ## URB runtime (experimental)
 
-`--urb` compiles source to Disturb bytecode and executes it through a URB-based compatibility runtime. This is an early, minimal core implementation focused on basic ops and printing. Safety checks and GC are intentionally omitted.
+`--urb` compiles source to Disturb bytecode and executes it through a URB-based compatibility runtime. This is an early implementation focused on performance. Safety checks and GC are intentionally omitted.
 
 ## Core Model
 

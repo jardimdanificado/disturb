@@ -1433,6 +1433,18 @@ static void native_emit(VM *vm, List *stack, List *global)
     fprintf(stderr, "emit expects bytecode bytes\n");
 }
 
+static void native_bytecode_to_ast(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    stack = push_entry(vm, stack, vm->null_entry);
+}
+
+static void native_ast_to_source(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    stack = push_entry(vm, stack, vm->null_entry);
+}
+
 static void native_eval_bytecode(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -3142,6 +3154,8 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "eval") == 0) return native_eval;
     if (strcmp(name, "parse") == 0) return native_parse;
     if (strcmp(name, "emit") == 0) return native_emit;
+    if (strcmp(name, "bytecodeToAst") == 0) return native_bytecode_to_ast;
+    if (strcmp(name, "astToSource") == 0) return native_ast_to_source;
     if (strcmp(name, "evalBytecode") == 0) return native_eval_bytecode;
     if (strcmp(name, "gc") == 0) return native_gc;
     if (strcmp(name, "gcCollect") == 0) return native_gc_collect;

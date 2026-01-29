@@ -1,5 +1,7 @@
 #include "urb_runtime.h"
 #include "bytecode.h"
+
+#include <limits.h>
 #include "urb.h"
 #include "urb_bridge.h"
 
@@ -9,6 +11,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef DISTURB_ENABLE_FFI
+#include <dlfcn.h>
+#include <ffi.h>
+#endif
 
 int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap);
 
@@ -36,6 +42,7 @@ struct UObj {
         struct {
             unsigned char *data;
             size_t len;
+            size_t cap;
         } bytes;
         struct {
             UEntry **items;
@@ -85,6 +92,7 @@ struct UrbVM {
     UEntry *common_entry;
     UEntry *argc_entry;
     UEntry *this_entry;
+    UEntry *call_entry;
     int strict_mode;
     Int call_override_len;
     int has_call_override;
@@ -95,17 +103,21 @@ static UrbVM *g_vm = NULL;
 
 static UObj *uobj_new(int type);
 static UEntry *uent_new(UObj *obj);
+static UEntry *uent_make_native(UrbNativeFn fn, void *data, void (*free_data)(void *data));
 static int table_set_by_key_len(UEntry *table, const char *name, size_t len, UEntry *value);
 static void stack_push_entry(List *stack, UEntry *entry);
 static void exec_bytecode_in_vm(UrbVM *vm, const unsigned char *data, size_t len, List *stack);
+static int bc_read_u8(const unsigned char *data, size_t len, size_t *pc, uint8_t *out);
+static int bc_read_u32(const unsigned char *data, size_t len, size_t *pc, uint32_t *out);
+static int bc_read_i64(const unsigned char *data, size_t len, size_t *pc, int64_t *out);
+static int bc_read_f64(const unsigned char *data, size_t len, size_t *pc, double *out);
+static int bc_read_string(const unsigned char *data, size_t len, size_t *pc, unsigned char **out, size_t *out_len);
+static UEntry *entry_clone_shallow_copy(UEntry *src);
+static int entry_number_to_int(const UEntry *entry, Int *out);
 
 static void register_native(UrbVM *v, const char *name, UrbNativeFn fn, int to_common)
 {
-    UObj *native_obj = uobj_new(U_T_NATIVE);
-    UNative *box = (UNative*)calloc(1, sizeof(UNative));
-    box->fn = fn;
-    native_obj->as.native.native = box;
-    UEntry *entry = uent_new(native_obj);
+    UEntry *entry = uent_make_native(fn, NULL, NULL);
     table_set_by_key_len(v->global_entry, name, strlen(name), entry);
     if (to_common && v->common_entry) {
         table_set_by_key_len(v->common_entry, name, strlen(name), entry);
@@ -142,6 +154,19 @@ static UEntry *uent_new(UObj *obj)
     return entry;
 }
 
+static UEntry *uent_make_native(UrbNativeFn fn, void *data, void (*free_data)(void *data))
+{
+    UObj *native_obj = uobj_new(U_T_NATIVE);
+    if (!native_obj) return NULL;
+    UNative *box = (UNative*)calloc(1, sizeof(UNative));
+    if (!box) return NULL;
+    box->fn = fn;
+    box->data = data;
+    box->free_data = free_data;
+    native_obj->as.native.native = box;
+    return uent_new(native_obj);
+}
+
 static UEntry *uent_make_null(void)
 {
     UObj *obj = uobj_new(U_T_NULL);
@@ -153,6 +178,7 @@ static UEntry *uent_make_int_scalar(Int v)
     UObj *obj = uobj_new(U_T_INT);
     if (!obj) return NULL;
     obj->as.bytes.len = sizeof(Int);
+    obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.len);
     if (!obj->as.bytes.data) return NULL;
     memcpy(obj->as.bytes.data, &v, sizeof(Int));
@@ -164,6 +190,7 @@ static UEntry *uent_make_float_scalar(Float v)
     UObj *obj = uobj_new(U_T_FLOAT);
     if (!obj) return NULL;
     obj->as.bytes.len = sizeof(Float);
+    obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.len);
     if (!obj->as.bytes.data) return NULL;
     memcpy(obj->as.bytes.data, &v, sizeof(Float));
@@ -175,6 +202,7 @@ static UEntry *uent_make_bytes(const char *s, size_t len, int is_string, int exp
     UObj *obj = uobj_new(U_T_INT);
     if (!obj) return NULL;
     obj->as.bytes.len = len;
+    obj->as.bytes.cap = len;
     obj->as.bytes.data = NULL;
     if (len) {
         obj->as.bytes.data = (unsigned char*)malloc(len);
@@ -200,6 +228,7 @@ static UEntry *uent_make_int_list(Int count)
     UObj *obj = uobj_new(U_T_INT);
     if (!obj) return NULL;
     obj->as.bytes.len = (size_t)count * sizeof(Int);
+    obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = NULL;
     if (obj->as.bytes.len) {
         obj->as.bytes.data = (unsigned char*)calloc(1, obj->as.bytes.len);
@@ -214,6 +243,7 @@ static UEntry *uent_make_float_list(Int count)
     UObj *obj = uobj_new(U_T_FLOAT);
     if (!obj) return NULL;
     obj->as.bytes.len = (size_t)count * sizeof(Float);
+    obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = NULL;
     if (obj->as.bytes.len) {
         obj->as.bytes.data = (unsigned char*)calloc(1, obj->as.bytes.len);
@@ -251,6 +281,15 @@ static unsigned char *entry_bytes_data(const UEntry *entry)
     return entry->obj->as.bytes.data;
 }
 
+static int entry_key_is(const UEntry *entry, const char *name)
+{
+    if (!entry || !entry_is_string(entry) || !name) return 0;
+    size_t len = entry_bytes_len(entry);
+    size_t nlen = strlen(name);
+    if (len != nlen) return 0;
+    return memcmp(entry_bytes_data(entry), name, len) == 0;
+}
+
 static Int entry_bytes_count(const UEntry *entry, int type)
 {
     size_t elem = 0;
@@ -276,6 +315,267 @@ static int entry_read_float(const UEntry *entry, Int index, Float *out)
     if (off + sizeof(Float) > entry->obj->as.bytes.len) return 0;
     memcpy(out, entry->obj->as.bytes.data + off, sizeof(Float));
     return 1;
+}
+
+static Int entry_meta_size(const UEntry *entry)
+{
+    if (!entry || !entry->obj) return 0;
+    int type = entry->obj->type;
+    if (type == U_T_NULL) return 0;
+    if (type == U_T_TABLE) return (Int)entry->obj->as.table.size;
+    if (type == U_T_INT) {
+        if (entry_is_string(entry)) return (Int)entry_bytes_len(entry);
+        return entry_bytes_count(entry, U_T_INT);
+    }
+    if (type == U_T_FLOAT) return entry_bytes_count(entry, U_T_FLOAT);
+    return 0;
+}
+
+static Int entry_meta_capacity(const UEntry *entry)
+{
+    if (!entry || !entry->obj) return 0;
+    int type = entry->obj->type;
+    if (type == U_T_NULL) return 0;
+    if (type == U_T_TABLE) return (Int)entry->obj->as.table.cap;
+    if (type == U_T_INT) {
+        if (entry_is_string(entry)) return (Int)entry->obj->as.bytes.cap;
+        return (Int)(entry->obj->as.bytes.cap / sizeof(Int));
+    }
+    if (type == U_T_FLOAT) return (Int)(entry->obj->as.bytes.cap / sizeof(Float));
+    return 0;
+}
+
+static UEntry *make_type_name(UEntry *target)
+{
+    const char *name = "unknown";
+    if (!target || !target->obj) {
+        name = "null";
+    } else if (target->obj->type == U_T_INT && entry_is_string(target)) {
+        name = entry_bytes_len(target) == 1 ? "char" : "string";
+    } else {
+        name = u_type_name(target->obj->type);
+    }
+    return uent_make_bytes(name, strlen(name), 1, 1);
+}
+
+static int resize_bytes_capacity(UEntry *target, size_t new_cap)
+{
+    if (!target || !target->obj) return 0;
+    unsigned char *buf = NULL;
+    if (new_cap > 0) {
+        buf = (unsigned char*)realloc(target->obj->as.bytes.data, new_cap);
+        if (!buf) return 0;
+        if (new_cap > target->obj->as.bytes.cap) {
+            memset(buf + target->obj->as.bytes.cap, 0, new_cap - target->obj->as.bytes.cap);
+        }
+    } else {
+        free(target->obj->as.bytes.data);
+    }
+    target->obj->as.bytes.data = buf;
+    target->obj->as.bytes.cap = new_cap;
+    if (target->obj->as.bytes.len > new_cap) {
+        target->obj->as.bytes.len = new_cap;
+    }
+    return 1;
+}
+
+static int resize_bytes(UEntry *target, size_t new_len)
+{
+    if (!target || !target->obj) return 0;
+    if (new_len > target->obj->as.bytes.cap) {
+        if (!resize_bytes_capacity(target, new_len)) return 0;
+    }
+    if (new_len > target->obj->as.bytes.len) {
+        memset(target->obj->as.bytes.data + target->obj->as.bytes.len, 0,
+               new_len - target->obj->as.bytes.len);
+    }
+    target->obj->as.bytes.len = new_len;
+    return 1;
+}
+
+static int resize_table_size(UEntry *target, Int new_size)
+{
+    if (!target || !target->obj || target->obj->type != U_T_TABLE) return 0;
+    if (new_size < 0) return 0;
+    size_t new_count = (size_t)new_size;
+    if (new_count > target->obj->as.table.cap) {
+        size_t next = new_count;
+        UEntry **items = (UEntry**)realloc(target->obj->as.table.items, next * sizeof(UEntry*));
+        if (!items && next > 0) return 0;
+        if (next > target->obj->as.table.cap) {
+            memset(items + target->obj->as.table.cap, 0,
+                   (next - target->obj->as.table.cap) * sizeof(UEntry*));
+        }
+        target->obj->as.table.items = items;
+        target->obj->as.table.cap = next;
+    }
+    if (new_count > target->obj->as.table.size) {
+        for (size_t i = target->obj->as.table.size; i < new_count; i++) {
+            target->obj->as.table.items[i] = g_vm->null_entry;
+        }
+    }
+    target->obj->as.table.size = new_count;
+    return 1;
+}
+
+static int resize_table_capacity(UEntry *target, Int new_cap)
+{
+    if (!target || !target->obj || target->obj->type != U_T_TABLE) return 0;
+    if (new_cap < 0) return 0;
+    size_t cap = (size_t)new_cap;
+    UEntry **items = (UEntry**)realloc(target->obj->as.table.items, cap * sizeof(UEntry*));
+    if (!items && cap > 0) return 0;
+    if (cap > target->obj->as.table.cap) {
+        memset(items + target->obj->as.table.cap, 0,
+               (cap - target->obj->as.table.cap) * sizeof(UEntry*));
+    }
+    target->obj->as.table.items = items;
+    target->obj->as.table.cap = cap;
+    if (target->obj->as.table.size > cap) {
+        target->obj->as.table.size = cap;
+    }
+    for (size_t i = 0; i < target->obj->as.table.size; i++) {
+        if (!target->obj->as.table.items[i]) {
+            target->obj->as.table.items[i] = g_vm->null_entry;
+        }
+    }
+    return 1;
+}
+
+static UEntry *meta_get(UrbVM *vm, UEntry *target, UEntry *index)
+{
+    if (!target || !index || !entry_is_string(index)) return NULL;
+    if (entry_key_is(index, "name")) {
+        if (vm && target == vm->global_entry) {
+            return uent_make_bytes("global", 6, 1, 1);
+        }
+        if (!target->key && vm && vm->global_entry &&
+            vm->global_entry->obj && vm->global_entry->obj->type == U_T_TABLE) {
+            for (size_t i = vm->global_entry->obj->as.table.size; i > 0; i--) {
+                UEntry *entry = vm->global_entry->obj->as.table.items[i - 1];
+                if (!entry || entry->obj != target->obj) continue;
+                UEntry *key = entry->key;
+                if (!entry_is_string(key)) continue;
+                if (entry_key_is(key, "null")) continue;
+                return key;
+            }
+        }
+        return target->key ? target->key : vm->null_entry;
+    }
+    if (entry_key_is(index, "type")) {
+        return make_type_name(target);
+    }
+    if (entry_key_is(index, "size")) {
+        return uent_make_int_scalar(entry_meta_size(target));
+    }
+    if (entry_key_is(index, "capacity")) {
+        return uent_make_int_scalar(entry_meta_capacity(target));
+    }
+    if (entry_key_is(index, "value")) {
+        UEntry *out = entry_clone_shallow_copy(target);
+        if (!out) return NULL;
+        out->key = NULL;
+        return out;
+    }
+    if (entry_key_is(index, "string")) {
+        if (!target->obj || target->obj->type != U_T_INT) return NULL;
+        UEntry *out = uent_new(target->obj);
+        if (!out) return NULL;
+        out->key = target->key;
+        out->is_string = 1;
+        out->explicit_string = 1;
+        return out;
+    }
+    return NULL;
+}
+
+static int meta_set(UrbVM *vm, UEntry *target, UEntry *index, UEntry *value)
+{
+    if (!target || !index || !entry_is_string(index)) return 0;
+    if (entry_key_is(index, "name")) {
+        if (!value || !value->obj || value->obj->type == U_T_NULL) {
+            target->key = NULL;
+            return 1;
+        }
+        if (!entry_is_string(value)) return -1;
+        target->key = uent_make_bytes((const char*)entry_bytes_data(value),
+                                      entry_bytes_len(value), 1, 1);
+        return 1;
+    }
+    if (entry_key_is(index, "type")) {
+        if (!value || !entry_is_string(value)) return -1;
+        const char *name = (const char*)entry_bytes_data(value);
+        size_t len = entry_bytes_len(value);
+        int next = -1;
+        if (len == 4 && strncmp(name, "null", 4) == 0) next = U_T_NULL;
+        else if (len == 3 && strncmp(name, "int", 3) == 0) next = U_T_INT;
+        else if (len == 5 && strncmp(name, "float", 5) == 0) next = U_T_FLOAT;
+        else if (len == 5 && strncmp(name, "table", 5) == 0) next = U_T_TABLE;
+        else if (len == 4 && strncmp(name, "char", 4) == 0) next = U_T_INT;
+        else if (len == 6 && strncmp(name, "string", 6) == 0) next = U_T_INT;
+        else if (len == 6 && strncmp(name, "native", 6) == 0) next = U_T_NATIVE;
+        else if (len == 6 && strncmp(name, "lambda", 6) == 0) next = U_T_LAMBDA;
+        else return -1;
+        target->obj->type = next;
+        if (next == U_T_INT && (len == 4 || len == 6)) {
+            target->is_string = 1;
+            target->explicit_string = 1;
+        } else if (next == U_T_INT || next == U_T_FLOAT) {
+            target->is_string = 0;
+            target->explicit_string = 0;
+        }
+        return 1;
+    }
+    if (entry_key_is(index, "value")) {
+        if (!value || !value->obj) return -1;
+        if (value == vm->null_entry || value->obj->type == U_T_NULL) {
+            target->obj = vm->null_entry->obj;
+            target->is_string = 0;
+            target->explicit_string = 0;
+            return 1;
+        }
+        UEntry *copy = entry_clone_shallow_copy(value);
+        if (!copy) return -1;
+        target->obj = copy->obj;
+        target->is_string = copy->is_string;
+        target->explicit_string = copy->explicit_string;
+        return 1;
+    }
+    if (entry_key_is(index, "size")) {
+        Int iv = 0;
+        if (!entry_number_to_int(value, &iv) || iv < 0) return -1;
+        int type = target->obj ? target->obj->type : U_T_NULL;
+        if (type == U_T_INT) {
+            size_t bytes = entry_is_string(target) ? (size_t)iv : (size_t)iv * sizeof(Int);
+            return resize_bytes(target, bytes) ? 1 : -1;
+        }
+        if (type == U_T_FLOAT) {
+            size_t bytes = (size_t)iv * sizeof(Float);
+            return resize_bytes(target, bytes) ? 1 : -1;
+        }
+        if (type == U_T_TABLE) {
+            return resize_table_size(target, iv) ? 1 : -1;
+        }
+        return -1;
+    }
+    if (entry_key_is(index, "capacity")) {
+        Int iv = 0;
+        if (!entry_number_to_int(value, &iv) || iv < 0) return -1;
+        int type = target->obj ? target->obj->type : U_T_NULL;
+        if (type == U_T_INT) {
+            size_t bytes = entry_is_string(target) ? (size_t)iv : (size_t)iv * sizeof(Int);
+            return resize_bytes_capacity(target, bytes) ? 1 : -1;
+        }
+        if (type == U_T_FLOAT) {
+            size_t bytes = (size_t)iv * sizeof(Float);
+            return resize_bytes_capacity(target, bytes) ? 1 : -1;
+        }
+        if (type == U_T_TABLE) {
+            return resize_table_capacity(target, iv) ? 1 : -1;
+        }
+        return -1;
+    }
+    return 0;
 }
 
 static int entry_is_scalar_int(const UEntry *entry)
@@ -325,8 +625,9 @@ static UEntry *entry_clone_deep(const UEntry *src)
         obj = uobj_new(src->obj->type);
         if (!obj) return NULL;
         obj->as.bytes.len = src->obj->as.bytes.len;
-        if (obj->as.bytes.len > 0) {
-            obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.len);
+        obj->as.bytes.cap = src->obj->as.bytes.cap ? src->obj->as.bytes.cap : obj->as.bytes.len;
+        if (obj->as.bytes.cap > 0) {
+            obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.cap);
             if (!obj->as.bytes.data) return NULL;
             memcpy(obj->as.bytes.data, src->obj->as.bytes.data, obj->as.bytes.len);
         }
@@ -391,13 +692,52 @@ static int table_set_by_key_len(UEntry *table, const char *name, size_t len, UEn
         if (!entry_is_string(key)) continue;
         if (entry_bytes_len(key) == len &&
             memcmp(entry_bytes_data(key), name, len) == 0) {
-            UEntry *copy = entry_clone_shallow(value, key);
-            table->obj->as.table.items[i] = copy;
+            if (!entry) return 0;
+            if (!value || !value->obj || value->obj->type == U_T_NULL) {
+                entry->obj = g_vm->null_entry->obj;
+                entry->is_string = 0;
+                entry->explicit_string = 0;
+                return 1;
+            }
+            if (entry->obj && entry->obj->type == value->obj->type) {
+                int type = entry->obj->type;
+                if (type == U_T_INT || type == U_T_FLOAT) {
+                    size_t len_bytes = value->obj->as.bytes.len;
+                    if (!resize_bytes(entry, len_bytes)) return 0;
+                    if (len_bytes) {
+                        memcpy(entry->obj->as.bytes.data,
+                               value->obj->as.bytes.data,
+                               len_bytes);
+                    }
+                    entry->is_string = value->is_string;
+                    entry->explicit_string = value->explicit_string;
+                    return 1;
+                }
+                if (type == U_T_TABLE) {
+                    if (!resize_table_size(entry, (Int)value->obj->as.table.size)) return 0;
+                    for (size_t j = 0; j < value->obj->as.table.size; j++) {
+                        entry->obj->as.table.items[j] = value->obj->as.table.items[j];
+                    }
+                    return 1;
+                }
+            }
+            entry->obj = value->obj;
+            entry->is_string = value->is_string;
+            entry->explicit_string = value->explicit_string;
             return 1;
         }
     }
     UEntry *key_entry = uent_make_bytes(name, len, 1, 1);
-    UEntry *copy = entry_clone_shallow(value, key_entry);
+    UEntry *copy = NULL;
+    {
+        int is_null = value && value->obj && value->obj->type == U_T_NULL;
+        if (is_null) {
+            copy = uent_make_null();
+            if (copy) copy->key = key_entry;
+        } else {
+            copy = entry_clone_shallow(value, key_entry);
+        }
+    }
     table_add_entry(table, copy);
     return 1;
 }
@@ -551,9 +891,12 @@ static int bytes_list_insert(UEntry *target, size_t offset, const void *data, si
     if (!target || !target->obj) return 0;
     size_t old_len = target->obj->as.bytes.len;
     size_t new_len = old_len + len;
-    unsigned char *buf = (unsigned char*)realloc(target->obj->as.bytes.data, new_len);
-    if (!buf && new_len > 0) return 0;
-    target->obj->as.bytes.data = buf;
+    if (new_len > target->obj->as.bytes.cap) {
+        size_t next = target->obj->as.bytes.cap ? target->obj->as.bytes.cap : 8;
+        while (next < new_len) next <<= 1;
+        if (!resize_bytes_capacity(target, next)) return 0;
+    }
+    unsigned char *buf = target->obj->as.bytes.data;
     memmove(buf + offset + len, buf + offset, old_len - offset);
     memcpy(buf + offset, data, len);
     target->obj->as.bytes.len = new_len;
@@ -570,7 +913,6 @@ static int bytes_list_remove(UEntry *target, size_t offset, void *out, size_t le
             target->obj->as.bytes.data + offset + len,
             old_len - offset - len);
     target->obj->as.bytes.len = old_len - len;
-    target->obj->as.bytes.data = (unsigned char*)realloc(target->obj->as.bytes.data, target->obj->as.bytes.len);
     return 1;
 }
 
@@ -724,6 +1066,11 @@ typedef struct {
     size_t cap;
 } StrBuf;
 
+typedef struct PrettySeen {
+    const UEntry *entry;
+    struct PrettySeen *next;
+} PrettySeen;
+
 static void sb_init(StrBuf *b)
 {
     b->cap = 256;
@@ -798,6 +1145,13 @@ static void sb_append_escaped(StrBuf *b, const char *s, size_t len)
             }
             break;
         }
+    }
+}
+
+static void sb_append_indent(StrBuf *b, int depth)
+{
+    for (int i = 0; i < depth; i++) {
+        sb_append_n(b, "  ", 2);
     }
 }
 
@@ -918,6 +1272,53 @@ static void append_value_text(UrbVM *vm, UEntry *entry, StrBuf *b, int raw_strin
     }
 }
 
+static int pretty_seen_has(PrettySeen *seen, const UEntry *entry)
+{
+    while (seen) {
+        if (seen->entry == entry) return 1;
+        seen = seen->next;
+    }
+    return 0;
+}
+
+static void append_pretty_value(UrbVM *vm, UEntry *entry, StrBuf *b, int depth, PrettySeen *seen)
+{
+    if (!entry || !entry->obj) {
+        sb_append_n(b, "null", 4);
+        return;
+    }
+    int type = entry->obj->type;
+    if (type != U_T_TABLE) {
+        append_value_text(vm, entry, b, 0);
+        return;
+    }
+    if (pretty_seen_has(seen, entry)) {
+        sb_append_n(b, "null", 4);
+        return;
+    }
+    PrettySeen node = { entry, seen };
+    sb_append_char(b, '{');
+    if (entry->obj->as.table.size == 0) {
+        sb_append_char(b, '}');
+        return;
+    }
+    sb_append_char(b, '\n');
+    int first = 1;
+    for (size_t i = 0; i < entry->obj->as.table.size; i++) {
+        UEntry *child = entry->obj->as.table.items[i];
+        if (!child) continue;
+        if (!first) sb_append_n(b, ",\n", 2);
+        first = 0;
+        sb_append_indent(b, depth + 1);
+        append_key_text(b, child);
+        sb_append_n(b, " = ", 3);
+        append_pretty_value(vm, child, b, depth + 1, &node);
+    }
+    sb_append_char(b, '\n');
+    sb_append_indent(b, depth);
+    sb_append_char(b, '}');
+}
+
 static void print_plain_entry(FILE *out, UrbVM *vm, UEntry *entry)
 {
     if (!entry || !entry->obj) {
@@ -990,7 +1391,7 @@ static void print_plain_entry(FILE *out, UrbVM *vm, UEntry *entry)
             }
             UEntry *key = child->key;
             if (!entry_is_string(key)) {
-                fputs("<?>", out);
+                fputs("_", out);
             } else {
                 fwrite(entry_bytes_data(key), 1, entry_bytes_len(key), out);
             }
@@ -1286,7 +1687,7 @@ static void native_pretty(UrbVM *vm, List *stack, UEntry *global)
     if (!target) return;
     StrBuf buf;
     sb_init(&buf);
-    append_value_text(vm, target, &buf, 0);
+    append_pretty_value(vm, target, &buf, 0, NULL);
     push_string(stack, buf.data, buf.len);
     sb_free(&buf);
 }
@@ -1297,8 +1698,9 @@ static UEntry *entry_clone_shallow_copy(UEntry *src)
     if (src->obj->type == U_T_INT || src->obj->type == U_T_FLOAT) {
         UObj *obj = uobj_new(src->obj->type);
         obj->as.bytes.len = src->obj->as.bytes.len;
-        if (obj->as.bytes.len) {
-            obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.len);
+        obj->as.bytes.cap = src->obj->as.bytes.cap ? src->obj->as.bytes.cap : obj->as.bytes.len;
+        if (obj->as.bytes.cap) {
+            obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.cap);
             memcpy(obj->as.bytes.data, src->obj->as.bytes.data, obj->as.bytes.len);
         }
         UEntry *out = uent_new(obj);
@@ -1312,7 +1714,7 @@ static UEntry *entry_clone_shallow_copy(UEntry *src)
         for (size_t i = 0; i < src->obj->as.table.size; i++) {
             UEntry *child = src->obj->as.table.items[i];
             if (!child) continue;
-            table_add_entry(out, entry_clone_shallow(child, child->key));
+            table_add_entry(out, child);
         }
         return out;
     }
@@ -1430,10 +1832,8 @@ static void native_append(UrbVM *vm, List *stack, UEntry *global)
     }
     size_t old_len = entry_bytes_len(dst);
     size_t add = entry_bytes_len(src);
-    size_t new_len = old_len + add;
-    dst->obj->as.bytes.data = (unsigned char*)realloc(dst->obj->as.bytes.data, new_len);
+    if (!resize_bytes(dst, old_len + add)) return;
     memcpy(dst->obj->as.bytes.data + old_len, entry_bytes_data(src), add);
-    dst->obj->as.bytes.len = new_len;
 }
 
 static int native_number_seed(UrbVM *vm, List *stack, UEntry *global, Float *out, uint32_t *start)
@@ -2166,7 +2566,7 @@ static void native_values(UrbVM *vm, List *stack, UEntry *global)
     for (size_t i = 0; i < target->obj->as.table.size; i++) {
         UEntry *child = target->obj->as.table.items[i];
         if (!child) continue;
-        table_add_entry(out, entry_clone_shallow(child, NULL));
+        table_add_entry(out, child);
     }
     push_entry(stack, out);
 }
@@ -2201,24 +2601,40 @@ static void native_delete(UrbVM *vm, List *stack, UEntry *global)
         fprintf(stderr, "delete expects table and key\n");
         return;
     }
-    if (!entry_is_string(idx)) {
-        fprintf(stderr, "delete expects string key\n");
+    if (entry_is_string(idx)) {
+        size_t key_len = entry_bytes_len(idx);
+        for (size_t i = 0; i < target->obj->as.table.size; i++) {
+            UEntry *entry = target->obj->as.table.items[i];
+            UEntry *key = entry ? entry->key : NULL;
+            if (!entry_is_string(key)) continue;
+            if (entry_bytes_len(key) == key_len &&
+                memcmp(entry_bytes_data(key), entry_bytes_data(idx), key_len) == 0) {
+                memmove(&target->obj->as.table.items[i],
+                        &target->obj->as.table.items[i + 1],
+                        (target->obj->as.table.size - i - 1) * sizeof(UEntry*));
+                target->obj->as.table.size--;
+                push_number(stack, 1);
+                return;
+            }
+        }
+        push_number(stack, 0);
         return;
     }
-    size_t key_len = entry_bytes_len(idx);
-    for (size_t i = 0; i < target->obj->as.table.size; i++) {
-        UEntry *entry = target->obj->as.table.items[i];
-        UEntry *key = entry ? entry->key : NULL;
-        if (!entry_is_string(key)) continue;
-        if (entry_bytes_len(key) == key_len &&
-            memcmp(entry_bytes_data(key), entry_bytes_data(idx), key_len) == 0) {
-            memmove(&target->obj->as.table.items[i],
-                    &target->obj->as.table.items[i + 1],
-                    (target->obj->as.table.size - i - 1) * sizeof(UEntry*));
-            target->obj->as.table.size--;
-            return;
-        }
+    Int index = 0;
+    if (!entry_number_to_int(idx, &index)) {
+        fprintf(stderr, "delete expects string key or integer index\n");
+        return;
     }
+    if (!list_index_valid(target, index)) {
+        push_number(stack, 0);
+        return;
+    }
+    Int pos = list_pos_from_index(target, index);
+    memmove(&target->obj->as.table.items[pos],
+            &target->obj->as.table.items[pos + 1],
+            (target->obj->as.table.size - (size_t)pos - 1) * sizeof(UEntry*));
+    target->obj->as.table.size--;
+    push_number(stack, 1);
 }
 
 static void native_push(UrbVM *vm, List *stack, UEntry *global)
@@ -2244,9 +2660,8 @@ static void native_push(UrbVM *vm, List *stack, UEntry *global)
             }
             size_t add = entry_bytes_len(arg);
             size_t old_len = entry_bytes_len(target);
-            target->obj->as.bytes.data = (unsigned char*)realloc(target->obj->as.bytes.data, old_len + add);
+            if (!resize_bytes(target, old_len + add)) return;
             memcpy(target->obj->as.bytes.data + old_len, entry_bytes_data(arg), add);
-            target->obj->as.bytes.len = old_len + add;
         } else if (type == U_T_INT) {
             Int iv = 0;
             Float fv = 0;
@@ -2655,12 +3070,645 @@ static void native_system(UrbVM *vm, List *stack, UEntry *global)
     push_number(stack, res);
 }
 
+#ifdef DISTURB_ENABLE_FFI
+typedef enum {
+    FFI_BASE_VOID = 0,
+    FFI_BASE_I8,
+    FFI_BASE_U8,
+    FFI_BASE_I16,
+    FFI_BASE_U16,
+    FFI_BASE_I32,
+    FFI_BASE_U32,
+    FFI_BASE_I64,
+    FFI_BASE_U64,
+    FFI_BASE_F32,
+    FFI_BASE_F64,
+    FFI_BASE_CSTR,
+    FFI_BASE_PTR
+} FfiBase;
+
+typedef struct {
+    FfiBase base;
+    int is_ptr;
+    int is_array;
+    int array_len;
+} FfiType;
+
+typedef struct {
+    int refcount;
+    void *handle;
+    void *fn_ptr;
+    FfiType ret;
+    FfiType *args;
+    int argc;
+    ffi_cif cif;
+    ffi_type **arg_types;
+    ffi_type *ret_type;
+} FfiFunction;
+
+typedef union {
+    int64_t i;
+    uint64_t u;
+    double f;
+    void *p;
+} FfiValue;
+
+static void ffi_function_release(void *data)
+{
+    FfiFunction *fn = (FfiFunction*)data;
+    if (!fn) return;
+    fn->refcount--;
+    if (fn->refcount > 0) return;
+    free(fn->args);
+    free(fn->arg_types);
+    free(fn);
+}
+
+static int entry_number_scalar_ffi(UEntry *entry, Int *out_i, Float *out_f, int *out_is_float)
+{
+    return entry_number(entry, out_i, out_f, out_is_float);
+}
+
+static int entry_as_cstr(UEntry *entry, const char **out)
+{
+    const char *s = NULL;
+    size_t len = 0;
+    if (!entry_as_string(entry, &s, &len)) return 0;
+    *out = s;
+    return 1;
+}
+
+static ffi_type *ffi_type_for_base(FfiBase base)
+{
+    switch (base) {
+    case FFI_BASE_I8: return &ffi_type_sint8;
+    case FFI_BASE_U8: return &ffi_type_uint8;
+    case FFI_BASE_I16: return &ffi_type_sint16;
+    case FFI_BASE_U16: return &ffi_type_uint16;
+    case FFI_BASE_I32: return &ffi_type_sint32;
+    case FFI_BASE_U32: return &ffi_type_uint32;
+    case FFI_BASE_I64: return &ffi_type_sint64;
+    case FFI_BASE_U64: return &ffi_type_uint64;
+    case FFI_BASE_F32: return &ffi_type_float;
+    case FFI_BASE_F64: return &ffi_type_double;
+    case FFI_BASE_CSTR: return &ffi_type_pointer;
+    case FFI_BASE_PTR: return &ffi_type_pointer;
+    case FFI_BASE_VOID: return &ffi_type_void;
+    default: return &ffi_type_pointer;
+    }
+}
+
+static size_t ffi_elem_size(const FfiType *t)
+{
+    switch (t->base) {
+    case FFI_BASE_I8:
+    case FFI_BASE_U8:
+        return 1;
+    case FFI_BASE_I16:
+    case FFI_BASE_U16:
+        return 2;
+    case FFI_BASE_I32:
+    case FFI_BASE_U32:
+    case FFI_BASE_F32:
+        return 4;
+    case FFI_BASE_I64:
+    case FFI_BASE_U64:
+    case FFI_BASE_F64:
+        return 8;
+    default:
+        return sizeof(void*);
+    }
+}
+
+typedef struct {
+    const char *src;
+    size_t pos;
+} SigParser;
+
+static void sig_skip_ws(SigParser *p)
+{
+    while (p->src[p->pos] == ' ' || p->src[p->pos] == '\t' || p->src[p->pos] == '\n' || p->src[p->pos] == '\r') {
+        p->pos++;
+    }
+}
+
+static int sig_is_ident_start(char c)
+{
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+}
+
+static int sig_is_ident_char(char c)
+{
+    return sig_is_ident_start(c) || (c >= '0' && c <= '9');
+}
+
+static int sig_read_ident(SigParser *p, char *out, size_t cap)
+{
+    sig_skip_ws(p);
+    size_t start = p->pos;
+    if (!sig_is_ident_start(p->src[p->pos])) return 0;
+    p->pos++;
+    while (sig_is_ident_char(p->src[p->pos])) p->pos++;
+    size_t len = p->pos - start;
+    if (len >= cap) len = cap - 1;
+    memcpy(out, p->src + start, len);
+    out[len] = 0;
+    return 1;
+}
+
+static int sig_read_number(SigParser *p, int *out)
+{
+    sig_skip_ws(p);
+    int value = 0;
+    int has = 0;
+    while (p->src[p->pos] >= '0' && p->src[p->pos] <= '9') {
+        has = 1;
+        value = value * 10 + (p->src[p->pos] - '0');
+        p->pos++;
+    }
+    if (!has) return 0;
+    *out = value;
+    return 1;
+}
+
+static int sig_match_char(SigParser *p, char c)
+{
+    sig_skip_ws(p);
+    if (p->src[p->pos] == c) {
+        p->pos++;
+        return 1;
+    }
+    return 0;
+}
+
+static int parse_base_type(const char *name, FfiBase *out)
+{
+    if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
+    if (strcmp(name, "char") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "schar") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "uchar") == 0 || strcmp(name, "u8") == 0) { *out = FFI_BASE_U8; return 1; }
+    if (strcmp(name, "int8_t") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "uint8_t") == 0) { *out = FFI_BASE_U8; return 1; }
+    if (strcmp(name, "i8") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "i16") == 0 || strcmp(name, "short") == 0) { *out = FFI_BASE_I16; return 1; }
+    if (strcmp(name, "u16") == 0 || strcmp(name, "ushort") == 0) { *out = FFI_BASE_U16; return 1; }
+    if (strcmp(name, "int16_t") == 0) { *out = FFI_BASE_I16; return 1; }
+    if (strcmp(name, "uint16_t") == 0) { *out = FFI_BASE_U16; return 1; }
+    if (strcmp(name, "i32") == 0 || strcmp(name, "int") == 0) { *out = FFI_BASE_I32; return 1; }
+    if (strcmp(name, "u32") == 0 || strcmp(name, "uint") == 0) { *out = FFI_BASE_U32; return 1; }
+    if (strcmp(name, "int32_t") == 0) { *out = FFI_BASE_I32; return 1; }
+    if (strcmp(name, "uint32_t") == 0) { *out = FFI_BASE_U32; return 1; }
+    if (strcmp(name, "i64") == 0 || strcmp(name, "long") == 0 || strcmp(name, "longlong") == 0) { *out = FFI_BASE_I64; return 1; }
+    if (strcmp(name, "u64") == 0 || strcmp(name, "ulong") == 0 || strcmp(name, "ulonglong") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "int64_t") == 0) { *out = FFI_BASE_I64; return 1; }
+    if (strcmp(name, "uint64_t") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "f32") == 0 || strcmp(name, "float") == 0) { *out = FFI_BASE_F32; return 1; }
+    if (strcmp(name, "f64") == 0 || strcmp(name, "double") == 0) { *out = FFI_BASE_F64; return 1; }
+    if (strcmp(name, "size_t") == 0 || strcmp(name, "uintptr_t") == 0) {
+#if SIZE_MAX == UINT64_MAX
+        *out = FFI_BASE_U64;
+#else
+        *out = FFI_BASE_U32;
+#endif
+        return 1;
+    }
+    if (strcmp(name, "ssize_t") == 0 || strcmp(name, "intptr_t") == 0) {
+#if SIZE_MAX == UINT64_MAX
+        *out = FFI_BASE_I64;
+#else
+        *out = FFI_BASE_I32;
+#endif
+        return 1;
+    }
+    if (strcmp(name, "cstring") == 0 || strcmp(name, "string") == 0 || strcmp(name, "cstr") == 0) {
+        *out = FFI_BASE_CSTR;
+        return 1;
+    }
+    if (strcmp(name, "ptr") == 0 || strcmp(name, "pointer") == 0 || strcmp(name, "voidptr") == 0) {
+        *out = FFI_BASE_PTR;
+        return 1;
+    }
+    return 0;
+}
+
+static char *ffi_strdup(const char *s)
+{
+    size_t len = s ? strlen(s) : 0;
+    char *out = (char*)malloc(len + 1);
+    if (!out) return NULL;
+    if (len) memcpy(out, s, len);
+    out[len] = 0;
+    return out;
+}
+
+static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_cap, const char **out_name)
+{
+    if (!sig) return NULL;
+    SigParser p = {sig, 0};
+    char name[64] = {0};
+    if (!sig_read_ident(&p, name, sizeof(name))) {
+        snprintf(err, err_cap, "ffi: missing name");
+        return NULL;
+    }
+    if (!sig_match_char(&p, '(')) {
+        snprintf(err, err_cap, "ffi: missing '('");
+        return NULL;
+    }
+
+    FfiType *args = NULL;
+    int argc = 0;
+    int cap = 0;
+    while (1) {
+        sig_skip_ws(&p);
+        if (sig_match_char(&p, ')')) break;
+        char tname[64] = {0};
+        if (!sig_read_ident(&p, tname, sizeof(tname))) {
+            snprintf(err, err_cap, "ffi: expected type");
+            free(args);
+            return NULL;
+        }
+        FfiBase base = FFI_BASE_VOID;
+        if (!parse_base_type(tname, &base)) {
+            snprintf(err, err_cap, "ffi: unknown type '%s'", tname);
+            free(args);
+            return NULL;
+        }
+        FfiType t;
+        memset(&t, 0, sizeof(t));
+        t.base = base;
+        while (sig_match_char(&p, '*')) t.is_ptr = 1;
+        if (sig_match_char(&p, '[')) {
+            int len = 0;
+            if (!sig_read_number(&p, &len) || !sig_match_char(&p, ']')) {
+                snprintf(err, err_cap, "ffi: invalid array");
+                free(args);
+                return NULL;
+            }
+            t.is_array = 1;
+            t.array_len = len;
+        }
+        if (argc == cap) {
+            int next = cap == 0 ? 4 : cap * 2;
+            FfiType *next_args = (FfiType*)realloc(args, (size_t)next * sizeof(FfiType));
+            if (!next_args) {
+                free(args);
+                snprintf(err, err_cap, "ffi: out of memory");
+                return NULL;
+            }
+            args = next_args;
+            cap = next;
+        }
+        args[argc++] = t;
+        sig_skip_ws(&p);
+        if (sig_match_char(&p, ',')) continue;
+        if (sig_match_char(&p, ')')) break;
+    }
+
+    if (!sig_match_char(&p, ':')) {
+        snprintf(err, err_cap, "ffi: missing ':'");
+        free(args);
+        return NULL;
+    }
+
+    char ret_name[64] = {0};
+    if (!sig_read_ident(&p, ret_name, sizeof(ret_name))) {
+        snprintf(err, err_cap, "ffi: missing return type");
+        free(args);
+        return NULL;
+    }
+    FfiType ret;
+    memset(&ret, 0, sizeof(ret));
+    if (!parse_base_type(ret_name, &ret.base)) {
+        snprintf(err, err_cap, "ffi: unknown return type '%s'", ret_name);
+        free(args);
+        return NULL;
+    }
+    while (sig_match_char(&p, '*')) ret.is_ptr = 1;
+    if (sig_match_char(&p, '[')) {
+        int len = 0;
+        if (!sig_read_number(&p, &len) || !sig_match_char(&p, ']')) {
+            snprintf(err, err_cap, "ffi: invalid return array");
+            free(args);
+            return NULL;
+        }
+        ret.is_array = 1;
+        ret.array_len = len;
+    }
+
+    FfiFunction *fn = (FfiFunction*)calloc(1, sizeof(FfiFunction));
+    if (!fn) {
+        free(args);
+        snprintf(err, err_cap, "ffi: out of memory");
+        return NULL;
+    }
+    fn->refcount = 1;
+    fn->args = args;
+    fn->argc = argc;
+    fn->ret = ret;
+    *out_name = ffi_strdup(name);
+    return fn;
+}
+
+static int ffi_arg_is_float(const FfiType *t)
+{
+    return t->base == FFI_BASE_F32 || t->base == FFI_BASE_F64;
+}
+
+static int ffi_arg_is_int(const FfiType *t)
+{
+    return t->base == FFI_BASE_I8 || t->base == FFI_BASE_U8 ||
+           t->base == FFI_BASE_I16 || t->base == FFI_BASE_U16 ||
+           t->base == FFI_BASE_I32 || t->base == FFI_BASE_U32 ||
+           t->base == FFI_BASE_I64 || t->base == FFI_BASE_U64;
+}
+
+static UEntry *ffi_make_int_list(int count)
+{
+    return uent_make_int_list((Int)count);
+}
+
+static UEntry *ffi_make_float_list(int count)
+{
+    return uent_make_float_list((Int)count);
+}
+
+static void ffi_fill_int_list(UEntry *entry, const void *ptr, int count, size_t elem_size, int is_signed)
+{
+    if (!entry || !ptr || count <= 0) return;
+    for (int i = 0; i < count; i++) {
+        const unsigned char *p = (const unsigned char*)ptr + (size_t)i * elem_size;
+        int64_t v = 0;
+        memcpy(&v, p, elem_size);
+        if (!is_signed && elem_size < sizeof(uint64_t)) {
+            uint64_t u = 0;
+            memcpy(&u, p, elem_size);
+            v = (int64_t)u;
+        }
+        entry_write_int(entry, (Int)i, (Int)v);
+    }
+}
+
+static void ffi_fill_float_list(UEntry *entry, const void *ptr, int count, size_t elem_size)
+{
+    if (!entry || !ptr || count <= 0) return;
+    for (int i = 0; i < count; i++) {
+        const unsigned char *p = (const unsigned char*)ptr + (size_t)i * elem_size;
+        if (elem_size == sizeof(float)) {
+            float v = 0.0f;
+            memcpy(&v, p, sizeof(float));
+            entry_write_float(entry, (Int)i, (Float)v);
+        } else {
+            double v = 0.0;
+            memcpy(&v, p, sizeof(double));
+            entry_write_float(entry, (Int)i, (Float)v);
+        }
+    }
+}
+
+static void native_ffi_call(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)global;
+    uint32_t argc = native_argc(vm);
+    UEntry *self = vm && vm->call_entry ? vm->call_entry : NULL;
+    if (!self || !self->obj || self->obj->type != U_T_NATIVE) {
+        fprintf(stderr, "ffi: invalid function\n");
+        return;
+    }
+    UNative *box = self->obj->as.native.native;
+    FfiFunction *fn = box ? (FfiFunction*)box->data : NULL;
+    if (!fn) {
+        fprintf(stderr, "ffi: missing function data\n");
+        return;
+    }
+    if ((int)argc != fn->argc) {
+        fprintf(stderr, "ffi: argc mismatch\n");
+        return;
+    }
+
+    FfiValue *values = (FfiValue*)calloc((size_t)fn->argc, sizeof(FfiValue));
+    void **argv = (void**)calloc((size_t)fn->argc, sizeof(void*));
+    if (!values || !argv) {
+        free(values);
+        free(argv);
+        fprintf(stderr, "ffi: out of memory\n");
+        return;
+    }
+
+    for (int i = 0; i < fn->argc; i++) {
+        UEntry *arg = native_arg(stack, argc, (uint32_t)i);
+        FfiType *t = &fn->args[i];
+        if (t->base == FFI_BASE_CSTR) {
+            const char *s = NULL;
+            if (arg && entry_as_cstr(arg, &s)) {
+                values[i].p = (void*)s;
+            } else {
+                values[i].p = NULL;
+            }
+            argv[i] = &values[i].p;
+            continue;
+        }
+        if (t->base == FFI_BASE_PTR || t->is_ptr || t->is_array) {
+            if (!arg || !arg->obj || arg->obj->type == U_T_NULL) {
+                values[i].p = NULL;
+            } else if (arg->obj->type == U_T_INT || arg->obj->type == U_T_FLOAT) {
+                values[i].p = arg->obj->as.bytes.data;
+            } else {
+                values[i].p = NULL;
+            }
+            argv[i] = &values[i].p;
+            continue;
+        }
+        if (ffi_arg_is_float(t)) {
+            Float fv = 0;
+            Int iv = 0;
+            int is_float = 0;
+            if (!arg || !entry_number_scalar_ffi(arg, &iv, &fv, &is_float)) {
+                values[i].f = 0.0;
+            } else {
+                values[i].f = is_float ? (double)fv : (double)iv;
+            }
+            argv[i] = &values[i].f;
+            continue;
+        }
+        if (ffi_arg_is_int(t)) {
+            Int iv = 0;
+            if (!arg || !entry_number_scalar_ffi(arg, &iv, NULL, NULL)) {
+                values[i].i = 0;
+            } else {
+                values[i].i = (int64_t)iv;
+            }
+            argv[i] = &values[i].i;
+            continue;
+        }
+        values[i].p = NULL;
+        argv[i] = &values[i].p;
+    }
+
+    FfiValue ret = {0};
+    ffi_call(&fn->cif, FFI_FN(fn->fn_ptr), &ret, argv);
+
+    free(values);
+    free(argv);
+
+    if (fn->ret.base == FFI_BASE_VOID) {
+        stack_push_entry(stack, g_vm->null_entry);
+        return;
+    }
+
+    if (fn->ret.base == FFI_BASE_CSTR) {
+        const char *s = (const char*)ret.p;
+        if (!s) {
+            stack_push_entry(stack, g_vm->null_entry);
+            return;
+        }
+        stack_push_entry(stack, uent_make_bytes(s, strlen(s), 1, 1));
+        return;
+    }
+
+    if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_PTR) {
+        void *ptr = ret.p;
+        if (fn->ret.base == FFI_BASE_PTR) {
+            stack_push_entry(stack, uent_make_int_scalar((Int)(uintptr_t)ptr));
+            return;
+        }
+        int len = 0;
+        if (vm && vm->has_call_override && vm->call_override_len >= 0) {
+            len = (int)vm->call_override_len;
+        } else if (fn->ret.is_array && fn->ret.array_len > 0) {
+            len = fn->ret.array_len;
+        } else {
+            len = 0;
+        }
+        if (!ptr) {
+            stack_push_entry(stack, g_vm->null_entry);
+            return;
+        }
+        if (fn->ret.base == FFI_BASE_F32 || fn->ret.base == FFI_BASE_F64) {
+            UEntry *entry = ffi_make_float_list(len);
+            if (!entry) return;
+            if (len > 0) {
+                ffi_fill_float_list(entry, ptr, len, ffi_elem_size(&fn->ret));
+            }
+            stack_push_entry(stack, entry);
+            return;
+        }
+        if (ffi_arg_is_int(&fn->ret)) {
+            UEntry *entry = ffi_make_int_list(len);
+            if (!entry) return;
+            if (len > 0) {
+                ffi_fill_int_list(entry, ptr, len, ffi_elem_size(&fn->ret), 1);
+            }
+            stack_push_entry(stack, entry);
+            return;
+        }
+    }
+
+    if (ffi_arg_is_float(&fn->ret)) {
+        stack_push_entry(stack, uent_make_float_scalar((Float)ret.f));
+        return;
+    }
+    if (ffi_arg_is_int(&fn->ret)) {
+        stack_push_entry(stack, uent_make_int_scalar((Int)ret.i));
+        return;
+    }
+
+    stack_push_entry(stack, g_vm->null_entry);
+}
+
+static int ffi_prepare(FfiFunction *fn, const char *name, void *handle, char *err, size_t err_cap)
+{
+    fn->handle = handle;
+    fn->fn_ptr = dlsym(handle, name);
+    if (!fn->fn_ptr) {
+        snprintf(err, err_cap, "ffi: missing symbol '%s'", name);
+        return 0;
+    }
+    fn->arg_types = (ffi_type**)calloc((size_t)fn->argc, sizeof(ffi_type*));
+    if (!fn->arg_types) {
+        snprintf(err, err_cap, "ffi: out of memory");
+        return 0;
+    }
+    for (int i = 0; i < fn->argc; i++) {
+        FfiType *t = &fn->args[i];
+        if (t->is_ptr || t->is_array || t->base == FFI_BASE_CSTR || t->base == FFI_BASE_PTR) {
+            fn->arg_types[i] = &ffi_type_pointer;
+        } else {
+            fn->arg_types[i] = ffi_type_for_base(t->base);
+        }
+    }
+    if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_CSTR || fn->ret.base == FFI_BASE_PTR) {
+        fn->ret_type = &ffi_type_pointer;
+    } else {
+        fn->ret_type = ffi_type_for_base(fn->ret.base);
+    }
+    if (ffi_prep_cif(&fn->cif, FFI_DEFAULT_ABI, (unsigned)fn->argc, fn->ret_type, fn->arg_types) != FFI_OK) {
+        snprintf(err, err_cap, "ffi: failed to prepare call");
+        return 0;
+    }
+    return 1;
+}
+#endif
+
 static void native_ffi_load(UrbVM *vm, List *stack, UEntry *global)
 {
-    (void)vm;
     (void)global;
+#ifndef DISTURB_ENABLE_FFI
+    (void)vm;
     fprintf(stderr, "ffiLoad is not supported in URB runtime yet\n");
     push_entry(stack, g_vm->null_entry);
+#else
+    uint32_t argc = native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.load expects library path and signatures\n");
+        return;
+    }
+    UEntry *path_entry = native_arg(stack, argc, 0);
+    const char *path = NULL;
+    if (!path_entry || !entry_as_cstr(path_entry, &path)) {
+        fprintf(stderr, "ffi.load expects string path\n");
+        return;
+    }
+    void *handle = dlopen(path, RTLD_LAZY);
+    if (!handle) {
+        fprintf(stderr, "ffi.load failed: %s\n", dlerror());
+        return;
+    }
+
+    UEntry *table = uent_make_table((Int)(argc > 1 ? argc - 1 : 0));
+    if (!table) return;
+    for (uint32_t i = 1; i < argc; i++) {
+        UEntry *sig_entry = native_arg(stack, argc, i);
+        const char *sig = NULL;
+        if (!sig_entry || !entry_as_cstr(sig_entry, &sig)) {
+            fprintf(stderr, "ffi.load expects string signatures\n");
+            continue;
+        }
+        char err[128] = {0};
+        const char *name = NULL;
+        FfiFunction *fn = ffi_parse_signature(sig, err, sizeof(err), &name);
+        if (!fn) {
+            fprintf(stderr, "%s\n", err[0] ? err : "ffi: invalid signature");
+            continue;
+        }
+        if (!ffi_prepare(fn, name, handle, err, sizeof(err))) {
+            fprintf(stderr, "%s\n", err[0] ? err : "ffi: prepare failed");
+            free((void*)name);
+            ffi_function_release(fn);
+            continue;
+        }
+        UEntry *entry = uent_make_native(native_ffi_call, fn, ffi_function_release);
+        if (!entry) {
+            ffi_function_release(fn);
+            free((void*)name);
+            continue;
+        }
+        UEntry *key = uent_make_bytes(name, strlen(name), 1, 1);
+        entry->key = key;
+        table_add_entry(table, entry);
+        free((void*)name);
+    }
+    push_entry(stack, table);
+#endif
 }
 
 static void native_eval(UrbVM *vm, List *stack, UEntry *global)
@@ -2674,13 +3722,22 @@ static void native_eval(UrbVM *vm, List *stack, UEntry *global)
         fprintf(stderr, "eval expects string source\n");
         return;
     }
+    char *src_buf = (char*)malloc(src_len + 1);
+    if (!src_buf) {
+        fprintf(stderr, "eval out of memory\n");
+        return;
+    }
+    memcpy(src_buf, src, src_len);
+    src_buf[src_len] = 0;
     Bytecode bc;
     char err[256];
     err[0] = 0;
-    if (!vm_compile_source(src, &bc, err, sizeof(err))) {
+    if (!vm_compile_source(src_buf, &bc, err, sizeof(err))) {
+        free(src_buf);
         fprintf(stderr, "%s\n", err[0] ? err : "eval compile failed");
         return;
     }
+    free(src_buf);
     Int before = stack->size;
     exec_bytecode_in_vm(vm, bc.data, bc.len, stack);
     bc_free(&bc);
@@ -2706,18 +3763,208 @@ static void native_eval_bytecode(UrbVM *vm, List *stack, UEntry *global)
 
 static void native_parse(UrbVM *vm, List *stack, UEntry *global)
 {
-    (void)vm;
     (void)global;
-    fprintf(stderr, "parse is not supported in URB runtime\n");
-    push_entry(stack, g_vm->null_entry);
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    const char *src = NULL;
+    size_t src_len = 0;
+    if (!target || !entry_as_string(target, &src, &src_len)) {
+        fprintf(stderr, "parse expects a string\n");
+        return;
+    }
+    char *buf = (char*)malloc(src_len + 1);
+    if (!buf) {
+        fprintf(stderr, "parse out of memory\n");
+        return;
+    }
+    memcpy(buf, src, src_len);
+    buf[src_len] = 0;
+    Bytecode bc;
+    char err[256];
+    err[0] = 0;
+    if (!vm_compile_source(buf, &bc, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "parse error");
+        free(buf);
+        return;
+    }
+    free(buf);
+    UEntry *bytes = uent_make_bytes((const char*)bc.data, bc.len, 1, 0);
+    bc_free(&bc);
+    push_entry(stack, bytes ? bytes : g_vm->null_entry);
 }
 
 static void native_emit(UrbVM *vm, List *stack, UEntry *global)
 {
-    (void)vm;
     (void)global;
-    fprintf(stderr, "emit is not supported in URB runtime\n");
-    push_entry(stack, g_vm->null_entry);
+    uint32_t argc = native_argc(vm);
+    UEntry *target = native_target(vm, stack, argc);
+    const char *data = NULL;
+    size_t len = 0;
+    if (!target || !entry_as_string(target, &data, &len)) {
+        fprintf(stderr, "emit expects bytecode bytes\n");
+        return;
+    }
+    StrBuf out;
+    sb_init(&out);
+    size_t pc = 0;
+    while (pc < len) {
+        uint8_t op = 0;
+        if (!bc_read_u8((const unsigned char*)data, len, &pc, &op)) break;
+        const char *op_name = bc_opcode_name(op);
+        sb_append_n(&out, op_name, strlen(op_name));
+        switch (op) {
+        case BC_PUSH_INT: {
+            int64_t v = 0;
+            if (!bc_read_i64((const unsigned char*)data, len, &pc, &v)) break;
+            sb_append_char(&out, ' ');
+            sb_append_int(&out, (Int)v);
+            break;
+        }
+        case BC_PUSH_FLOAT: {
+            double v = 0.0;
+            if (!bc_read_f64((const unsigned char*)data, len, &pc, &v)) break;
+            sb_append_char(&out, ' ');
+            sb_append_number(&out, v);
+            break;
+        }
+        case BC_PUSH_CHAR:
+        case BC_PUSH_STRING:
+        case BC_PUSH_CHAR_RAW:
+        case BC_PUSH_STRING_RAW: {
+            unsigned char *buf = NULL;
+            size_t slen = 0;
+            if (!bc_read_string((const unsigned char*)data, len, &pc, &buf, &slen)) break;
+            sb_append_char(&out, ' ');
+            if (op == BC_PUSH_CHAR || op == BC_PUSH_CHAR_RAW) {
+                sb_append_char(&out, '\'');
+                sb_append_escaped(&out, (const char*)buf, slen);
+                sb_append_char(&out, '\'');
+            } else {
+                sb_append_char(&out, '"');
+                sb_append_escaped(&out, (const char*)buf, slen);
+                sb_append_char(&out, '"');
+            }
+            free(buf);
+            break;
+        }
+        case BC_BUILD_INT:
+        case BC_BUILD_FLOAT:
+        case BC_BUILD_OBJECT: {
+            uint32_t count = 0;
+            if (!bc_read_u32((const unsigned char*)data, len, &pc, &count)) break;
+            sb_append_char(&out, ' ');
+            sb_append_int(&out, (Int)count);
+            break;
+        }
+        case BC_BUILD_INT_LIT: {
+            uint32_t count = 0;
+            if (!bc_read_u32((const unsigned char*)data, len, &pc, &count)) break;
+            sb_append_char(&out, ' ');
+            sb_append_int(&out, (Int)count);
+            for (uint32_t i = 0; i < count; i++) {
+                int64_t v = 0;
+                if (!bc_read_i64((const unsigned char*)data, len, &pc, &v)) break;
+                sb_append_char(&out, ' ');
+                sb_append_int(&out, (Int)v);
+            }
+            break;
+        }
+        case BC_BUILD_FLOAT_LIT: {
+            uint32_t count = 0;
+            if (!bc_read_u32((const unsigned char*)data, len, &pc, &count)) break;
+            sb_append_char(&out, ' ');
+            sb_append_int(&out, (Int)count);
+            for (uint32_t i = 0; i < count; i++) {
+                double v = 0.0;
+                if (!bc_read_f64((const unsigned char*)data, len, &pc, &v)) break;
+                sb_append_char(&out, ' ');
+                sb_append_number(&out, v);
+            }
+            break;
+        }
+        case BC_BUILD_FUNCTION: {
+            uint32_t argc = 0;
+            uint32_t vararg = 0;
+            uint32_t code_len = 0;
+            if (!bc_read_u32((const unsigned char*)data, len, &pc, &argc) ||
+                !bc_read_u32((const unsigned char*)data, len, &pc, &vararg) ||
+                !bc_read_u32((const unsigned char*)data, len, &pc, &code_len)) break;
+            sb_append_char(&out, ' ');
+            sb_append_int(&out, (Int)argc);
+            sb_append_char(&out, ' ');
+            sb_append_int(&out, (Int)vararg);
+            sb_append_char(&out, ' ');
+            sb_append_int(&out, (Int)code_len);
+            if (pc + code_len > len) break;
+            pc += code_len;
+            for (uint32_t i = 0; i < argc; i++) {
+                unsigned char *name = NULL;
+                size_t name_len = 0;
+                if (!bc_read_string((const unsigned char*)data, len, &pc, &name, &name_len)) break;
+                uint32_t def_len = 0;
+                if (!bc_read_u32((const unsigned char*)data, len, &pc, &def_len)) {
+                    free(name);
+                    break;
+                }
+                sb_append_char(&out, ' ');
+                sb_append_n(&out, (const char*)name, name_len);
+                sb_append_char(&out, ' ');
+                sb_append_int(&out, (Int)def_len);
+                free(name);
+                if (pc + def_len > len) break;
+                pc += def_len;
+            }
+            break;
+        }
+        case BC_LOAD_GLOBAL:
+        case BC_STORE_GLOBAL: {
+            unsigned char *name = NULL;
+            size_t name_len = 0;
+            if (!bc_read_string((const unsigned char*)data, len, &pc, &name, &name_len)) break;
+            sb_append_char(&out, ' ');
+            sb_append_n(&out, (const char*)name, name_len);
+            free(name);
+            break;
+        }
+        case BC_CALL:
+        case BC_CALL_EX: {
+            unsigned char *name = NULL;
+            size_t name_len = 0;
+            if (!bc_read_string((const unsigned char*)data, len, &pc, &name, &name_len)) break;
+            uint32_t argc = 0;
+            if (!bc_read_u32((const unsigned char*)data, len, &pc, &argc)) {
+                free(name);
+                break;
+            }
+            sb_append_char(&out, ' ');
+            sb_append_n(&out, (const char*)name, name_len);
+            sb_append_char(&out, ' ');
+            sb_append_int(&out, (Int)argc);
+            free(name);
+            if (op == BC_CALL_EX) {
+                uint32_t override_len = 0;
+                if (!bc_read_u32((const unsigned char*)data, len, &pc, &override_len)) break;
+                sb_append_char(&out, ' ');
+                sb_append_int(&out, (Int)override_len);
+            }
+            break;
+        }
+        case BC_JMP:
+        case BC_JMP_IF_FALSE: {
+            uint32_t target = 0;
+            if (!bc_read_u32((const unsigned char*)data, len, &pc, &target)) break;
+            sb_append_char(&out, ' ');
+            sb_append_int(&out, (Int)target);
+            break;
+        }
+        default:
+            break;
+        }
+        sb_append_char(&out, '\n');
+    }
+    UEntry *text = uent_make_bytes(out.data, out.len, 1, 1);
+    sb_free(&out);
+    push_entry(stack, text ? text : g_vm->null_entry);
 }
 
 static void native_gc_collect(UrbVM *vm, List *stack, UEntry *global)
@@ -2819,6 +4066,13 @@ static void native_gc_debug(UrbVM *vm, List *stack, UEntry *global)
 }
 
 static void native_gc_stats(UrbVM *vm, List *stack, UEntry *global)
+{
+    (void)vm;
+    (void)global;
+    stack_push_entry(stack, g_vm->null_entry);
+}
+
+static void native_gc_flush(UrbVM *vm, List *stack, UEntry *global)
 {
     (void)vm;
     (void)global;
@@ -2938,6 +4192,13 @@ static void op_index(List *stack)
         stack_push_entry(stack, g_vm->null_entry);
         return;
     }
+    if (entry_is_string(index)) {
+        UEntry *meta = meta_get(g_vm, target, index);
+        if (meta) {
+            stack_push_entry(stack, meta);
+            return;
+        }
+    }
     int type = target->obj->type;
     if (type == U_T_NULL) {
         stack_push_entry(stack, g_vm->null_entry);
@@ -3023,6 +4284,10 @@ static void op_store_index(List *stack)
     UEntry *target = stack_pop_entry(stack);
     if (!target || !target->obj) return;
     int type = target->obj->type;
+    if (entry_is_string(index)) {
+        int meta = meta_set(g_vm, target, index, value);
+        if (meta != 0) return;
+    }
     if (type == U_T_TABLE && entry_is_string(index)) {
         table_set_by_key_len(target, (const char*)entry_bytes_data(index), entry_bytes_len(index), value);
         return;
@@ -3030,7 +4295,26 @@ static void op_store_index(List *stack)
     Int idx = 0;
     if (!entry_number_to_int(index, &idx)) return;
     if (type == U_T_INT) {
-        if (entry_is_string(target)) return;
+        if (entry_is_string(target)) {
+            size_t len = entry_bytes_len(target);
+            if (idx < 0 || (size_t)idx >= len) return;
+            if (entry_is_string(value) && entry_bytes_len(value) == 1) {
+                entry_bytes_data(target)[idx] = entry_bytes_data(value)[0];
+                return;
+            }
+            Int iv = 0;
+            Float fv = 0;
+            int is_float = 0;
+            if (!entry_number(value, &iv, &fv, &is_float)) return;
+            if (is_float) {
+                Int cast = (Int)fv;
+                if ((Float)cast != fv) return;
+                iv = cast;
+            }
+            if (iv < 0 || iv > 255) return;
+            entry_bytes_data(target)[idx] = (unsigned char)iv;
+            return;
+        }
         Int count = entry_bytes_count(target, U_T_INT);
         if (idx < 0 || idx >= count) return;
         Int iv = 0;
@@ -3081,6 +4365,22 @@ static void op_load_global(List *stack)
                                    (const char*)entry_bytes_data(name),
                                    entry_bytes_len(name));
     }
+    if (entry && entry->obj && entry->obj->type == U_T_NULL) {
+        entry->key = uent_make_bytes((const char*)entry_bytes_data(name),
+                                     entry_bytes_len(name), 1, 1);
+    }
+    if (entry == g_vm->null_entry) {
+        UEntry *copy = uent_make_null();
+        if (copy) {
+            copy->key = uent_make_bytes((const char*)entry_bytes_data(name),
+                                        entry_bytes_len(name), 1, 1);
+            entry = copy;
+        }
+    }
+    if (entry && !entry->key) {
+        entry->key = uent_make_bytes((const char*)entry_bytes_data(name),
+                                     entry_bytes_len(name), 1, 1);
+    }
     stack_push_entry(stack, entry ? entry : g_vm->null_entry);
 }
 
@@ -3115,6 +4415,7 @@ static void call_entry(UEntry *target, List *stack, uint32_t argc, Int override_
 {
     UEntry *old_this = g_vm->this_entry;
     UEntry *old_local = g_vm->local_entry;
+    UEntry *old_call = g_vm->call_entry;
     Int old_override = g_vm->call_override_len;
     int old_has_override = g_vm->has_call_override;
     Int old_argc = 0;
@@ -3127,6 +4428,7 @@ static void call_entry(UEntry *target, List *stack, uint32_t argc, Int override_
     if (target && target->obj && target->obj->type == U_T_NATIVE) {
         UNative *box = target->obj->as.native.native;
         if (box && box->fn) {
+            g_vm->call_entry = target;
             box->fn(g_vm, stack, g_vm->global_entry);
         }
     } else if (target && target->obj && target->obj->type == U_T_LAMBDA) {
@@ -3148,6 +4450,7 @@ static void call_entry(UEntry *target, List *stack, uint32_t argc, Int override_
         stack_push_entry(stack, g_vm->null_entry);
     }
     g_vm->this_entry = old_this;
+    g_vm->call_entry = old_call;
     g_vm->call_override_len = old_override;
     g_vm->has_call_override = old_has_override;
     if (g_vm->argc_entry) entry_write_int(g_vm->argc_entry, 0, old_argc);
@@ -4182,6 +5485,11 @@ static void vm_init(UrbVM *vm)
     UEntry *gc_entry = uent_make_table(8);
     table_set_by_key_len(vm->global_entry, "gc", 2, gc_entry);
 
+#ifdef DISTURB_ENABLE_FFI
+    UEntry *ffi_entry = uent_make_table(1);
+    table_set_by_key_len(vm->global_entry, "ffi", 3, ffi_entry);
+#endif
+
     register_native(vm, "print", native_print, 1);
     register_native(vm, "println", native_println, 1);
     register_native(vm, "len", native_len, 1);
@@ -4260,6 +5568,7 @@ static void vm_init(UrbVM *vm)
     register_native(vm, "gcFree", native_gc_free, 0);
     register_native(vm, "gcSweep", native_gc_sweep, 0);
     register_native(vm, "gcNew", native_gc_new, 0);
+    register_native(vm, "gcFlush", native_gc_flush, 0);
     register_native(vm, "gcDebug", native_gc_debug, 0);
     register_native(vm, "gcStats", native_gc_stats, 0);
 
@@ -4269,6 +5578,12 @@ static void vm_init(UrbVM *vm)
     table_set_by_key_len(gc_entry, "new", 3, table_find_by_key_len(vm->global_entry, "gcNew", 5));
     table_set_by_key_len(gc_entry, "debug", 5, table_find_by_key_len(vm->global_entry, "gcDebug", 7));
     table_set_by_key_len(gc_entry, "stats", 5, table_find_by_key_len(vm->global_entry, "gcStats", 7));
+
+#ifdef DISTURB_ENABLE_FFI
+    if (ffi_entry) {
+        table_set_by_key_len(ffi_entry, "load", 4, table_find_by_key_len(vm->global_entry, "ffiLoad", 7));
+    }
+#endif
 }
 
 static void vm_set_args(UrbVM *vm, int argc, char **argv)
