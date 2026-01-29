@@ -47,4 +47,12 @@ run_case value
 
 echo "negative tests skipped for URB"
 
+if command -v valgrind >/dev/null 2>&1; then
+  echo "valgrind: leak check (tests/cases/basic.disturb)"
+  valgrind --leak-check=full --error-exitcode=1 \
+    "$BIN" --urb tests/cases/basic.disturb >/dev/null
+else
+  echo "valgrind not found; skipping leak check"
+fi
+
 echo "all URB tests passed"

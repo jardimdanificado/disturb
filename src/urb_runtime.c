@@ -3272,7 +3272,7 @@ static int parse_base_type(const char *name, FfiBase *out)
 #endif
         return 1;
     }
-    if (strcmp(name, "ssize_t") == 0 || strcmp(name, "intptr_t") == 0) {
+    if (strcmp(name, "ssize_t") == 0 || strcmp(name, "intptr_t") == 0 || strcmp(name, "ptrdiff_t") == 0) {
 #if SIZE_MAX == UINT64_MAX
         *out = FFI_BASE_I64;
 #else
@@ -3291,6 +3291,120 @@ static int parse_base_type(const char *name, FfiBase *out)
     return 0;
 }
 
+static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
+{
+    char ident[64];
+    if (!sig_read_ident(p, ident, sizeof(ident))) {
+        snprintf(err, err_cap, "expected type");
+        return 0;
+    }
+
+    char combined[64];
+    combined[0] = 0;
+    if (strcmp(ident, "unsigned") == 0) {
+        char next[64];
+        if (!sig_read_ident(p, next, sizeof(next))) {
+            snprintf(err, err_cap, "expected type after unsigned");
+            return 0;
+        }
+        if (strcmp(next, "long") == 0) {
+            size_t old_pos = p->pos;
+            char next2[64];
+            if (sig_read_ident(p, next2, sizeof(next2)) && strcmp(next2, "long") == 0) {
+                snprintf(combined, sizeof(combined), "ulonglong");
+            } else {
+                p->pos = old_pos;
+                snprintf(combined, sizeof(combined), "ulong");
+            }
+        } else {
+            size_t next_len = strlen(next);
+            if (next_len > sizeof(combined) - 2) next_len = sizeof(combined) - 2;
+            combined[0] = 'u';
+            memcpy(combined + 1, next, next_len);
+            combined[1 + next_len] = 0;
+        }
+    } else if (strcmp(ident, "signed") == 0) {
+        char next[64];
+        if (!sig_read_ident(p, next, sizeof(next))) {
+            snprintf(err, err_cap, "expected type after signed");
+            return 0;
+        }
+        if (strcmp(next, "long") == 0) {
+            size_t old_pos = p->pos;
+            char next2[64];
+            if (sig_read_ident(p, next2, sizeof(next2)) && strcmp(next2, "long") == 0) {
+                snprintf(combined, sizeof(combined), "longlong");
+            } else {
+                p->pos = old_pos;
+                snprintf(combined, sizeof(combined), "long");
+            }
+        } else {
+            snprintf(combined, sizeof(combined), "%s", next);
+        }
+    } else if (strcmp(ident, "long") == 0) {
+        size_t old_pos = p->pos;
+        char next[64];
+        if (sig_read_ident(p, next, sizeof(next)) && strcmp(next, "long") == 0) {
+            snprintf(combined, sizeof(combined), "longlong");
+        } else {
+            p->pos = old_pos;
+            snprintf(combined, sizeof(combined), "long");
+        }
+    } else {
+        snprintf(combined, sizeof(combined), "%s", ident);
+    }
+
+    FfiBase base = FFI_BASE_VOID;
+    if (!parse_base_type(combined, &base)) {
+        snprintf(err, err_cap, "unknown type '%s'", combined);
+        return 0;
+    }
+
+    int is_ptr = 0;
+    int is_array = 0;
+    int array_len = -1;
+
+    sig_skip_ws(p);
+    if (sig_match_char(p, '*')) {
+        is_ptr = 1;
+    }
+
+    sig_skip_ws(p);
+    if (sig_match_char(p, '[')) {
+        int n = 0;
+        if (sig_read_number(p, &n)) {
+            array_len = n;
+        } else {
+            array_len = 0;
+        }
+        if (!sig_match_char(p, ']')) {
+            snprintf(err, err_cap, "expected ']'");
+            return 0;
+        }
+        is_array = 1;
+        is_ptr = 1;
+    }
+
+    if ((base == FFI_BASE_I8 || base == FFI_BASE_U8) && is_ptr) {
+        base = FFI_BASE_CSTR;
+    }
+    if (base == FFI_BASE_VOID && is_ptr) {
+        base = FFI_BASE_PTR;
+    }
+
+    out->base = base;
+    out->is_ptr = is_ptr;
+    out->is_array = is_array;
+    out->array_len = array_len;
+    return 1;
+}
+
+static int sig_skip_arg_name(SigParser *p)
+{
+    char tmp[64];
+    return sig_read_ident(p, tmp, sizeof(tmp));
+}
+
 static char *ffi_strdup(const char *s)
 {
     size_t len = s ? strlen(s) : 0;
@@ -3303,109 +3417,69 @@ static char *ffi_strdup(const char *s)
 
 static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_cap, const char **out_name)
 {
-    if (!sig) return NULL;
-    SigParser p = {sig, 0};
-    char name[64] = {0};
+    SigParser p = { sig, 0 };
+    FfiType ret = {0};
+    if (!sig_parse_type(&p, &ret, err, err_cap)) return NULL;
+    char name[128];
     if (!sig_read_ident(&p, name, sizeof(name))) {
-        snprintf(err, err_cap, "ffi: missing name");
+        snprintf(err, err_cap, "expected function name");
         return NULL;
     }
     if (!sig_match_char(&p, '(')) {
-        snprintf(err, err_cap, "ffi: missing '('");
+        snprintf(err, err_cap, "expected '('");
         return NULL;
     }
 
     FfiType *args = NULL;
     int argc = 0;
     int cap = 0;
-    while (1) {
-        sig_skip_ws(&p);
-        if (sig_match_char(&p, ')')) break;
-        char tname[64] = {0};
-        if (!sig_read_ident(&p, tname, sizeof(tname))) {
-            snprintf(err, err_cap, "ffi: expected type");
-            free(args);
-            return NULL;
-        }
-        FfiBase base = FFI_BASE_VOID;
-        if (!parse_base_type(tname, &base)) {
-            snprintf(err, err_cap, "ffi: unknown type '%s'", tname);
-            free(args);
-            return NULL;
-        }
-        FfiType t;
-        memset(&t, 0, sizeof(t));
-        t.base = base;
-        while (sig_match_char(&p, '*')) t.is_ptr = 1;
-        if (sig_match_char(&p, '[')) {
-            int len = 0;
-            if (!sig_read_number(&p, &len) || !sig_match_char(&p, ']')) {
-                snprintf(err, err_cap, "ffi: invalid array");
+    sig_skip_ws(&p);
+    if (sig_match_char(&p, ')')) {
+        // no args
+    } else {
+        for (;;) {
+            FfiType arg = {0};
+            if (!sig_parse_type(&p, &arg, err, err_cap)) {
                 free(args);
                 return NULL;
             }
-            t.is_array = 1;
-            t.array_len = len;
-        }
-        if (argc == cap) {
-            int next = cap == 0 ? 4 : cap * 2;
-            FfiType *next_args = (FfiType*)realloc(args, (size_t)next * sizeof(FfiType));
-            if (!next_args) {
-                free(args);
-                snprintf(err, err_cap, "ffi: out of memory");
-                return NULL;
+            sig_skip_arg_name(&p);
+            if (argc == cap) {
+                int next = cap == 0 ? 4 : cap * 2;
+                FfiType *tmp = (FfiType*)realloc(args, (size_t)next * sizeof(FfiType));
+                if (!tmp) {
+                    snprintf(err, err_cap, "out of memory");
+                    free(args);
+                    return NULL;
+                }
+                args = tmp;
+                cap = next;
             }
-            args = next_args;
-            cap = next;
-        }
-        args[argc++] = t;
-        sig_skip_ws(&p);
-        if (sig_match_char(&p, ',')) continue;
-        if (sig_match_char(&p, ')')) break;
-    }
-
-    if (!sig_match_char(&p, ':')) {
-        snprintf(err, err_cap, "ffi: missing ':'");
-        free(args);
-        return NULL;
-    }
-
-    char ret_name[64] = {0};
-    if (!sig_read_ident(&p, ret_name, sizeof(ret_name))) {
-        snprintf(err, err_cap, "ffi: missing return type");
-        free(args);
-        return NULL;
-    }
-    FfiType ret;
-    memset(&ret, 0, sizeof(ret));
-    if (!parse_base_type(ret_name, &ret.base)) {
-        snprintf(err, err_cap, "ffi: unknown return type '%s'", ret_name);
-        free(args);
-        return NULL;
-    }
-    while (sig_match_char(&p, '*')) ret.is_ptr = 1;
-    if (sig_match_char(&p, '[')) {
-        int len = 0;
-        if (!sig_read_number(&p, &len) || !sig_match_char(&p, ']')) {
-            snprintf(err, err_cap, "ffi: invalid return array");
+            args[argc++] = arg;
+            sig_skip_ws(&p);
+            if (sig_match_char(&p, ',')) continue;
+            if (sig_match_char(&p, ')')) break;
+            snprintf(err, err_cap, "expected ',' or ')'");
             free(args);
             return NULL;
         }
-        ret.is_array = 1;
-        ret.array_len = len;
     }
 
     FfiFunction *fn = (FfiFunction*)calloc(1, sizeof(FfiFunction));
     if (!fn) {
         free(args);
-        snprintf(err, err_cap, "ffi: out of memory");
         return NULL;
     }
     fn->refcount = 1;
+    fn->ret = ret;
     fn->args = args;
     fn->argc = argc;
-    fn->ret = ret;
     *out_name = ffi_strdup(name);
+    if (!*out_name) {
+        free(args);
+        free(fn);
+        return NULL;
+    }
     return fn;
 }
 
