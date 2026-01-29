@@ -2,7 +2,7 @@
 
 Disturb is a stack-oriented VM with a C-like source syntax that compiles to a compact RPN bytecode. The language focuses on safety and explicit behavior: everything lives under the global table, and missing lookups return a null table.
 
-Disturb means Distributable Urb, at least that was the original idea, but we are quite far from that.
+Disturb means Distributable Urb, at least that was the original idea, disturb been built from ground with its foundation rooted into the urb 0.9.5, but eventually disturb became its own thing, currently urb 0.9.4a is used as a unsafe but fast alternative runtime;
 
 ## Quick Start
 

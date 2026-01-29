@@ -1,7 +1,7 @@
 # Changelog
 
 ## 0.16.0
-- disturb urb runtime.
+- disturb urb runtime mostly implemented.
 - Add raw string/char bytecode opcodes to skip papagaio when literals contain no `$`.
 - Update metaprogramming: `parse` returns bytecode bytes, `emit` renders bytecode text; remove public bytecode AST helpers.
 
