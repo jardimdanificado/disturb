@@ -97,9 +97,53 @@ struct UrbVM {
     Int call_override_len;
     int has_call_override;
     List *exec;
+    UEntry **entries;
+    size_t entry_count;
+    size_t entry_cap;
+    UObj **objs;
+    size_t obj_count;
+    size_t obj_cap;
 };
 
 static UrbVM *g_vm = NULL;
+
+static void vm_track_obj(UrbVM *vm, UObj *obj)
+{
+    if (!vm || !obj) return;
+    if (vm->obj_count == vm->obj_cap) {
+        size_t next = vm->obj_cap == 0 ? 256 : vm->obj_cap * 2;
+        UObj **items = (UObj**)realloc(vm->objs, next * sizeof(UObj*));
+        if (!items) return;
+        vm->objs = items;
+        vm->obj_cap = next;
+    }
+    vm->objs[vm->obj_count++] = obj;
+}
+
+static void vm_untrack_obj(UrbVM *vm, UObj *obj)
+{
+    if (!vm || !obj) return;
+    for (size_t i = 0; i < vm->obj_count; i++) {
+        if (vm->objs[i] == obj) {
+            vm->objs[i] = vm->objs[vm->obj_count - 1];
+            vm->obj_count--;
+            return;
+        }
+    }
+}
+
+static void vm_track_entry(UrbVM *vm, UEntry *entry)
+{
+    if (!vm || !entry) return;
+    if (vm->entry_count == vm->entry_cap) {
+        size_t next = vm->entry_cap == 0 ? 512 : vm->entry_cap * 2;
+        UEntry **items = (UEntry**)realloc(vm->entries, next * sizeof(UEntry*));
+        if (!items) return;
+        vm->entries = items;
+        vm->entry_cap = next;
+    }
+    vm->entries[vm->entry_count++] = entry;
+}
 
 static UObj *uobj_new(int type);
 static UEntry *uent_new(UObj *obj);
@@ -143,6 +187,7 @@ static UObj *uobj_new(int type)
     UObj *obj = (UObj*)calloc(1, sizeof(UObj));
     if (!obj) return NULL;
     obj->type = type;
+    vm_track_obj(g_vm, obj);
     return obj;
 }
 
@@ -151,6 +196,7 @@ static UEntry *uent_new(UObj *obj)
     UEntry *entry = (UEntry*)calloc(1, sizeof(UEntry));
     if (!entry) return NULL;
     entry->obj = obj;
+    vm_track_entry(g_vm, entry);
     return entry;
 }
 
@@ -3417,17 +3463,36 @@ static char *ffi_strdup(const char *s)
 
 static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_cap, const char **out_name)
 {
+    if (!sig) return NULL;
     SigParser p = { sig, 0 };
-    FfiType ret = {0};
-    if (!sig_parse_type(&p, &ret, err, err_cap)) return NULL;
-    char name[128];
-    if (!sig_read_ident(&p, name, sizeof(name))) {
-        snprintf(err, err_cap, "expected function name");
+    char first[64];
+    if (!sig_read_ident(&p, first, sizeof(first))) {
+        snprintf(err, err_cap, "expected type or name");
         return NULL;
     }
-    if (!sig_match_char(&p, '(')) {
-        snprintf(err, err_cap, "expected '('");
-        return NULL;
+
+    FfiType ret = {0};
+    char name[128];
+    sig_skip_ws(&p);
+    if (p.src[p.pos] == ':') {
+        p.pos++;
+        if (!sig_parse_type(&p, &ret, err, err_cap)) return NULL;
+        if (!sig_match_char(&p, '(')) {
+            snprintf(err, err_cap, "expected '('");
+            return NULL;
+        }
+        snprintf(name, sizeof(name), "%s", first);
+    } else {
+        p = (SigParser){ sig, 0 };
+        if (!sig_parse_type(&p, &ret, err, err_cap)) return NULL;
+        if (!sig_read_ident(&p, name, sizeof(name))) {
+            snprintf(err, err_cap, "expected function name");
+            return NULL;
+        }
+        if (!sig_match_char(&p, '(')) {
+            snprintf(err, err_cap, "expected '('");
+            return NULL;
+        }
     }
 
     FfiType *args = NULL;
@@ -3867,6 +3932,149 @@ static void native_parse(UrbVM *vm, List *stack, UEntry *global)
     push_entry(stack, bytes ? bytes : g_vm->null_entry);
 }
 
+static int opcode_from_name(const char *name, size_t len)
+{
+    if (!name) return -1;
+    if (len == 8 && strncmp(name, "PUSH_INT", 8) == 0) return BC_PUSH_INT;
+    if (len == 10 && strncmp(name, "PUSH_FLOAT", 10) == 0) return BC_PUSH_FLOAT;
+    if (len == 9 && strncmp(name, "PUSH_CHAR", 9) == 0) return BC_PUSH_CHAR;
+    if (len == 11 && strncmp(name, "PUSH_STRING", 11) == 0) return BC_PUSH_STRING;
+    if (len == 13 && strncmp(name, "PUSH_CHAR_RAW", 13) == 0) return BC_PUSH_CHAR_RAW;
+    if (len == 15 && strncmp(name, "PUSH_STRING_RAW", 15) == 0) return BC_PUSH_STRING_RAW;
+    if (len == 9 && strncmp(name, "BUILD_INT", 9) == 0) return BC_BUILD_INT;
+    if (len == 11 && strncmp(name, "BUILD_FLOAT", 11) == 0) return BC_BUILD_FLOAT;
+    if (len == 12 && strncmp(name, "BUILD_OBJECT", 12) == 0) return BC_BUILD_OBJECT;
+    if (len == 14 && strncmp(name, "BUILD_INT_LIT", 14) == 0) return BC_BUILD_INT_LIT;
+    if (len == 16 && strncmp(name, "BUILD_FLOAT_LIT", 16) == 0) return BC_BUILD_FLOAT_LIT;
+    if (len == 11 && strncmp(name, "LOAD_GLOBAL", 11) == 0) return BC_LOAD_GLOBAL;
+    if (len == 12 && strncmp(name, "STORE_GLOBAL", 12) == 0) return BC_STORE_GLOBAL;
+    if (len == 4 && strncmp(name, "CALL", 4) == 0) return BC_CALL;
+    if (len == 7 && strncmp(name, "CALL_EX", 7) == 0) return BC_CALL_EX;
+    if (len == 3 && strncmp(name, "JMP", 3) == 0) return BC_JMP;
+    if (len == 12 && strncmp(name, "JMP_IF_FALSE", 12) == 0) return BC_JMP_IF_FALSE;
+    if (len == 6 && strncmp(name, "STRICT", 6) == 0) return BC_STRICT;
+    if (len == 3 && strncmp(name, "POP", 3) == 0) return BC_POP;
+    if (len == 3 && strncmp(name, "DUP", 3) == 0) return BC_DUP;
+    if (len == 6 && strncmp(name, "RETURN", 6) == 0) return BC_RETURN;
+    if (len == 3 && strncmp(name, "ADD", 3) == 0) return BC_ADD;
+    if (len == 3 && strncmp(name, "SUB", 3) == 0) return BC_SUB;
+    if (len == 3 && strncmp(name, "MUL", 3) == 0) return BC_MUL;
+    if (len == 3 && strncmp(name, "DIV", 3) == 0) return BC_DIV;
+    if (len == 3 && strncmp(name, "MOD", 3) == 0) return BC_MOD;
+    if (len == 3 && strncmp(name, "NEG", 3) == 0) return BC_NEG;
+    if (len == 3 && strncmp(name, "NOT", 3) == 0) return BC_NOT;
+    if (len == 2 && strncmp(name, "EQ", 2) == 0) return BC_EQ;
+    if (len == 3 && strncmp(name, "NEQ", 3) == 0) return BC_NEQ;
+    if (len == 2 && strncmp(name, "LT", 2) == 0) return BC_LT;
+    if (len == 3 && strncmp(name, "LTE", 3) == 0) return BC_LTE;
+    if (len == 2 && strncmp(name, "GT", 2) == 0) return BC_GT;
+    if (len == 3 && strncmp(name, "GTE", 3) == 0) return BC_GTE;
+    if (len == 3 && strncmp(name, "AND", 3) == 0) return BC_AND;
+    if (len == 2 && strncmp(name, "OR", 2) == 0) return BC_OR;
+    if (len == 4 && strncmp(name, "DUMP", 4) == 0) return BC_DUMP;
+    if (len == 2 && strncmp(name, "GC", 2) == 0) return BC_GC;
+    if (len == 9 && strncmp(name, "LOAD_ROOT", 9) == 0) return BC_LOAD_ROOT;
+    if (len == 8 && strncmp(name, "LOAD_THIS", 8) == 0) return BC_LOAD_THIS;
+    if (len == 8 && strncmp(name, "SET_THIS", 8) == 0) return BC_SET_THIS;
+    if (len == 5 && strncmp(name, "INDEX", 5) == 0) return BC_INDEX;
+    if (len == 11 && strncmp(name, "STORE_INDEX", 11) == 0) return BC_STORE_INDEX;
+    return -1;
+}
+
+static UEntry *table_get(UEntry *table, const char *name)
+{
+    return table_find_by_key_len(table, name, strlen(name));
+}
+
+static int emit_from_ast(UEntry *target, Bytecode *bc)
+{
+    UEntry *type_entry = table_get(target, "type");
+    const char *type_name = NULL;
+    size_t type_len = 0;
+    if (!type_entry || !entry_as_string(type_entry, &type_name, &type_len)) return 0;
+    if (!(type_len == 8 && strncmp(type_name, "bytecode", 8) == 0)) return 0;
+    UEntry *ops = table_get(target, "ops");
+    if (!ops || !ops->obj || ops->obj->type != U_T_TABLE) return 0;
+    for (size_t i = 0; i < ops->obj->as.table.size; i++) {
+        UEntry *op_entry = ops->obj->as.table.items[i];
+        if (!op_entry || !op_entry->obj || op_entry->obj->type != U_T_TABLE) continue;
+        UEntry *op_name_entry = table_get(op_entry, "op");
+        const char *op_name = NULL;
+        size_t op_len = 0;
+        if (!op_name_entry || !entry_as_string(op_name_entry, &op_name, &op_len)) continue;
+        int opcode = opcode_from_name(op_name, op_len);
+        if (opcode < 0) continue;
+        if (!bc_emit_u8(bc, (uint8_t)opcode)) return 0;
+        if (opcode == BC_PUSH_INT) {
+            UEntry *val = table_get(op_entry, "value");
+            Int iv = 0;
+            if (!entry_number_to_int(val, &iv) || !bc_emit_i64(bc, (int64_t)iv)) return 0;
+        } else if (opcode == BC_PUSH_FLOAT) {
+            UEntry *val = table_get(op_entry, "value");
+            Float fv = 0;
+            if (!entry_as_number(val, &fv) || !bc_emit_f64(bc, (double)fv)) return 0;
+        } else if (opcode == BC_PUSH_CHAR || opcode == BC_PUSH_STRING ||
+                   opcode == BC_PUSH_CHAR_RAW || opcode == BC_PUSH_STRING_RAW) {
+            UEntry *val = table_get(op_entry, "value");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!val || !entry_as_string(val, &s, &slen) || !bc_emit_string(bc, s, slen)) return 0;
+        } else if (opcode == BC_BUILD_INT || opcode == BC_BUILD_FLOAT || opcode == BC_BUILD_OBJECT) {
+            UEntry *cnt = table_get(op_entry, "count");
+            Int iv = 0;
+            if (!entry_number_to_int(cnt, &iv) || iv < 0 || !bc_emit_u32(bc, (uint32_t)iv)) return 0;
+        } else if (opcode == BC_BUILD_INT_LIT || opcode == BC_BUILD_FLOAT_LIT) {
+            UEntry *cnt = table_get(op_entry, "count");
+            Int iv = 0;
+            if (!entry_number_to_int(cnt, &iv) || iv < 0 || !bc_emit_u32(bc, (uint32_t)iv)) return 0;
+            UEntry *vals = table_get(op_entry, "values");
+            if (vals && vals->obj && vals->obj->type == U_T_TABLE) {
+                for (Int j = 0; j < iv && j < (Int)vals->obj->as.table.size; j++) {
+                    UEntry *v = vals->obj->as.table.items[j];
+                    if (opcode == BC_BUILD_INT_LIT) {
+                        Int vi = 0;
+                        if (!entry_number_to_int(v, &vi) || !bc_emit_i64(bc, (int64_t)vi)) return 0;
+                    } else {
+                        Float vf = 0;
+                        if (!entry_as_number(v, &vf) || !bc_emit_f64(bc, (double)vf)) return 0;
+                    }
+                }
+            }
+        } else if (opcode == BC_LOAD_GLOBAL || opcode == BC_STORE_GLOBAL) {
+            UEntry *name = table_get(op_entry, "name");
+            const char *s = NULL;
+            size_t slen = 0;
+            if (!name || !entry_as_string(name, &s, &slen) || !bc_emit_string(bc, s, slen)) return 0;
+        } else if (opcode == BC_CALL) {
+            UEntry *name = table_get(op_entry, "name");
+            UEntry *argc_entry = table_get(op_entry, "argc");
+            const char *s = NULL;
+            size_t slen = 0;
+            Int iv = 0;
+            if (!name || !entry_as_string(name, &s, &slen) || !entry_number_to_int(argc_entry, &iv)) return 0;
+            if (!bc_emit_string(bc, s, slen) || !bc_emit_u32(bc, (uint32_t)iv)) return 0;
+        } else if (opcode == BC_CALL_EX) {
+            UEntry *name = table_get(op_entry, "name");
+            UEntry *argc_entry = table_get(op_entry, "argc");
+            UEntry *ov_entry = table_get(op_entry, "override");
+            const char *s = NULL;
+            size_t slen = 0;
+            Int iv = 0;
+            Int ov = 0;
+            if (!name || !entry_as_string(name, &s, &slen) ||
+                !entry_number_to_int(argc_entry, &iv) ||
+                !entry_number_to_int(ov_entry, &ov)) return 0;
+            if (!bc_emit_string(bc, s, slen) || !bc_emit_u32(bc, (uint32_t)iv) ||
+                !bc_emit_u32(bc, (uint32_t)ov)) return 0;
+        } else if (opcode == BC_JMP || opcode == BC_JMP_IF_FALSE) {
+            UEntry *tgt = table_get(op_entry, "target");
+            Int iv = 0;
+            if (!entry_number_to_int(tgt, &iv) || iv < 0 || !bc_emit_u32(bc, (uint32_t)iv)) return 0;
+        }
+    }
+    return 1;
+}
+
 static void native_emit(UrbVM *vm, List *stack, UEntry *global)
 {
     (void)global;
@@ -3874,6 +4082,17 @@ static void native_emit(UrbVM *vm, List *stack, UEntry *global)
     UEntry *target = native_target(vm, stack, argc);
     const char *data = NULL;
     size_t len = 0;
+    if (target && target->obj && target->obj->type == U_T_TABLE) {
+        Bytecode bc;
+        bc_init(&bc);
+        if (emit_from_ast(target, &bc)) {
+            UEntry *bytes = uent_make_bytes((const char*)bc.data, bc.len, 1, 0);
+            bc_free(&bc);
+            push_entry(stack, bytes ? bytes : g_vm->null_entry);
+            return;
+        }
+        bc_free(&bc);
+    }
     if (!target || !entry_as_string(target, &data, &len)) {
         fprintf(stderr, "emit expects bytecode bytes\n");
         return;
@@ -4048,7 +4267,7 @@ static void native_gc_collect(UrbVM *vm, List *stack, UEntry *global)
     stack_push_entry(stack, g_vm->null_entry);
 }
 
-static void uobj_free(UObj *obj)
+static void uobj_free_raw(UObj *obj)
 {
     if (!obj) return;
     if (obj->type == U_T_INT || obj->type == U_T_FLOAT) {
@@ -4074,6 +4293,13 @@ static void uobj_free(UObj *obj)
         }
     }
     free(obj);
+}
+
+static void uobj_free(UObj *obj)
+{
+    if (!obj) return;
+    vm_untrack_obj(g_vm, obj);
+    uobj_free_raw(obj);
 }
 
 static void native_gc_free(UrbVM *vm, List *stack, UEntry *global)
@@ -5676,12 +5902,31 @@ static void vm_set_args(UrbVM *vm, int argc, char **argv)
     table_set_by_key_len(vm->global_entry, "argc", 4, uent_make_string(buf, strlen(buf)));
 }
 
+static void vm_cleanup(UrbVM *vm)
+{
+    if (!vm) return;
+    for (size_t i = 0; i < vm->obj_count; i++) {
+        uobj_free_raw(vm->objs[i]);
+    }
+    for (size_t i = 0; i < vm->entry_count; i++) {
+        free(vm->entries[i]);
+    }
+    free(vm->objs);
+    free(vm->entries);
+    vm->objs = NULL;
+    vm->entries = NULL;
+    vm->obj_count = 0;
+    vm->entry_count = 0;
+    vm->obj_cap = 0;
+    vm->entry_cap = 0;
+}
+
 int urb_exec_bytecode(const unsigned char *data, size_t len, int argc, char **argv)
 {
     if (!data || len == 0) return 0;
     UrbVM vm;
-    vm_init(&vm);
     g_vm = &vm;
+    vm_init(&vm);
     // Match Disturb behavior: ensure stdout is fully buffered for heavy println loops.
     // This significantly reduces per-line overhead when output is redirected.
     setvbuf(stdout, NULL, _IOFBF, 1 << 20);
@@ -5695,5 +5940,12 @@ int urb_exec_bytecode(const unsigned char *data, size_t len, int argc, char **ar
     urb_free(stack);
     urb_free(program.mem);
     urb_free(vm.exec);
+    fflush(stdout);
+    fflush(stderr);
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+    urb_bridge_free();
+    vm_cleanup(&vm);
+    g_vm = NULL;
     return 1;
 }

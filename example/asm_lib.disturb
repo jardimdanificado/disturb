@@ -154,5 +154,8 @@ asm = (text){
 };
 
 disasm = (bytes){
-  return emit(bytes).trim();
+  if (bytes == null) { return ""; }
+  out = emit(bytes);
+  if (out == null) { return ""; }
+  return out.trim();
 };
