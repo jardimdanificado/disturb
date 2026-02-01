@@ -1,6 +1,7 @@
 // urb
 // urb use no other libraries beside the standard C99 libraries
 // urb.h is standalone and is not dependant on any other file of the repo
+// https://github.com/jardimdanificado/urb
 
 #ifndef URB_H
 #define URB_H 1

@@ -297,35 +297,64 @@ static int vm_view_is_float(ViewType view)
 
 static List *disturb_obj_new_list(Int type, ObjEntry *key_entry, Int reserve)
 {
-    List *obj = disturb_new(2 + reserve);
+    List *obj = urb_new(2 + reserve);
     Value v;
     v.i = type;
-    obj = disturb_push(obj, v);
+    urb_push(obj, v);
     v.p = key_entry;
-    obj = disturb_push(obj, v);
+    urb_push(obj, v);
     return obj;
 }
 
 List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve)
 {
-    size_t need = (size_t)reserve + 2;
-    FreeNode *prev = NULL;
-    FreeNode *cur = vm->free_lists;
-    while (cur) {
-        List *obj = cur->obj;
-        if (obj && (size_t)obj->capacity >= need) {
-            if (prev) prev->next = cur->next;
-            else vm->free_lists = cur->next;
-            free(cur);
-            obj->data[0].i = type;
-            obj->data[1].p = key_entry;
-            obj->size = 2;
-            return obj;
-        }
-        prev = cur;
-        cur = cur->next;
+    size_t need_values = (size_t)reserve + 2;
+    size_t need_bytes = need_values * sizeof(Value);
+    List *obj = NULL;
+    if (vm && vm->free_list_objs) {
+        FreeNode *node = vm->free_list_objs;
+        vm->free_list_objs = node->next;
+        obj = node->obj;
+        free(node);
     }
-    return disturb_obj_new_list(type, key_entry, reserve);
+    if (!obj) {
+        obj = (List*)malloc(sizeof(List));
+        if (!obj) return NULL;
+    }
+
+    size_t cap_bytes = 0;
+    Value *data = NULL;
+    if (vm && vm->free_list_data) {
+        FreeDataNode *prev = NULL;
+        FreeDataNode *cur = vm->free_list_data;
+        while (cur) {
+            if (cur->cap_bytes >= need_bytes) {
+                if (prev) prev->next = cur->next;
+                else vm->free_list_data = cur->next;
+                data = (Value*)cur->data;
+                cap_bytes = cur->cap_bytes;
+                free(cur);
+                break;
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+    }
+    if (!data) {
+        data = (Value*)malloc(need_bytes);
+        cap_bytes = need_bytes;
+    }
+    if (!data) {
+        free(obj);
+        return NULL;
+    }
+
+    obj->data = data;
+    obj->capacity = (UHalf)(cap_bytes / sizeof(Value));
+    obj->size = 2;
+    obj->data[0].i = type;
+    obj->data[1].p = key_entry;
+    return obj;
 }
 
 static List *disturb_obj_new_bytes(Int type, ObjEntry *key_entry, const char *s, size_t len)
@@ -334,8 +363,14 @@ static List *disturb_obj_new_bytes(Int type, ObjEntry *key_entry, const char *s,
         PANIC("byte object too large.");
     }
 
-    size_t bytes = sizeof(List) + 2 * sizeof(Value) + len;
-    List *obj = (List*)malloc(bytes);
+    List *obj = (List*)malloc(sizeof(List));
+    if (!obj) return NULL;
+    size_t bytes = 2 * sizeof(Value) + len;
+    obj->data = (Value*)malloc(bytes);
+    if (!obj->data) {
+        free(obj);
+        return NULL;
+    }
     obj->capacity = (UHalf)(len + 2);
     obj->size = (UHalf)(len + 2);
     obj->data[0].i = type;
@@ -382,7 +417,10 @@ static void disturb_obj_clear(List *obj)
 static void disturb_obj_free(List *obj)
 {
     disturb_obj_clear(obj);
-    free(obj);
+    if (obj) {
+        free(obj->data);
+        free(obj);
+    }
 }
 
 void vm_free_list(List *obj)
@@ -392,44 +430,94 @@ void vm_free_list(List *obj)
 
 static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s, size_t len)
 {
-    size_t need = len + 2;
-    FreeNode *prev = NULL;
-    FreeNode *cur = vm->free_bytes;
-    while (cur) {
-        List *obj = cur->obj;
-        if (obj && (size_t)obj->capacity >= need) {
-            if (prev) prev->next = cur->next;
-            else vm->free_bytes = cur->next;
-            free(cur);
-            obj->data[0].i = type;
-            obj->data[1].p = key_entry;
-            obj->size = (UHalf)(len + 2);
-            if ((size_t)obj->capacity < need) obj->capacity = (UHalf)need;
-            if (len && s) memcpy(disturb_bytes_data(obj), s, len);
-            return obj;
-        }
-        prev = cur;
-        cur = cur->next;
+    size_t need_bytes = 2 * sizeof(Value) + len;
+    List *obj = NULL;
+    if (vm && vm->free_list_objs) {
+        FreeNode *node = vm->free_list_objs;
+        vm->free_list_objs = node->next;
+        obj = node->obj;
+        free(node);
     }
-    return disturb_obj_new_bytes(type, key_entry, s, len);
+    if (!obj) {
+        obj = (List*)malloc(sizeof(List));
+        if (!obj) return NULL;
+    }
+
+    size_t cap_bytes = 0;
+    Value *data = NULL;
+    if (vm && vm->free_list_data) {
+        FreeDataNode *prev = NULL;
+        FreeDataNode *cur = vm->free_list_data;
+        while (cur) {
+            if (cur->cap_bytes >= need_bytes) {
+                if (prev) prev->next = cur->next;
+                else vm->free_list_data = cur->next;
+                data = (Value*)cur->data;
+                cap_bytes = cur->cap_bytes;
+                free(cur);
+                break;
+            }
+            prev = cur;
+            cur = cur->next;
+        }
+    }
+    if (!data) {
+        data = (Value*)malloc(need_bytes);
+        cap_bytes = need_bytes;
+    }
+    if (!data) {
+        free(obj);
+        return NULL;
+    }
+
+    size_t payload = cap_bytes >= 2 * sizeof(Value) ? cap_bytes - 2 * sizeof(Value) : 0;
+    obj->data = data;
+    obj->capacity = (UHalf)(payload + 2);
+    obj->size = (UHalf)(len + 2);
+    obj->data[0].i = type;
+    obj->data[1].p = key_entry;
+    if (len && s) memcpy(disturb_bytes_data(obj), s, len);
+    return obj;
 }
 
 static void vm_pool_push(VM *vm, List *obj)
 {
     if (!vm || !obj) return;
     disturb_obj_clear(obj);
+    size_t data_bytes = 0;
+    if (obj->data) {
+        Int type = disturb_obj_type(obj);
+        if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
+            size_t bytes_len = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
+            data_bytes = 2 * sizeof(Value) + bytes_len;
+        } else {
+            data_bytes = (size_t)obj->capacity * sizeof(Value);
+        }
+    }
+
+    if (obj->data && data_bytes > 0) {
+        FreeDataNode *dnode = (FreeDataNode*)malloc(sizeof(FreeDataNode));
+        if (dnode) {
+            dnode->data = obj->data;
+            dnode->cap_bytes = data_bytes;
+            dnode->next = vm->free_list_data;
+            vm->free_list_data = dnode;
+        } else {
+            free(obj->data);
+        }
+    }
+    obj->data = NULL;
+    obj->capacity = 0;
+    obj->size = 0;
+
     FreeNode *node = (FreeNode*)malloc(sizeof(FreeNode));
     if (!node) {
+        free(obj);
         return;
     }
     node->obj = obj;
-    if (disturb_obj_type(obj) == DISTURB_T_INT || disturb_obj_type(obj) == DISTURB_T_FLOAT) {
-        node->next = vm->free_bytes;
-        vm->free_bytes = node;
-    } else {
-        node->next = vm->free_lists;
-        vm->free_lists = node;
-    }
+    node->next = vm->free_list_objs;
+    vm->free_list_objs = node;
 }
 
 void vm_reuse_list(VM *vm, List *obj)
@@ -440,16 +528,16 @@ void vm_reuse_list(VM *vm, List *obj)
 void vm_flush_reuse(VM *vm)
 {
     if (!vm) return;
-    while (vm->free_lists) {
-        FreeNode *node = vm->free_lists;
-        vm->free_lists = node->next;
-        vm_free_list(node->obj);
+    while (vm->free_list_objs) {
+        FreeNode *node = vm->free_list_objs;
+        vm->free_list_objs = node->next;
+        free(node->obj);
         free(node);
     }
-    while (vm->free_bytes) {
-        FreeNode *node = vm->free_bytes;
-        vm->free_bytes = node->next;
-        vm_free_list(node->obj);
+    while (vm->free_list_data) {
+        FreeDataNode *node = vm->free_list_data;
+        vm->free_list_data = node->next;
+        free(node->data);
         free(node);
     }
 }
@@ -470,13 +558,13 @@ int vm_gc_stats(VM *vm, GcStats *out)
     if (!vm || !out) return 0;
     memset(out, 0, sizeof(*out));
 
-    for (FreeNode *cur = vm->free_lists; cur; cur = cur->next) {
+    for (FreeNode *cur = vm->free_list_objs; cur; cur = cur->next) {
         out->reuse_list_count++;
-        out->reuse_bytes_total += vm_obj_alloc_bytes(cur->obj);
+        out->reuse_bytes_total += sizeof(List);
     }
-    for (FreeNode *cur = vm->free_bytes; cur; cur = cur->next) {
+    for (FreeDataNode *cur = vm->free_list_data; cur; cur = cur->next) {
         out->reuse_bytes_count++;
-        out->reuse_bytes_total += vm_obj_alloc_bytes(cur->obj);
+        out->reuse_bytes_total += cur->cap_bytes;
     }
 
     for (Int i = 0; i < vm->reg_count; i++) {
@@ -501,19 +589,19 @@ int vm_gc_stats(VM *vm, GcStats *out)
         ObjEntry *root = roots[i];
         if (!root || !root->in_use) continue;
         if (root->mark) continue;
-        List *mark_stack = disturb_new(16);
+        List *mark_stack = urb_new(16);
         Value v;
         v.p = root;
-        mark_stack = disturb_push(mark_stack, v);
+        urb_push(mark_stack, v);
         while (mark_stack->size > 0) {
-            ObjEntry *entry = (ObjEntry*)disturb_pop(mark_stack).p;
+            ObjEntry *entry = (ObjEntry*)urb_pop(mark_stack).p;
             if (!entry || !entry->in_use || entry->mark) continue;
             entry->mark = 1;
             ObjEntry *key = vm_entry_key(entry);
             if (key && key->in_use && !key->mark) {
                 Value kv;
                 kv.p = key;
-                mark_stack = disturb_push(mark_stack, kv);
+                urb_push(mark_stack, kv);
             }
             if (!entry->obj) continue;
             Int type = disturb_obj_type(entry->obj);
@@ -524,12 +612,12 @@ int vm_gc_stats(VM *vm, GcStats *out)
                     if (child && child->in_use && !child->mark) {
                         Value cv;
                         cv.p = child;
-                        mark_stack = disturb_push(mark_stack, cv);
+                        urb_push(mark_stack, cv);
                     }
                 }
             }
         }
-        disturb_free(mark_stack);
+        urb_free(mark_stack);
     }
 
     size_t obj_cap = 0;
@@ -614,7 +702,8 @@ List *disturb_table_add(List *obj, ObjEntry *entry)
 {
     Value v;
     v.p = entry;
-    return disturb_push(obj, v);
+    urb_push(obj, v);
+    return obj;
 }
 
 List *disturb_bytes_append(List *obj, const char *bytes, size_t len)
@@ -624,8 +713,12 @@ List *disturb_bytes_append(List *obj, const char *bytes, size_t len)
     if (new_len > disturb_bytes_max() - 2) {
         PANIC("byte object too large.");
     }
-    size_t bytes_size = sizeof(List) + 2 * sizeof(Value) + new_len;
-    obj = (List*)realloc(obj, bytes_size);
+    size_t bytes_size = 2 * sizeof(Value) + new_len;
+    Value *data = (Value*)realloc(obj->data, bytes_size);
+    if (!data && bytes_size > 0) {
+        PANIC("failed to resize byte object.");
+    }
+    if (data) obj->data = data;
     if (len) {
         memcpy(disturb_bytes_data(obj) + old_len, bytes, len);
     }
@@ -644,8 +737,8 @@ static void vm_reg_init(VM *vm)
     vm->reg_cap = 64;
     vm->reg_count = 0;
     vm->reg = (ObjEntry**)calloc((size_t)vm->reg_cap, sizeof(ObjEntry*));
-    vm->free_lists = NULL;
-    vm->free_bytes = NULL;
+    vm->free_list_objs = NULL;
+    vm->free_list_data = NULL;
 }
 
 static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
@@ -735,7 +828,7 @@ static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_na
     box->clone_data = NULL;
     Value v;
     v.p = box;
-    obj = disturb_push(obj, v);
+    urb_push(obj, v);
     return vm_reg_alloc(vm, obj);
 }
 
@@ -752,7 +845,7 @@ ObjEntry *vm_make_native_entry_data(VM *vm, const char *key, NativeFn fn, void *
     box->clone_data = clone_data;
     Value v;
     v.p = box;
-    obj = disturb_push(obj, v);
+    urb_push(obj, v);
     return vm_reg_alloc(vm, obj);
 }
 
@@ -794,7 +887,7 @@ int vm_global_remove_by_key(VM *vm, const char *name)
         if (!key) continue;
         if (!entry_is_string(key)) continue;
         if (disturb_bytes_eq_cstr(key->obj, name)) {
-            disturb_remove(global, i);
+            urb_remove(global, i);
             return 1;
         }
     }
@@ -829,19 +922,19 @@ void vm_gc(VM *vm)
         if (!root || !root->in_use) continue;
         if (root->mark) continue;
         /* iterative mark using a simple stack */
-        List *mark_stack = disturb_new(16);
+        List *mark_stack = urb_new(16);
         Value v;
         v.p = root;
-        mark_stack = disturb_push(mark_stack, v);
+        urb_push(mark_stack, v);
         while (mark_stack->size > 0) {
-            ObjEntry *entry = (ObjEntry*)disturb_pop(mark_stack).p;
+            ObjEntry *entry = (ObjEntry*)urb_pop(mark_stack).p;
             if (!entry || !entry->in_use || entry->mark) continue;
             entry->mark = 1;
             ObjEntry *key = vm_entry_key(entry);
             if (key && key->in_use && !key->mark) {
                 Value kv;
                 kv.p = key;
-                mark_stack = disturb_push(mark_stack, kv);
+                urb_push(mark_stack, kv);
             }
             if (!entry->obj) continue;
             Int type = disturb_obj_type(entry->obj);
@@ -852,12 +945,12 @@ void vm_gc(VM *vm)
                     if (child && child->in_use && !child->mark) {
                         Value cv;
                         cv.p = child;
-                        mark_stack = disturb_push(mark_stack, cv);
+                        urb_push(mark_stack, cv);
                     }
                 }
             }
         }
-        disturb_free(mark_stack);
+        urb_free(mark_stack);
     }
 
     /* sweep */
@@ -1908,16 +2001,16 @@ void vm_free(VM *vm)
         free(entry);
         vm->reg[i] = NULL;
     }
-    while (vm->free_lists) {
-        FreeNode *node = vm->free_lists;
-        vm->free_lists = node->next;
-        vm_free_list(node->obj);
+    while (vm->free_list_objs) {
+        FreeNode *node = vm->free_list_objs;
+        vm->free_list_objs = node->next;
+        free(node->obj);
         free(node);
     }
-    while (vm->free_bytes) {
-        FreeNode *node = vm->free_bytes;
-        vm->free_bytes = node->next;
-        vm_free_list(node->obj);
+    while (vm->free_list_data) {
+        FreeDataNode *node = vm->free_list_data;
+        vm->free_list_data = node->next;
+        free(node->data);
         free(node);
     }
     free(vm->reg);
@@ -1967,7 +2060,7 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         Int n = (Int)(obj->size - 2);
         copy = vm_alloc_list(vm, DISTURB_T_VIEW, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
-            copy = disturb_push(copy, obj->data[i]);
+            urb_push(copy, obj->data[i]);
         }
         break;
     }
@@ -1989,7 +2082,7 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         }
         Value v;
         v.p = box;
-        copy = disturb_push(copy, v);
+        urb_push(copy, v);
         break;
     }
     case DISTURB_T_LAMBDA: {
@@ -2030,13 +2123,13 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         }
         Value v;
         v.p = box;
-        copy = disturb_push(copy, v);
+        urb_push(copy, v);
         break;
     }
     default:
         copy = vm_alloc_list(vm, type, key_entry, (Int)(obj->size - 2));
         for (Int i = 2; i < obj->size; i++) {
-            copy = disturb_push(copy, obj->data[i]);
+            urb_push(copy, obj->data[i]);
         }
         break;
     }
@@ -2114,7 +2207,7 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
         Int n = (Int)(obj->size - 2);
         copy = vm_alloc_list(vm, DISTURB_T_VIEW, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
-            copy = disturb_push(copy, obj->data[i]);
+            urb_push(copy, obj->data[i]);
         }
         break;
     }
@@ -2123,7 +2216,7 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
         copy = vm_alloc_list(vm, DISTURB_T_TABLE, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             Value v = obj->data[i];
-            copy = disturb_push(copy, v);
+            urb_push(copy, v);
         }
         break;
     }
@@ -2132,7 +2225,7 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
         Int n = (Int)(obj->size - 2);
         copy = vm_alloc_list(vm, type, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
-            copy = disturb_push(copy, obj->data[i]);
+            urb_push(copy, obj->data[i]);
         }
         break;
     }
@@ -2140,7 +2233,7 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
         Int n = (Int)(obj->size - 2);
         copy = vm_alloc_list(vm, type, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
-            copy = disturb_push(copy, obj->data[i]);
+            urb_push(copy, obj->data[i]);
         }
         break;
     }
@@ -2276,7 +2369,7 @@ ObjEntry *vm_define_native(VM *vm, const char *key, const char *fn_name)
     box->clone_data = NULL;
     Value v;
     v.p = box;
-    obj = disturb_push(obj, v);
+    urb_push(obj, v);
     ObjEntry *entry = vm_reg_alloc(vm, obj);
     vm_global_add(vm, entry);
     return entry;
@@ -2299,7 +2392,7 @@ void vm_pop_stack(VM *vm)
         fprintf(stderr, "stack empty\n");
         return;
     }
-    disturb_pop(stack);
+    urb_pop(stack);
 }
 
 void vm_call_native(VM *vm, const char *key)
@@ -2653,7 +2746,7 @@ static ObjEntry *vm_stack_pop_entry(VM *vm, const char *op, size_t pc)
         fprintf(stderr, "bytecode error at pc %zu: %s stack underflow\n", pc, op);
         return NULL;
     }
-    return (ObjEntry*)disturb_pop(stack).p;
+    return (ObjEntry*)urb_pop(stack).p;
 }
 
 static int vm_key_is(ObjEntry *index, const char *name)
@@ -2750,9 +2843,9 @@ static ObjEntry *vm_make_view(VM *vm, ObjEntry *base, ViewType view)
     List *obj = vm_alloc_list(vm, DISTURB_T_VIEW, NULL, 2);
     Value v;
     v.p = base;
-    obj = disturb_push(obj, v);
+    urb_push(obj, v);
     v.i = (Int)view;
-    obj = disturb_push(obj, v);
+    urb_push(obj, v);
     return vm_reg_alloc(vm, obj);
 }
 
@@ -2778,7 +2871,7 @@ static List *vm_clone_obj_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *key_entr
         Int n = (Int)(obj->size - 2);
         copy = vm_alloc_list(vm, DISTURB_T_VIEW, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
-            copy = disturb_push(copy, obj->data[i]);
+            urb_push(copy, obj->data[i]);
         }
         break;
     }
@@ -2789,7 +2882,7 @@ static List *vm_clone_obj_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *key_entr
         Int n = (Int)(obj->size - 2);
         copy = vm_alloc_list(vm, type, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
-            copy = disturb_push(copy, obj->data[i]);
+            urb_push(copy, obj->data[i]);
         }
         break;
     }
@@ -2898,9 +2991,10 @@ static List *vm_resize_bytes(List *obj, Int new_size)
     if (new_size < 0) return 0;
     size_t len = (size_t)new_size;
     if (len > disturb_bytes_max() - 2) return NULL;
-    size_t bytes = sizeof(List) + 2 * sizeof(Value) + len;
-    obj = (List*)realloc(obj, bytes);
-    if (!obj) return NULL;
+    size_t bytes = 2 * sizeof(Value) + len;
+    Value *data = (Value*)realloc(obj->data, bytes);
+    if (!data && bytes > 0) return NULL;
+    if (data) obj->data = data;
     size_t old_len = disturb_bytes_len(obj);
     if (len > old_len) {
         memset(disturb_bytes_data(obj) + old_len, 0, len - old_len);
@@ -2915,11 +3009,11 @@ static List *vm_resize_bytes_capacity(List *obj, Int new_cap)
     if (new_cap < 0) return NULL;
     size_t cap = (size_t)new_cap;
     if (cap > disturb_bytes_max() - 2) return NULL;
-    size_t bytes = sizeof(List) + 2 * sizeof(Value) + cap;
+    size_t bytes = 2 * sizeof(Value) + cap;
     size_t old_len = disturb_bytes_len(obj);
-    List *resized = (List*)realloc(obj, bytes);
-    if (!resized && cap > 0) return NULL;
-    if (resized) obj = resized;
+    Value *data = (Value*)realloc(obj->data, bytes);
+    if (!data && cap > 0) return NULL;
+    if (data) obj->data = data;
     obj->capacity = (UHalf)(cap + 2);
     if (old_len > cap) {
         obj->size = (UHalf)(cap + 2);
@@ -2932,9 +3026,10 @@ static List *vm_resize_list(List *obj, Int new_size, ObjEntry *null_entry)
     if (new_size < 0) return NULL;
     size_t payload = (size_t)new_size;
     size_t new_cap = payload + 2;
-    size_t bytes = sizeof(List) + new_cap * sizeof(Value);
-    obj = (List*)realloc(obj, bytes);
-    if (!obj && new_cap > 0) return NULL;
+    size_t bytes = new_cap * sizeof(Value);
+    Value *data = (Value*)realloc(obj->data, bytes);
+    if (!data && new_cap > 0) return NULL;
+    if (data) obj->data = data;
     if ((size_t)obj->capacity < new_cap) {
         memset(obj->data + obj->capacity, 0, (new_cap - obj->capacity) * sizeof(Value));
     }
@@ -3569,13 +3664,13 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         if (type == DISTURB_T_TABLE) {
             size_t payload = (size_t)new_cap;
             size_t new_total = payload + 2;
-            size_t bytes = sizeof(List) + new_total * sizeof(Value);
-            List *resized = (List*)realloc(target->obj, bytes);
-            if (!resized && new_total > 0) {
+            size_t bytes = new_total * sizeof(Value);
+            Value *data = (Value*)realloc(target->obj->data, bytes);
+            if (!data && new_total > 0) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize list\n", pc);
                 return -1;
             }
-            target->obj = resized;
+            if (data) target->obj->data = data;
             if ((size_t)target->obj->capacity < new_total) {
                 memset(target->obj->data + target->obj->capacity, 0,
                        (new_total - target->obj->capacity) * sizeof(Value));
@@ -3916,7 +4011,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             List *obj = vm_alloc_list(vm, DISTURB_T_LAMBDA, NULL, 1);
             Value v;
             v.p = box;
-            obj = disturb_push(obj, v);
+            urb_push(obj, v);
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
@@ -4544,7 +4639,7 @@ ObjEntry *vm_eval_source(VM *vm, const char *src, size_t len)
         result = (ObjEntry*)stack->data[stack->size - 1].p;
     }
     while (stack->size > stack_before) {
-        disturb_pop(stack);
+        urb_pop(stack);
     }
     bc_free(&bc);
     return result ? result : vm->null_entry;

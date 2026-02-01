@@ -3,7 +3,7 @@ ENABLE_IO ?= 1
 ENABLE_SYSTEM ?= 1
 ENABLE_FFI ?= 1
 
-CFLAGS = -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp -Ilib/urb
+CFLAGS = -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp -Ilib/
 LIBREGEXP_CFLAGS = -Wno-unused-parameter -Wno-sign-compare -Wno-pedantic
 LDFLAGS = -lm
 

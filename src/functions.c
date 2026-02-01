@@ -1580,26 +1580,22 @@ static void native_gc_debug(VM *vm, List *stack, List *global)
 
     fputs("gc.reuse.lists:\n", stdout);
     if (vm) {
-        FreeNode *cur = vm->free_lists;
+        FreeNode *cur = vm->free_list_objs;
         while (cur) {
-            List *obj = cur->obj;
-            size_t bytes = obj ? sizeof(List) + (size_t)obj->capacity * sizeof(Value) : 0;
-            fprintf(stdout, "  cap=%u bytes=%zu\n", obj ? (unsigned)obj->capacity : 0u, bytes);
+            size_t bytes = sizeof(List);
+            fprintf(stdout, "  bytes=%zu\n", bytes);
             total_bytes += bytes;
             list_count++;
             cur = cur->next;
         }
     }
 
-    fputs("gc.reuse.bytes:\n", stdout);
+    fputs("gc.reuse.data:\n", stdout);
     if (vm) {
-        FreeNode *cur = vm->free_bytes;
+        FreeDataNode *cur = vm->free_list_data;
         while (cur) {
-            List *obj = cur->obj;
-            size_t bytes_len = 0;
-            if (obj && obj->capacity >= 2) bytes_len = (size_t)obj->capacity - 2;
-            size_t bytes = obj ? sizeof(List) + 2 * sizeof(Value) + bytes_len : 0;
-            fprintf(stdout, "  cap=%u bytes=%zu\n", obj ? (unsigned)obj->capacity : 0u, bytes);
+            size_t bytes = cur->cap_bytes;
+            fprintf(stdout, "  cap_bytes=%zu\n", cur->cap_bytes);
             total_bytes += bytes;
             bytes_count++;
             cur = cur->next;
@@ -2049,13 +2045,14 @@ static Int bytes_list_insert_index(Int count, Int index)
 
 static List *bytes_list_insert(VM *vm, ObjEntry *target, size_t offset, const void *data, size_t len)
 {
+    (void)vm;
     size_t old_len = disturb_bytes_len(target->obj);
     size_t new_len = old_len + len;
-    size_t bytes = sizeof(List) + 2 * sizeof(Value) + new_len;
-    List *old_obj = target->obj;
-    List *obj = (List*)realloc(target->obj, bytes);
-    if (!obj) return NULL;
-    obj = vm_update_shared_obj(vm, old_obj, obj);
+    size_t bytes = 2 * sizeof(Value) + new_len;
+    Value *next = (Value*)realloc(target->obj->data, bytes);
+    if (!next && bytes > 0) return NULL;
+    if (next) target->obj->data = next;
+    List *obj = target->obj;
     memmove(disturb_bytes_data(obj) + offset + len, disturb_bytes_data(obj) + offset, old_len - offset);
     memcpy(disturb_bytes_data(obj) + offset, data, len);
     obj->size = (UHalf)(new_len + 2);
@@ -2687,7 +2684,7 @@ static void native_delete(VM *vm, List *stack, List *global)
             ObjEntry *k = vm_entry_key(child);
             if (!k || !entry_is_string(k)) continue;
             if (disturb_bytes_len(k->obj) == len && memcmp(disturb_bytes_data(k->obj), key, len) == 0) {
-                disturb_remove(target->obj, i);
+                urb_remove(target->obj, i);
                 push_number(vm, stack, 1);
                 return;
             }
@@ -2707,7 +2704,7 @@ static void native_delete(VM *vm, List *stack, List *global)
             return;
         }
         if (type == DISTURB_T_TABLE) {
-            disturb_remove(target->obj, list_pos_from_index(target->obj, i));
+            urb_remove(target->obj, list_pos_from_index(target->obj, i));
             push_number(vm, stack, 1);
             return;
         }
@@ -2817,7 +2814,7 @@ static void native_pop(VM *vm, List *stack, List *global)
     Int type = disturb_obj_type(target->obj);
     if (type == DISTURB_T_TABLE) {
         if (target->obj->size <= 2) return;
-        Value v = disturb_pop(target->obj);
+        Value v = urb_pop(target->obj);
         ObjEntry *entry = (ObjEntry*)v.p;
         if (entry) {
             stack = push_entry(vm, stack, entry);
@@ -2866,7 +2863,7 @@ static void native_shift(VM *vm, List *stack, List *global)
     Int type = disturb_obj_type(target->obj);
     if (type == DISTURB_T_TABLE) {
         if (target->obj->size <= 2) return;
-        Value v = disturb_remove(target->obj, 2);
+        Value v = urb_remove(target->obj, 2);
         ObjEntry *entry = (ObjEntry*)v.p;
         if (entry) {
             stack = push_entry(vm, stack, entry);
@@ -2917,8 +2914,7 @@ static void native_unshift(VM *vm, List *stack, List *global)
         if (type == DISTURB_T_TABLE) {
             Value v;
             v.p = arg;
-            target->obj = vm_update_shared_obj(vm, target->obj,
-                                               disturb_insert(target->obj, 2, v));
+            urb_insert(target->obj, 2, v);
         } else if (type == DISTURB_T_INT && entry_is_string(target)) {
             if (!entry_is_string(arg)) {
                 fprintf(stderr, "unshift expects string values\n");
@@ -2926,10 +2922,13 @@ static void native_unshift(VM *vm, List *stack, List *global)
             }
             size_t len = disturb_bytes_len(target->obj);
             size_t add = disturb_bytes_len(arg->obj);
-            size_t bytes = sizeof(List) + 2 * sizeof(Value) + len + add;
-            List *old_obj = target->obj;
-            target->obj = (List*)realloc(target->obj, bytes);
-            target->obj = vm_update_shared_obj(vm, old_obj, target->obj);
+            size_t bytes = 2 * sizeof(Value) + len + add;
+            Value *data = (Value*)realloc(target->obj->data, bytes);
+            if (!data && bytes > 0) {
+                fprintf(stderr, "unshift failed to grow list\n");
+                return;
+            }
+            if (data) target->obj->data = data;
             memmove(disturb_bytes_data(target->obj) + add, disturb_bytes_data(target->obj), len);
             memcpy(disturb_bytes_data(target->obj), disturb_bytes_data(arg->obj), add);
             target->obj->size = (UHalf)(len + add + 2);
@@ -2990,9 +2989,7 @@ static void native_insert(VM *vm, List *stack, List *global)
     if (type == DISTURB_T_TABLE) {
         Value v;
         v.p = val;
-        target->obj = vm_update_shared_obj(vm, target->obj,
-                                           disturb_insert(target->obj,
-                                                      list_pos_from_index(target->obj, index), v));
+        urb_insert(target->obj, list_pos_from_index(target->obj, index), v);
         return;
     }
     if (type == DISTURB_T_INT && entry_is_string(target)) {
@@ -3075,7 +3072,7 @@ static void native_remove(VM *vm, List *stack, List *global)
                     memcmp(disturb_bytes_data(key->obj), disturb_bytes_data(idx->obj), key_len) != 0) {
                     continue;
                 }
-                Value v = disturb_remove(target->obj, i);
+                Value v = urb_remove(target->obj, i);
                 entry = (ObjEntry*)v.p;
                 if (entry) {
                     stack = push_entry(vm, stack, entry);
@@ -3090,7 +3087,7 @@ static void native_remove(VM *vm, List *stack, List *global)
             return;
         }
         if (target->obj->size <= 2) return;
-        Value v = disturb_remove(target->obj, list_pos_from_index(target->obj, index));
+        Value v = urb_remove(target->obj, list_pos_from_index(target->obj, index));
         ObjEntry *entry = (ObjEntry*)v.p;
         if (entry) {
             stack = push_entry(vm, stack, entry);
