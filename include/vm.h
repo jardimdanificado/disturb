@@ -77,6 +77,8 @@ struct VM {
     ObjEntry *call_entry;
     FreeNode *free_list_objs;
     FreeDataNode *free_list_data;
+    size_t gc_rate;
+    size_t gc_counter;
     Int call_override_len;
     int has_call_override;
     int strict_mode;

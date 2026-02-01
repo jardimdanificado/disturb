@@ -38,6 +38,7 @@ enum {
 
 struct UObj {
     int type;
+    unsigned mark : 1;
     union {
         struct {
             unsigned char *data;
@@ -64,6 +65,7 @@ struct UObj {
 struct UEntry {
     UObj *obj;
     UEntry *key;
+    unsigned mark : 1;
     unsigned is_string : 1;
     unsigned explicit_string : 1;
 };
@@ -98,6 +100,11 @@ struct UrbVM {
     Int call_override_len;
     int has_call_override;
     List *exec;
+    List *stack_root;
+    List *mem_root;
+    size_t gc_rate;
+    size_t gc_counter;
+    int gc_strip;
     UEntry **entries;
     size_t entry_count;
     size_t entry_cap;
@@ -144,6 +151,162 @@ static void vm_track_entry(UrbVM *vm, UEntry *entry)
         vm->entry_cap = next;
     }
     vm->entries[vm->entry_count++] = entry;
+}
+
+typedef struct {
+    UEntry **items;
+    size_t cap;
+} EntrySet;
+
+static size_t entry_set_cap(size_t count)
+{
+    size_t cap = 1;
+    while (cap < count * 2) cap <<= 1;
+    return cap;
+}
+
+static EntrySet entry_set_build(UrbVM *vm)
+{
+    EntrySet set = {0};
+    if (!vm || vm->entry_count == 0) return set;
+    set.cap = entry_set_cap(vm->entry_count);
+    set.items = (UEntry**)calloc(set.cap, sizeof(UEntry*));
+    if (!set.items) {
+        set.cap = 0;
+        return set;
+    }
+    for (size_t i = 0; i < vm->entry_count; i++) {
+        UEntry *entry = vm->entries[i];
+        if (!entry) continue;
+        size_t mask = set.cap - 1;
+        size_t idx = ((uintptr_t)entry >> 3) & mask;
+        while (set.items[idx]) idx = (idx + 1) & mask;
+        set.items[idx] = entry;
+    }
+    return set;
+}
+
+static int entry_set_has(const EntrySet *set, const void *ptr)
+{
+    if (!set || !set->items || set->cap == 0 || !ptr) return 0;
+    size_t mask = set->cap - 1;
+    size_t idx = ((uintptr_t)ptr >> 3) & mask;
+    for (;;) {
+        UEntry *entry = set->items[idx];
+        if (!entry) return 0;
+        if (entry == ptr) return 1;
+        idx = (idx + 1) & mask;
+    }
+}
+
+static void entry_set_free(EntrySet *set)
+{
+    if (!set) return;
+    free(set->items);
+    set->items = NULL;
+    set->cap = 0;
+}
+
+static void gc_mark_entry(UrbVM *vm, const EntrySet *set, UEntry *entry);
+static void gc_mark_obj(UrbVM *vm, const EntrySet *set, UObj *obj);
+
+static void gc_mark_list_entries(UrbVM *vm, const EntrySet *set, const List *list)
+{
+    if (!vm || !list) return;
+    for (Int i = 0; i < (Int)list->size; i++) {
+        void *ptr = list->data[i].p;
+        if (entry_set_has(set, ptr)) {
+            gc_mark_entry(vm, set, (UEntry*)ptr);
+        }
+    }
+}
+
+static void gc_mark_entry(UrbVM *vm, const EntrySet *set, UEntry *entry)
+{
+    if (!vm || !entry || entry->mark) return;
+    entry->mark = 1;
+    if (entry->key) gc_mark_entry(vm, set, entry->key);
+    if (entry->obj) gc_mark_obj(vm, set, entry->obj);
+}
+
+static void gc_mark_obj(UrbVM *vm, const EntrySet *set, UObj *obj)
+{
+    if (!vm || !obj || obj->mark) return;
+    obj->mark = 1;
+    if (obj->type == U_T_TABLE) {
+        for (size_t i = 0; i < obj->as.table.size; i++) {
+            UEntry *child = obj->as.table.items[i];
+            if (child) gc_mark_entry(vm, set, child);
+        }
+    } else if (obj->type == U_T_LAMBDA) {
+        UFunc *fn = obj->as.lambda.func;
+        if (fn) {
+            if (fn->mem) gc_mark_list_entries(vm, set, fn->mem);
+            if (fn->default_mem) {
+                for (uint32_t i = 0; i < fn->argc; i++) {
+                    if (fn->default_mem[i]) {
+                        gc_mark_list_entries(vm, set, fn->default_mem[i]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+static void uobj_free_raw(UObj *obj);
+
+static void vm_gc_collect(UrbVM *vm, List *stack)
+{
+    if (!vm) return;
+    EntrySet set = entry_set_build(vm);
+    for (size_t i = 0; i < vm->entry_count; i++) {
+        if (vm->entries[i]) vm->entries[i]->mark = 0;
+    }
+    for (size_t i = 0; i < vm->obj_count; i++) {
+        if (vm->objs[i]) vm->objs[i]->mark = 0;
+    }
+
+    gc_mark_entry(vm, &set, vm->global_entry);
+    gc_mark_entry(vm, &set, vm->stack_entry);
+    gc_mark_entry(vm, &set, vm->local_entry);
+    gc_mark_entry(vm, &set, vm->null_entry);
+    gc_mark_entry(vm, &set, vm->common_entry);
+    gc_mark_entry(vm, &set, vm->argc_entry);
+    gc_mark_entry(vm, &set, vm->this_entry);
+    gc_mark_entry(vm, &set, vm->call_entry);
+    gc_mark_entry(vm, &set, vm->gc_entry);
+    if (stack) gc_mark_list_entries(vm, &set, stack);
+    if (vm->stack_root && vm->stack_root != stack) {
+        gc_mark_list_entries(vm, &set, vm->stack_root);
+    }
+    if (vm->mem_root) {
+        gc_mark_list_entries(vm, &set, vm->mem_root);
+    }
+
+    size_t entry_out = 0;
+    for (size_t i = 0; i < vm->entry_count; i++) {
+        UEntry *entry = vm->entries[i];
+        if (entry && entry->mark) {
+            entry->mark = 0;
+            vm->entries[entry_out++] = entry;
+        } else if (entry) {
+            free(entry);
+        }
+    }
+    vm->entry_count = entry_out;
+
+    size_t obj_out = 0;
+    for (size_t i = 0; i < vm->obj_count; i++) {
+        UObj *obj = vm->objs[i];
+        if (obj && obj->mark) {
+            obj->mark = 0;
+            vm->objs[obj_out++] = obj;
+        } else if (obj) {
+            uobj_free_raw(obj);
+        }
+    }
+    vm->obj_count = obj_out;
+    entry_set_free(&set);
 }
 
 static UObj *uobj_new(int type);
@@ -492,6 +655,9 @@ static int resize_table_capacity(UEntry *target, Int new_cap)
 static UEntry *meta_get(UrbVM *vm, UEntry *target, UEntry *index)
 {
     if (!target || !index || !entry_is_string(index)) return NULL;
+    if (vm && target == vm->gc_entry && entry_key_is(index, "rate")) {
+        return uent_make_int_scalar((Int)vm->gc_rate);
+    }
     if (entry_key_is(index, "name")) {
         if (vm && target == vm->global_entry) {
             return uent_make_bytes("global", 6, 1, 1);
@@ -539,6 +705,13 @@ static UEntry *meta_get(UrbVM *vm, UEntry *target, UEntry *index)
 static int meta_set(UrbVM *vm, UEntry *target, UEntry *index, UEntry *value)
 {
     if (!target || !index || !entry_is_string(index)) return 0;
+    if (vm && target == vm->gc_entry && entry_key_is(index, "rate")) {
+        Int iv = 0;
+        if (!entry_number_to_int(value, &iv) || iv < 0) return -1;
+        vm->gc_rate = (size_t)iv;
+        vm->gc_counter = 0;
+        return 1;
+    }
     if (entry_key_is(index, "name")) {
         if (!value || !value->obj || value->obj->type == U_T_NULL) {
             target->key = NULL;
@@ -3984,12 +4157,8 @@ static int opcode_from_name(const char *name, size_t len)
 
 static int is_urb_noop_call(const char *name, size_t len)
 {
-    if (!name) return 0;
-    if (len == 9 && strncmp(name, "gcCollect", 9) == 0) return 1;
-    if (len == 7 && strncmp(name, "gcSweep", 7) == 0) return 1;
-    if (len == 7 && strncmp(name, "gcDebug", 7) == 0) return 1;
-    if (len == 7 && strncmp(name, "gcStats", 7) == 0) return 1;
-    if (len == 7 && strncmp(name, "gcFlush", 7) == 0) return 1;
+    (void)name;
+    (void)len;
     return 0;
 }
 
@@ -4285,8 +4454,8 @@ static void native_emit(UrbVM *vm, List *stack, UEntry *global)
 
 static void native_gc_collect(UrbVM *vm, List *stack, UEntry *global)
 {
-    (void)vm;
     (void)global;
+    vm_gc_collect(vm, stack);
     stack_push_entry(stack, g_vm->null_entry);
 }
 
@@ -4347,8 +4516,8 @@ static void native_gc_free(UrbVM *vm, List *stack, UEntry *global)
 
 static void native_gc_sweep(UrbVM *vm, List *stack, UEntry *global)
 {
-    (void)vm;
     (void)global;
+    vm_gc_collect(vm, stack);
     stack_push_entry(stack, g_vm->null_entry);
 }
 
@@ -4370,22 +4539,26 @@ static void native_gc_new(UrbVM *vm, List *stack, UEntry *global)
 
 static void native_gc_debug(UrbVM *vm, List *stack, UEntry *global)
 {
-    (void)vm;
     (void)global;
+    if (vm) {
+        fprintf(stdout, "gc.debug.inuse: objs=%zu entries=%zu\n", vm->obj_count, vm->entry_count);
+    }
     stack_push_entry(stack, g_vm->null_entry);
 }
 
 static void native_gc_stats(UrbVM *vm, List *stack, UEntry *global)
 {
-    (void)vm;
     (void)global;
+    if (vm) {
+        fprintf(stdout, "gc.stats.inuse: objs=%zu entries=%zu\n", vm->obj_count, vm->entry_count);
+    }
     stack_push_entry(stack, g_vm->null_entry);
 }
 
 static void native_gc_flush(UrbVM *vm, List *stack, UEntry *global)
 {
-    (void)vm;
     (void)global;
+    vm_gc_collect(vm, stack);
     stack_push_entry(stack, g_vm->null_entry);
 }
 
@@ -4774,22 +4947,6 @@ static void op_call(List *stack)
         stack_push_entry(stack, g_vm->null_entry);
         return;
     }
-    if (g_vm && g_vm->gc_entry && g_vm->this_entry == g_vm->gc_entry) {
-        size_t nlen = entry_bytes_len(name);
-        const char *n = (const char*)entry_bytes_data(name);
-        if ((nlen == 7 && strncmp(n, "collect", 7) == 0) ||
-            (nlen == 5 && strncmp(n, "sweep", 5) == 0) ||
-            (nlen == 5 && strncmp(n, "debug", 5) == 0) ||
-            (nlen == 5 && strncmp(n, "stats", 5) == 0) ||
-            (nlen == 5 && strncmp(n, "flush", 5) == 0)) {
-            for (Int i = 0; i < argc; i++) {
-                if (stack->size == 0) break;
-                urb_pop(stack);
-            }
-            stack_push_entry(stack, g_vm->null_entry);
-            return;
-        }
-    }
     UEntry *target = NULL;
     if (g_vm->this_entry) {
         int this_type = g_vm->this_entry->obj ? g_vm->this_entry->obj->type : U_T_NULL;
@@ -4826,22 +4983,6 @@ static void op_call_ex(List *stack)
     if (!name || !entry_is_string(name)) {
         stack_push_entry(stack, g_vm->null_entry);
         return;
-    }
-    if (g_vm && g_vm->gc_entry && g_vm->this_entry == g_vm->gc_entry) {
-        size_t nlen = entry_bytes_len(name);
-        const char *n = (const char*)entry_bytes_data(name);
-        if ((nlen == 7 && strncmp(n, "collect", 7) == 0) ||
-            (nlen == 5 && strncmp(n, "sweep", 5) == 0) ||
-            (nlen == 5 && strncmp(n, "debug", 5) == 0) ||
-            (nlen == 5 && strncmp(n, "stats", 5) == 0) ||
-            (nlen == 5 && strncmp(n, "flush", 5) == 0)) {
-            for (Int i = 0; i < argc; i++) {
-                if (stack->size == 0) break;
-                urb_pop(stack);
-            }
-            stack_push_entry(stack, g_vm->null_entry);
-            return;
-        }
     }
     UEntry *target = NULL;
     if (g_vm->this_entry) {
@@ -5215,7 +5356,7 @@ static void op_dup(List *stack)
 
 static void op_gc(List *stack)
 {
-    (void)stack;
+    if (g_vm) vm_gc_collect(g_vm, stack);
 }
 
 static void op_dump(List *stack)
@@ -5328,6 +5469,54 @@ static void exec_init(List **out_exec)
     exec->data[OP_NOT_INT].fn = op_not_int;
     exec->data[OP_SWAP].fn = op_swap;
     *out_exec = exec;
+}
+
+static void urb_interpret_gc(UrbVM *vm, List *exec, List* mem, List* _stack)
+{
+    List *stack = (_stack == NULL) ? urb_new(URB_DEFAULT_SIZE) : _stack;
+    for (Int i = 0; i < mem->size; i++) {
+        if(mem->data[i].i < INT_MIN + exec->size + OP_CODES_OFFSET) {
+            switch(mem->data[i].i) {
+                case ALIAS_GOTO:
+                    i = urb_pop(stack).i - 1;
+                break;
+                case ALIAS_GOIF: {
+                    Int cond = urb_pop(stack).i;
+                    Int posit = urb_pop(stack).i - 1;
+                    i = cond ? posit : i;
+                } break;
+                case ALIAS_GOIE: {
+                    Int cond = urb_pop(stack).i;
+                    Int posit_true = urb_pop(stack).i - 1;
+                    Int posit_else = urb_pop(stack).i - 1;
+                    i = cond ? posit_true : posit_else;
+                } break;
+                case ALIAS_EXEC:
+                    urb_push(stack, (Value){.p = exec});
+                break;
+                case ALIAS_MEM:
+                    urb_push(stack, (Value){.p = mem});
+                break;
+                default:
+                    exec->data[INT_MIN + mem->data[i].i - OP_CODES_OFFSET].fn(stack);
+                break;
+            }
+        } else if(mem->data[i].i > INT_MAX - mem->size) {
+            urb_push(stack, mem->data[INT_MAX - mem->data[i].i]);
+        } else {
+            urb_push(stack, mem->data[i]);
+        }
+
+        vm->gc_counter++;
+        if (vm->gc_rate > 0 && vm->gc_counter >= vm->gc_rate) {
+            vm->gc_counter = 0;
+            vm_gc_collect(vm, stack);
+        }
+    }
+
+    if (_stack == NULL) {
+        urb_free(stack);
+    }
 }
 
 static Value op_token(int op_index)
@@ -5674,7 +5863,8 @@ static UrbProgram translate_bytecode(const unsigned char *data, size_t len, List
             if (!bc_read_string(data, len, &pc, &name, &name_len)) break;
             uint32_t argc = 0;
             if (!bc_read_u32(data, len, &pc, &argc)) break;
-            if (gc_this_active && is_gc_method_name((const char*)name, name_len)) {
+            if (g_vm && g_vm->gc_strip && gc_this_active &&
+                is_gc_method_name((const char*)name, name_len)) {
                 free(name);
                 if (op == BC_CALL_EX) {
                     uint32_t override_len = 0;
@@ -5890,7 +6080,15 @@ static void exec_bytecode_in_vm(UrbVM *vm, const unsigned char *data, size_t len
     if (!vm || !data || len == 0) return;
     UrbProgram program = translate_bytecode(data, len, vm->exec);
     if (program.mem) {
-        urb_interpret(vm->exec, program.mem, stack);
+        vm->stack_root = stack;
+        vm->mem_root = program.mem;
+        if (vm->gc_rate > 0) {
+            urb_interpret_gc(vm, vm->exec, program.mem, stack);
+        } else {
+            urb_interpret(vm->exec, program.mem, stack);
+        }
+        vm->mem_root = NULL;
+        vm->stack_root = NULL;
         urb_free(program.mem);
     }
 }
@@ -5901,6 +6099,9 @@ static void vm_init(UrbVM *vm)
     vm->strict_mode = 0;
     vm->call_override_len = -1;
     vm->has_call_override = 0;
+    vm->gc_rate = 0;
+    vm->gc_counter = 0;
+    vm->gc_strip = 0;
     exec_init(&vm->exec);
 
     vm->global_entry = uent_make_table(8);

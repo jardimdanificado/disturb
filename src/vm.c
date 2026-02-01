@@ -1754,6 +1754,8 @@ void vm_init(VM *vm)
     memset(vm, 0, sizeof(*vm));
     vm_reg_init(vm);
     vm->gc_entry = NULL;
+    vm->gc_rate = 0;
+    vm->gc_counter = 0;
     vm->call_override_len = -1;
     vm->has_call_override = 0;
     vm->call_entry = NULL;
@@ -2941,6 +2943,9 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
 {
     (void)pc;
     if (!target || !index || !entry_is_string(index)) return NULL;
+    if (vm && target == vm->gc_entry && vm_key_is(index, "rate")) {
+        return vm_make_int_value(vm, (Int)vm->gc_rate);
+    }
     if (vm_key_is(index, "name")) {
         ObjEntry *key = vm_entry_key(target);
         return key ? key : vm->null_entry;
@@ -3516,6 +3521,18 @@ int vm_object_set_by_key(VM *vm, ObjEntry *target, const char *name, size_t len,
 static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc)
 {
     if (!target || !index || !entry_is_string(index)) return 0;
+    if (vm && target == vm->gc_entry && vm_key_is(index, "rate")) {
+        Int iv = 0;
+        Float fv = 0;
+        int is_float = 0;
+        if (!vm_entry_number(value, &iv, &fv, &is_float, "gc.rate", pc) || is_float || iv < 0) {
+            fprintf(stderr, "bytecode error at pc %zu: gc.rate expects non-negative int\n", pc);
+            return -1;
+        }
+        vm->gc_rate = (size_t)iv;
+        vm->gc_counter = 0;
+        return 1;
+    }
     if (vm_key_is(index, "name")) {
         if (!value || disturb_obj_type(value->obj) == DISTURB_T_NULL) {
             target->key = NULL;
@@ -4605,6 +4622,13 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         default:
             fprintf(stderr, "bytecode error at pc %zu: unknown opcode %u\n", pc, (unsigned)op);
             return 0;
+        }
+        if (vm->gc_rate > 0) {
+            vm->gc_counter++;
+            if (vm->gc_counter >= vm->gc_rate) {
+                vm->gc_counter = 0;
+                vm_gc(vm);
+            }
         }
     }
     return 1;
