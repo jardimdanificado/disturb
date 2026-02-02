@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 static char *read_all_text(FILE *fp)
 {
@@ -29,6 +30,7 @@ static char *read_all_text(FILE *fp)
     buf[len] = 0;
     return buf;
 }
+
 
 static void print_help(void)
 {
@@ -182,6 +184,9 @@ int main(int argc, char **argv)
                 perror("open");
                 return 1;
             }
+            Bytecode bc;
+            char err[256];
+            err[0] = 0;
             char *src = read_all_text(fp);
             if (!src) {
                 fprintf(stderr, "failed to read file\n");
@@ -198,9 +203,6 @@ int main(int argc, char **argv)
                     memmove(src, src + offset, remaining + 1);
                 }
             }
-            Bytecode bc;
-            char err[256];
-            err[0] = 0;
             if (!vm_compile_source(src, &bc, err, sizeof(err))) {
                 fprintf(stderr, "%s\n", err[0] ? err : "compile error");
                 free(src);

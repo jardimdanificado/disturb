@@ -40,6 +40,7 @@ struct UObj {
     int type;
     unsigned mark : 1;
     unsigned bytes_inline : 1;
+    unsigned shared : 1;
     unsigned char inline_bytes[16];
     union {
         struct {
@@ -78,7 +79,9 @@ enum {
     URB_POOL_MAX_BYTES_COUNT = 32768,
     URB_POOL_MAX_TABLE_COUNT = 4096,
     URB_POOL_MAX_ENTRY_COUNT = 131072,
-    URB_POOL_MAX_OBJ_COUNT = 65536
+    URB_POOL_MAX_OBJ_COUNT = 65536,
+    URB_INT_CACHE_MIN = 0,
+    URB_INT_CACHE_MAX = 100000
 };
 
 typedef struct BufNode {
@@ -92,6 +95,16 @@ typedef struct TableNode {
     size_t cap;
     struct TableNode *next;
 } TableNode;
+
+typedef struct EntrySlab {
+    struct EntrySlab *next;
+    UEntry entries[1024];
+} EntrySlab;
+
+typedef struct ObjSlab {
+    struct ObjSlab *next;
+    UObj objs[1024];
+} ObjSlab;
 
 struct UNative {
     UrbNativeFn fn;
@@ -150,8 +163,13 @@ struct UrbVM {
     UObj **free_objs;
     size_t free_obj_count;
     size_t free_obj_cap;
+    struct EntrySlab *entry_slabs;
+    struct ObjSlab *obj_slabs;
     UEntry **mark_set;
     size_t mark_cap;
+    UEntry *int_cache_entries;
+    UObj *int_cache_objs;
+    size_t int_cache_count;
 };
 
 static UrbVM *g_vm = NULL;
@@ -200,11 +218,43 @@ static UObj *uobj_pool_take(UrbVM *vm)
     return vm->free_objs[--vm->free_obj_count];
 }
 
+static int uobj_in_slabs(const UrbVM *vm, const UObj *obj)
+{
+    if (!vm || !obj) return 0;
+    for (const ObjSlab *slab = vm->obj_slabs; slab; slab = slab->next) {
+        const UObj *start = &slab->objs[0];
+        const UObj *end = start + (sizeof(slab->objs) / sizeof(slab->objs[0]));
+        if (obj >= start && obj < end) return 1;
+    }
+    return 0;
+}
+
+static void uobj_pool_seed(UrbVM *vm)
+{
+    if (!vm) return;
+    ObjSlab *slab = (ObjSlab*)malloc(sizeof(ObjSlab));
+    if (!slab) return;
+    slab->next = vm->obj_slabs;
+    vm->obj_slabs = slab;
+    size_t add = sizeof(slab->objs) / sizeof(slab->objs[0]);
+    if (vm->free_obj_count + add > vm->free_obj_cap) {
+        size_t next = vm->free_obj_cap == 0 ? add : vm->free_obj_cap;
+        while (next < vm->free_obj_count + add) next *= 2;
+        UObj **items = (UObj**)realloc(vm->free_objs, next * sizeof(UObj*));
+        if (!items) return;
+        vm->free_objs = items;
+        vm->free_obj_cap = next;
+    }
+    for (size_t i = 0; i < add; i++) {
+        vm->free_objs[vm->free_obj_count++] = &slab->objs[i];
+    }
+}
+
 static void uobj_pool_put(UrbVM *vm, UObj *obj)
 {
     if (!obj) return;
     if (!vm || vm->free_obj_count >= URB_POOL_MAX_OBJ_COUNT) {
-        free(obj);
+        if (!uobj_in_slabs(vm, obj)) free(obj);
         return;
     }
     if (vm->free_obj_count == vm->free_obj_cap) {
@@ -227,11 +277,43 @@ static UEntry *entry_pool_take(UrbVM *vm)
     return vm->free_entries[--vm->free_entry_count];
 }
 
+static int entry_in_slabs(const UrbVM *vm, const UEntry *entry)
+{
+    if (!vm || !entry) return 0;
+    for (const EntrySlab *slab = vm->entry_slabs; slab; slab = slab->next) {
+        const UEntry *start = &slab->entries[0];
+        const UEntry *end = start + (sizeof(slab->entries) / sizeof(slab->entries[0]));
+        if (entry >= start && entry < end) return 1;
+    }
+    return 0;
+}
+
+static void entry_pool_seed(UrbVM *vm)
+{
+    if (!vm) return;
+    EntrySlab *slab = (EntrySlab*)malloc(sizeof(EntrySlab));
+    if (!slab) return;
+    slab->next = vm->entry_slabs;
+    vm->entry_slabs = slab;
+    size_t add = sizeof(slab->entries) / sizeof(slab->entries[0]);
+    if (vm->free_entry_count + add > vm->free_entry_cap) {
+        size_t next = vm->free_entry_cap == 0 ? add : vm->free_entry_cap;
+        while (next < vm->free_entry_count + add) next *= 2;
+        UEntry **items = (UEntry**)realloc(vm->free_entries, next * sizeof(UEntry*));
+        if (!items) return;
+        vm->free_entries = items;
+        vm->free_entry_cap = next;
+    }
+    for (size_t i = 0; i < add; i++) {
+        vm->free_entries[vm->free_entry_count++] = &slab->entries[i];
+    }
+}
+
 static void entry_pool_put(UrbVM *vm, UEntry *entry)
 {
     if (!entry) return;
     if (!vm || vm->free_entry_count >= URB_POOL_MAX_ENTRY_COUNT) {
-        free(entry);
+        if (!entry_in_slabs(vm, entry)) free(entry);
         return;
     }
     if (vm->free_entry_count == vm->free_entry_cap) {
@@ -314,6 +396,7 @@ static void entry_set_free(EntrySet *set)
 static void gc_mark_entry(UrbVM *vm, const EntrySet *set, UEntry *entry);
 static void gc_mark_obj(UrbVM *vm, const EntrySet *set, UObj *obj);
 static void uobj_free_raw(UObj *obj);
+static UObj *uobj_new(int type);
 
 static unsigned char *pool_bytes_take(size_t need, size_t *out_cap)
 {
@@ -389,6 +472,27 @@ static unsigned char *uobj_bytes_alloc(UObj *obj, size_t len, size_t *out_cap)
     }
     obj->bytes_inline = 0;
     return pool_bytes_take(len, out_cap);
+}
+
+static void entry_detach_bytes(UEntry *entry)
+{
+    if (!entry || !entry->obj || !entry->obj->shared) return;
+    int type = entry->obj->type;
+    if (type != U_T_INT && type != U_T_FLOAT) {
+        entry->obj->shared = 0;
+        return;
+    }
+    UObj *src = entry->obj;
+    UObj *obj = uobj_new(type);
+    if (!obj) return;
+    obj->as.bytes.len = src->as.bytes.len;
+    obj->as.bytes.cap = obj->as.bytes.len;
+    if (obj->as.bytes.len) {
+        obj->as.bytes.data = uobj_bytes_alloc(obj, obj->as.bytes.len, &obj->as.bytes.cap);
+        if (!obj->as.bytes.data) return;
+        memcpy(obj->as.bytes.data, src->as.bytes.data, obj->as.bytes.len);
+    }
+    entry->obj = obj;
 }
 
 static UEntry **pool_table_take(size_t need, size_t *out_cap)
@@ -517,6 +621,11 @@ static void vm_gc_collect(UrbVM *vm, List *stack)
     gc_mark_entry(vm, &set, vm->this_entry);
     gc_mark_entry(vm, &set, vm->call_entry);
     gc_mark_entry(vm, &set, vm->gc_entry);
+    if (vm->int_cache_entries) {
+        for (size_t i = 0; i < vm->int_cache_count; i++) {
+            gc_mark_entry(vm, &set, &vm->int_cache_entries[i]);
+        }
+    }
     if (stack) gc_mark_list_entries(vm, &set, stack);
     if (vm->stack_root && vm->stack_root != stack) {
         gc_mark_list_entries(vm, &set, vm->stack_root);
@@ -599,8 +708,13 @@ static const char *u_type_name(int type)
 static UObj *uobj_new(int type)
 {
     UObj *obj = uobj_pool_take(g_vm);
+    if (!obj && g_vm) {
+        uobj_pool_seed(g_vm);
+        obj = uobj_pool_take(g_vm);
+    }
     if (!obj) obj = (UObj*)calloc(1, sizeof(UObj));
     if (!obj) return NULL;
+    memset(obj, 0, sizeof(*obj));
     obj->type = type;
     vm_track_obj(g_vm, obj);
     return obj;
@@ -609,8 +723,13 @@ static UObj *uobj_new(int type)
 static UEntry *uent_new(UObj *obj)
 {
     UEntry *entry = entry_pool_take(g_vm);
+    if (!entry && g_vm) {
+        entry_pool_seed(g_vm);
+        entry = entry_pool_take(g_vm);
+    }
     if (!entry) entry = (UEntry*)calloc(1, sizeof(UEntry));
     if (!entry) return NULL;
+    memset(entry, 0, sizeof(*entry));
     entry->obj = obj;
     vm_track_entry(g_vm, entry);
     return entry;
@@ -639,6 +758,7 @@ static UEntry *uent_make_int_scalar_raw(Int v)
 {
     UObj *obj = uobj_new(U_T_INT);
     if (!obj) return NULL;
+    obj->shared = 0;
     obj->as.bytes.len = sizeof(Int);
     obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = uobj_bytes_alloc(obj, obj->as.bytes.len, &obj->as.bytes.cap);
@@ -649,6 +769,14 @@ static UEntry *uent_make_int_scalar_raw(Int v)
 
 static UEntry *uent_make_int_scalar(Int v)
 {
+    if (g_vm && g_vm->int_cache_entries) {
+        if (v >= (Int)URB_INT_CACHE_MIN && v <= (Int)URB_INT_CACHE_MAX) {
+            size_t idx = (size_t)(v - (Int)URB_INT_CACHE_MIN);
+            if (idx < g_vm->int_cache_count) {
+                return &g_vm->int_cache_entries[idx];
+            }
+        }
+    }
     return uent_make_int_scalar_raw(v);
 }
 
@@ -656,6 +784,7 @@ static UEntry *uent_make_float_scalar(Float v)
 {
     UObj *obj = uobj_new(U_T_FLOAT);
     if (!obj) return NULL;
+    obj->shared = 0;
     obj->as.bytes.len = sizeof(Float);
     obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = uobj_bytes_alloc(obj, obj->as.bytes.len, &obj->as.bytes.cap);
@@ -830,6 +959,7 @@ static UEntry *make_type_name(UEntry *target)
 static int resize_bytes_capacity(UEntry *target, size_t new_cap)
 {
     if (!target || !target->obj) return 0;
+    entry_detach_bytes(target);
     size_t old_cap = target->obj->as.bytes.cap;
     size_t old_len = target->obj->as.bytes.len;
     unsigned char *old = target->obj->as.bytes.data;
@@ -1100,6 +1230,7 @@ static int entry_is_scalar_float(const UEntry *entry)
 static void entry_write_int(UEntry *entry, Int index, Int value)
 {
     if (!entry || !entry->obj || entry->obj->type != U_T_INT) return;
+    entry_detach_bytes(entry);
     size_t off = (size_t)index * sizeof(Int);
     if (off + sizeof(Int) > entry->obj->as.bytes.len) return;
     memcpy(entry->obj->as.bytes.data + off, &value, sizeof(Int));
@@ -1108,6 +1239,7 @@ static void entry_write_int(UEntry *entry, Int index, Int value)
 static void entry_write_float(UEntry *entry, Int index, Float value)
 {
     if (!entry || !entry->obj || entry->obj->type != U_T_FLOAT) return;
+    entry_detach_bytes(entry);
     size_t off = (size_t)index * sizeof(Float);
     if (off + sizeof(Float) > entry->obj->as.bytes.len) return;
     memcpy(entry->obj->as.bytes.data + off, &value, sizeof(Float));
@@ -1209,6 +1341,7 @@ static int table_set_by_key_len(UEntry *table, const char *name, size_t len, UEn
             if (entry->obj && entry->obj->type == value->obj->type) {
                 int type = entry->obj->type;
                 if (type == U_T_INT || type == U_T_FLOAT) {
+                    entry_detach_bytes(entry);
                     size_t len_bytes = value->obj->as.bytes.len;
                     if (!resize_bytes(entry, len_bytes)) return 0;
                     if (len_bytes) {
@@ -1242,7 +1375,25 @@ static int table_set_by_key_len(UEntry *table, const char *name, size_t len, UEn
             copy = uent_make_null();
             if (copy) copy->key = key_entry;
         } else {
-            copy = entry_clone_shallow(value, key_entry);
+            if (value && value->obj && value->obj->shared &&
+                (value->obj->type == U_T_INT || value->obj->type == U_T_FLOAT) &&
+                (entry_is_scalar_int(value) || entry_is_scalar_float(value))) {
+                if (value->obj->type == U_T_INT) {
+                    Int iv = 0;
+                    if (entry_read_int(value, 0, &iv)) {
+                        copy = uent_make_int_scalar_raw(iv);
+                    }
+                } else {
+                    Float fv = 0;
+                    if (entry_read_float(value, 0, &fv)) {
+                        copy = uent_make_float_scalar(fv);
+                    }
+                }
+                if (copy) copy->key = key_entry;
+            }
+            if (!copy) {
+                copy = entry_clone_shallow(value, key_entry);
+            }
         }
     }
     table_add_entry(table, copy);
@@ -6439,6 +6590,31 @@ static void vm_init(UrbVM *vm)
     vm->argc_entry = uent_make_int_scalar(0);
     vm->this_entry = vm->null_entry;
 
+    vm->int_cache_count = (size_t)(URB_INT_CACHE_MAX - URB_INT_CACHE_MIN + 1);
+    vm->int_cache_entries = (UEntry*)calloc(vm->int_cache_count, sizeof(UEntry));
+    vm->int_cache_objs = (UObj*)calloc(vm->int_cache_count, sizeof(UObj));
+    if (vm->int_cache_entries && vm->int_cache_objs) {
+        for (size_t i = 0; i < vm->int_cache_count; i++) {
+            Int v = (Int)URB_INT_CACHE_MIN + (Int)i;
+            UObj *obj = &vm->int_cache_objs[i];
+            UEntry *entry = &vm->int_cache_entries[i];
+            obj->type = U_T_INT;
+            obj->shared = 1;
+            obj->bytes_inline = 1;
+            obj->as.bytes.len = sizeof(Int);
+            obj->as.bytes.cap = sizeof(Int);
+            obj->as.bytes.data = obj->inline_bytes;
+            memcpy(obj->as.bytes.data, &v, sizeof(Int));
+            entry->obj = obj;
+        }
+    } else {
+        vm->int_cache_count = 0;
+        free(vm->int_cache_entries);
+        free(vm->int_cache_objs);
+        vm->int_cache_entries = NULL;
+        vm->int_cache_objs = NULL;
+    }
+
     table_set_by_key_len(vm->global_entry, "global", 6, vm->global_entry);
     table_set_by_key_len(vm->global_entry, "stack", 5, vm->stack_entry);
     table_set_by_key_len(vm->global_entry, "null", 4, vm->null_entry);
@@ -6575,10 +6751,10 @@ static void vm_cleanup(UrbVM *vm)
         entry_pool_put(vm, vm->entries[i]);
     }
     for (size_t i = 0; i < vm->free_obj_count; i++) {
-        free(vm->free_objs[i]);
+        if (!uobj_in_slabs(vm, vm->free_objs[i])) free(vm->free_objs[i]);
     }
     for (size_t i = 0; i < vm->free_entry_count; i++) {
-        free(vm->free_entries[i]);
+        if (!entry_in_slabs(vm, vm->free_entries[i])) free(vm->free_entries[i]);
     }
     while (vm->free_bytes) {
         BufNode *node = vm->free_bytes;
@@ -6607,6 +6783,18 @@ static void vm_cleanup(UrbVM *vm)
     free(vm->free_objs);
     free(vm->free_entries);
     free(vm->mark_set);
+    free(vm->int_cache_entries);
+    free(vm->int_cache_objs);
+    while (vm->entry_slabs) {
+        EntrySlab *slab = vm->entry_slabs;
+        vm->entry_slabs = slab->next;
+        free(slab);
+    }
+    while (vm->obj_slabs) {
+        ObjSlab *slab = vm->obj_slabs;
+        vm->obj_slabs = slab->next;
+        free(slab);
+    }
     vm->objs = NULL;
     vm->entries = NULL;
     vm->obj_count = 0;
@@ -6627,6 +6815,11 @@ static void vm_cleanup(UrbVM *vm)
     vm->free_table_nodes_count = 0;
     vm->mark_set = NULL;
     vm->mark_cap = 0;
+    vm->int_cache_entries = NULL;
+    vm->int_cache_objs = NULL;
+    vm->int_cache_count = 0;
+    vm->entry_slabs = NULL;
+    vm->obj_slabs = NULL;
 }
 
 int urb_exec_bytecode(const unsigned char *data, size_t len, int argc, char **argv)

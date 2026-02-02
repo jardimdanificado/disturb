@@ -188,10 +188,19 @@ struct Expr {
 
 static int expr_is_lvalue(const Expr *e);
 
+typedef struct ArenaBlock {
+    struct ArenaBlock *next;
+    size_t cap;
+    size_t used;
+    unsigned char data[];
+} ArenaBlock;
+
 typedef struct {
     void **items;
     size_t count;
     size_t cap;
+    struct ArenaBlock *blocks;
+    size_t block_size;
 } Arena;
 
 static char *arena_format_temp(Arena *a, const char *prefix, int id);
@@ -243,24 +252,30 @@ static void arena_init(Arena *a)
     a->items = NULL;
     a->count = 0;
     a->cap = 0;
+    a->blocks = NULL;
+    a->block_size = 16384;
 }
 
 static void *arena_alloc(Arena *a, size_t size)
 {
-    void *p = calloc(1, size);
-    if (!p) return NULL;
-    if (a->count == a->cap) {
-        size_t next = a->cap == 0 ? 16 : a->cap * 2;
-        void **items = (void**)realloc(a->items, next * sizeof(void*));
-        if (!items) {
-            free(p);
-            return NULL;
-        }
-        a->items = items;
-        a->cap = next;
+    if (!a || size == 0) return NULL;
+    size_t aligned = (size + 7) & ~(size_t)7;
+    ArenaBlock *block = a->blocks;
+    if (!block || block->used + aligned > block->cap) {
+        size_t cap = a->block_size;
+        if (aligned > cap) cap = aligned;
+        ArenaBlock *next = (ArenaBlock*)malloc(sizeof(ArenaBlock) + cap);
+        if (!next) return NULL;
+        next->next = block;
+        next->cap = cap;
+        next->used = 0;
+        a->blocks = next;
+        block = next;
     }
-    a->items[a->count++] = p;
-    return p;
+    unsigned char *ptr = block->data + block->used;
+    memset(ptr, 0, size);
+    block->used += aligned;
+    return ptr;
 }
 
 static int arena_track(Arena *a, void *p)
@@ -295,6 +310,14 @@ static void arena_free(Arena *a)
     a->items = NULL;
     a->count = 0;
     a->cap = 0;
+    ArenaBlock *block = a->blocks;
+    while (block) {
+        ArenaBlock *next = block->next;
+        free(block);
+        block = next;
+    }
+    a->blocks = NULL;
+    a->block_size = 0;
 }
 
 static void loop_free(Parser *p)
