@@ -33,6 +33,8 @@ typedef struct ObjEntry ObjEntry;
 typedef struct VM VM;
 typedef struct FreeNode FreeNode;
 typedef struct GcStats GcStats;
+typedef struct ListSlab ListSlab;
+typedef struct EntrySlab EntrySlab;
 
 typedef void (*NativeFn)(VM *vm, List *stack, List *global);
 
@@ -77,6 +79,10 @@ struct VM {
     ObjEntry *call_entry;
     FreeNode *free_list_objs;
     FreeDataNode *free_list_data;
+    FreeNode *free_node_pool;
+    FreeDataNode *free_data_node_pool;
+    ListSlab *list_slabs;
+    EntrySlab *entry_slabs;
     size_t gc_rate;
     size_t gc_counter;
     Int call_override_len;
@@ -129,7 +135,7 @@ ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len);
 ObjEntry *vm_make_table_value(VM *vm, Int reserve);
 List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve);
-void vm_free_list(List *obj);
+void vm_free_list(VM *vm, List *obj);
 void vm_reuse_list(VM *vm, List *obj);
 void vm_flush_reuse(VM *vm);
 int vm_gc_stats(VM *vm, GcStats *out);

@@ -1514,7 +1514,7 @@ static void native_gc_free(VM *vm, List *stack, List *global)
     }
     ObjEntry *key_entry = vm_entry_key(target);
     if (target->obj) {
-        vm_free_list(target->obj);
+        vm_free_list(vm, target->obj);
     }
     target->obj = vm_alloc_list(vm, DISTURB_T_NULL, key_entry, 0);
     target->key = key_entry;

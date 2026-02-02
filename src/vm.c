@@ -295,6 +295,109 @@ static int vm_view_is_float(ViewType view)
     return view == VIEW_F32 || view == VIEW_F64;
 }
 
+struct ListSlab {
+    struct ListSlab *next;
+    size_t used;
+    List lists[1024];
+};
+
+struct EntrySlab {
+    struct EntrySlab *next;
+    size_t used;
+    ObjEntry entries[1024];
+};
+
+static int list_in_slabs(const VM *vm, const List *obj)
+{
+    if (!vm || !obj) return 0;
+    for (const ListSlab *slab = vm->list_slabs; slab; slab = slab->next) {
+        const List *start = &slab->lists[0];
+        const List *end = start + (sizeof(slab->lists) / sizeof(slab->lists[0]));
+        if (obj >= start && obj < end) return 1;
+    }
+    return 0;
+}
+
+static int entry_in_slabs(const VM *vm, const ObjEntry *entry)
+{
+    if (!vm || !entry) return 0;
+    for (const EntrySlab *slab = vm->entry_slabs; slab; slab = slab->next) {
+        const ObjEntry *start = &slab->entries[0];
+        const ObjEntry *end = start + (sizeof(slab->entries) / sizeof(slab->entries[0]));
+        if (entry >= start && entry < end) return 1;
+    }
+    return 0;
+}
+
+static List *list_slab_take(VM *vm)
+{
+    if (!vm) return NULL;
+    ListSlab *slab = vm->list_slabs;
+    if (!slab || slab->used >= (sizeof(slab->lists) / sizeof(slab->lists[0]))) {
+        ListSlab *next = (ListSlab*)malloc(sizeof(ListSlab));
+        if (!next) return NULL;
+        next->next = slab;
+        next->used = 0;
+        vm->list_slabs = next;
+        slab = next;
+    }
+    List *obj = &slab->lists[slab->used++];
+    memset(obj, 0, sizeof(*obj));
+    return obj;
+}
+
+static ObjEntry *entry_slab_take(VM *vm)
+{
+    if (!vm) return NULL;
+    EntrySlab *slab = vm->entry_slabs;
+    if (!slab || slab->used >= (sizeof(slab->entries) / sizeof(slab->entries[0]))) {
+        EntrySlab *next = (EntrySlab*)malloc(sizeof(EntrySlab));
+        if (!next) return NULL;
+        next->next = slab;
+        next->used = 0;
+        vm->entry_slabs = next;
+        slab = next;
+    }
+    ObjEntry *entry = &slab->entries[slab->used++];
+    memset(entry, 0, sizeof(*entry));
+    return entry;
+}
+
+static FreeNode *free_node_take(VM *vm)
+{
+    if (!vm || !vm->free_node_pool) return NULL;
+    FreeNode *node = vm->free_node_pool;
+    vm->free_node_pool = node->next;
+    node->next = NULL;
+    return node;
+}
+
+static void free_node_put(VM *vm, FreeNode *node)
+{
+    if (!vm || !node) return;
+    node->obj = NULL;
+    node->next = vm->free_node_pool;
+    vm->free_node_pool = node;
+}
+
+static FreeDataNode *free_data_node_take(VM *vm)
+{
+    if (!vm || !vm->free_data_node_pool) return NULL;
+    FreeDataNode *node = vm->free_data_node_pool;
+    vm->free_data_node_pool = node->next;
+    node->next = NULL;
+    return node;
+}
+
+static void free_data_node_put(VM *vm, FreeDataNode *node)
+{
+    if (!vm || !node) return;
+    node->data = NULL;
+    node->cap_bytes = 0;
+    node->next = vm->free_data_node_pool;
+    vm->free_data_node_pool = node;
+}
+
 static List *disturb_obj_new_list(Int type, ObjEntry *key_entry, Int reserve)
 {
     List *obj = urb_new(2 + reserve);
@@ -315,11 +418,15 @@ List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve)
         FreeNode *node = vm->free_list_objs;
         vm->free_list_objs = node->next;
         obj = node->obj;
-        free(node);
+        free_node_put(vm, node);
     }
     if (!obj) {
-        obj = (List*)malloc(sizeof(List));
-        if (!obj) return NULL;
+        obj = list_slab_take(vm);
+        if (!obj) {
+            obj = (List*)malloc(sizeof(List));
+            if (!obj) return NULL;
+            memset(obj, 0, sizeof(*obj));
+        }
     }
 
     size_t cap_bytes = 0;
@@ -333,7 +440,7 @@ List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve)
                 else vm->free_list_data = cur->next;
                 data = (Value*)cur->data;
                 cap_bytes = cur->cap_bytes;
-                free(cur);
+                free_data_node_put(vm, cur);
                 break;
             }
             prev = cur;
@@ -414,18 +521,24 @@ static void disturb_obj_clear(List *obj)
     }
 }
 
-static void disturb_obj_free(List *obj)
+static void vm_pool_push(VM *vm, List *obj);
+
+static void disturb_obj_free(VM *vm, List *obj)
 {
     disturb_obj_clear(obj);
     if (obj) {
         free(obj->data);
-        free(obj);
+        if (!list_in_slabs(vm, obj)) free(obj);
     }
 }
 
-void vm_free_list(List *obj)
+void vm_free_list(VM *vm, List *obj)
 {
-    disturb_obj_free(obj);
+    if (vm) {
+        vm_pool_push(vm, obj);
+        return;
+    }
+    disturb_obj_free(NULL, obj);
 }
 
 static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s, size_t len)
@@ -436,11 +549,15 @@ static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s
         FreeNode *node = vm->free_list_objs;
         vm->free_list_objs = node->next;
         obj = node->obj;
-        free(node);
+        free_node_put(vm, node);
     }
     if (!obj) {
-        obj = (List*)malloc(sizeof(List));
-        if (!obj) return NULL;
+        obj = list_slab_take(vm);
+        if (!obj) {
+            obj = (List*)malloc(sizeof(List));
+            if (!obj) return NULL;
+            memset(obj, 0, sizeof(*obj));
+        }
     }
 
     size_t cap_bytes = 0;
@@ -454,7 +571,7 @@ static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s
                 else vm->free_list_data = cur->next;
                 data = (Value*)cur->data;
                 cap_bytes = cur->cap_bytes;
-                free(cur);
+                free_data_node_put(vm, cur);
                 break;
             }
             prev = cur;
@@ -496,7 +613,8 @@ static void vm_pool_push(VM *vm, List *obj)
     }
 
     if (obj->data && data_bytes > 0) {
-        FreeDataNode *dnode = (FreeDataNode*)malloc(sizeof(FreeDataNode));
+        FreeDataNode *dnode = free_data_node_take(vm);
+        if (!dnode) dnode = (FreeDataNode*)malloc(sizeof(FreeDataNode));
         if (dnode) {
             dnode->data = obj->data;
             dnode->cap_bytes = data_bytes;
@@ -510,9 +628,10 @@ static void vm_pool_push(VM *vm, List *obj)
     obj->capacity = 0;
     obj->size = 0;
 
-    FreeNode *node = (FreeNode*)malloc(sizeof(FreeNode));
+    FreeNode *node = free_node_take(vm);
+    if (!node) node = (FreeNode*)malloc(sizeof(FreeNode));
     if (!node) {
-        free(obj);
+        if (!list_in_slabs(vm, obj)) free(obj);
         return;
     }
     node->obj = obj;
@@ -531,14 +650,14 @@ void vm_flush_reuse(VM *vm)
     while (vm->free_list_objs) {
         FreeNode *node = vm->free_list_objs;
         vm->free_list_objs = node->next;
-        free(node->obj);
-        free(node);
+        if (!list_in_slabs(vm, node->obj)) free(node->obj);
+        free_node_put(vm, node);
     }
     while (vm->free_list_data) {
         FreeDataNode *node = vm->free_list_data;
         vm->free_list_data = node->next;
         free(node->data);
-        free(node);
+        free_data_node_put(vm, node);
     }
 }
 
@@ -739,6 +858,10 @@ static void vm_reg_init(VM *vm)
     vm->reg = (ObjEntry**)calloc((size_t)vm->reg_cap, sizeof(ObjEntry*));
     vm->free_list_objs = NULL;
     vm->free_list_data = NULL;
+    vm->free_node_pool = NULL;
+    vm->free_data_node_pool = NULL;
+    vm->list_slabs = NULL;
+    vm->entry_slabs = NULL;
 }
 
 static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
@@ -764,7 +887,8 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
         memset(vm->reg + vm->reg_count, 0, (size_t)(vm->reg_cap - vm->reg_count) * sizeof(ObjEntry*));
     }
 
-    ObjEntry *entry = (ObjEntry*)calloc(1, sizeof(ObjEntry));
+    ObjEntry *entry = entry_slab_take(vm);
+    if (!entry) entry = (ObjEntry*)calloc(1, sizeof(ObjEntry));
     if (!entry) return NULL;
     vm->reg[vm->reg_count++] = entry;
     entry->obj = obj;
@@ -1989,7 +2113,7 @@ void vm_free(VM *vm)
         if (!entry) continue;
         if (entry->in_use && entry->obj) {
             List *obj = entry->obj;
-            disturb_obj_free(obj);
+            disturb_obj_free(vm, obj);
             for (Int j = 0; j < vm->reg_count; j++) {
                 ObjEntry *other = vm->reg[j];
                 if (!other || other->obj != obj) continue;
@@ -2000,20 +2124,40 @@ void vm_free(VM *vm)
     for (Int i = 0; i < vm->reg_count; i++) {
         ObjEntry *entry = vm->reg[i];
         if (!entry) continue;
-        free(entry);
+        if (!entry_in_slabs(vm, entry)) free(entry);
         vm->reg[i] = NULL;
     }
     while (vm->free_list_objs) {
         FreeNode *node = vm->free_list_objs;
         vm->free_list_objs = node->next;
-        free(node->obj);
-        free(node);
+        if (!list_in_slabs(vm, node->obj)) free(node->obj);
+        free_node_put(vm, node);
     }
     while (vm->free_list_data) {
         FreeDataNode *node = vm->free_list_data;
         vm->free_list_data = node->next;
         free(node->data);
+        free_data_node_put(vm, node);
+    }
+    while (vm->free_node_pool) {
+        FreeNode *node = vm->free_node_pool;
+        vm->free_node_pool = node->next;
         free(node);
+    }
+    while (vm->free_data_node_pool) {
+        FreeDataNode *node = vm->free_data_node_pool;
+        vm->free_data_node_pool = node->next;
+        free(node);
+    }
+    while (vm->list_slabs) {
+        ListSlab *slab = vm->list_slabs;
+        vm->list_slabs = slab->next;
+        free(slab);
+    }
+    while (vm->entry_slabs) {
+        EntrySlab *slab = vm->entry_slabs;
+        vm->entry_slabs = slab->next;
+        free(slab);
     }
     free(vm->reg);
 }
