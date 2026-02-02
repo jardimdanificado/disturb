@@ -2,6 +2,7 @@ CC = cc
 ENABLE_IO ?= 1
 ENABLE_SYSTEM ?= 1
 ENABLE_FFI ?= 1
+DEFAULT_BACKEND ?= disturb
 
 CFLAGS = -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp -Ilib/
 LIBREGEXP_CFLAGS = -Wno-unused-parameter -Wno-sign-compare -Wno-pedantic
@@ -18,6 +19,10 @@ endif
 ifeq ($(ENABLE_FFI),1)
 	CFLAGS += -DDISTURB_ENABLE_FFI
 	LDFLAGS += -ldl -lffi
+endif
+
+ifeq ($(DEFAULT_BACKEND),urb)
+	CFLAGS += -DDISTURB_DEFAULT_BACKEND_URB
 endif
 
 SRC = lib/libregexp/cutils.c lib/libregexp/libunicode.c lib/libregexp/libregexp.c \

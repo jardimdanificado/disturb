@@ -37,7 +37,8 @@ static void print_help(void)
     puts("usage:");
     puts("  disturb [script.disturb] [args...]");
     puts("  disturb --repl");
-    puts("  disturb --urb [script.disturb]");
+    puts("  disturb --urb|--fast|--unsafe [script.disturb]");
+    puts("  disturb --dist|--debug|--safe [script.disturb]");
     puts("  disturb --help");
     puts("");
     puts("notes:");
@@ -171,52 +172,99 @@ static int repl_run(int argc, char **argv)
     return 0;
 }
 
+static int backend_from_flag(const char *arg, int *use_urb)
+{
+    if (!arg || !use_urb) return 0;
+    if (strcmp(arg, "--urb") == 0 || strcmp(arg, "--fast") == 0 || strcmp(arg, "--unsafe") == 0) {
+        *use_urb = 1;
+        return 1;
+    }
+    if (strcmp(arg, "--dist") == 0 || strcmp(arg, "--debug") == 0 || strcmp(arg, "--safe") == 0) {
+        *use_urb = 0;
+        return 1;
+    }
+    return 0;
+}
+
+static int run_urb_script(const char *path, int script_argc, char **script_argv)
+{
+    FILE *fp = fopen(path, "r");
+    if (!fp) {
+        perror("open");
+        return 1;
+    }
+    Bytecode bc;
+    char err[256];
+    err[0] = 0;
+    char *src = read_all_text(fp);
+    if (!src) {
+        fprintf(stderr, "failed to read file\n");
+        fclose(fp);
+        return 1;
+    }
+    if (src[0] == '#' && src[1] == '!') {
+        char *nl = strchr(src, '\n');
+        if (!nl) {
+            src[0] = '\0';
+        } else {
+            size_t offset = (size_t)(nl - src) + 1;
+            size_t remaining = strlen(src + offset);
+            memmove(src, src + offset, remaining + 1);
+        }
+    }
+    if (!vm_compile_source(src, &bc, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "compile error");
+        free(src);
+        fclose(fp);
+        return 1;
+    }
+    free(src);
+    fclose(fp);
+    int ok = urb_exec_bytecode(bc.data, bc.len, script_argc, script_argv);
+    bc_free(&bc);
+    return ok ? 0 : 1;
+}
+
+static int run_disturb_script(const char *path, int script_argc, char **script_argv)
+{
+    VM vm;
+    vm_init(&vm);
+    vm_add_args(&vm, script_argc, script_argv);
+
+    FILE *fp = fopen(path, "r");
+    if (!fp) {
+        perror("open");
+        vm_free(&vm);
+        return 1;
+    }
+    char *src = read_all_text(fp);
+    if (!src) {
+        fprintf(stderr, "failed to read file\n");
+        fclose(fp);
+        vm_free(&vm);
+        return 1;
+    }
+
+    if (src[0] == '#' && src[1] == '!') {
+        char *nl = strchr(src, '\n');
+        if (!nl) {
+            src[0] = '\0';
+        } else {
+            size_t offset = (size_t)(nl - src) + 1;
+            size_t remaining = strlen(src + offset);
+            memmove(src, src + offset, remaining + 1);
+        }
+    }
+    vm_exec_line(&vm, src);
+    free(src);
+    fclose(fp);
+    vm_free(&vm);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1) {
-        if (strcmp(argv[1], "--urb") == 0) {
-            if (argc < 3) {
-                fprintf(stderr, "disturb --urb expects a source file\n");
-                return 1;
-            }
-            FILE *fp = fopen(argv[2], "r");
-            if (!fp) {
-                perror("open");
-                return 1;
-            }
-            Bytecode bc;
-            char err[256];
-            err[0] = 0;
-            char *src = read_all_text(fp);
-            if (!src) {
-                fprintf(stderr, "failed to read file\n");
-                fclose(fp);
-                return 1;
-            }
-            if (src[0] == '#' && src[1] == '!') {
-                char *nl = strchr(src, '\n');
-                if (!nl) {
-                    src[0] = '\0';
-                } else {
-                    size_t offset = (size_t)(nl - src) + 1;
-                    size_t remaining = strlen(src + offset);
-                    memmove(src, src + offset, remaining + 1);
-                }
-            }
-            if (!vm_compile_source(src, &bc, err, sizeof(err))) {
-                fprintf(stderr, "%s\n", err[0] ? err : "compile error");
-                free(src);
-                fclose(fp);
-                return 1;
-            }
-            free(src);
-            fclose(fp);
-            int script_argc = argc - 3;
-            char **script_argv = argv + 3;
-            int ok = urb_exec_bytecode(bc.data, bc.len, script_argc, script_argv);
-            bc_free(&bc);
-            return ok ? 0 : 1;
-        }
         if (strcmp(argv[1], "--repl") == 0) {
             return repl_run(argc, argv);
         }
@@ -225,41 +273,24 @@ int main(int argc, char **argv)
             return 0;
         }
 
-        VM vm;
-        vm_init(&vm);
-        
-        int script_argc = argc - 2;
-        char **script_argv = argv + 2;
-        vm_add_args(&vm, script_argc, script_argv);
-        
-        FILE *fp = fopen(argv[1], "r");
-        if (!fp) {
-            perror("open");
-            vm_free(&vm);
+        int use_urb = 0;
+#ifdef DISTURB_DEFAULT_BACKEND_URB
+        use_urb = 1;
+#endif
+        int argi = 1;
+        if (backend_from_flag(argv[1], &use_urb)) {
+            argi = 2;
+        }
+        if (argc <= argi) {
+            fprintf(stderr, "disturb expects a source file\n");
             return 1;
         }
-        char *src = read_all_text(fp);
-        if (!src) {
-            fprintf(stderr, "failed to read file\n");
-            fclose(fp);
-            vm_free(&vm);
-            return 1;
+        int script_argc = argc - (argi + 1);
+        char **script_argv = argv + argi + 1;
+        if (use_urb) {
+            return run_urb_script(argv[argi], script_argc, script_argv);
         }
-
-        if (src[0] == '#' && src[1] == '!') {
-            char *nl = strchr(src, '\n');
-            if (!nl) {
-                src[0] = '\0';
-            } else {
-                size_t offset = (size_t)(nl - src) + 1;
-                size_t remaining = strlen(src + offset);
-                memmove(src, src + offset, remaining + 1);
-            }
-        }
-        vm_exec_line(&vm, src);
-        free(src);
-        fclose(fp);
-        vm_free(&vm);
+        return run_disturb_script(argv[argi], script_argc, script_argv);
     } else {
         return repl_run(argc, argv);
     }

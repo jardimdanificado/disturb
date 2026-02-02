@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.17.1
+- new backend selector flags (`--urb/--fast/--unsafe` for URB, `--dist/--debug/--safe` for Disturb) plus the `DEFAULT_BACKEND` Makefile option (Disturb by default) so scripts can pick a compiler-side default.
+
 ## 0.17.0
 - implement full gc in urb mode.
 - add runtime-configurable `gc.rate` for both Disturb and URB modes.
