@@ -1,6 +1,7 @@
-gc.rate = 100;
+gc.rate = 10;
 for(i = 0;i<100000;i++)
 {
     println(i);
 }
+gc.collect();
 gc.stats();

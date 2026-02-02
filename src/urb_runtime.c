@@ -70,6 +70,25 @@ struct UEntry {
     unsigned explicit_string : 1;
 };
 
+enum {
+    URB_POOL_MAX_BYTES = 65536,
+    URB_POOL_MAX_TABLE_ITEMS = 4096,
+    URB_POOL_MAX_BYTES_COUNT = 256,
+    URB_POOL_MAX_TABLE_COUNT = 128
+};
+
+typedef struct BufNode {
+    unsigned char *data;
+    size_t cap;
+    struct BufNode *next;
+} BufNode;
+
+typedef struct TableNode {
+    UEntry **items;
+    size_t cap;
+    struct TableNode *next;
+} TableNode;
+
 struct UNative {
     UrbNativeFn fn;
     void *data;
@@ -105,12 +124,18 @@ struct UrbVM {
     size_t gc_rate;
     size_t gc_counter;
     int gc_strip;
+    struct BufNode *free_bytes;
+    size_t free_bytes_count;
+    struct TableNode *free_tables;
+    size_t free_tables_count;
     UEntry **entries;
     size_t entry_count;
     size_t entry_cap;
     UObj **objs;
     size_t obj_count;
     size_t obj_cap;
+    size_t live_entry_count;
+    size_t live_obj_count;
 };
 
 static UrbVM *g_vm = NULL;
@@ -210,6 +235,103 @@ static void entry_set_free(EntrySet *set)
 static void gc_mark_entry(UrbVM *vm, const EntrySet *set, UEntry *entry);
 static void gc_mark_obj(UrbVM *vm, const EntrySet *set, UObj *obj);
 static void uobj_free_raw(UObj *obj);
+
+static unsigned char *pool_bytes_take(size_t need, size_t *out_cap)
+{
+    if (out_cap) *out_cap = 0;
+    if (!g_vm || need == 0) {
+        unsigned char *data = need ? (unsigned char*)malloc(need) : NULL;
+        if (out_cap) *out_cap = need;
+        return data;
+    }
+    BufNode *prev = NULL;
+    BufNode *cur = g_vm->free_bytes;
+    while (cur) {
+        if (cur->cap >= need) {
+            if (prev) prev->next = cur->next;
+            else g_vm->free_bytes = cur->next;
+            g_vm->free_bytes_count--;
+            unsigned char *data = cur->data;
+            if (out_cap) *out_cap = cur->cap;
+            free(cur);
+            return data;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+    unsigned char *data = (unsigned char*)malloc(need);
+    if (out_cap) *out_cap = need;
+    return data;
+}
+
+static void pool_bytes_put(unsigned char *data, size_t cap)
+{
+    if (!data) return;
+    if (!g_vm || cap == 0 || cap > URB_POOL_MAX_BYTES ||
+        g_vm->free_bytes_count >= URB_POOL_MAX_BYTES_COUNT) {
+        free(data);
+        return;
+    }
+    BufNode *node = (BufNode*)malloc(sizeof(BufNode));
+    if (!node) {
+        free(data);
+        return;
+    }
+    node->data = data;
+    node->cap = cap;
+    node->next = g_vm->free_bytes;
+    g_vm->free_bytes = node;
+    g_vm->free_bytes_count++;
+}
+
+static UEntry **pool_table_take(size_t need, size_t *out_cap)
+{
+    if (out_cap) *out_cap = 0;
+    if (!g_vm || need == 0) {
+        UEntry **items = need ? (UEntry**)calloc(need, sizeof(UEntry*)) : NULL;
+        if (out_cap) *out_cap = need;
+        return items;
+    }
+    TableNode *prev = NULL;
+    TableNode *cur = g_vm->free_tables;
+    while (cur) {
+        if (cur->cap >= need) {
+            if (prev) prev->next = cur->next;
+            else g_vm->free_tables = cur->next;
+            g_vm->free_tables_count--;
+            UEntry **items = cur->items;
+            if (out_cap) *out_cap = cur->cap;
+            free(cur);
+            memset(items, 0, need * sizeof(UEntry*));
+            return items;
+        }
+        prev = cur;
+        cur = cur->next;
+    }
+    UEntry **items = (UEntry**)calloc(need, sizeof(UEntry*));
+    if (out_cap) *out_cap = need;
+    return items;
+}
+
+static void pool_table_put(UEntry **items, size_t cap)
+{
+    if (!items) return;
+    if (!g_vm || cap == 0 || cap > URB_POOL_MAX_TABLE_ITEMS ||
+        g_vm->free_tables_count >= URB_POOL_MAX_TABLE_COUNT) {
+        free(items);
+        return;
+    }
+    TableNode *node = (TableNode*)malloc(sizeof(TableNode));
+    if (!node) {
+        free(items);
+        return;
+    }
+    node->items = items;
+    node->cap = cap;
+    node->next = g_vm->free_tables;
+    g_vm->free_tables = node;
+    g_vm->free_tables_count++;
+}
 static void uobj_free_raw(UObj *obj);
 
 static void gc_mark_list_entries(UrbVM *vm, const EntrySet *set, const List *list)
@@ -283,17 +405,20 @@ static void vm_gc_collect(UrbVM *vm, List *stack)
         gc_mark_list_entries(vm, &set, vm->mem_root);
     }
 
-    size_t entry_out = 0;
+    size_t live_entries = 0;
     for (size_t i = 0; i < vm->entry_count; i++) {
         UEntry *entry = vm->entries[i];
-        if (entry && entry->mark) {
+        if (!entry) continue;
+        if (entry->mark) {
             entry->mark = 0;
-            vm->entries[entry_out++] = entry;
-        } else if (entry) {
-            free(entry);
+            live_entries++;
+            continue;
         }
+        entry->obj = vm->null_entry ? vm->null_entry->obj : NULL;
+        entry->key = NULL;
+        entry->is_string = 0;
+        entry->explicit_string = 0;
     }
-    vm->entry_count = entry_out;
 
     size_t obj_out = 0;
     for (size_t i = 0; i < vm->obj_count; i++) {
@@ -306,6 +431,8 @@ static void vm_gc_collect(UrbVM *vm, List *stack)
         }
     }
     vm->obj_count = obj_out;
+    vm->live_entry_count = live_entries;
+    vm->live_obj_count = obj_out;
     entry_set_free(&set);
 }
 
@@ -392,7 +519,7 @@ static UEntry *uent_make_int_scalar(Int v)
     if (!obj) return NULL;
     obj->as.bytes.len = sizeof(Int);
     obj->as.bytes.cap = obj->as.bytes.len;
-    obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.len);
+    obj->as.bytes.data = pool_bytes_take(obj->as.bytes.len, &obj->as.bytes.cap);
     if (!obj->as.bytes.data) return NULL;
     memcpy(obj->as.bytes.data, &v, sizeof(Int));
     return uent_new(obj);
@@ -404,7 +531,7 @@ static UEntry *uent_make_float_scalar(Float v)
     if (!obj) return NULL;
     obj->as.bytes.len = sizeof(Float);
     obj->as.bytes.cap = obj->as.bytes.len;
-    obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.len);
+    obj->as.bytes.data = pool_bytes_take(obj->as.bytes.len, &obj->as.bytes.cap);
     if (!obj->as.bytes.data) return NULL;
     memcpy(obj->as.bytes.data, &v, sizeof(Float));
     return uent_new(obj);
@@ -418,7 +545,7 @@ static UEntry *uent_make_bytes(const char *s, size_t len, int is_string, int exp
     obj->as.bytes.cap = len;
     obj->as.bytes.data = NULL;
     if (len) {
-        obj->as.bytes.data = (unsigned char*)malloc(len);
+        obj->as.bytes.data = pool_bytes_take(len, &obj->as.bytes.cap);
         if (!obj->as.bytes.data) return NULL;
         memcpy(obj->as.bytes.data, s, len);
     }
@@ -444,8 +571,9 @@ static UEntry *uent_make_int_list(Int count)
     obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = NULL;
     if (obj->as.bytes.len) {
-        obj->as.bytes.data = (unsigned char*)calloc(1, obj->as.bytes.len);
+        obj->as.bytes.data = pool_bytes_take(obj->as.bytes.len, &obj->as.bytes.cap);
         if (!obj->as.bytes.data) return NULL;
+        memset(obj->as.bytes.data, 0, obj->as.bytes.len);
     }
     return uent_new(obj);
 }
@@ -459,8 +587,9 @@ static UEntry *uent_make_float_list(Int count)
     obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = NULL;
     if (obj->as.bytes.len) {
-        obj->as.bytes.data = (unsigned char*)calloc(1, obj->as.bytes.len);
+        obj->as.bytes.data = pool_bytes_take(obj->as.bytes.len, &obj->as.bytes.cap);
         if (!obj->as.bytes.data) return NULL;
+        memset(obj->as.bytes.data, 0, obj->as.bytes.len);
     }
     return uent_new(obj);
 }
@@ -472,7 +601,7 @@ static UEntry *uent_make_table(Int reserve)
     if (!obj) return NULL;
     obj->as.table.cap = (size_t)reserve;
     obj->as.table.size = 0;
-    obj->as.table.items = reserve > 0 ? (UEntry**)calloc((size_t)reserve, sizeof(UEntry*)) : NULL;
+    obj->as.table.items = reserve > 0 ? pool_table_take((size_t)reserve, &obj->as.table.cap) : NULL;
     if (reserve > 0 && !obj->as.table.items) return NULL;
     return uent_new(obj);
 }
@@ -4181,11 +4310,20 @@ static int is_gc_method_name(const char *name, size_t len)
 {
     if (!name) return 0;
     if (len == 7 && strncmp(name, "collect", 7) == 0) return 1;
+    if (len == 4 && strncmp(name, "free", 4) == 0) return 1;
     if (len == 5 && strncmp(name, "sweep", 5) == 0) return 1;
+    if (len == 3 && strncmp(name, "new", 3) == 0) return 1;
     if (len == 5 && strncmp(name, "debug", 5) == 0) return 1;
     if (len == 5 && strncmp(name, "stats", 5) == 0) return 1;
     if (len == 5 && strncmp(name, "flush", 5) == 0) return 1;
     return 0;
+}
+
+static UEntry *gc_method_lookup(const char *name, size_t len)
+{
+    if (!g_vm || !g_vm->gc_entry) return NULL;
+    if (!is_gc_method_name(name, len)) return NULL;
+    return table_find_by_key_len(g_vm->gc_entry, name, len);
 }
 
 static UEntry *table_get(UEntry *table, const char *name)
@@ -4478,9 +4616,9 @@ static void uobj_free_raw(UObj *obj)
 {
     if (!obj) return;
     if (obj->type == U_T_INT || obj->type == U_T_FLOAT) {
-        free(obj->as.bytes.data);
+        pool_bytes_put(obj->as.bytes.data, obj->as.bytes.cap);
     } else if (obj->type == U_T_TABLE) {
-        free(obj->as.table.items);
+        pool_table_put(obj->as.table.items, obj->as.table.cap);
     } else if (obj->type == U_T_NATIVE) {
         UNative *n = obj->as.native.native;
         if (n && n->free_data) n->free_data(n->data);
@@ -4566,7 +4704,8 @@ static void native_gc_stats(UrbVM *vm, List *stack, UEntry *global)
 {
     (void)global;
     if (vm) {
-        fprintf(stdout, "gc.stats.inuse: objs=%zu entries=%zu\n", vm->obj_count, vm->entry_count);
+        fprintf(stdout, "gc.stats.inuse: objs=%zu entries=%zu\n",
+                vm->live_obj_count, vm->live_entry_count);
         fflush(stdout);
     }
     stack_push_entry(stack, g_vm->null_entry);
@@ -4986,6 +5125,9 @@ static void op_call(List *stack)
     if (entry == g_vm->null_entry) entry = NULL;
     if (!target) target = entry;
     if (!target) {
+        target = gc_method_lookup((const char*)entry_bytes_data(name), entry_bytes_len(name));
+    }
+    if (!target) {
         stack_push_entry(stack, g_vm->null_entry);
         return;
     }
@@ -5022,6 +5164,9 @@ static void op_call_ex(List *stack)
                                        entry_bytes_len(name));
     if (entry == g_vm->null_entry) entry = NULL;
     if (!target) target = entry;
+    if (!target) {
+        target = gc_method_lookup((const char*)entry_bytes_data(name), entry_bytes_len(name));
+    }
     if (!target) {
         stack_push_entry(stack, g_vm->null_entry);
         return;
@@ -6119,6 +6264,10 @@ static void vm_init(UrbVM *vm)
     vm->gc_rate = 0;
     vm->gc_counter = 0;
     vm->gc_strip = 0;
+    vm->free_bytes = NULL;
+    vm->free_bytes_count = 0;
+    vm->free_tables = NULL;
+    vm->free_tables_count = 0;
     exec_init(&vm->exec);
 
     vm->global_entry = uent_make_table(8);
@@ -6264,6 +6413,18 @@ static void vm_cleanup(UrbVM *vm)
     for (size_t i = 0; i < vm->entry_count; i++) {
         free(vm->entries[i]);
     }
+    while (vm->free_bytes) {
+        BufNode *node = vm->free_bytes;
+        vm->free_bytes = node->next;
+        free(node->data);
+        free(node);
+    }
+    while (vm->free_tables) {
+        TableNode *node = vm->free_tables;
+        vm->free_tables = node->next;
+        free(node->items);
+        free(node);
+    }
     free(vm->objs);
     free(vm->entries);
     vm->objs = NULL;
@@ -6272,6 +6433,10 @@ static void vm_cleanup(UrbVM *vm)
     vm->entry_count = 0;
     vm->obj_cap = 0;
     vm->entry_cap = 0;
+    vm->live_obj_count = 0;
+    vm->live_entry_count = 0;
+    vm->free_bytes_count = 0;
+    vm->free_tables_count = 0;
 }
 
 int urb_exec_bytecode(const unsigned char *data, size_t len, int argc, char **argv)
@@ -6288,7 +6453,15 @@ int urb_exec_bytecode(const unsigned char *data, size_t len, int argc, char **ar
     UrbProgram program = translate_bytecode(data, len, vm.exec);
 
     List *stack = urb_new(URB_DEFAULT_SIZE);
-    urb_interpret(vm.exec, program.mem, stack);
+    vm.stack_root = stack;
+    vm.mem_root = program.mem;
+    if (vm.gc_rate > 0) {
+        urb_interpret_gc(&vm, vm.exec, program.mem, stack);
+    } else {
+        urb_interpret(vm.exec, program.mem, stack);
+    }
+    vm.mem_root = NULL;
+    vm.stack_root = NULL;
 
     urb_free(stack);
     urb_free(program.mem);
