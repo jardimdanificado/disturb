@@ -3,5 +3,4 @@ for(i = 0;i<100000;i++)
 {
     println(i);
 }
-gc.collect();
 gc.stats();

@@ -39,6 +39,8 @@ enum {
 struct UObj {
     int type;
     unsigned mark : 1;
+    unsigned bytes_inline : 1;
+    unsigned char inline_bytes[16];
     union {
         struct {
             unsigned char *data;
@@ -73,8 +75,10 @@ struct UEntry {
 enum {
     URB_POOL_MAX_BYTES = 65536,
     URB_POOL_MAX_TABLE_ITEMS = 4096,
-    URB_POOL_MAX_BYTES_COUNT = 256,
-    URB_POOL_MAX_TABLE_COUNT = 128
+    URB_POOL_MAX_BYTES_COUNT = 32768,
+    URB_POOL_MAX_TABLE_COUNT = 4096,
+    URB_POOL_MAX_ENTRY_COUNT = 131072,
+    URB_POOL_MAX_OBJ_COUNT = 65536
 };
 
 typedef struct BufNode {
@@ -126,8 +130,12 @@ struct UrbVM {
     int gc_strip;
     struct BufNode *free_bytes;
     size_t free_bytes_count;
+    struct BufNode *free_buf_nodes;
+    size_t free_buf_nodes_count;
     struct TableNode *free_tables;
     size_t free_tables_count;
+    struct TableNode *free_table_nodes;
+    size_t free_table_nodes_count;
     UEntry **entries;
     size_t entry_count;
     size_t entry_cap;
@@ -136,6 +144,14 @@ struct UrbVM {
     size_t obj_cap;
     size_t live_entry_count;
     size_t live_obj_count;
+    UEntry **free_entries;
+    size_t free_entry_count;
+    size_t free_entry_cap;
+    UObj **free_objs;
+    size_t free_obj_count;
+    size_t free_obj_cap;
+    UEntry **mark_set;
+    size_t mark_cap;
 };
 
 static UrbVM *g_vm = NULL;
@@ -178,6 +194,60 @@ static void vm_track_entry(UrbVM *vm, UEntry *entry)
     vm->entries[vm->entry_count++] = entry;
 }
 
+static UObj *uobj_pool_take(UrbVM *vm)
+{
+    if (!vm || vm->free_obj_count == 0) return NULL;
+    return vm->free_objs[--vm->free_obj_count];
+}
+
+static void uobj_pool_put(UrbVM *vm, UObj *obj)
+{
+    if (!obj) return;
+    if (!vm || vm->free_obj_count >= URB_POOL_MAX_OBJ_COUNT) {
+        free(obj);
+        return;
+    }
+    if (vm->free_obj_count == vm->free_obj_cap) {
+        size_t next = vm->free_obj_cap == 0 ? 256 : vm->free_obj_cap * 2;
+        UObj **items = (UObj**)realloc(vm->free_objs, next * sizeof(UObj*));
+        if (!items) {
+            free(obj);
+            return;
+        }
+        vm->free_objs = items;
+        vm->free_obj_cap = next;
+    }
+    memset(obj, 0, sizeof(*obj));
+    vm->free_objs[vm->free_obj_count++] = obj;
+}
+
+static UEntry *entry_pool_take(UrbVM *vm)
+{
+    if (!vm || vm->free_entry_count == 0) return NULL;
+    return vm->free_entries[--vm->free_entry_count];
+}
+
+static void entry_pool_put(UrbVM *vm, UEntry *entry)
+{
+    if (!entry) return;
+    if (!vm || vm->free_entry_count >= URB_POOL_MAX_ENTRY_COUNT) {
+        free(entry);
+        return;
+    }
+    if (vm->free_entry_count == vm->free_entry_cap) {
+        size_t next = vm->free_entry_cap == 0 ? 512 : vm->free_entry_cap * 2;
+        UEntry **items = (UEntry**)realloc(vm->free_entries, next * sizeof(UEntry*));
+        if (!items) {
+            free(entry);
+            return;
+        }
+        vm->free_entries = items;
+        vm->free_entry_cap = next;
+    }
+    memset(entry, 0, sizeof(*entry));
+    vm->free_entries[vm->free_entry_count++] = entry;
+}
+
 typedef struct {
     UEntry **items;
     size_t cap;
@@ -190,16 +260,26 @@ static size_t entry_set_cap(size_t count)
     return cap;
 }
 
+static void entry_set_ensure(UrbVM *vm, size_t count)
+{
+    if (!vm) return;
+    size_t cap = entry_set_cap(count);
+    if (cap <= vm->mark_cap) return;
+    UEntry **items = (UEntry**)realloc(vm->mark_set, cap * sizeof(UEntry*));
+    if (!items) return;
+    vm->mark_set = items;
+    vm->mark_cap = cap;
+}
+
 static EntrySet entry_set_build(UrbVM *vm)
 {
     EntrySet set = {0};
     if (!vm || vm->entry_count == 0) return set;
-    set.cap = entry_set_cap(vm->entry_count);
-    set.items = (UEntry**)calloc(set.cap, sizeof(UEntry*));
-    if (!set.items) {
-        set.cap = 0;
-        return set;
-    }
+    entry_set_ensure(vm, vm->entry_count);
+    if (!vm->mark_set || vm->mark_cap == 0) return set;
+    memset(vm->mark_set, 0, vm->mark_cap * sizeof(UEntry*));
+    set.cap = vm->mark_cap;
+    set.items = vm->mark_set;
     for (size_t i = 0; i < vm->entry_count; i++) {
         UEntry *entry = vm->entries[i];
         if (!entry) continue;
@@ -227,7 +307,6 @@ static int entry_set_has(const EntrySet *set, const void *ptr)
 static void entry_set_free(EntrySet *set)
 {
     if (!set) return;
-    free(set->items);
     set->items = NULL;
     set->cap = 0;
 }
@@ -253,7 +332,13 @@ static unsigned char *pool_bytes_take(size_t need, size_t *out_cap)
             g_vm->free_bytes_count--;
             unsigned char *data = cur->data;
             if (out_cap) *out_cap = cur->cap;
-            free(cur);
+            if (g_vm->free_buf_nodes_count < URB_POOL_MAX_BYTES_COUNT) {
+                cur->next = g_vm->free_buf_nodes;
+                g_vm->free_buf_nodes = cur;
+                g_vm->free_buf_nodes_count++;
+            } else {
+                free(cur);
+            }
             return data;
         }
         prev = cur;
@@ -272,7 +357,14 @@ static void pool_bytes_put(unsigned char *data, size_t cap)
         free(data);
         return;
     }
-    BufNode *node = (BufNode*)malloc(sizeof(BufNode));
+    BufNode *node = NULL;
+    if (g_vm->free_buf_nodes) {
+        node = g_vm->free_buf_nodes;
+        g_vm->free_buf_nodes = node->next;
+        g_vm->free_buf_nodes_count--;
+    } else {
+        node = (BufNode*)malloc(sizeof(BufNode));
+    }
     if (!node) {
         free(data);
         return;
@@ -282,6 +374,21 @@ static void pool_bytes_put(unsigned char *data, size_t cap)
     node->next = g_vm->free_bytes;
     g_vm->free_bytes = node;
     g_vm->free_bytes_count++;
+}
+
+static unsigned char *uobj_bytes_alloc(UObj *obj, size_t len, size_t *out_cap)
+{
+    if (!obj || len == 0) {
+        if (out_cap) *out_cap = 0;
+        return NULL;
+    }
+    if (len <= sizeof(obj->inline_bytes)) {
+        obj->bytes_inline = 1;
+        if (out_cap) *out_cap = len;
+        return obj->inline_bytes;
+    }
+    obj->bytes_inline = 0;
+    return pool_bytes_take(len, out_cap);
 }
 
 static UEntry **pool_table_take(size_t need, size_t *out_cap)
@@ -301,7 +408,13 @@ static UEntry **pool_table_take(size_t need, size_t *out_cap)
             g_vm->free_tables_count--;
             UEntry **items = cur->items;
             if (out_cap) *out_cap = cur->cap;
-            free(cur);
+            if (g_vm->free_table_nodes_count < URB_POOL_MAX_TABLE_COUNT) {
+                cur->next = g_vm->free_table_nodes;
+                g_vm->free_table_nodes = cur;
+                g_vm->free_table_nodes_count++;
+            } else {
+                free(cur);
+            }
             memset(items, 0, need * sizeof(UEntry*));
             return items;
         }
@@ -321,7 +434,14 @@ static void pool_table_put(UEntry **items, size_t cap)
         free(items);
         return;
     }
-    TableNode *node = (TableNode*)malloc(sizeof(TableNode));
+    TableNode *node = NULL;
+    if (g_vm->free_table_nodes) {
+        node = g_vm->free_table_nodes;
+        g_vm->free_table_nodes = node->next;
+        g_vm->free_table_nodes_count--;
+    } else {
+        node = (TableNode*)malloc(sizeof(TableNode));
+    }
     if (!node) {
         free(items);
         return;
@@ -406,19 +526,19 @@ static void vm_gc_collect(UrbVM *vm, List *stack)
     }
 
     size_t live_entries = 0;
+    size_t entry_out = 0;
     for (size_t i = 0; i < vm->entry_count; i++) {
         UEntry *entry = vm->entries[i];
         if (!entry) continue;
         if (entry->mark) {
             entry->mark = 0;
             live_entries++;
+            vm->entries[entry_out++] = entry;
             continue;
         }
-        entry->obj = vm->null_entry ? vm->null_entry->obj : NULL;
-        entry->key = NULL;
-        entry->is_string = 0;
-        entry->explicit_string = 0;
+        entry_pool_put(vm, entry);
     }
+    vm->entry_count = entry_out;
 
     size_t obj_out = 0;
     for (size_t i = 0; i < vm->obj_count; i++) {
@@ -478,7 +598,8 @@ static const char *u_type_name(int type)
 
 static UObj *uobj_new(int type)
 {
-    UObj *obj = (UObj*)calloc(1, sizeof(UObj));
+    UObj *obj = uobj_pool_take(g_vm);
+    if (!obj) obj = (UObj*)calloc(1, sizeof(UObj));
     if (!obj) return NULL;
     obj->type = type;
     vm_track_obj(g_vm, obj);
@@ -487,7 +608,8 @@ static UObj *uobj_new(int type)
 
 static UEntry *uent_new(UObj *obj)
 {
-    UEntry *entry = (UEntry*)calloc(1, sizeof(UEntry));
+    UEntry *entry = entry_pool_take(g_vm);
+    if (!entry) entry = (UEntry*)calloc(1, sizeof(UEntry));
     if (!entry) return NULL;
     entry->obj = obj;
     vm_track_entry(g_vm, entry);
@@ -513,16 +635,21 @@ static UEntry *uent_make_null(void)
     return uent_new(obj);
 }
 
-static UEntry *uent_make_int_scalar(Int v)
+static UEntry *uent_make_int_scalar_raw(Int v)
 {
     UObj *obj = uobj_new(U_T_INT);
     if (!obj) return NULL;
     obj->as.bytes.len = sizeof(Int);
     obj->as.bytes.cap = obj->as.bytes.len;
-    obj->as.bytes.data = pool_bytes_take(obj->as.bytes.len, &obj->as.bytes.cap);
+    obj->as.bytes.data = uobj_bytes_alloc(obj, obj->as.bytes.len, &obj->as.bytes.cap);
     if (!obj->as.bytes.data) return NULL;
     memcpy(obj->as.bytes.data, &v, sizeof(Int));
     return uent_new(obj);
+}
+
+static UEntry *uent_make_int_scalar(Int v)
+{
+    return uent_make_int_scalar_raw(v);
 }
 
 static UEntry *uent_make_float_scalar(Float v)
@@ -531,7 +658,7 @@ static UEntry *uent_make_float_scalar(Float v)
     if (!obj) return NULL;
     obj->as.bytes.len = sizeof(Float);
     obj->as.bytes.cap = obj->as.bytes.len;
-    obj->as.bytes.data = pool_bytes_take(obj->as.bytes.len, &obj->as.bytes.cap);
+    obj->as.bytes.data = uobj_bytes_alloc(obj, obj->as.bytes.len, &obj->as.bytes.cap);
     if (!obj->as.bytes.data) return NULL;
     memcpy(obj->as.bytes.data, &v, sizeof(Float));
     return uent_new(obj);
@@ -545,7 +672,7 @@ static UEntry *uent_make_bytes(const char *s, size_t len, int is_string, int exp
     obj->as.bytes.cap = len;
     obj->as.bytes.data = NULL;
     if (len) {
-        obj->as.bytes.data = pool_bytes_take(len, &obj->as.bytes.cap);
+        obj->as.bytes.data = uobj_bytes_alloc(obj, len, &obj->as.bytes.cap);
         if (!obj->as.bytes.data) return NULL;
         memcpy(obj->as.bytes.data, s, len);
     }
@@ -571,7 +698,7 @@ static UEntry *uent_make_int_list(Int count)
     obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = NULL;
     if (obj->as.bytes.len) {
-        obj->as.bytes.data = pool_bytes_take(obj->as.bytes.len, &obj->as.bytes.cap);
+        obj->as.bytes.data = uobj_bytes_alloc(obj, obj->as.bytes.len, &obj->as.bytes.cap);
         if (!obj->as.bytes.data) return NULL;
         memset(obj->as.bytes.data, 0, obj->as.bytes.len);
     }
@@ -587,7 +714,7 @@ static UEntry *uent_make_float_list(Int count)
     obj->as.bytes.cap = obj->as.bytes.len;
     obj->as.bytes.data = NULL;
     if (obj->as.bytes.len) {
-        obj->as.bytes.data = pool_bytes_take(obj->as.bytes.len, &obj->as.bytes.cap);
+        obj->as.bytes.data = uobj_bytes_alloc(obj, obj->as.bytes.len, &obj->as.bytes.cap);
         if (!obj->as.bytes.data) return NULL;
         memset(obj->as.bytes.data, 0, obj->as.bytes.len);
     }
@@ -703,18 +830,41 @@ static UEntry *make_type_name(UEntry *target)
 static int resize_bytes_capacity(UEntry *target, size_t new_cap)
 {
     if (!target || !target->obj) return 0;
-    unsigned char *buf = NULL;
-    if (new_cap > 0) {
-        buf = (unsigned char*)realloc(target->obj->as.bytes.data, new_cap);
-        if (!buf) return 0;
-        if (new_cap > target->obj->as.bytes.cap) {
-            memset(buf + target->obj->as.bytes.cap, 0, new_cap - target->obj->as.bytes.cap);
-        }
-    } else {
-        free(target->obj->as.bytes.data);
+    size_t old_cap = target->obj->as.bytes.cap;
+    size_t old_len = target->obj->as.bytes.len;
+    unsigned char *old = target->obj->as.bytes.data;
+    int old_inline = target->obj->bytes_inline;
+    if (new_cap == 0) {
+        if (!old_inline) pool_bytes_put(old, old_cap);
+        target->obj->as.bytes.data = NULL;
+        target->obj->as.bytes.cap = 0;
+        target->obj->as.bytes.len = 0;
+        target->obj->bytes_inline = 0;
+        return 1;
     }
-    target->obj->as.bytes.data = buf;
-    target->obj->as.bytes.cap = new_cap;
+    if (new_cap <= sizeof(target->obj->inline_bytes)) {
+        unsigned char *buf = target->obj->inline_bytes;
+        size_t copy_len = old_len < new_cap ? old_len : new_cap;
+        if (copy_len > 0 && old) memcpy(buf, old, copy_len);
+        if (new_cap > copy_len) {
+            memset(buf + copy_len, 0, new_cap - copy_len);
+        }
+        if (!old_inline) pool_bytes_put(old, old_cap);
+        target->obj->as.bytes.data = buf;
+        target->obj->as.bytes.cap = new_cap;
+        target->obj->bytes_inline = 1;
+    } else {
+        unsigned char *buf = pool_bytes_take(new_cap, &target->obj->as.bytes.cap);
+        if (!buf) return 0;
+        size_t copy_len = old_len < new_cap ? old_len : new_cap;
+        if (copy_len > 0 && old) memcpy(buf, old, copy_len);
+        if (new_cap > copy_len) {
+            memset(buf + copy_len, 0, new_cap - copy_len);
+        }
+        if (!old_inline) pool_bytes_put(old, old_cap);
+        target->obj->as.bytes.data = buf;
+        target->obj->bytes_inline = 0;
+    }
     if (target->obj->as.bytes.len > new_cap) {
         target->obj->as.bytes.len = new_cap;
     }
@@ -741,15 +891,17 @@ static int resize_table_size(UEntry *target, Int new_size)
     if (new_size < 0) return 0;
     size_t new_count = (size_t)new_size;
     if (new_count > target->obj->as.table.cap) {
-        size_t next = new_count;
-        UEntry **items = (UEntry**)realloc(target->obj->as.table.items, next * sizeof(UEntry*));
-        if (!items && next > 0) return 0;
-        if (next > target->obj->as.table.cap) {
-            memset(items + target->obj->as.table.cap, 0,
-                   (next - target->obj->as.table.cap) * sizeof(UEntry*));
+        size_t old_cap = target->obj->as.table.cap;
+        UEntry **old = target->obj->as.table.items;
+        size_t new_cap = new_count;
+        UEntry **items = pool_table_take(new_cap, &new_cap);
+        if (!items && new_cap > 0) return 0;
+        if (old && target->obj->as.table.size > 0) {
+            memcpy(items, old, target->obj->as.table.size * sizeof(UEntry*));
         }
+        pool_table_put(old, old_cap);
         target->obj->as.table.items = items;
-        target->obj->as.table.cap = next;
+        target->obj->as.table.cap = new_cap;
     }
     if (new_count > target->obj->as.table.size) {
         for (size_t i = target->obj->as.table.size; i < new_count; i++) {
@@ -765,14 +917,17 @@ static int resize_table_capacity(UEntry *target, Int new_cap)
     if (!target || !target->obj || target->obj->type != U_T_TABLE) return 0;
     if (new_cap < 0) return 0;
     size_t cap = (size_t)new_cap;
-    UEntry **items = (UEntry**)realloc(target->obj->as.table.items, cap * sizeof(UEntry*));
+    size_t old_cap = target->obj->as.table.cap;
+    UEntry **old = target->obj->as.table.items;
+    size_t new_cap_real = cap;
+    UEntry **items = cap ? pool_table_take(cap, &new_cap_real) : NULL;
     if (!items && cap > 0) return 0;
-    if (cap > target->obj->as.table.cap) {
-        memset(items + target->obj->as.table.cap, 0,
-               (cap - target->obj->as.table.cap) * sizeof(UEntry*));
+    if (old && target->obj->as.table.size > 0) {
+        memcpy(items, old, target->obj->as.table.size * sizeof(UEntry*));
     }
+    pool_table_put(old, old_cap);
     target->obj->as.table.items = items;
-    target->obj->as.table.cap = cap;
+    target->obj->as.table.cap = new_cap_real;
     if (target->obj->as.table.size > cap) {
         target->obj->as.table.size = cap;
     }
@@ -979,16 +1134,16 @@ static UEntry *entry_clone_deep(const UEntry *src)
         obj->as.bytes.len = src->obj->as.bytes.len;
         obj->as.bytes.cap = src->obj->as.bytes.cap ? src->obj->as.bytes.cap : obj->as.bytes.len;
         if (obj->as.bytes.cap > 0) {
-            obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.cap);
-            if (!obj->as.bytes.data) return NULL;
-            memcpy(obj->as.bytes.data, src->obj->as.bytes.data, obj->as.bytes.len);
+        obj->as.bytes.data = uobj_bytes_alloc(obj, obj->as.bytes.cap, &obj->as.bytes.cap);
+        if (!obj->as.bytes.data) return NULL;
+        memcpy(obj->as.bytes.data, src->obj->as.bytes.data, obj->as.bytes.len);
         }
     } else if (src->obj->type == U_T_TABLE) {
         obj = uobj_new(U_T_TABLE);
         if (!obj) return NULL;
         obj->as.table.cap = src->obj->as.table.size;
         obj->as.table.size = 0;
-        obj->as.table.items = obj->as.table.cap ? (UEntry**)calloc(obj->as.table.cap, sizeof(UEntry*)) : NULL;
+        obj->as.table.items = obj->as.table.cap ? pool_table_take(obj->as.table.cap, &obj->as.table.cap) : NULL;
         if (obj->as.table.cap && !obj->as.table.items) return NULL;
         for (size_t i = 0; i < src->obj->as.table.size; i++) {
             UEntry *child = src->obj->as.table.items[i];
@@ -2064,7 +2219,8 @@ static UEntry *entry_clone_shallow_copy(UEntry *src)
         obj->as.bytes.len = src->obj->as.bytes.len;
         obj->as.bytes.cap = src->obj->as.bytes.cap ? src->obj->as.bytes.cap : obj->as.bytes.len;
         if (obj->as.bytes.cap) {
-            obj->as.bytes.data = (unsigned char*)malloc(obj->as.bytes.cap);
+            obj->as.bytes.data = uobj_bytes_alloc(obj, obj->as.bytes.cap, &obj->as.bytes.cap);
+            if (!obj->as.bytes.data) return NULL;
             memcpy(obj->as.bytes.data, src->obj->as.bytes.data, obj->as.bytes.len);
         }
         UEntry *out = uent_new(obj);
@@ -4616,7 +4772,9 @@ static void uobj_free_raw(UObj *obj)
 {
     if (!obj) return;
     if (obj->type == U_T_INT || obj->type == U_T_FLOAT) {
-        pool_bytes_put(obj->as.bytes.data, obj->as.bytes.cap);
+        if (!obj->bytes_inline) {
+            pool_bytes_put(obj->as.bytes.data, obj->as.bytes.cap);
+        }
     } else if (obj->type == U_T_TABLE) {
         pool_table_put(obj->as.table.items, obj->as.table.cap);
     } else if (obj->type == U_T_NATIVE) {
@@ -4637,7 +4795,7 @@ static void uobj_free_raw(UObj *obj)
             free(fn);
         }
     }
-    free(obj);
+    uobj_pool_put(g_vm, obj);
 }
 
 static void uobj_free(UObj *obj)
@@ -4704,6 +4862,7 @@ static void native_gc_stats(UrbVM *vm, List *stack, UEntry *global)
 {
     (void)global;
     if (vm) {
+        vm_gc_collect(vm, stack);
         fprintf(stdout, "gc.stats.inuse: objs=%zu entries=%zu\n",
                 vm->live_obj_count, vm->live_entry_count);
         fflush(stdout);
@@ -5669,10 +5828,12 @@ static void urb_interpret_gc(UrbVM *vm, List *exec, List* mem, List* _stack)
             urb_push(stack, mem->data[i]);
         }
 
-        vm->gc_counter++;
-        if (vm->gc_rate > 0 && vm->gc_counter >= vm->gc_rate) {
-            vm->gc_counter = 0;
-            vm_gc_collect(vm, stack);
+        if (vm->gc_rate > 0) {
+            vm->gc_counter++;
+            if (vm->gc_counter >= vm->gc_rate) {
+                vm->gc_counter = 0;
+                vm_gc_collect(vm, stack);
+            }
         }
     }
 
@@ -6244,11 +6405,7 @@ static void exec_bytecode_in_vm(UrbVM *vm, const unsigned char *data, size_t len
     if (program.mem) {
         vm->stack_root = stack;
         vm->mem_root = program.mem;
-        if (vm->gc_rate > 0) {
-            urb_interpret_gc(vm, vm->exec, program.mem, stack);
-        } else {
-            urb_interpret(vm->exec, program.mem, stack);
-        }
+        urb_interpret_gc(vm, vm->exec, program.mem, stack);
         vm->mem_root = NULL;
         vm->stack_root = NULL;
         urb_free(program.mem);
@@ -6266,8 +6423,12 @@ static void vm_init(UrbVM *vm)
     vm->gc_strip = 0;
     vm->free_bytes = NULL;
     vm->free_bytes_count = 0;
+    vm->free_buf_nodes = NULL;
+    vm->free_buf_nodes_count = 0;
     vm->free_tables = NULL;
     vm->free_tables_count = 0;
+    vm->free_table_nodes = NULL;
+    vm->free_table_nodes_count = 0;
     exec_init(&vm->exec);
 
     vm->global_entry = uent_make_table(8);
@@ -6411,12 +6572,23 @@ static void vm_cleanup(UrbVM *vm)
         uobj_free_raw(vm->objs[i]);
     }
     for (size_t i = 0; i < vm->entry_count; i++) {
-        free(vm->entries[i]);
+        entry_pool_put(vm, vm->entries[i]);
+    }
+    for (size_t i = 0; i < vm->free_obj_count; i++) {
+        free(vm->free_objs[i]);
+    }
+    for (size_t i = 0; i < vm->free_entry_count; i++) {
+        free(vm->free_entries[i]);
     }
     while (vm->free_bytes) {
         BufNode *node = vm->free_bytes;
         vm->free_bytes = node->next;
         free(node->data);
+        free(node);
+    }
+    while (vm->free_buf_nodes) {
+        BufNode *node = vm->free_buf_nodes;
+        vm->free_buf_nodes = node->next;
         free(node);
     }
     while (vm->free_tables) {
@@ -6425,8 +6597,16 @@ static void vm_cleanup(UrbVM *vm)
         free(node->items);
         free(node);
     }
+    while (vm->free_table_nodes) {
+        TableNode *node = vm->free_table_nodes;
+        vm->free_table_nodes = node->next;
+        free(node);
+    }
     free(vm->objs);
     free(vm->entries);
+    free(vm->free_objs);
+    free(vm->free_entries);
+    free(vm->mark_set);
     vm->objs = NULL;
     vm->entries = NULL;
     vm->obj_count = 0;
@@ -6435,8 +6615,18 @@ static void vm_cleanup(UrbVM *vm)
     vm->entry_cap = 0;
     vm->live_obj_count = 0;
     vm->live_entry_count = 0;
+    vm->free_obj_count = 0;
+    vm->free_entry_count = 0;
+    vm->free_obj_cap = 0;
+    vm->free_entry_cap = 0;
     vm->free_bytes_count = 0;
     vm->free_tables_count = 0;
+    vm->free_buf_nodes = NULL;
+    vm->free_buf_nodes_count = 0;
+    vm->free_table_nodes = NULL;
+    vm->free_table_nodes_count = 0;
+    vm->mark_set = NULL;
+    vm->mark_cap = 0;
 }
 
 int urb_exec_bytecode(const unsigned char *data, size_t len, int argc, char **argv)
@@ -6455,11 +6645,7 @@ int urb_exec_bytecode(const unsigned char *data, size_t len, int argc, char **ar
     List *stack = urb_new(URB_DEFAULT_SIZE);
     vm.stack_root = stack;
     vm.mem_root = program.mem;
-    if (vm.gc_rate > 0) {
-        urb_interpret_gc(&vm, vm.exec, program.mem, stack);
-    } else {
-        urb_interpret(vm.exec, program.mem, stack);
-    }
+    urb_interpret_gc(&vm, vm.exec, program.mem, stack);
     vm.mem_root = NULL;
     vm.stack_root = NULL;
 
