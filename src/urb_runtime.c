@@ -209,6 +209,8 @@ static void entry_set_free(EntrySet *set)
 
 static void gc_mark_entry(UrbVM *vm, const EntrySet *set, UEntry *entry);
 static void gc_mark_obj(UrbVM *vm, const EntrySet *set, UObj *obj);
+static void uobj_free_raw(UObj *obj);
+static void uobj_free_raw(UObj *obj);
 
 static void gc_mark_list_entries(UrbVM *vm, const EntrySet *set, const List *list)
 {
@@ -252,8 +254,6 @@ static void gc_mark_obj(UrbVM *vm, const EntrySet *set, UObj *obj)
         }
     }
 }
-
-static void uobj_free_raw(UObj *obj);
 
 static void vm_gc_collect(UrbVM *vm, List *stack)
 {
@@ -313,6 +313,8 @@ static UObj *uobj_new(int type);
 static UEntry *uent_new(UObj *obj);
 static UEntry *uent_make_native(UrbNativeFn fn, void *data, void (*free_data)(void *data));
 static int table_set_by_key_len(UEntry *table, const char *name, size_t len, UEntry *value);
+static void table_add_entry(UEntry *table, UEntry *entry);
+static UEntry *table_find_by_key_len(UEntry *table, const char *name, size_t len);
 static void stack_push_entry(List *stack, UEntry *entry);
 static void exec_bytecode_in_vm(UrbVM *vm, const unsigned char *data, size_t len, List *stack);
 static int bc_read_u8(const unsigned char *data, size_t len, size_t *pc, uint8_t *out);
@@ -321,6 +323,7 @@ static int bc_read_i64(const unsigned char *data, size_t len, size_t *pc, int64_
 static int bc_read_f64(const unsigned char *data, size_t len, size_t *pc, double *out);
 static int bc_read_string(const unsigned char *data, size_t len, size_t *pc, unsigned char **out, size_t *out_len);
 static UEntry *entry_clone_shallow_copy(UEntry *src);
+static UEntry *entry_clone_shallow(UEntry *src, UEntry *forced_key);
 static int entry_number_to_int(const UEntry *entry, Int *out);
 
 static void register_native(UrbVM *v, const char *name, UrbNativeFn fn, int to_common)
@@ -1838,6 +1841,18 @@ static void vm_set_argc(UrbVM *vm, uint32_t argc)
 {
     if (!vm || !vm->argc_entry) return;
     entry_write_int(vm->argc_entry, 0, (Int)argc);
+}
+
+static void gc_table_add_method(UrbVM *vm, UEntry *gc_entry, const char *name, const char *global_name)
+{
+    if (!vm || !gc_entry || !name || !global_name) return;
+    UEntry *entry = table_find_by_key_len(vm->global_entry, global_name, strlen(global_name));
+    if (!entry) return;
+    UEntry *key = uent_make_bytes(name, strlen(name), 1, 1);
+    if (!key) return;
+    UEntry *clone = entry_clone_shallow(entry, key);
+    if (!clone) return;
+    table_add_entry(gc_entry, clone);
 }
 
 static void native_print(UrbVM *vm, List *stack, UEntry *global)
@@ -4542,6 +4557,7 @@ static void native_gc_debug(UrbVM *vm, List *stack, UEntry *global)
     (void)global;
     if (vm) {
         fprintf(stdout, "gc.debug.inuse: objs=%zu entries=%zu\n", vm->obj_count, vm->entry_count);
+        fflush(stdout);
     }
     stack_push_entry(stack, g_vm->null_entry);
 }
@@ -4551,6 +4567,7 @@ static void native_gc_stats(UrbVM *vm, List *stack, UEntry *global)
     (void)global;
     if (vm) {
         fprintf(stdout, "gc.stats.inuse: objs=%zu entries=%zu\n", vm->obj_count, vm->entry_count);
+        fflush(stdout);
     }
     stack_push_entry(stack, g_vm->null_entry);
 }
@@ -6135,8 +6152,6 @@ static void vm_init(UrbVM *vm)
     register_native(vm, "copy", native_copy, 1);
     register_native(vm, "toInt", native_to_int, 1);
     register_native(vm, "toFloat", native_to_float, 1);
-    register_native(vm, "gc", native_gc_collect, 1);
-
     #ifdef DISTURB_ENABLE_IO
     register_native(vm, "read", native_read, 1);
     register_native(vm, "write", native_write, 1);
@@ -6209,12 +6224,13 @@ static void vm_init(UrbVM *vm)
     register_native(vm, "gcDebug", native_gc_debug, 0);
     register_native(vm, "gcStats", native_gc_stats, 0);
 
-    table_set_by_key_len(gc_entry, "collect", 7, table_find_by_key_len(vm->global_entry, "gcCollect", 9));
-    table_set_by_key_len(gc_entry, "free", 4, table_find_by_key_len(vm->global_entry, "gcFree", 6));
-    table_set_by_key_len(gc_entry, "sweep", 5, table_find_by_key_len(vm->global_entry, "gcSweep", 7));
-    table_set_by_key_len(gc_entry, "new", 3, table_find_by_key_len(vm->global_entry, "gcNew", 5));
-    table_set_by_key_len(gc_entry, "debug", 5, table_find_by_key_len(vm->global_entry, "gcDebug", 7));
-    table_set_by_key_len(gc_entry, "stats", 5, table_find_by_key_len(vm->global_entry, "gcStats", 7));
+    gc_table_add_method(vm, gc_entry, "collect", "gcCollect");
+    gc_table_add_method(vm, gc_entry, "free", "gcFree");
+    gc_table_add_method(vm, gc_entry, "sweep", "gcSweep");
+    gc_table_add_method(vm, gc_entry, "new", "gcNew");
+    gc_table_add_method(vm, gc_entry, "debug", "gcDebug");
+    gc_table_add_method(vm, gc_entry, "stats", "gcStats");
+    gc_table_add_method(vm, gc_entry, "flush", "gcFlush");
 
 #ifdef DISTURB_ENABLE_FFI
     if (ffi_entry) {
