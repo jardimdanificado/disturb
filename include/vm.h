@@ -15,11 +15,7 @@
 
 #include "bytecode.h"
 
-#define DISTURB_VERSION "0.16.1"
-
-#ifndef DISTURB_DEFAULT_SIZE
-    #define DISTURB_DEFAULT_SIZE 0
-#endif
+#define DISTURB_VERSION "0.17.0"
 
 #define PANIC(message) do {\
         fprintf(stderr, "DISTURB ERROR:" message "\n");\

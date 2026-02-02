@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.17.0
+- implement full gc in urb mode.
+- add runtime-configurable `gc.rate` for both Disturb and URB modes.
+- add reuse pools for objects/entries and inline-small-bytes storage to reduce allocations.
+- add slab allocators for lists/entries and free-node pools to reduce malloc/free churn.
+- some real optimization stuff;
+
 ## 0.16.1
 - Using urb 0.9.4a direcly instead the disturb's modified version of urb.
 
