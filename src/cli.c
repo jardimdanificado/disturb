@@ -32,13 +32,65 @@ static char *read_all_text(FILE *fp)
 }
 
 
+static void strip_shebang(char *src)
+{
+    if (!src) return;
+    if (src[0] == '#' && src[1] == '!') {
+        char *nl = strchr(src, '\n');
+        if (!nl) {
+            src[0] = '\0';
+        } else {
+            size_t offset = (size_t)(nl - src) + 1;
+            size_t remaining = strlen(src + offset);
+            memmove(src, src + offset, remaining + 1);
+        }
+    }
+}
+
+static unsigned char *read_all_bytes(FILE *fp, size_t *out_len)
+{
+    size_t cap = 4096;
+    size_t len = 0;
+    unsigned char *buf = (unsigned char*)malloc(cap);
+    if (!buf) return NULL;
+
+    while (1) {
+        if (len == cap) {
+            size_t next = cap * 2;
+            unsigned char *tmp = (unsigned char*)realloc(buf, next);
+            if (!tmp) {
+                free(buf);
+                return NULL;
+            }
+            buf = tmp;
+            cap = next;
+        }
+        size_t want = cap - len;
+        size_t got = fread(buf + len, 1, want, fp);
+        if (got == 0) {
+            if (feof(fp)) break;
+            if (ferror(fp)) {
+                free(buf);
+                return NULL;
+            }
+            break;
+        }
+        len += got;
+    }
+
+    if (out_len) *out_len = len;
+    return buf;
+}
+
+
 static void print_help(void)
 {
     puts("usage:");
     puts("  disturb [script.disturb] [args...]");
-    puts("  disturb --repl");
-    puts("  disturb --urb|--fast|--unsafe [script.disturb]");
-    puts("  disturb --dist|--debug|--safe [script.disturb]");
+    puts("  disturb --dist [script.disturb] [args...]");
+    puts("  disturb --urb [script.disturb] [args...]");
+    puts("  disturb --compile-bytecode script.disturb output.bytecode");
+    puts("  disturb --run-bytecode output.bytecode [args...]");
     puts("  disturb --help");
     puts("");
     puts("notes:");
@@ -175,11 +227,11 @@ static int repl_run(int argc, char **argv)
 static int backend_from_flag(const char *arg, int *use_urb)
 {
     if (!arg || !use_urb) return 0;
-    if (strcmp(arg, "--urb") == 0 || strcmp(arg, "--fast") == 0 || strcmp(arg, "--unsafe") == 0) {
+    if (strcmp(arg, "--urb") == 0) {
         *use_urb = 1;
         return 1;
     }
-    if (strcmp(arg, "--dist") == 0 || strcmp(arg, "--debug") == 0 || strcmp(arg, "--safe") == 0) {
+    if (strcmp(arg, "--dist") == 0) {
         *use_urb = 0;
         return 1;
     }
@@ -202,16 +254,7 @@ static int run_urb_script(const char *path, int script_argc, char **script_argv)
         fclose(fp);
         return 1;
     }
-    if (src[0] == '#' && src[1] == '!') {
-        char *nl = strchr(src, '\n');
-        if (!nl) {
-            src[0] = '\0';
-        } else {
-            size_t offset = (size_t)(nl - src) + 1;
-            size_t remaining = strlen(src + offset);
-            memmove(src, src + offset, remaining + 1);
-        }
-    }
+    strip_shebang(src);
     if (!vm_compile_source(src, &bc, err, sizeof(err))) {
         fprintf(stderr, "%s\n", err[0] ? err : "compile error");
         free(src);
@@ -245,16 +288,7 @@ static int run_disturb_script(const char *path, int script_argc, char **script_a
         return 1;
     }
 
-    if (src[0] == '#' && src[1] == '!') {
-        char *nl = strchr(src, '\n');
-        if (!nl) {
-            src[0] = '\0';
-        } else {
-            size_t offset = (size_t)(nl - src) + 1;
-            size_t remaining = strlen(src + offset);
-            memmove(src, src + offset, remaining + 1);
-        }
-    }
+    strip_shebang(src);
     vm_exec_line(&vm, src);
     free(src);
     fclose(fp);
@@ -262,38 +296,132 @@ static int run_disturb_script(const char *path, int script_argc, char **script_a
     return 0;
 }
 
+static int compile_bytecode_file(const char *src_path, const char *out_path)
+{
+    FILE *fp = fopen(src_path, "r");
+    if (!fp) {
+        perror("open");
+        return 1;
+    }
+    char *src = read_all_text(fp);
+    if (!src) {
+        fprintf(stderr, "failed to read file\n");
+        fclose(fp);
+        return 1;
+    }
+    strip_shebang(src);
+
+    Bytecode bc;
+    char err[256];
+    err[0] = 0;
+    if (!vm_compile_source(src, &bc, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "compile error");
+        free(src);
+        fclose(fp);
+        return 1;
+    }
+    FILE *out = fopen(out_path, "wb");
+    if (!out) {
+        perror("open");
+        bc_free(&bc);
+        free(src);
+        fclose(fp);
+        return 1;
+    }
+    size_t wrote = fwrite(bc.data, 1, bc.len, out);
+    if (wrote != bc.len) {
+        fprintf(stderr, "failed to write bytecode\n");
+        bc_free(&bc);
+        free(src);
+        fclose(fp);
+        fclose(out);
+        return 1;
+    }
+    fclose(out);
+    bc_free(&bc);
+    free(src);
+    fclose(fp);
+    return 0;
+}
+
+static int run_bytecode_file(const char *path, int script_argc, char **script_argv, int use_urb)
+{
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        perror("open");
+        return 1;
+    }
+    size_t len = 0;
+    unsigned char *data = read_all_bytes(fp, &len);
+    fclose(fp);
+    if (!data) {
+        fprintf(stderr, "failed to read bytecode file\n");
+        return 1;
+    }
+    int result;
+    if (use_urb) {
+        result = urb_exec_bytecode(data, len, script_argc, script_argv) ? 0 : 1;
+    } else {
+        VM vm;
+        vm_init(&vm);
+        vm_add_args(&vm, script_argc, script_argv);
+        int ok = vm_exec_bytecode(&vm, data, len);
+        vm_free(&vm);
+        result = ok ? 0 : 1;
+    }
+    free(data);
+    return result;
+}
+
 int main(int argc, char **argv)
 {
-    if (argc > 1) {
-        if (strcmp(argv[1], "--repl") == 0) {
-            return repl_run(argc, argv);
-        }
-        if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
-            print_help();
-            return 0;
-        }
-
-        int use_urb = 0;
-#ifdef DISTURB_DEFAULT_BACKEND_URB
-        use_urb = 1;
-#endif
-        int argi = 1;
-        if (backend_from_flag(argv[1], &use_urb)) {
-            argi = 2;
-        }
-        if (argc <= argi) {
-            fprintf(stderr, "disturb expects a source file\n");
-            return 1;
-        }
-        int script_argc = argc - (argi + 1);
-        char **script_argv = argv + argi + 1;
-        if (use_urb) {
-            return run_urb_script(argv[argi], script_argc, script_argv);
-        }
-        return run_disturb_script(argv[argi], script_argc, script_argv);
-    } else {
+    if (argc <= 1) {
         return repl_run(argc, argv);
     }
+    if (strcmp(argv[1], "--repl") == 0) {
+        return repl_run(argc, argv);
+    }
+    if (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0) {
+        print_help();
+        return 0;
+    }
 
-    return 0;
+    int use_urb = 0;
+#ifdef DISTURB_DEFAULT_BACKEND_URB
+    use_urb = 1;
+#endif
+    int argi = 1;
+    if (backend_from_flag(argv[argi], &use_urb)) {
+        argi++;
+    }
+    if (argc <= argi) {
+        fprintf(stderr, "disturb expects a source or bytecode file\n");
+        return 1;
+    }
+
+    const char *cmd = argv[argi];
+    if (strcmp(cmd, "--compile-bytecode") == 0) {
+        if (argc - argi < 3) {
+            fprintf(stderr, "usage: disturb --compile-bytecode script.disturb output.bytecode\n");
+            return 1;
+        }
+        return compile_bytecode_file(argv[argi + 1], argv[argi + 2]);
+    }
+    if (strcmp(cmd, "--run-bytecode") == 0) {
+        if (argc - argi < 2) {
+            fprintf(stderr, "disturb expects a bytecode file\n");
+            return 1;
+        }
+        const char *bytecode_path = argv[argi + 1];
+        int script_argc = argc - (argi + 2);
+        char **script_argv = argv + argi + 2;
+        return run_bytecode_file(bytecode_path, script_argc, script_argv, use_urb);
+    }
+
+    int script_argc = argc - (argi + 1);
+    char **script_argv = argv + argi + 1;
+    if (use_urb) {
+        return run_urb_script(cmd, script_argc, script_argv);
+    }
+    return run_disturb_script(cmd, script_argc, script_argv);
 }

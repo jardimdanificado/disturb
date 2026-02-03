@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- add CLI commands for compiling (`--compile-bytecode`) and running (`--run-bytecode`) bytecode files and limit backend selectors to `--dist`/`--urb`.
+
 ## 0.17.1
 - new backend selector flags (`--urb/--fast/--unsafe` for URB, `--dist/--debug/--safe` for Disturb) plus the `DEFAULT_BACKEND` Makefile option (Disturb by default) so scripts can pick a compiler-side default.
 

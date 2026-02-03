@@ -9,10 +9,12 @@ Disturb means Distributable Urb, at least that was the original idea, disturb be
 | Command | Purpose |
 | --- | --- |
 | `make` | Build `disturb` |
-| `./disturb file.disturb` | Run source |
-| `./disturb` | Interactive REPL |
-| `./disturb --repl` | Interactive REPL |
+| `./disturb file.disturb` | Run source with the Disturb backend (default) |
+| `./disturb --dist file.disturb` | Explicit Disturb backend |
 | `./disturb --urb file.disturb` | Run with URB runtime compatibility layer |
+| `./disturb --compile-bytecode script.disturb output.bytecode` | Compile a script into raw bytecode |
+| `./disturb --run-bytecode output.bytecode [args...]` | Run a previously compiled bytecode file |
+| `./disturb --repl` | Interactive REPL |
 | `./disturb --help` | Show CLI help |
 
 ## URB runtime (experimental)
