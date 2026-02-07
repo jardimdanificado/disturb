@@ -79,6 +79,7 @@ run_negative meta_size_float
 run_negative meta_capacity_string
 run_negative byte_range
 run_negative strict_mixed_list
+run_negative bitwise_float
 
 if command -v valgrind >/dev/null 2>&1; then
   echo "valgrind: leak check (tests/cases/basic.disturb)"

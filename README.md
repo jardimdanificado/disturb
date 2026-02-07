@@ -63,6 +63,7 @@ Notes:
 - Table literals now use `{...}` exclusively; the `table` prefix is no longer supported.
 - Plain `{}` is reserved for tables, while `(args){...}` still introduces a lambda.
 - Compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`) and increment/decrement statements (`++i`, `i++`, `--i`, `i--`) mutate the left-hand target in place; increments add/subtract `1`.
+- Compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`) and increment/decrement statements (`++i`, `i++`, `--i`, `i--`) mutate the left-hand target in place; increments add/subtract `1`.
 - Numeric suffixes: `1i` (int), `1u` (unsigned int, treated as int), `1f` (float).
 
 ## Expressions and Operators
@@ -71,8 +72,10 @@ Operators follow standard precedence with parentheses support:
 - Unary: `!`, unary `-`
 - Multiplicative: `*`, `/`, `%`
 - Additive: `+`, `-`
+- Shift: `<<`, `>>`
 - Comparisons: `<`, `<=`, `>`, `>=`
 - Equality: `==`, `!=`
+- Bitwise: `&`, `^`, `|`, unary `~`
 - Logical: `&&`, `||`
 
 Notes:
@@ -208,7 +211,13 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 | `MUL` | `a b -- out` | Multiply |
 | `DIV` | `a b -- out` | Divide |
 | `MOD` | `a b -- out` | Modulo |
+| `BITAND` | `a b -- out` | Bitwise and (int) |
+| `BITOR` | `a b -- out` | Bitwise or (int) |
+| `BITXOR` | `a b -- out` | Bitwise xor (int) |
+| `SHL` | `a b -- out` | Shift left (int) |
+| `SHR` | `a b -- out` | Shift right (int) |
 | `NEG` | `a -- out` | Unary minus |
+| `BNOT` | `a -- out` | Bitwise not (int) |
 | `NOT` | `a -- out` | Logical not |
 | `EQ` | `a b -- out` | Equality |
 | `NEQ` | `a b -- out` | Inequality |

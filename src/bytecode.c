@@ -138,6 +138,12 @@ const char *bc_opcode_name(uint8_t op)
     case BC_PUSH_CHAR_RAW: return "PUSH_CHAR_RAW";
     case BC_PUSH_STRING_RAW: return "PUSH_STRING_RAW";
     case BC_UNSTRICT: return "UNSTRICT";
+    case BC_BITAND: return "BITAND";
+    case BC_BITOR: return "BITOR";
+    case BC_BITXOR: return "BITXOR";
+    case BC_SHL: return "SHL";
+    case BC_SHR: return "SHR";
+    case BC_BNOT: return "BNOT";
     default: return "UNKNOWN";
     }
 }

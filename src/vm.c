@@ -3323,6 +3323,12 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         case BC_MOD:
         case BC_NEG:
         case BC_NOT:
+        case BC_BITAND:
+        case BC_BITOR:
+        case BC_BITXOR:
+        case BC_SHL:
+        case BC_SHR:
+        case BC_BNOT:
         case BC_EQ:
         case BC_NEQ:
         case BC_LT:
@@ -4438,7 +4444,13 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         [BC_AND] = &&BC_L_AND,
         [BC_OR] = &&BC_L_OR,
         [BC_PUSH_CHAR_RAW] = &&BC_L_PUSH_CHAR_RAW,
-        [BC_PUSH_STRING_RAW] = &&BC_L_PUSH_STRING_RAW
+        [BC_PUSH_STRING_RAW] = &&BC_L_PUSH_STRING_RAW,
+        [BC_BITAND] = &&BC_L_BITAND,
+        [BC_BITOR] = &&BC_L_BITOR,
+        [BC_BITXOR] = &&BC_L_BITXOR,
+        [BC_SHL] = &&BC_L_SHL,
+        [BC_SHR] = &&BC_L_SHR,
+        [BC_BNOT] = &&BC_L_BNOT
     };
 #define DISPATCH() do { \
         if (vm->gc_rate > 0) { \
@@ -5316,6 +5328,11 @@ BC_L_RETURN:
         case BC_MUL:
         case BC_DIV:
         case BC_MOD:
+        case BC_BITAND:
+        case BC_BITOR:
+        case BC_BITXOR:
+        case BC_SHL:
+        case BC_SHR:
         case BC_EQ:
         case BC_NEQ:
         case BC_LT:
@@ -5330,6 +5347,11 @@ BC_L_SUB:
 BC_L_MUL:
 BC_L_DIV:
 BC_L_MOD:
+BC_L_BITAND:
+BC_L_BITOR:
+BC_L_BITXOR:
+BC_L_SHL:
+BC_L_SHR:
 BC_L_EQ:
 BC_L_NEQ:
 BC_L_LT:
@@ -5371,6 +5393,45 @@ BC_L_OR:
                 int r = vm_entry_truthy(right);
                 int res = op == BC_AND ? (l && r) : (l || r);
                 vm_stack_push_entry(vm, vm_make_int_value(vm, res ? 1 : 0));
+                break;
+            }
+            if (op == BC_BITAND || op == BC_BITOR || op == BC_BITXOR ||
+                op == BC_SHL || op == BC_SHR) {
+                Int li = 0;
+                Int ri = 0;
+                Float lf = 0;
+                Float rf = 0;
+                int lf_is_float = 0;
+                int rf_is_float = 0;
+                if (!vm_entry_number(left, &li, &lf, &lf_is_float, "OP", pc)) return 0;
+                if (!vm_entry_number(right, &ri, &rf, &rf_is_float, "OP", pc)) return 0;
+                if (lf_is_float || rf_is_float) {
+                    fprintf(stderr, "bytecode error at pc %zu: OP expects int\n", pc);
+                    return 0;
+                }
+                Int out = 0;
+                switch (op) {
+                case BC_BITAND: out = li & ri; break;
+                case BC_BITOR: out = li | ri; break;
+                case BC_BITXOR: out = li ^ ri; break;
+                case BC_SHL:
+                case BC_SHR: {
+                    if (ri < 0 || ri >= (Int)(sizeof(Int) * 8u)) {
+                        fprintf(stderr, "bytecode error at pc %zu: shift expects range 0..%u\n",
+                                pc, (unsigned)((sizeof(Int) * 8u) - 1u));
+                        return 0;
+                    }
+                    unsigned int shift = (unsigned int)ri;
+                    if (op == BC_SHL) {
+                        out = (Int)(((uint64_t)li) << shift);
+                    } else {
+                        out = li >> shift;
+                    }
+                    break;
+                }
+                default: break;
+                }
+                vm_stack_push_entry(vm, vm_make_int_value(vm, out));
                 break;
             }
             if (op == BC_EQ || op == BC_NEQ) {
@@ -5461,11 +5522,14 @@ BC_L_OR:
             break;
         }
         case BC_NEG:
+        case BC_BNOT:
 #ifdef __GNUC__
 BC_L_NEG:
+BC_L_BNOT:
 #endif
         {
-            ObjEntry *value = vm_stack_pop_entry(vm, "NEG", pc);
+            const char *op_name = op == BC_BNOT ? "BNOT" : "NEG";
+            ObjEntry *value = vm_stack_pop_entry(vm, op_name, pc);
             if (!value) return 0;
             if (vm->strict_mode && disturb_obj_type(value->obj) == DISTURB_T_NULL) {
                 fprintf(stderr, "bytecode error at pc %zu: strict mode forbids null in numeric ops\n", pc);
@@ -5474,9 +5538,17 @@ BC_L_NEG:
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;
-            if (!vm_entry_number(value, &iv, &fv, &is_float, "NEG", pc)) return 0;
-            double out = is_float ? -(double)fv : -(double)iv;
-            vm_stack_push_entry(vm, vm_make_number_result(vm, out));
+            if (!vm_entry_number(value, &iv, &fv, &is_float, op_name, pc)) return 0;
+            if (op == BC_BNOT) {
+                if (is_float) {
+                    fprintf(stderr, "bytecode error at pc %zu: BNOT expects int\n", pc);
+                    return 0;
+                }
+                vm_stack_push_entry(vm, vm_make_int_value(vm, ~iv));
+            } else {
+                double out = is_float ? -(double)fv : -(double)iv;
+                vm_stack_push_entry(vm, vm_make_number_result(vm, out));
+            }
             break;
         }
         case BC_NOT:

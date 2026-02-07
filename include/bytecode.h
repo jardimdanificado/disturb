@@ -55,7 +55,13 @@ enum {
     BC_OR,
     BC_PUSH_CHAR_RAW,
     BC_PUSH_STRING_RAW,
-    BC_UNSTRICT
+    BC_UNSTRICT,
+    BC_BITAND,
+    BC_BITOR,
+    BC_BITXOR,
+    BC_SHL,
+    BC_SHR,
+    BC_BNOT
 };
 
 void bc_init(Bytecode *bc);

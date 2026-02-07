@@ -13,6 +13,7 @@
 - add runtime GC controls `gc.keyintern` (enable/disable key interning for new keys) and `gc.strict` (toggle runtime strict checks).
 - add `use nostrict;` / `use "nostrict";` directive support and `BC_UNSTRICT` runtime opcode.
 - keep strict mode layered: `use strict;`/`use nostrict;` change parser strictness from that point forward and also emit runtime strict toggles; `gc.strict` changes runtime only.
+- add full bitwise operator support: `&`, `|`, `^`, `~`, `<<`, `>>` and compound assignments `&=`, `|=`, `^=`, `<<=`, `>>=`.
 
 ## 0.17.1
 - add CLI commands for compiling (`--compile-bytecode`) and running (`--run-bytecode`) bytecode files.

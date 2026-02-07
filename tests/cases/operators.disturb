@@ -93,3 +93,57 @@ println(tbl.a--);
 println(tbl.a);
 println(--tbl.a);
 println(tbl.a);
+
+ba = 6 & 3;
+bb = 6 | 3;
+bc = 6 ^ 3;
+bd = ~6;
+be = 1 << 5;
+bf = 64 >> 3;
+bg = 1 + 2 << 3;
+bh = 16 >> 1 + 1;
+bi = 5 & 3 == 1;
+bj = 5 == 5 & 1;
+bk = 1 | 0 && 0;
+bl = 0 || 1 & 0;
+bm = ~1 + 2;
+
+println(ba);
+println(bb);
+println(bc);
+println(bd);
+println(be);
+println(bf);
+println(bg);
+println(bh);
+println(bi);
+println(bj);
+println(bk);
+println(bl);
+println(bm);
+
+acc2 = 10;
+acc2 &= 6;
+println(acc2);
+acc2 |= 8;
+println(acc2);
+acc2 ^= 3;
+println(acc2);
+acc2 <<= 1;
+println(acc2);
+acc2 >>= 2;
+println(acc2);
+
+arr2 = [15];
+println(arr2[0] &= 7);
+println(arr2[0] |= 8);
+println(arr2[0] ^= 3);
+println(arr2[0] <<= 1);
+println(arr2[0] >>= 2);
+
+tbl2 = {v = 9};
+println(tbl2.v &= 6);
+println(tbl2.v |= 1);
+println(tbl2.v ^= 2);
+println(tbl2.v <<= 2);
+println(tbl2.v >>= 1);

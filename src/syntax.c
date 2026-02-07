@@ -51,12 +51,18 @@ typedef enum {
     TOK_SLASH,
     TOK_PERCENT,
     TOK_BANG,
+    TOK_TILDE,
     TOK_EQEQ,
     TOK_NEQ,
     TOK_LT,
     TOK_LTE,
     TOK_GT,
     TOK_GTE,
+    TOK_SHL,
+    TOK_SHR,
+    TOK_BITAND,
+    TOK_BITOR,
+    TOK_BITXOR,
     TOK_AND,
     TOK_OR,
     TOK_PLUSPLUS,
@@ -66,6 +72,11 @@ typedef enum {
     TOK_STAR_EQ,
     TOK_SLASH_EQ,
     TOK_PERCENT_EQ,
+    TOK_BITAND_EQ,
+    TOK_BITOR_EQ,
+    TOK_BITXOR_EQ,
+    TOK_SHL_EQ,
+    TOK_SHR_EQ,
     TOK_ELLIPSIS
 } TokenKind;
 
@@ -794,6 +805,9 @@ static Token next_token(Parser *p)
             t.kind = TOK_BANG;
         }
         break;
+    case '~':
+        t.kind = TOK_TILDE;
+        break;
     case '=':
         if (peek_char(p) == '=') {
             next_char(p);
@@ -814,6 +828,14 @@ static Token next_token(Parser *p)
         if (peek_char(p) == '=') {
             next_char(p);
             t.kind = TOK_LTE;
+        } else if (peek_char(p) == '<') {
+            next_char(p);
+            if (peek_char(p) == '=') {
+                next_char(p);
+                t.kind = TOK_SHL_EQ;
+            } else {
+                t.kind = TOK_SHL;
+            }
         } else {
             t.kind = TOK_LT;
         }
@@ -822,6 +844,14 @@ static Token next_token(Parser *p)
         if (peek_char(p) == '=') {
             next_char(p);
             t.kind = TOK_GTE;
+        } else if (peek_char(p) == '>') {
+            next_char(p);
+            if (peek_char(p) == '=') {
+                next_char(p);
+                t.kind = TOK_SHR_EQ;
+            } else {
+                t.kind = TOK_SHR;
+            }
         } else {
             t.kind = TOK_GT;
         }
@@ -830,16 +860,30 @@ static Token next_token(Parser *p)
         if (peek_char(p) == '&') {
             next_char(p);
             t.kind = TOK_AND;
+        } else if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_BITAND_EQ;
         } else {
-            t.kind = TOK_EOF;
+            t.kind = TOK_BITAND;
         }
         break;
     case '|':
         if (peek_char(p) == '|') {
             next_char(p);
             t.kind = TOK_OR;
+        } else if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_BITOR_EQ;
         } else {
-            t.kind = TOK_EOF;
+            t.kind = TOK_BITOR;
+        }
+        break;
+    case '^':
+        if (peek_char(p) == '=') {
+            next_char(p);
+            t.kind = TOK_BITXOR_EQ;
+        } else {
+            t.kind = TOK_BITXOR;
         }
         break;
     default: t.kind = TOK_EOF; break;
@@ -1607,7 +1651,8 @@ static Expr *parse_unary(Parser *p)
         e->as.update.is_prefix = 1;
         return e;
     }
-    if (p->current.kind == TOK_BANG || p->current.kind == TOK_MINUS) {
+    if (p->current.kind == TOK_BANG || p->current.kind == TOK_MINUS ||
+        p->current.kind == TOK_TILDE) {
         TokenKind op = p->current.kind;
         advance(p);
         Expr *e = expr_new(p, EXPR_UNARY);
@@ -1659,15 +1704,34 @@ static Expr *parse_term(Parser *p)
     return expr;
 }
 
-static Expr *parse_compare(Parser *p)
+static Expr *parse_shift(Parser *p)
 {
     Expr *expr = parse_term(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_SHL || p->current.kind == TOK_SHR) {
+        TokenKind op = p->current.kind;
+        advance(p);
+        Expr *right = parse_term(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = op;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
+static Expr *parse_compare(Parser *p)
+{
+    Expr *expr = parse_shift(p);
     if (!expr) return NULL;
     while (p->current.kind == TOK_LT || p->current.kind == TOK_LTE ||
            p->current.kind == TOK_GT || p->current.kind == TOK_GTE) {
         TokenKind op = p->current.kind;
         advance(p);
-        Expr *right = parse_term(p);
+        Expr *right = parse_shift(p);
         if (!right) return NULL;
         Expr *e = expr_new(p, EXPR_BINARY);
         if (!e) return NULL;
@@ -1698,13 +1762,67 @@ static Expr *parse_equality(Parser *p)
     return expr;
 }
 
-static Expr *parse_and(Parser *p)
+static Expr *parse_bitand(Parser *p)
 {
     Expr *expr = parse_equality(p);
     if (!expr) return NULL;
-    while (p->current.kind == TOK_AND) {
+    while (p->current.kind == TOK_BITAND) {
         advance(p);
         Expr *right = parse_equality(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = TOK_BITAND;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
+static Expr *parse_bitxor(Parser *p)
+{
+    Expr *expr = parse_bitand(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_BITXOR) {
+        advance(p);
+        Expr *right = parse_bitand(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = TOK_BITXOR;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
+static Expr *parse_bitor(Parser *p)
+{
+    Expr *expr = parse_bitxor(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_BITOR) {
+        advance(p);
+        Expr *right = parse_bitxor(p);
+        if (!right) return NULL;
+        Expr *e = expr_new(p, EXPR_BINARY);
+        if (!e) return NULL;
+        e->as.binary.op = TOK_BITOR;
+        e->as.binary.left = expr;
+        e->as.binary.right = right;
+        expr = e;
+    }
+    return expr;
+}
+
+static Expr *parse_and(Parser *p)
+{
+    Expr *expr = parse_bitor(p);
+    if (!expr) return NULL;
+    while (p->current.kind == TOK_AND) {
+        advance(p);
+        Expr *right = parse_bitor(p);
         if (!right) return NULL;
         Expr *e = expr_new(p, EXPR_BINARY);
         if (!e) return NULL;
@@ -1746,6 +1864,11 @@ static Expr *parse_assignment(Parser *p)
     else if (match(p, TOK_STAR_EQ)) op = TOK_STAR_EQ;
     else if (match(p, TOK_SLASH_EQ)) op = TOK_SLASH_EQ;
     else if (match(p, TOK_PERCENT_EQ)) op = TOK_PERCENT_EQ;
+    else if (match(p, TOK_BITAND_EQ)) op = TOK_BITAND_EQ;
+    else if (match(p, TOK_BITOR_EQ)) op = TOK_BITOR_EQ;
+    else if (match(p, TOK_BITXOR_EQ)) op = TOK_BITXOR_EQ;
+    else if (match(p, TOK_SHL_EQ)) op = TOK_SHL_EQ;
+    else if (match(p, TOK_SHR_EQ)) op = TOK_SHR_EQ;
     else if (match(p, TOK_QEQ)) op = TOK_QEQ;
 
     if (op != TOK_EOF) {
@@ -1818,6 +1941,11 @@ static int emit_binary_op(Bytecode *bc, Parser *p, TokenKind op)
     case TOK_STAR: out = BC_MUL; break;
     case TOK_SLASH: out = BC_DIV; break;
     case TOK_PERCENT: out = BC_MOD; break;
+    case TOK_BITAND: out = BC_BITAND; break;
+    case TOK_BITOR: out = BC_BITOR; break;
+    case TOK_BITXOR: out = BC_BITXOR; break;
+    case TOK_SHL: out = BC_SHL; break;
+    case TOK_SHR: out = BC_SHR; break;
     case TOK_EQEQ: out = BC_EQ; break;
     case TOK_NEQ: out = BC_NEQ; break;
     case TOK_LT: out = BC_LT; break;
@@ -1898,6 +2026,11 @@ static int emit_assign_expr(Bytecode *bc, Parser *p, Expr *lhs, TokenKind op, Ex
         else if (op == TOK_STAR_EQ) bin_op = TOK_STAR;
         else if (op == TOK_SLASH_EQ) bin_op = TOK_SLASH;
         else if (op == TOK_PERCENT_EQ) bin_op = TOK_PERCENT;
+        else if (op == TOK_BITAND_EQ) bin_op = TOK_BITAND;
+        else if (op == TOK_BITOR_EQ) bin_op = TOK_BITOR;
+        else if (op == TOK_BITXOR_EQ) bin_op = TOK_BITXOR;
+        else if (op == TOK_SHL_EQ) bin_op = TOK_SHL;
+        else if (op == TOK_SHR_EQ) bin_op = TOK_SHR;
 
         if (op == TOK_QEQ) {
             if (!emit_load_global_name(bc, p, name, name_len)) return 0;
@@ -1956,6 +2089,11 @@ static int emit_assign_expr(Bytecode *bc, Parser *p, Expr *lhs, TokenKind op, Ex
     else if (op == TOK_STAR_EQ) bin_op = TOK_STAR;
     else if (op == TOK_SLASH_EQ) bin_op = TOK_SLASH;
     else if (op == TOK_PERCENT_EQ) bin_op = TOK_PERCENT;
+    else if (op == TOK_BITAND_EQ) bin_op = TOK_BITAND;
+    else if (op == TOK_BITOR_EQ) bin_op = TOK_BITOR;
+    else if (op == TOK_BITXOR_EQ) bin_op = TOK_BITXOR;
+    else if (op == TOK_SHL_EQ) bin_op = TOK_SHL;
+    else if (op == TOK_SHR_EQ) bin_op = TOK_SHR;
 
     if (op == TOK_QEQ) {
         if (!emit_expr(bc, p, lhs->kind == EXPR_MEMBER ? lhs->as.member.base : lhs->as.index.base)) return 0;
@@ -2349,7 +2487,9 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
     }
     case EXPR_UNARY: {
         if (!emit_expr(bc, p, e->as.unary.expr)) return 0;
-        uint8_t op = e->as.unary.op == TOK_MINUS ? BC_NEG : BC_NOT;
+        uint8_t op = BC_NOT;
+        if (e->as.unary.op == TOK_MINUS) op = BC_NEG;
+        else if (e->as.unary.op == TOK_TILDE) op = BC_BNOT;
         if (!bc_emit_u8(bc, op)) {
             parser_error(p, "failed to emit unary op");
             return 0;

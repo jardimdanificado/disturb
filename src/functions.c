@@ -684,9 +684,45 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 bc_free(out);
                 return 0;
             }
+        } else if (op_len == 6 && memcmp(op_name, "BITAND", 6) == 0) {
+            if (!bc_emit_u8(out, BC_BITAND)) {
+                ast_err(err, err_cap, "failed to emit BITAND");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 5 && memcmp(op_name, "BITOR", 5) == 0) {
+            if (!bc_emit_u8(out, BC_BITOR)) {
+                ast_err(err, err_cap, "failed to emit BITOR");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 6 && memcmp(op_name, "BITXOR", 6) == 0) {
+            if (!bc_emit_u8(out, BC_BITXOR)) {
+                ast_err(err, err_cap, "failed to emit BITXOR");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "SHL", 3) == 0) {
+            if (!bc_emit_u8(out, BC_SHL)) {
+                ast_err(err, err_cap, "failed to emit SHL");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 3 && memcmp(op_name, "SHR", 3) == 0) {
+            if (!bc_emit_u8(out, BC_SHR)) {
+                ast_err(err, err_cap, "failed to emit SHR");
+                bc_free(out);
+                return 0;
+            }
         } else if (op_len == 3 && memcmp(op_name, "NEG", 3) == 0) {
             if (!bc_emit_u8(out, BC_NEG)) {
                 ast_err(err, err_cap, "failed to emit NEG");
+                bc_free(out);
+                return 0;
+            }
+        } else if (op_len == 4 && memcmp(op_name, "BNOT", 4) == 0) {
+            if (!bc_emit_u8(out, BC_BNOT)) {
+                ast_err(err, err_cap, "failed to emit BNOT");
                 bc_free(out);
                 return 0;
             }
