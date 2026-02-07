@@ -128,6 +128,8 @@ const char *bc_opcode_name(uint8_t op)
     case BC_NEG: return "NEG";
     case BC_NOT: return "NOT";
     case BC_EQ: return "EQ";
+    case BC_SEQ: return "SEQ";
+    case BC_SNEQ: return "SNEQ";
     case BC_NEQ: return "NEQ";
     case BC_LT: return "LT";
     case BC_LTE: return "LTE";

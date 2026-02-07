@@ -14,6 +14,9 @@
 - add `use nostrict;` / `use "nostrict";` directive support and `BC_UNSTRICT` runtime opcode.
 - keep strict mode layered: `use strict;`/`use nostrict;` change parser strictness from that point forward and also emit runtime strict toggles; `gc.strict` changes runtime only.
 - add full bitwise operator support: `&`, `|`, `^`, `~`, `<<`, `>>` and compound assignments `&=`, `|=`, `^=`, `<<=`, `>>=`.
+- split equality semantics: add strict identity operator `===` (`BC_SEQ`) and make `==` value/content equality with recursive, cycle-safe table comparison; keep `!=` as negation of value equality.
+- add strict identity inequality operator `!==` (`BC_SNEQ`) as the negation of `===`.
+- add equality coverage tests for primitives, identity vs value, nested/cyclic tables, functions, and FFI-style wrapper objects; document `==` vs `===` behavior in README.
 
 ## 0.17.1
 - add CLI commands for compiling (`--compile-bytecode`) and running (`--run-bytecode`) bytecode files.

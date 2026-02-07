@@ -1,0 +1,35 @@
+println(1 == 1);
+println(1 === 1);
+println(1 == 1.0);
+println(!(1 === 1.0));
+println(1 !== 1.0);
+
+a = {};
+b = a;
+c = {};
+println(a === b);
+println(a === c);
+println(a !== c);
+println(a == c);
+
+println({x = 1, y = {z = 2}} == {x = 1, y = {z = 2}});
+
+ca = {};
+ca.self = ca;
+cb = {};
+cb.self = cb;
+println(ca == cb);
+
+f = (x){ return x; };
+g = (x){ return x; };
+println(f === f);
+println(f == f);
+println(f == g);
+
+t1 = {ptr = 123};
+t2 = {ptr = 123};
+println(t1 == t2);
+println(t1 === t2);
+println(t1 !== t2);
+println(t1.ptr === t2.ptr);
+println(!(t1.ptr !== t2.ptr));

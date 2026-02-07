@@ -1987,15 +1987,180 @@ ObjEntry *vm_pretty_value(VM *vm, ObjEntry *entry)
     return out;
 }
 
-static int vm_entry_equal(ObjEntry *a, ObjEntry *b)
+typedef struct {
+    const List *left;
+    const List *right;
+    int used;
+} EqPairSlot;
+
+typedef struct {
+    EqPairSlot *slots;
+    size_t cap;
+    size_t count;
+} EqPairSet;
+
+typedef struct {
+    EqPairSet visited;
+    int depth_limit;
+} EqCtx;
+
+enum {
+    VM_EQ_MAX_DEPTH = 256
+};
+
+static uint64_t vm_eq_hash_mix(uint64_t x)
+{
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    x *= 0xc4ceb9fe1a85ec53ULL;
+    x ^= x >> 33;
+    return x;
+}
+
+static uint64_t vm_eq_pair_hash(const List *a, const List *b)
+{
+    uintptr_t la = (uintptr_t)a;
+    uintptr_t lb = (uintptr_t)b;
+    if (la > lb) {
+        uintptr_t tmp = la;
+        la = lb;
+        lb = tmp;
+    }
+    uint64_t x = vm_eq_hash_mix((uint64_t)la);
+    uint64_t y = vm_eq_hash_mix((uint64_t)lb);
+    return x ^ (y + 0x9e3779b97f4a7c15ULL + (x << 6) + (x >> 2));
+}
+
+static int vm_eq_pair_set_resize(EqPairSet *set, size_t new_cap)
+{
+    EqPairSlot *old_slots = set->slots;
+    size_t old_cap = set->cap;
+    EqPairSlot *slots = (EqPairSlot*)calloc(new_cap, sizeof(EqPairSlot));
+    if (!slots) return 0;
+    set->slots = slots;
+    set->cap = new_cap;
+    set->count = 0;
+    if (!old_slots) return 1;
+    for (size_t i = 0; i < old_cap; i++) {
+        if (!old_slots[i].used) continue;
+        const List *left = old_slots[i].left;
+        const List *right = old_slots[i].right;
+        uintptr_t la = (uintptr_t)left;
+        uintptr_t lb = (uintptr_t)right;
+        if (la > lb) {
+            const List *tmp = left;
+            left = right;
+            right = tmp;
+        }
+        size_t idx = (size_t)(vm_eq_pair_hash(left, right) & (new_cap - 1));
+        while (slots[idx].used) idx = (idx + 1) & (new_cap - 1);
+        slots[idx].used = 1;
+        slots[idx].left = left;
+        slots[idx].right = right;
+        set->count++;
+    }
+    free(old_slots);
+    return 1;
+}
+
+static void vm_eq_pair_set_free(EqPairSet *set)
+{
+    if (!set) return;
+    free(set->slots);
+    memset(set, 0, sizeof(*set));
+}
+
+/* Returns 1 if pair already exists, 0 if inserted, -1 on OOM. */
+static int vm_eq_pair_set_visit(EqPairSet *set, const List *a, const List *b)
+{
+    if (!set || !a || !b) return -1;
+    const List *left = a;
+    const List *right = b;
+    if ((uintptr_t)left > (uintptr_t)right) {
+        const List *tmp = left;
+        left = right;
+        right = tmp;
+    }
+    if (set->cap == 0) {
+        if (!vm_eq_pair_set_resize(set, 64)) return -1;
+    } else if ((set->count + 1) * 10 >= set->cap * 7) {
+        if (!vm_eq_pair_set_resize(set, set->cap * 2)) return -1;
+    }
+    size_t idx = (size_t)(vm_eq_pair_hash(left, right) & (set->cap - 1));
+    for (;;) {
+        EqPairSlot *slot = &set->slots[idx];
+        if (!slot->used) {
+            slot->used = 1;
+            slot->left = left;
+            slot->right = right;
+            set->count++;
+            return 0;
+        }
+        if (slot->left == left && slot->right == right) return 1;
+        idx = (idx + 1) & (set->cap - 1);
+    }
+}
+
+static int vm_entry_equal_value_rec(ObjEntry *a, ObjEntry *b, EqCtx *ctx, int depth);
+
+/* Returns 1 equal, 0 not equal, -1 on depth/alloc failure. */
+static int vm_table_equal_value(ObjEntry *a, ObjEntry *b, EqCtx *ctx, int depth)
+{
+    if (!a || !b || !ctx) return 0;
+    List *ao = a->obj;
+    List *bo = b->obj;
+    if (ao == bo) return 1;
+    int seen = vm_eq_pair_set_visit(&ctx->visited, ao, bo);
+    if (seen < 0) return -1;
+    if (seen > 0) return 1;
+    Int asize = ao->size >= 2 ? (Int)(ao->size - 2) : 0;
+    Int bsize = bo->size >= 2 ? (Int)(bo->size - 2) : 0;
+    if (asize != bsize) return 0;
+    if (asize <= 0) return 1;
+    unsigned char *matched = (unsigned char*)calloc((size_t)bsize, sizeof(unsigned char));
+    if (!matched) return -1;
+    for (Int i = 0; i < asize; i++) {
+        ObjEntry *ae = (ObjEntry*)ao->data[i + 2].p;
+        ObjEntry *ak = vm_entry_key(ae);
+        int found = 0;
+        for (Int j = 0; j < bsize; j++) {
+            if (matched[j]) continue;
+            ObjEntry *be = (ObjEntry*)bo->data[j + 2].p;
+            ObjEntry *bk = vm_entry_key(be);
+            int key_eq = vm_entry_equal_value_rec(ak, bk, ctx, depth + 1);
+            if (key_eq <= 0) continue;
+            int val_eq = vm_entry_equal_value_rec(ae, be, ctx, depth + 1);
+            if (val_eq < 0) {
+                free(matched);
+                return -1;
+            }
+            if (!val_eq) continue;
+            matched[j] = 1;
+            found = 1;
+            break;
+        }
+        if (!found) {
+            free(matched);
+            return 0;
+        }
+    }
+    free(matched);
+    return 1;
+}
+
+/* Returns 1 equal, 0 not equal, -1 on depth/alloc failure. */
+static int vm_entry_equal_value_rec(ObjEntry *a, ObjEntry *b, EqCtx *ctx, int depth)
 {
     if (a == b) return 1;
     if (!a || !b || !a->in_use || !b->in_use) return 0;
+    if (!ctx || depth > ctx->depth_limit) return -1;
     Int at = disturb_obj_type(a->obj);
     Int bt = disturb_obj_type(b->obj);
     if ((at == DISTURB_T_INT && entry_is_string(a)) ||
         (bt == DISTURB_T_INT && entry_is_string(b))) {
-        if (!(at == DISTURB_T_INT && entry_is_string(a) && bt == DISTURB_T_INT && entry_is_string(b))) {
+        if (!(at == DISTURB_T_INT && entry_is_string(a) &&
+              bt == DISTURB_T_INT && entry_is_string(b))) {
             return 0;
         }
         size_t al = disturb_bytes_len(a->obj);
@@ -2040,21 +2205,79 @@ static int vm_entry_equal(ObjEntry *a, ObjEntry *b)
             for (Int i = 0; i < ac; i++) {
                 Int av = 0;
                 Int bv = 0;
-                if (!vm_read_int_at(a->obj, i, &av) || !vm_read_int_at(b->obj, i, &bv)) return 0;
+                if (!vm_read_int_at(a->obj, i, &av) ||
+                    !vm_read_int_at(b->obj, i, &bv)) return 0;
                 if (av != bv) return 0;
             }
         } else {
             for (Int i = 0; i < ac; i++) {
                 Float av = 0;
                 Float bv = 0;
-                if (!vm_read_float_at(a->obj, i, &av) || !vm_read_float_at(b->obj, i, &bv)) return 0;
+                if (!vm_read_float_at(a->obj, i, &av) ||
+                    !vm_read_float_at(b->obj, i, &bv)) return 0;
                 if (av != bv) return 0;
             }
         }
         return 1;
     }
+    if (at != bt) return 0;
     if (at == DISTURB_T_NULL) return 1;
+    if (at == DISTURB_T_TABLE) return vm_table_equal_value(a, b, ctx, depth);
+    if (at == DISTURB_T_LAMBDA || at == DISTURB_T_NATIVE || at == DISTURB_T_VIEW) {
+        return a->obj == b->obj;
+    }
     return 0;
+}
+
+static int vm_entry_equal_value(ObjEntry *a, ObjEntry *b)
+{
+    EqCtx ctx;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.depth_limit = VM_EQ_MAX_DEPTH;
+    int out = vm_entry_equal_value_rec(a, b, &ctx, 0);
+    vm_eq_pair_set_free(&ctx.visited);
+    return out > 0 ? 1 : 0;
+}
+
+static int vm_entry_equal_strict(ObjEntry *a, ObjEntry *b)
+{
+    if (a == b) return 1;
+    if (!a || !b || !a->in_use || !b->in_use) return 0;
+    Int at = disturb_obj_type(a->obj);
+    Int bt = disturb_obj_type(b->obj);
+    if (at != bt) return 0;
+    if (at == DISTURB_T_NULL) return 1;
+    if (at == DISTURB_T_INT && entry_is_string(a)) {
+        if (!entry_is_string(b)) return 0;
+        return a->obj == b->obj;
+    }
+    if (at == DISTURB_T_INT) {
+        size_t al = disturb_bytes_len(a->obj);
+        size_t bl = disturb_bytes_len(b->obj);
+        if (al == sizeof(Int) && bl == sizeof(Int)) {
+            Int av = 0;
+            Int bv = 0;
+            if (!vm_read_int_at(a->obj, 0, &av) || !vm_read_int_at(b->obj, 0, &bv)) return 0;
+            return av == bv;
+        }
+        return a->obj == b->obj;
+    }
+    if (at == DISTURB_T_FLOAT) {
+        size_t al = disturb_bytes_len(a->obj);
+        size_t bl = disturb_bytes_len(b->obj);
+        if (al == sizeof(Float) && bl == sizeof(Float)) {
+            Float av = 0;
+            Float bv = 0;
+            if (!vm_read_float_at(a->obj, 0, &av) || !vm_read_float_at(b->obj, 0, &bv)) return 0;
+            return av == bv;
+        }
+        return a->obj == b->obj;
+    }
+    if (at == DISTURB_T_TABLE || at == DISTURB_T_LAMBDA ||
+        at == DISTURB_T_NATIVE || at == DISTURB_T_VIEW) {
+        return a->obj == b->obj;
+    }
+    return a->obj == b->obj;
 }
 
 static int vm_entry_compare(ObjEntry *a, ObjEntry *b, int *out)
@@ -3330,6 +3553,8 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         case BC_SHR:
         case BC_BNOT:
         case BC_EQ:
+        case BC_SEQ:
+        case BC_SNEQ:
         case BC_NEQ:
         case BC_LT:
         case BC_LTE:
@@ -4436,6 +4661,8 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         [BC_NEG] = &&BC_L_NEG,
         [BC_NOT] = &&BC_L_NOT,
         [BC_EQ] = &&BC_L_EQ,
+        [BC_SEQ] = &&BC_L_SEQ,
+        [BC_SNEQ] = &&BC_L_SNEQ,
         [BC_NEQ] = &&BC_L_NEQ,
         [BC_LT] = &&BC_L_LT,
         [BC_LTE] = &&BC_L_LTE,
@@ -5334,6 +5561,8 @@ BC_L_RETURN:
         case BC_SHL:
         case BC_SHR:
         case BC_EQ:
+        case BC_SEQ:
+        case BC_SNEQ:
         case BC_NEQ:
         case BC_LT:
         case BC_LTE:
@@ -5353,6 +5582,8 @@ BC_L_BITXOR:
 BC_L_SHL:
 BC_L_SHR:
 BC_L_EQ:
+BC_L_SEQ:
+BC_L_SNEQ:
 BC_L_NEQ:
 BC_L_LT:
 BC_L_LTE:
@@ -5434,29 +5665,34 @@ BC_L_OR:
                 vm_stack_push_entry(vm, vm_make_int_value(vm, out));
                 break;
             }
-            if (op == BC_EQ || op == BC_NEQ) {
+            if (op == BC_EQ || op == BC_SEQ || op == BC_SNEQ || op == BC_NEQ) {
                 if (vm->strict_mode) {
                     Int lt = disturb_obj_type(left->obj);
                     Int rt = disturb_obj_type(right->obj);
-                    if ((lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
+                    if ((op == BC_EQ || op == BC_NEQ) &&
+                        (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
                         (rt == DISTURB_T_INT && entry_is_string(right))) {
                         fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
                         return 0;
                     }
-                    if ((rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT) &&
+                    if ((op == BC_EQ || op == BC_NEQ) &&
+                        (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT) &&
                         (lt == DISTURB_T_INT && entry_is_string(left))) {
                         fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
                         return 0;
                     }
-                    if ((lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
+                    if ((op == BC_EQ || op == BC_NEQ) &&
+                        (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
                         (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT) &&
                         lt != rt) {
                         fprintf(stderr, "bytecode error at pc %zu: strict mode forbids mixed numeric types\n", pc);
                         return 0;
                     }
                 }
-                int eq = vm_entry_equal(left, right);
-                int res = op == BC_EQ ? eq : !eq;
+                int eq = (op == BC_SEQ || op == BC_SNEQ)
+                                      ? vm_entry_equal_strict(left, right)
+                                      : vm_entry_equal_value(left, right);
+                int res = (op == BC_NEQ || op == BC_SNEQ) ? !eq : eq;
                 vm_stack_push_entry(vm, vm_make_int_value(vm, res ? 1 : 0));
                 break;
             }

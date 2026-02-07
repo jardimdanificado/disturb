@@ -46,6 +46,8 @@ enum {
     BC_NEG,
     BC_NOT,
     BC_EQ,
+    BC_SEQ,
+    BC_SNEQ,
     BC_NEQ,
     BC_LT,
     BC_LTE,

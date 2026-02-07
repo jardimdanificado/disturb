@@ -74,7 +74,7 @@ Operators follow standard precedence with parentheses support:
 - Additive: `+`, `-`
 - Shift: `<<`, `>>`
 - Comparisons: `<`, `<=`, `>`, `>=`
-- Equality: `==`, `!=`
+- Equality: `==`, `!=`, `===`, `!==`
 - Bitwise: `&`, `^`, `|`, unary `~`
 - Logical: `&&`, `||`
 
@@ -82,6 +82,10 @@ Notes:
 - Logical and comparison operators return ints (`1` or `0`).
 - `null` and numeric `0` (int/float) are false; everything else is true.
 - `+` concatenates when either side is a string/char; non-strings stringify to Disturb literals.
+- `===` is strict identity equality (fast, shallow): same type and same underlying identity/value only. Strings use string object identity (not content).
+- `!==` is strict identity inequality (the negation of `===`).
+- `==` is value equality: numbers compare by numeric value (`1 == 1.0`), strings by content, tables by recursive structural value (cycle-safe), functions by reference.
+- `===` exists for identity-sensitive code (references, wrapper objects, FFI handle wrappers) and when you need O(1) identity checks.
 - `a ?= b` assigns `b` only when `a` is `null`.
 - Assignment and `++`/`--` forms are expressions and return a value (prefix returns the updated value, postfix returns the previous value).
 - String indexing assignments accept either single-byte strings or numeric values `0-255`.
@@ -219,7 +223,9 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 | `NEG` | `a -- out` | Unary minus |
 | `BNOT` | `a -- out` | Bitwise not (int) |
 | `NOT` | `a -- out` | Logical not |
-| `EQ` | `a b -- out` | Equality |
+| `EQ` | `a b -- out` | Value equality (`==`) |
+| `SEQ` | `a b -- out` | Strict identity equality (`===`) |
+| `SNEQ` | `a b -- out` | Strict identity inequality (`!==`) |
 | `NEQ` | `a b -- out` | Inequality |
 | `LT` | `a b -- out` | Less than |
 | `LTE` | `a b -- out` | Less or equal |

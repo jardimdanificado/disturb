@@ -53,7 +53,9 @@ typedef enum {
     TOK_BANG,
     TOK_TILDE,
     TOK_EQEQ,
+    TOK_EQEQEQ,
     TOK_NEQ,
+    TOK_SNEQ,
     TOK_LT,
     TOK_LTE,
     TOK_GT,
@@ -800,7 +802,12 @@ static Token next_token(Parser *p)
     case '!':
         if (peek_char(p) == '=') {
             next_char(p);
-            t.kind = TOK_NEQ;
+            if (peek_char(p) == '=') {
+                next_char(p);
+                t.kind = TOK_SNEQ;
+            } else {
+                t.kind = TOK_NEQ;
+            }
         } else {
             t.kind = TOK_BANG;
         }
@@ -811,7 +818,12 @@ static Token next_token(Parser *p)
     case '=':
         if (peek_char(p) == '=') {
             next_char(p);
-            t.kind = TOK_EQEQ;
+            if (peek_char(p) == '=') {
+                next_char(p);
+                t.kind = TOK_EQEQEQ;
+            } else {
+                t.kind = TOK_EQEQ;
+            }
         } else {
             t.kind = TOK_EQ;
         }
@@ -1747,7 +1759,10 @@ static Expr *parse_equality(Parser *p)
 {
     Expr *expr = parse_compare(p);
     if (!expr) return NULL;
-    while (p->current.kind == TOK_EQEQ || p->current.kind == TOK_NEQ) {
+    while (p->current.kind == TOK_EQEQ ||
+           p->current.kind == TOK_EQEQEQ ||
+           p->current.kind == TOK_NEQ ||
+           p->current.kind == TOK_SNEQ) {
         TokenKind op = p->current.kind;
         advance(p);
         Expr *right = parse_compare(p);
@@ -1947,6 +1962,8 @@ static int emit_binary_op(Bytecode *bc, Parser *p, TokenKind op)
     case TOK_SHL: out = BC_SHL; break;
     case TOK_SHR: out = BC_SHR; break;
     case TOK_EQEQ: out = BC_EQ; break;
+    case TOK_EQEQEQ: out = BC_SEQ; break;
+    case TOK_SNEQ: out = BC_SNEQ; break;
     case TOK_NEQ: out = BC_NEQ; break;
     case TOK_LT: out = BC_LT; break;
     case TOK_LTE: out = BC_LTE; break;
