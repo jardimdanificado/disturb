@@ -15,6 +15,9 @@ Disturb means Distributable Urb, at least that was the original idea;
 | `./disturb --repl` | Interactive REPL |
 | `./disturb --help` | Show CLI help |
 
+Notes:
+- Disturb now uses a single unified runtime backend; legacy `--urb`/`--dist` backend selection flags were removed.
+
 ## Core Model
 
 | Concept | Behavior |
@@ -83,9 +86,10 @@ Notes:
 
 ## Strict Mode
 
-Enable strict numeric rules at the top of a script:
+Enable strict numeric rules with directives:
 ```
 use strict;
+use nostrict;
 ```
 
 In strict mode:
@@ -95,6 +99,13 @@ In strict mode:
 - Number/string comparisons are errors.
 - Using `null` in numeric ops is an error.
 - `print`/`println` only render text for `.string`; raw string literals print as int lists.
+
+Notes:
+- `use strict;` and `use nostrict;` (also `use "strict";` / `use "nostrict";`) can appear anywhere; effects start from that point onward.
+- Directives affect both layers:
+  - parser strictness (compile-time checks for following code)
+  - runtime strictness (emits bytecode that toggles VM strict mode)
+- Runtime strict can also be toggled dynamically with `gc.strict = 0/1;` and follows last-write-wins behavior.
 
 ## Control Flow
 
@@ -189,6 +200,8 @@ The bytecode is RPN stack-based. There is no const pool; literals are inline.
 | `POP` | `val --` | Drop |
 | `DUP` | `val -- val val` | Duplicate |
 | `GC` | `--` | Collect |
+| `STRICT` | `--` | Enable runtime strict mode |
+| `UNSTRICT` | `--` | Disable runtime strict mode |
 | `DUMP` | `--` | Dump global |
 | `ADD` | `a b -- out` | Add/concat |
 | `SUB` | `a b -- out` | Subtract |
@@ -283,6 +296,9 @@ println(disasm(bytes));
 
 The internal bytecode AST is no longer a public API.
 - `gc()` runs a collection.
+- `global.gc.rate = N` sets auto-GC frequency (`0` disables periodic GC checks).
+- `global.gc.strict = 0/1` toggles runtime strict checks immediately.
+- `global.gc.keyintern = 0/1` toggles key interning for newly created keys (existing interned keys are kept).
 - `global.gc.collect()` runs a manual reachability collection and marks unreachable values for reuse.
 - `global.gc.free(value)` frees the value and replaces it with `null` (manual management).
 - `global.gc.sweep(value)` marks the value for reuse immediately and replaces it with `null`.

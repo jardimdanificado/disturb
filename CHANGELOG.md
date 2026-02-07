@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.18.0
 - remove the separate URB backend and keep a single unified runtime.
 - remove URB runtime/bridge sources and headers from the build (`src/urb_runtime.c`, `src/urb_bridge.c`, `include/urb_runtime.h`, `include/urb_bridge.h`).
 - simplify CLI backend behavior by removing `--urb`/`--dist` selection and always running the unified VM backend.
@@ -8,6 +8,11 @@
 - add computed-goto opcode dispatch in `vm_exec_bytecode()` under `#ifdef __GNUC__`, with switch-based fallback preserved.
 - optimize VM memory/object paths with pool limits, integer caching (`0..100000`), larger initial stack table capacity, and O(1) registry allocation via free-index stack.
 - add stdout full buffering at CLI entry points with flush/restore on exit.
+- add phase 5 key-string interning for VM key objects, with safe fallback to non-interned key creation if intern table allocation/growth fails.
+- keep interned keys alive across GC by marking intern roots during mark phase using compact root tracking (without full-capacity intern table scans).
+- add runtime GC controls `gc.keyintern` (enable/disable key interning for new keys) and `gc.strict` (toggle runtime strict checks).
+- add `use nostrict;` / `use "nostrict";` directive support and `BC_UNSTRICT` runtime opcode.
+- keep strict mode layered: `use strict;`/`use nostrict;` change parser strictness from that point forward and also emit runtime strict toggles; `gc.strict` changes runtime only.
 
 ## 0.17.1
 - add CLI commands for compiling (`--compile-bytecode`) and running (`--run-bytecode`) bytecode files.
