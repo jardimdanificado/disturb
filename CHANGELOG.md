@@ -1,10 +1,16 @@
 # Changelog
 
 ## Unreleased
-- add CLI commands for compiling (`--compile-bytecode`) and running (`--run-bytecode`) bytecode files and limit backend selectors to `--dist`/`--urb`.
+- remove the separate URB backend and keep a single unified runtime.
+- remove URB runtime/bridge sources and headers from the build (`src/urb_runtime.c`, `src/urb_bridge.c`, `include/urb_runtime.h`, `include/urb_bridge.h`).
+- simplify CLI backend behavior by removing `--urb`/`--dist` selection and always running the unified VM backend.
+- remove URB-specific test scripts and backend toggles from the Makefile.
+- add computed-goto opcode dispatch in `vm_exec_bytecode()` under `#ifdef __GNUC__`, with switch-based fallback preserved.
+- optimize VM memory/object paths with pool limits, integer caching (`0..100000`), larger initial stack table capacity, and O(1) registry allocation via free-index stack.
+- add stdout full buffering at CLI entry points with flush/restore on exit.
 
 ## 0.17.1
-- new backend selector flags (`--urb/--fast/--unsafe` for URB, `--dist/--debug/--safe` for Disturb) plus the `DEFAULT_BACKEND` Makefile option (Disturb by default) so scripts can pick a compiler-side default.
+- add CLI commands for compiling (`--compile-bytecode`) and running (`--run-bytecode`) bytecode files.
 
 ## 0.17.0
 - implement full gc in urb mode.

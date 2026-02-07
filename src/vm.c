@@ -37,6 +37,14 @@ typedef enum {
     VIEW_F64
 } ViewType;
 
+enum {
+    POOL_MAX_LIST_COUNT = 32768,
+    POOL_MAX_DATA_COUNT = 32768,
+    POOL_MAX_DATA_BYTES = 65536,
+    INT_CACHE_MIN = 0,
+    INT_CACHE_MAX = 100000
+};
+
 int lre_check_stack_overflow(void *opaque, size_t alloca_size)
 {
     (void)opaque;
@@ -62,6 +70,8 @@ void *lre_realloc(void *opaque, void *ptr, size_t size)
 
 static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_t len,
                                     ObjEntry *value, size_t pc);
+static void vm_obj_ref_move(VM *vm, List *old_obj, List *new_obj);
+static void vm_entry_set_obj(VM *vm, ObjEntry *entry, List *obj);
 
 
 static void sb_init(StrBuf *b)
@@ -147,6 +157,7 @@ ObjEntry *vm_entry_key(const ObjEntry *entry)
 List *vm_update_shared_obj(VM *vm, List *old_obj, List *new_obj)
 {
     if (!vm || !old_obj || old_obj == new_obj) return new_obj;
+    vm_obj_ref_move(vm, old_obj, new_obj);
     for (Int i = 0; i < vm->reg_count; i++) {
         ObjEntry *entry = vm->reg[i];
         if (!entry || !entry->in_use) continue;
@@ -175,6 +186,17 @@ static int disturb_bytes_eq_bytes(const List *obj, const char *s, size_t len)
 static int entry_is_string(const ObjEntry *entry)
 {
     return entry && entry->is_string && disturb_obj_type(entry->obj) == DISTURB_T_INT;
+}
+
+static int vm_obj_is_cached_int(const VM *vm, const List *obj)
+{
+    if (!vm || !obj || !vm->int_cache_objs || vm->int_cache_count == 0) return 0;
+    return obj >= vm->int_cache_objs && obj < (vm->int_cache_objs + vm->int_cache_count);
+}
+
+static int vm_entry_is_cached_int(const VM *vm, const ObjEntry *entry)
+{
+    return entry && vm_obj_is_cached_int(vm, entry->obj);
 }
 
 static size_t vm_elem_size(Int type)
@@ -417,6 +439,7 @@ List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve)
     if (vm && vm->free_list_objs) {
         FreeNode *node = vm->free_list_objs;
         vm->free_list_objs = node->next;
+        if (vm->free_list_obj_count > 0) vm->free_list_obj_count--;
         obj = node->obj;
         free_node_put(vm, node);
     }
@@ -440,6 +463,12 @@ List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve)
                 else vm->free_list_data = cur->next;
                 data = (Value*)cur->data;
                 cap_bytes = cur->cap_bytes;
+                if (vm->free_list_data_count > 0) vm->free_list_data_count--;
+                if (vm->free_list_data_bytes >= cur->cap_bytes) {
+                    vm->free_list_data_bytes -= cur->cap_bytes;
+                } else {
+                    vm->free_list_data_bytes = 0;
+                }
                 free_data_node_put(vm, cur);
                 break;
             }
@@ -548,6 +577,7 @@ static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s
     if (vm && vm->free_list_objs) {
         FreeNode *node = vm->free_list_objs;
         vm->free_list_objs = node->next;
+        if (vm->free_list_obj_count > 0) vm->free_list_obj_count--;
         obj = node->obj;
         free_node_put(vm, node);
     }
@@ -571,6 +601,12 @@ static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s
                 else vm->free_list_data = cur->next;
                 data = (Value*)cur->data;
                 cap_bytes = cur->cap_bytes;
+                if (vm->free_list_data_count > 0) vm->free_list_data_count--;
+                if (vm->free_list_data_bytes >= cur->cap_bytes) {
+                    vm->free_list_data_bytes -= cur->cap_bytes;
+                } else {
+                    vm->free_list_data_bytes = 0;
+                }
                 free_data_node_put(vm, cur);
                 break;
             }
@@ -600,6 +636,7 @@ static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s
 static void vm_pool_push(VM *vm, List *obj)
 {
     if (!vm || !obj) return;
+    if (vm_obj_is_cached_int(vm, obj)) return;
     disturb_obj_clear(obj);
     size_t data_bytes = 0;
     if (obj->data) {
@@ -613,13 +650,22 @@ static void vm_pool_push(VM *vm, List *obj)
     }
 
     if (obj->data && data_bytes > 0) {
+        int can_pool_data = vm->free_list_data_count < POOL_MAX_DATA_COUNT &&
+                            data_bytes <= POOL_MAX_DATA_BYTES &&
+                            vm->free_list_data_bytes + data_bytes <= POOL_MAX_DATA_BYTES;
         FreeDataNode *dnode = free_data_node_take(vm);
-        if (!dnode) dnode = (FreeDataNode*)malloc(sizeof(FreeDataNode));
-        if (dnode) {
-            dnode->data = obj->data;
-            dnode->cap_bytes = data_bytes;
-            dnode->next = vm->free_list_data;
-            vm->free_list_data = dnode;
+        if (can_pool_data) {
+            if (!dnode) dnode = (FreeDataNode*)malloc(sizeof(FreeDataNode));
+            if (dnode) {
+                dnode->data = obj->data;
+                dnode->cap_bytes = data_bytes;
+                dnode->next = vm->free_list_data;
+                vm->free_list_data = dnode;
+                vm->free_list_data_count++;
+                vm->free_list_data_bytes += data_bytes;
+            } else {
+                free(obj->data);
+            }
         } else {
             free(obj->data);
         }
@@ -628,6 +674,10 @@ static void vm_pool_push(VM *vm, List *obj)
     obj->capacity = 0;
     obj->size = 0;
 
+    if (vm->free_list_obj_count >= POOL_MAX_LIST_COUNT) {
+        if (!list_in_slabs(vm, obj)) free(obj);
+        return;
+    }
     FreeNode *node = free_node_take(vm);
     if (!node) node = (FreeNode*)malloc(sizeof(FreeNode));
     if (!node) {
@@ -637,6 +687,7 @@ static void vm_pool_push(VM *vm, List *obj)
     node->obj = obj;
     node->next = vm->free_list_objs;
     vm->free_list_objs = node;
+    vm->free_list_obj_count++;
 }
 
 void vm_reuse_list(VM *vm, List *obj)
@@ -650,12 +701,19 @@ void vm_flush_reuse(VM *vm)
     while (vm->free_list_objs) {
         FreeNode *node = vm->free_list_objs;
         vm->free_list_objs = node->next;
+        if (vm->free_list_obj_count > 0) vm->free_list_obj_count--;
         if (!list_in_slabs(vm, node->obj)) free(node->obj);
         free_node_put(vm, node);
     }
     while (vm->free_list_data) {
         FreeDataNode *node = vm->free_list_data;
         vm->free_list_data = node->next;
+        if (vm->free_list_data_count > 0) vm->free_list_data_count--;
+        if (vm->free_list_data_bytes >= node->cap_bytes) {
+            vm->free_list_data_bytes -= node->cap_bytes;
+        } else {
+            vm->free_list_data_bytes = 0;
+        }
         free(node->data);
         free_data_node_put(vm, node);
     }
@@ -814,7 +872,7 @@ static void vm_table_add_entry(VM *vm, ObjEntry *target, ObjEntry *entry)
 {
     if (!target) return;
     List *old_obj = target->obj;
-    target->obj = vm_update_shared_obj(vm, old_obj, disturb_table_add(old_obj, entry));
+    vm_entry_set_obj(vm, target, vm_update_shared_obj(vm, old_obj, disturb_table_add(old_obj, entry)));
 }
 
 List *disturb_table_add(List *obj, ObjEntry *entry)
@@ -860,22 +918,189 @@ static void vm_reg_init(VM *vm)
     vm->free_list_data = NULL;
     vm->free_node_pool = NULL;
     vm->free_data_node_pool = NULL;
+    vm->free_list_obj_count = 0;
+    vm->free_list_data_count = 0;
+    vm->free_list_data_bytes = 0;
     vm->list_slabs = NULL;
     vm->entry_slabs = NULL;
+    vm->int_cache_entries = NULL;
+    vm->int_cache_objs = NULL;
+    vm->int_cache_data = NULL;
+    vm->int_cache_count = 0;
+    vm->reg_free = NULL;
+    vm->reg_free_count = 0;
+    vm->reg_free_cap = 0;
+    vm->obj_ref_keys = NULL;
+    vm->obj_ref_vals = NULL;
+    vm->obj_ref_cap = 0;
+    vm->obj_ref_count = 0;
+}
+
+static int vm_reg_free_push(VM *vm, Int idx)
+{
+    if (!vm || idx < 0) return 0;
+    if (vm->reg_free_count == vm->reg_free_cap) {
+        Int next_cap = vm->reg_free_cap == 0 ? 64 : vm->reg_free_cap * 2;
+        Int *next = (Int*)realloc(vm->reg_free, (size_t)next_cap * sizeof(Int));
+        if (!next) return 0;
+        vm->reg_free = next;
+        vm->reg_free_cap = next_cap;
+    }
+    vm->reg_free[vm->reg_free_count++] = idx;
+    return 1;
+}
+
+static void vm_reg_rebuild_free(VM *vm)
+{
+    if (!vm) return;
+    vm->reg_free_count = 0;
+    for (Int i = 0; i < vm->reg_count; i++) {
+        ObjEntry *entry = vm->reg[i];
+        if (!entry || entry->in_use) continue;
+        vm_reg_free_push(vm, i);
+    }
+}
+
+static size_t vm_obj_ref_hash(const List *obj)
+{
+    uintptr_t x = (uintptr_t)obj;
+    x >>= 4;
+    x ^= x >> 33;
+    x *= 0xff51afd7ed558ccdULL;
+    x ^= x >> 33;
+    return (size_t)x;
+}
+
+static int vm_obj_ref_rehash(VM *vm, size_t new_cap)
+{
+    List **new_keys = (List**)calloc(new_cap, sizeof(List*));
+    size_t *new_vals = (size_t*)calloc(new_cap, sizeof(size_t));
+    if (!new_keys || !new_vals) {
+        free(new_keys);
+        free(new_vals);
+        return 0;
+    }
+    for (size_t i = 0; i < vm->obj_ref_cap; i++) {
+        List *key = vm->obj_ref_keys ? vm->obj_ref_keys[i] : NULL;
+        if (!key || key == (List*)1) continue;
+        size_t idx = vm_obj_ref_hash(key) & (new_cap - 1);
+        while (new_keys[idx]) idx = (idx + 1) & (new_cap - 1);
+        new_keys[idx] = key;
+        new_vals[idx] = vm->obj_ref_vals[i];
+    }
+    free(vm->obj_ref_keys);
+    free(vm->obj_ref_vals);
+    vm->obj_ref_keys = new_keys;
+    vm->obj_ref_vals = new_vals;
+    vm->obj_ref_cap = new_cap;
+    return 1;
+}
+
+static int vm_obj_ref_ensure(VM *vm)
+{
+    if (!vm) return 0;
+    if (vm->obj_ref_cap == 0) return vm_obj_ref_rehash(vm, 1024);
+    if ((vm->obj_ref_count + 1) * 10 >= vm->obj_ref_cap * 7) {
+        return vm_obj_ref_rehash(vm, vm->obj_ref_cap * 2);
+    }
+    return 1;
+}
+
+static size_t vm_obj_ref_inc(VM *vm, List *obj, size_t delta)
+{
+    if (!vm || !obj || delta == 0 || vm_obj_is_cached_int(vm, obj)) return 0;
+    if (!vm_obj_ref_ensure(vm)) return 0;
+    size_t mask = vm->obj_ref_cap - 1;
+    size_t idx = vm_obj_ref_hash(obj) & mask;
+    Int tomb = -1;
+    while (1) {
+        List *key = vm->obj_ref_keys[idx];
+        if (!key) {
+            size_t put = tomb >= 0 ? (size_t)tomb : idx;
+            vm->obj_ref_keys[put] = obj;
+            vm->obj_ref_vals[put] = delta;
+            vm->obj_ref_count++;
+            return delta;
+        }
+        if (key == (List*)1) {
+            if (tomb < 0) tomb = (Int)idx;
+        } else if (key == obj) {
+            vm->obj_ref_vals[idx] += delta;
+            return vm->obj_ref_vals[idx];
+        }
+        idx = (idx + 1) & mask;
+    }
+}
+
+static size_t vm_obj_ref_get(const VM *vm, List *obj, size_t *slot_out)
+{
+    if (!vm || !obj || vm->obj_ref_cap == 0) return 0;
+    size_t mask = vm->obj_ref_cap - 1;
+    size_t idx = vm_obj_ref_hash(obj) & mask;
+    while (1) {
+        List *key = vm->obj_ref_keys[idx];
+        if (!key) return 0;
+        if (key == obj) {
+            if (slot_out) *slot_out = idx;
+            return vm->obj_ref_vals[idx];
+        }
+        idx = (idx + 1) & mask;
+    }
+}
+
+static size_t vm_obj_ref_dec(VM *vm, List *obj)
+{
+    if (!vm || !obj || vm_obj_is_cached_int(vm, obj)) return 0;
+    size_t slot = 0;
+    size_t cur = vm_obj_ref_get(vm, obj, &slot);
+    if (cur == 0) return 0;
+    if (cur == 1) {
+        vm->obj_ref_keys[slot] = (List*)1;
+        vm->obj_ref_vals[slot] = 0;
+        if (vm->obj_ref_count > 0) vm->obj_ref_count--;
+        return 0;
+    }
+    vm->obj_ref_vals[slot] = cur - 1;
+    return cur - 1;
+}
+
+static void vm_obj_ref_move(VM *vm, List *old_obj, List *new_obj)
+{
+    if (!vm || !old_obj || !new_obj || old_obj == new_obj) return;
+    if (vm_obj_is_cached_int(vm, old_obj) || vm_obj_is_cached_int(vm, new_obj)) return;
+    size_t slot = 0;
+    size_t count = vm_obj_ref_get(vm, old_obj, &slot);
+    if (count == 0) return;
+    vm->obj_ref_keys[slot] = (List*)1;
+    vm->obj_ref_vals[slot] = 0;
+    if (vm->obj_ref_count > 0) vm->obj_ref_count--;
+    vm_obj_ref_inc(vm, new_obj, count);
+}
+
+static void vm_entry_set_obj(VM *vm, ObjEntry *entry, List *obj)
+{
+    if (!entry) return;
+    if (entry->obj == obj) return;
+    if (entry->obj) vm_obj_ref_dec(vm, entry->obj);
+    entry->obj = obj;
+    if (obj) vm_obj_ref_inc(vm, obj, 1);
 }
 
 static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
 {
-    for (Int i = 0; i < vm->reg_count; i++) {
-        ObjEntry *entry = vm->reg[i];
-        if (entry && !entry->in_use) {
-            entry->obj = obj;
-            entry->key = obj ? disturb_obj_key(obj) : NULL;
-            entry->in_use = 1;
-            entry->mark = 0;
-            entry->is_string = 0;
-            entry->explicit_string = 0;
-            return entry;
+    if (vm->reg_free_count > 0) {
+        Int idx = vm->reg_free[--vm->reg_free_count];
+        if (idx >= 0 && idx < vm->reg_count) {
+            ObjEntry *entry = vm->reg[idx];
+            if (entry) {
+                vm_entry_set_obj(vm, entry, obj);
+                entry->key = obj ? disturb_obj_key(obj) : NULL;
+                entry->in_use = 1;
+                entry->mark = 0;
+                entry->is_string = 0;
+                entry->explicit_string = 0;
+                return entry;
+            }
         }
     }
 
@@ -890,8 +1115,9 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
     ObjEntry *entry = entry_slab_take(vm);
     if (!entry) entry = (ObjEntry*)calloc(1, sizeof(ObjEntry));
     if (!entry) return NULL;
+    entry->reg_index = vm->reg_count;
     vm->reg[vm->reg_count++] = entry;
-    entry->obj = obj;
+    vm_entry_set_obj(vm, entry, obj);
     entry->key = obj ? disturb_obj_key(obj) : NULL;
     entry->in_use = 1;
     entry->mark = 0;
@@ -900,29 +1126,23 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
     return entry;
 }
 
-static int vm_entry_shared(VM *vm, ObjEntry *entry)
-{
-    if (!vm || !entry || !entry->obj) return 0;
-    for (Int i = 0; i < vm->reg_count; i++) {
-        ObjEntry *other = vm->reg[i];
-        if (!other || !other->in_use || other == entry) continue;
-        if (other->obj == entry->obj) return 1;
-    }
-    return 0;
-}
-
 void vm_release_entry(VM *vm, ObjEntry *entry)
 {
     if (!entry || !entry->in_use) return;
     if (entry->obj) {
-        if (!vm_entry_shared(vm, entry)) {
-            vm_pool_push(vm, entry->obj);
+        List *obj = entry->obj;
+        size_t refs = vm_obj_ref_dec(vm, obj);
+        if (!vm_obj_is_cached_int(vm, obj) && refs == 0) {
+            vm_pool_push(vm, obj);
         }
         entry->obj = NULL;
     }
     entry->in_use = 0;
     entry->mark = 0;
     entry->key = NULL;
+    if (vm && entry->reg_index >= 0) {
+        vm_reg_free_push(vm, entry->reg_index);
+    }
 }
 
 static ObjEntry *vm_make_key(VM *vm, const char *name)
@@ -1087,6 +1307,7 @@ void vm_gc(VM *vm)
         }
         vm_release_entry(vm, entry);
     }
+    vm_reg_rebuild_free(vm);
 }
 
 ObjEntry *vm_stack_peek(List *stack, Int from_top)
@@ -1885,12 +2106,46 @@ void vm_init(VM *vm)
     vm->call_entry = NULL;
     vm->strict_mode = 0;
 
+    vm->int_cache_count = (size_t)(INT_CACHE_MAX - INT_CACHE_MIN + 1);
+    vm->int_cache_entries = (ObjEntry*)calloc(vm->int_cache_count, sizeof(ObjEntry));
+    vm->int_cache_objs = (List*)calloc(vm->int_cache_count, sizeof(List));
+    vm->int_cache_data = (unsigned char*)malloc(vm->int_cache_count * (2 * sizeof(Value) + sizeof(Int)));
+    if (vm->int_cache_entries && vm->int_cache_objs && vm->int_cache_data) {
+        for (size_t i = 0; i < vm->int_cache_count; i++) {
+            Int v = (Int)INT_CACHE_MIN + (Int)i;
+            ObjEntry *entry = &vm->int_cache_entries[i];
+            List *obj = &vm->int_cache_objs[i];
+            unsigned char *bytes = vm->int_cache_data + i * (2 * sizeof(Value) + sizeof(Int));
+            obj->data = (Value*)bytes;
+            obj->capacity = (UHalf)(sizeof(Int) + 2);
+            obj->size = (UHalf)(sizeof(Int) + 2);
+            obj->data[0].i = DISTURB_T_INT;
+            obj->data[1].p = NULL;
+            memcpy(disturb_bytes_data(obj), &v, sizeof(Int));
+            entry->obj = obj;
+            entry->key = NULL;
+            entry->reg_index = -1;
+            entry->in_use = 1;
+            entry->mark = 0;
+            entry->is_string = 0;
+            entry->explicit_string = 0;
+        }
+    } else {
+        vm->int_cache_count = 0;
+        free(vm->int_cache_entries);
+        free(vm->int_cache_objs);
+        free(vm->int_cache_data);
+        vm->int_cache_entries = NULL;
+        vm->int_cache_objs = NULL;
+        vm->int_cache_data = NULL;
+    }
+
     ObjEntry *global_key = vm_make_key(vm, "global");
     List *global_obj = vm_alloc_list(vm, DISTURB_T_TABLE, global_key, 8);
     vm->global_entry = vm_reg_alloc(vm, global_obj);
 
     ObjEntry *stack_key = vm_make_key(vm, "stack");
-    List *stack_obj = vm_alloc_list(vm, DISTURB_T_TABLE, stack_key, 8);
+    List *stack_obj = vm_alloc_list(vm, DISTURB_T_TABLE, stack_key, 64);
     vm->stack_entry = vm_reg_alloc(vm, stack_obj);
     vm_global_add(vm, vm->stack_entry);
 
@@ -1935,32 +2190,32 @@ void vm_init(VM *vm)
     ObjEntry *collect_entry = vm_make_native_entry(vm, "collect", "gcCollect");
     if (collect_entry) {
         gc_obj = disturb_table_add(gc_obj, collect_entry);
-        vm->gc_entry->obj = gc_obj;
+        vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *free_entry = vm_make_native_entry(vm, "free", "gcFree");
     if (free_entry) {
         gc_obj = disturb_table_add(gc_obj, free_entry);
-        vm->gc_entry->obj = gc_obj;
+        vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *sweep_entry = vm_make_native_entry(vm, "sweep", "gcSweep");
     if (sweep_entry) {
         gc_obj = disturb_table_add(gc_obj, sweep_entry);
-        vm->gc_entry->obj = gc_obj;
+        vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *new_entry = vm_make_native_entry(vm, "new", "gcNew");
     if (new_entry) {
         gc_obj = disturb_table_add(gc_obj, new_entry);
-        vm->gc_entry->obj = gc_obj;
+        vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *debug_entry = vm_make_native_entry(vm, "debug", "gcDebug");
     if (debug_entry) {
         gc_obj = disturb_table_add(gc_obj, debug_entry);
-        vm->gc_entry->obj = gc_obj;
+        vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *stats_entry = vm_make_native_entry(vm, "stats", "gcStats");
     if (stats_entry) {
         gc_obj = disturb_table_add(gc_obj, stats_entry);
-        vm->gc_entry->obj = gc_obj;
+        vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
 
     ObjEntry *entry = NULL;
@@ -2101,7 +2356,7 @@ void vm_init(VM *vm)
     ObjEntry *load_entry = vm_make_native_entry(vm, "load", "ffiLoad");
     if (load_entry) {
         ffi_obj = disturb_table_add(ffi_obj, load_entry);
-        ffi_entry->obj = ffi_obj;
+        vm_entry_set_obj(vm, ffi_entry, ffi_obj);
     }
     #endif
 }
@@ -2113,7 +2368,9 @@ void vm_free(VM *vm)
         if (!entry) continue;
         if (entry->in_use && entry->obj) {
             List *obj = entry->obj;
-            disturb_obj_free(vm, obj);
+            if (!vm_obj_is_cached_int(vm, obj)) {
+                disturb_obj_free(vm, obj);
+            }
             for (Int j = 0; j < vm->reg_count; j++) {
                 ObjEntry *other = vm->reg[j];
                 if (!other || other->obj != obj) continue;
@@ -2130,12 +2387,19 @@ void vm_free(VM *vm)
     while (vm->free_list_objs) {
         FreeNode *node = vm->free_list_objs;
         vm->free_list_objs = node->next;
+        if (vm->free_list_obj_count > 0) vm->free_list_obj_count--;
         if (!list_in_slabs(vm, node->obj)) free(node->obj);
         free_node_put(vm, node);
     }
     while (vm->free_list_data) {
         FreeDataNode *node = vm->free_list_data;
         vm->free_list_data = node->next;
+        if (vm->free_list_data_count > 0) vm->free_list_data_count--;
+        if (vm->free_list_data_bytes >= node->cap_bytes) {
+            vm->free_list_data_bytes -= node->cap_bytes;
+        } else {
+            vm->free_list_data_bytes = 0;
+        }
         free(node->data);
         free_data_node_put(vm, node);
     }
@@ -2159,6 +2423,12 @@ void vm_free(VM *vm)
         vm->entry_slabs = slab->next;
         free(slab);
     }
+    free(vm->int_cache_entries);
+    free(vm->int_cache_objs);
+    free(vm->int_cache_data);
+    free(vm->reg_free);
+    free(vm->obj_ref_keys);
+    free(vm->obj_ref_vals);
     free(vm->reg);
 }
 
@@ -2731,16 +3001,16 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                         fprintf(stderr, "bytecodeToAst: truncated BUILD_INT_LIT value at pc %zu\n", pc);
                         return NULL;
                     }
-                    values->obj = vm_update_shared_obj(vm, values->obj,
-                                                       disturb_table_add(values->obj, vm_make_int_value(vm, (Int)v)));
+                    vm_entry_set_obj(vm, values, vm_update_shared_obj(vm, values->obj,
+                                                                      disturb_table_add(values->obj, vm_make_int_value(vm, (Int)v))));
                 } else {
                     double v = 0.0;
                     if (!bc_read_f64(data, len, &pc, &v)) {
                         fprintf(stderr, "bytecodeToAst: truncated BUILD_FLOAT_LIT value at pc %zu\n", pc);
                         return NULL;
                     }
-                    values->obj = vm_update_shared_obj(vm, values->obj,
-                                                       disturb_table_add(values->obj, vm_make_float_value(vm, (Float)v)));
+                    vm_entry_set_obj(vm, values, vm_update_shared_obj(vm, values->obj,
+                                                                      disturb_table_add(values->obj, vm_make_float_value(vm, (Float)v))));
                 }
             }
             ast_set_kv(vm, node, "count", vm_make_int_value(vm, (Int)count));
@@ -2792,8 +3062,8 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                     ast_set_kv(vm, arg, "default", vm->null_entry);
                 }
                 pc += def_len;
-                args->obj = vm_update_shared_obj(vm, args->obj,
-                                                 disturb_table_add(args->obj, arg));
+                vm_entry_set_obj(vm, args, vm_update_shared_obj(vm, args->obj,
+                                                                disturb_table_add(args->obj, arg)));
                 free(name);
             }
 
@@ -2876,8 +3146,8 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             return NULL;
         }
 
-        ops->obj = vm_update_shared_obj(vm, ops->obj,
-                                        disturb_table_add(ops->obj, node));
+        vm_entry_set_obj(vm, ops, vm_update_shared_obj(vm, ops->obj,
+                                                       disturb_table_add(ops->obj, node)));
     }
 
     ast_set_kv(vm, root, "type", vm_make_bytes_value(vm, "bytecode", 8));
@@ -2927,8 +3197,19 @@ static ObjEntry *vm_make_type_name(VM *vm, ObjEntry *target)
     return entry;
 }
 
+static ObjEntry *vm_get_cached_int(VM *vm, Int value)
+{
+    if (!vm || !vm->int_cache_entries || vm->int_cache_count == 0) return NULL;
+    if (value < (Int)INT_CACHE_MIN || value > (Int)INT_CACHE_MAX) return NULL;
+    size_t idx = (size_t)(value - (Int)INT_CACHE_MIN);
+    if (idx >= vm->int_cache_count) return NULL;
+    return &vm->int_cache_entries[idx];
+}
+
 ObjEntry *vm_make_int_value(VM *vm, Int value)
 {
+    ObjEntry *cached = vm_get_cached_int(vm, value);
+    if (cached) return cached;
     List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, sizeof(Int));
     vm_set_int_single(obj, value);
     return vm_reg_alloc(vm, obj);
@@ -3199,10 +3480,24 @@ static List *vm_resize_list(List *obj, Int new_size, ObjEntry *null_entry)
     return obj;
 }
 
+static int vm_ensure_mutable_entry_obj(VM *vm, ObjEntry *entry)
+{
+    if (!vm || !entry || !entry->obj) return 0;
+    if (!vm_entry_is_cached_int(vm, entry)) return 1;
+    ObjEntry *key_entry = vm_entry_key(entry);
+    List *copy = vm_alloc_bytes(vm, DISTURB_T_INT, key_entry,
+                                disturb_bytes_data(entry->obj),
+                                disturb_bytes_len(entry->obj));
+    if (!copy) return 0;
+    vm_entry_set_obj(vm, entry, copy);
+    return 1;
+}
+
 static int vm_set_size_bytes(VM *vm, ObjEntry *target, Int new_size)
 {
     if (new_size < 0) return 0;
     if (!target || !target->obj) return 0;
+    if (!vm_ensure_mutable_entry_obj(vm, target)) return 0;
     List *obj = target->obj;
     List *old_obj = obj;
     size_t cap = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
@@ -3217,7 +3512,7 @@ static int vm_set_size_bytes(VM *vm, ObjEntry *target, Int new_size)
     }
     obj = vm_resize_bytes(obj, new_size);
     if (!obj) return 0;
-    target->obj = vm_update_shared_obj(vm, old_obj, obj);
+    vm_entry_set_obj(vm, target, vm_update_shared_obj(vm, old_obj, obj));
     return 1;
 }
 
@@ -3248,7 +3543,7 @@ static int vm_set_size_list(VM *vm, ObjEntry *target, Int new_size, ObjEntry *nu
     }
     obj = vm_resize_list(obj, new_size, null_entry);
     if (!obj) return 0;
-    target->obj = vm_update_shared_obj(vm, old_obj, obj);
+    vm_entry_set_obj(vm, target, vm_update_shared_obj(vm, old_obj, obj));
     return 1;
 }
 static void vm_stack_push_entry(VM *vm, ObjEntry *entry)
@@ -3353,8 +3648,8 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc, Ob
         for (uint32_t i = fixed; i < argc; i++) {
             ObjEntry *arg = vm_stack_arg(stack, argc, i);
             if (!arg) arg = vm->null_entry;
-            list->obj = vm_update_shared_obj(vm, list->obj,
-                                             disturb_table_add(list->obj, arg));
+            vm_entry_set_obj(vm, list, vm_update_shared_obj(vm, list->obj,
+                                                            disturb_table_add(list->obj, arg)));
         }
         if (!local) return 0;
         if (!vm_object_set_by_key_len(vm, &local->obj,
@@ -3603,8 +3898,9 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
         if (found->obj == value->obj) return 1;
         Int found_type = disturb_obj_type(found->obj);
         Int value_type = disturb_obj_type(value->obj);
-        if ((found_type == DISTURB_T_INT && value_type == DISTURB_T_INT) ||
-            (found_type == DISTURB_T_FLOAT && value_type == DISTURB_T_FLOAT)) {
+        if (!vm_entry_is_cached_int(vm, found) &&
+            ((found_type == DISTURB_T_INT && value_type == DISTURB_T_INT) ||
+             (found_type == DISTURB_T_FLOAT && value_type == DISTURB_T_FLOAT))) {
             List *dst = found->obj;
             List *src = value->obj;
             size_t len_bytes = disturb_bytes_len(src);
@@ -3612,7 +3908,7 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
             dst = vm_resize_bytes(dst, (Int)len_bytes);
             if (!dst) return 0;
             dst = vm_update_shared_obj(vm, old_dst, dst);
-            found->obj = dst;
+            vm_entry_set_obj(vm, found, dst);
             if (len_bytes) {
                 memcpy(disturb_bytes_data(dst), disturb_bytes_data(src), len_bytes);
             }
@@ -3630,7 +3926,7 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
                 dst = vm_resize_list(dst, (Int)count, vm->null_entry);
                 if (!dst) return 0;
                 dst = vm_update_shared_obj(vm, old_dst, dst);
-                found->obj = dst;
+                vm_entry_set_obj(vm, found, dst);
             }
             dst->size = (UHalf)(count + 2);
             for (size_t i = 0; i < count; i++) {
@@ -3638,7 +3934,7 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
             }
             return 1;
         }
-        found->obj = value->obj;
+        vm_entry_set_obj(vm, found, value->obj);
         return 1;
     }
 
@@ -3695,6 +3991,10 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             fprintf(stderr, "bytecode error at pc %zu: type expects string\n", pc);
             return -1;
         }
+        if (!vm_ensure_mutable_entry_obj(vm, target)) {
+            fprintf(stderr, "bytecode error at pc %zu: type update failed\n", pc);
+            return -1;
+        }
         const char *name = disturb_bytes_data(value->obj);
         size_t len = disturb_bytes_len(value->obj);
         Int next = -1;
@@ -3726,7 +4026,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             return -1;
         }
         if (value == vm->null_entry || disturb_obj_type(value->obj) == DISTURB_T_NULL) {
-            target->obj = vm->null_entry->obj;
+            vm_entry_set_obj(vm, target, vm->null_entry->obj);
             target->is_string = 0;
             return 1;
         }
@@ -3738,7 +4038,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             fprintf(stderr, "bytecode error at pc %zu: value assignment failed\n", pc);
             return -1;
         }
-        target->obj = copy;
+        vm_entry_set_obj(vm, target, copy);
         target->is_string = is_string;
         target->explicit_string = explicit_string;
         return 1;
@@ -3813,13 +4113,17 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             if (!(type == DISTURB_T_INT && entry_is_string(target))) {
                 bytes = (Int)((size_t)new_cap * vm_elem_size(type));
             }
+            if (!vm_ensure_mutable_entry_obj(vm, target)) {
+                fprintf(stderr, "bytecode error at pc %zu: failed to resize bytes\n", pc);
+                return -1;
+            }
             List *old_obj = target->obj;
             List *resized = vm_resize_bytes_capacity(target->obj, bytes);
             if (!resized) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize bytes\n", pc);
                 return -1;
             }
-            target->obj = vm_update_shared_obj(vm, old_obj, resized);
+            vm_entry_set_obj(vm, target, vm_update_shared_obj(vm, old_obj, resized));
             return 1;
         }
         if (type == DISTURB_T_TABLE) {
@@ -3858,15 +4162,112 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
 int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
 {
     size_t pc = 0;
-    while (pc < len) {
-        uint8_t op = 0;
-        if (!bc_read_u8(data, len, &pc, &op)) {
-            fprintf(stderr, "bytecode error at pc %zu: truncated opcode\n", pc);
-            return 0;
-        }
+    uint8_t op = 0;
+#ifdef __GNUC__
+    static void *dispatch_table[256] = {
+        [BC_PUSH_INT] = &&BC_L_PUSH_INT,
+        [BC_PUSH_FLOAT] = &&BC_L_PUSH_FLOAT,
+        [BC_PUSH_CHAR] = &&BC_L_PUSH_CHAR,
+        [BC_PUSH_STRING] = &&BC_L_PUSH_STRING,
+        [BC_BUILD_INT] = &&BC_L_BUILD_INT,
+        [BC_BUILD_FLOAT] = &&BC_L_BUILD_FLOAT,
+        [BC_BUILD_OBJECT] = &&BC_L_BUILD_OBJECT,
+        [BC_BUILD_FUNCTION] = &&BC_L_BUILD_FUNCTION,
+        [BC_INDEX] = &&BC_L_INDEX,
+        [BC_STORE_INDEX] = &&BC_L_STORE_INDEX,
+        [BC_LOAD_ROOT] = &&BC_L_LOAD_ROOT,
+        [BC_LOAD_GLOBAL] = &&BC_L_LOAD_GLOBAL,
+        [BC_LOAD_THIS] = &&BC_L_LOAD_THIS,
+        [BC_STORE_GLOBAL] = &&BC_L_STORE_GLOBAL,
+        [BC_SET_THIS] = &&BC_L_SET_THIS,
+        [BC_CALL] = &&BC_L_CALL,
+        [BC_CALL_EX] = &&BC_L_CALL_EX,
+        [BC_STRICT] = &&BC_L_STRICT,
+        [BC_JMP] = &&BC_L_JMP,
+        [BC_JMP_IF_FALSE] = &&BC_L_JMP_IF_FALSE,
+        [BC_RETURN] = &&BC_L_RETURN,
+        [BC_POP] = &&BC_L_POP,
+        [BC_DUP] = &&BC_L_DUP,
+        [BC_GC] = &&BC_L_GC,
+        [BC_DUMP] = &&BC_L_DUMP,
+        [BC_BUILD_INT_LIT] = &&BC_L_BUILD_INT_LIT,
+        [BC_BUILD_FLOAT_LIT] = &&BC_L_BUILD_FLOAT_LIT,
+        [BC_ADD] = &&BC_L_ADD,
+        [BC_SUB] = &&BC_L_SUB,
+        [BC_MUL] = &&BC_L_MUL,
+        [BC_DIV] = &&BC_L_DIV,
+        [BC_MOD] = &&BC_L_MOD,
+        [BC_NEG] = &&BC_L_NEG,
+        [BC_NOT] = &&BC_L_NOT,
+        [BC_EQ] = &&BC_L_EQ,
+        [BC_NEQ] = &&BC_L_NEQ,
+        [BC_LT] = &&BC_L_LT,
+        [BC_LTE] = &&BC_L_LTE,
+        [BC_GT] = &&BC_L_GT,
+        [BC_GTE] = &&BC_L_GTE,
+        [BC_AND] = &&BC_L_AND,
+        [BC_OR] = &&BC_L_OR,
+        [BC_PUSH_CHAR_RAW] = &&BC_L_PUSH_CHAR_RAW,
+        [BC_PUSH_STRING_RAW] = &&BC_L_PUSH_STRING_RAW
+    };
+#define DISPATCH() do { \
+        if (vm->gc_rate > 0) { \
+            vm->gc_counter++; \
+            if (vm->gc_counter >= vm->gc_rate) { \
+                vm->gc_counter = 0; \
+                vm_gc(vm); \
+            } \
+        } \
+        if (pc >= len) goto VM_DONE; \
+        if (!bc_read_u8(data, len, &pc, &op)) { \
+            fprintf(stderr, "bytecode error at pc %zu: truncated opcode\n", pc); \
+            return 0; \
+        } \
+        { \
+            void *target_ = dispatch_table[op]; \
+            if (!target_) goto BC_L_UNKNOWN; \
+            goto *target_; \
+        } \
+    } while (0)
+#else
+#define DISPATCH() do { \
+        if (vm->gc_rate > 0) { \
+            vm->gc_counter++; \
+            if (vm->gc_counter >= vm->gc_rate) { \
+                vm->gc_counter = 0; \
+                vm_gc(vm); \
+            } \
+        } \
+        if (pc >= len) goto VM_DONE; \
+        if (!bc_read_u8(data, len, &pc, &op)) { \
+            fprintf(stderr, "bytecode error at pc %zu: truncated opcode\n", pc); \
+            return 0; \
+        } \
+        goto VM_EXEC_LOOP; \
+    } while (0)
+#endif
+    if (pc >= len) goto VM_DONE;
+    if (!bc_read_u8(data, len, &pc, &op)) {
+        fprintf(stderr, "bytecode error at pc %zu: truncated opcode\n", pc);
+        return 0;
+    }
+#ifdef __GNUC__
+    {
+        void *target_ = dispatch_table[op];
+        if (!target_) goto BC_L_UNKNOWN;
+        goto *target_;
+    }
+#endif
 
-        switch (op) {
-        case BC_PUSH_INT: {
+#ifndef __GNUC__
+VM_EXEC_LOOP:
+#endif
+    switch (op) {
+        case BC_PUSH_INT:
+#ifdef __GNUC__
+BC_L_PUSH_INT:
+#endif
+        {
             int64_t v = 0;
             if (!bc_read_i64(data, len, &pc, &v)) {
                 fprintf(stderr, "bytecode error at pc %zu: truncated PUSH_INT\n", pc);
@@ -3875,7 +4276,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_make_int_value(vm, (Int)v));
             break;
         }
-        case BC_PUSH_FLOAT: {
+        case BC_PUSH_FLOAT:
+#ifdef __GNUC__
+BC_L_PUSH_FLOAT:
+#endif
+        {
             double v = 0.0;
             if (!bc_read_f64(data, len, &pc, &v)) {
                 fprintf(stderr, "bytecode error at pc %zu: truncated PUSH_FLOAT\n", pc);
@@ -3885,7 +4290,12 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             break;
         }
         case BC_PUSH_CHAR:
-        case BC_PUSH_STRING: {
+        case BC_PUSH_STRING:
+#ifdef __GNUC__
+BC_L_PUSH_CHAR:
+BC_L_PUSH_STRING:
+#endif
+        {
             unsigned char *buf = NULL;
             size_t slen = 0;
             if (!bc_read_string(data, len, &pc, &buf, &slen)) {
@@ -3916,7 +4326,12 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             break;
         }
         case BC_PUSH_CHAR_RAW:
-        case BC_PUSH_STRING_RAW: {
+        case BC_PUSH_STRING_RAW:
+#ifdef __GNUC__
+BC_L_PUSH_CHAR_RAW:
+BC_L_PUSH_STRING_RAW:
+#endif
+        {
             unsigned char *buf = NULL;
             size_t slen = 0;
             if (!bc_read_string(data, len, &pc, &buf, &slen)) {
@@ -3933,7 +4348,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, entry);
             break;
         }
-        case BC_BUILD_INT: {
+        case BC_BUILD_INT:
+#ifdef __GNUC__
+BC_L_BUILD_INT:
+#endif
+        {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_INT\n", pc);
@@ -3955,7 +4374,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
-        case BC_BUILD_FLOAT: {
+        case BC_BUILD_FLOAT:
+#ifdef __GNUC__
+BC_L_BUILD_FLOAT:
+#endif
+        {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_FLOAT\n", pc);
@@ -3976,7 +4399,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
-        case BC_BUILD_INT_LIT: {
+        case BC_BUILD_INT_LIT:
+#ifdef __GNUC__
+BC_L_BUILD_INT_LIT:
+#endif
+        {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_INT_LIT\n", pc);
@@ -3994,7 +4421,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
-        case BC_BUILD_FLOAT_LIT: {
+        case BC_BUILD_FLOAT_LIT:
+#ifdef __GNUC__
+BC_L_BUILD_FLOAT_LIT:
+#endif
+        {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_FLOAT_LIT\n", pc);
@@ -4012,7 +4443,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
-        case BC_BUILD_OBJECT: {
+        case BC_BUILD_OBJECT:
+#ifdef __GNUC__
+BC_L_BUILD_OBJECT:
+#endif
+        {
             uint32_t count = 0;
             if (!bc_read_u32(data, len, &pc, &count)) {
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_OBJECT\n", pc);
@@ -4057,7 +4492,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
-        case BC_BUILD_FUNCTION: {
+        case BC_BUILD_FUNCTION:
+#ifdef __GNUC__
+BC_L_BUILD_FUNCTION:
+#endif
+        {
             uint32_t argc = 0;
             uint32_t vararg = 0;
             uint32_t code_len = 0;
@@ -4176,7 +4615,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_reg_alloc(vm, obj));
             break;
         }
-        case BC_INDEX: {
+        case BC_INDEX:
+#ifdef __GNUC__
+BC_L_INDEX:
+#endif
+        {
             ObjEntry *index = vm_stack_pop_entry(vm, "INDEX", pc);
             ObjEntry *target = vm_stack_pop_entry(vm, "INDEX", pc);
             if (!index || !target) return 0;
@@ -4185,7 +4628,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, res);
             break;
         }
-        case BC_STORE_INDEX: {
+        case BC_STORE_INDEX:
+#ifdef __GNUC__
+BC_L_STORE_INDEX:
+#endif
+        {
             ObjEntry *value = vm_stack_pop_entry(vm, "STORE_INDEX", pc);
             ObjEntry *index = vm_stack_pop_entry(vm, "STORE_INDEX", pc);
             ObjEntry *target = vm_stack_pop_entry(vm, "STORE_INDEX", pc);
@@ -4214,6 +4661,10 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
                 ViewType view = (ViewType)target->obj->data[3].i;
                 if (!base || !base->in_use) {
                     fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX view base missing\n", pc);
+                    return 0;
+                }
+                if (!vm_ensure_mutable_entry_obj(vm, base)) {
+                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX mutation failed\n", pc);
                     return 0;
                 }
                 if (idx < 0) {
@@ -4295,6 +4746,10 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             }
 
             if (type == DISTURB_T_INT) {
+                if (!vm_ensure_mutable_entry_obj(vm, target)) {
+                    fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX mutation failed\n", pc);
+                    return 0;
+                }
                 if (entry_is_string(target)) {
                     size_t len = disturb_bytes_len(target->obj);
                     if (idx < 0 || (size_t)idx >= len) {
@@ -4378,9 +4833,16 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             return 0;
         }
         case BC_LOAD_ROOT:
+#ifdef __GNUC__
+BC_L_LOAD_ROOT:
+#endif
             vm_stack_push_entry(vm, vm->global_entry);
             break;
-        case BC_LOAD_GLOBAL: {
+        case BC_LOAD_GLOBAL:
+#ifdef __GNUC__
+BC_L_LOAD_GLOBAL:
+#endif
+        {
             unsigned char *name = NULL;
             size_t name_len = 0;
             if (!bc_read_string(data, len, &pc, &name, &name_len)) {
@@ -4399,9 +4861,16 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             break;
         }
         case BC_LOAD_THIS:
+#ifdef __GNUC__
+BC_L_LOAD_THIS:
+#endif
             vm_stack_push_entry(vm, vm->this_entry ? vm->this_entry : vm->null_entry);
             break;
-        case BC_STORE_GLOBAL: {
+        case BC_STORE_GLOBAL:
+#ifdef __GNUC__
+BC_L_STORE_GLOBAL:
+#endif
+        {
             unsigned char *name = NULL;
             size_t name_len = 0;
             if (!bc_read_string(data, len, &pc, &name, &name_len)) {
@@ -4423,16 +4892,28 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             if (!ok) return 0;
             break;
         }
-        case BC_SET_THIS: {
+        case BC_SET_THIS:
+#ifdef __GNUC__
+BC_L_SET_THIS:
+#endif
+        {
             ObjEntry *value = vm_stack_pop_entry(vm, "SET_THIS", pc);
             vm->this_entry = value ? value : vm->null_entry;
             break;
         }
         case BC_STRICT:
+#ifdef __GNUC__
+BC_L_STRICT:
+#endif
             vm->strict_mode = 1;
             break;
         case BC_CALL:
-        case BC_CALL_EX: {
+        case BC_CALL_EX:
+#ifdef __GNUC__
+BC_L_CALL:
+BC_L_CALL_EX:
+#endif
+        {
             unsigned char *name = NULL;
             size_t name_len = 0;
             if (!bc_read_string(data, len, &pc, &name, &name_len)) {
@@ -4551,7 +5032,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             }
             break;
         }
-        case BC_JMP: {
+        case BC_JMP:
+#ifdef __GNUC__
+BC_L_JMP:
+#endif
+        {
             uint32_t target = 0;
             if (!bc_read_u32(data, len, &pc, &target)) {
                 fprintf(stderr, "bytecode error at pc %zu: truncated JMP\n", pc);
@@ -4564,7 +5049,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             pc = target;
             break;
         }
-        case BC_JMP_IF_FALSE: {
+        case BC_JMP_IF_FALSE:
+#ifdef __GNUC__
+BC_L_JMP_IF_FALSE:
+#endif
+        {
             uint32_t target = 0;
             if (!bc_read_u32(data, len, &pc, &target)) {
                 fprintf(stderr, "bytecode error at pc %zu: truncated JMP_IF_FALSE\n", pc);
@@ -4582,6 +5071,9 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             break;
         }
         case BC_RETURN:
+#ifdef __GNUC__
+BC_L_RETURN:
+#endif
             return 1;
         case BC_ADD:
         case BC_SUB:
@@ -4595,7 +5087,23 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         case BC_GT:
         case BC_GTE:
         case BC_AND:
-        case BC_OR: {
+        case BC_OR:
+#ifdef __GNUC__
+BC_L_ADD:
+BC_L_SUB:
+BC_L_MUL:
+BC_L_DIV:
+BC_L_MOD:
+BC_L_EQ:
+BC_L_NEQ:
+BC_L_LT:
+BC_L_LTE:
+BC_L_GT:
+BC_L_GTE:
+BC_L_AND:
+BC_L_OR:
+#endif
+        {
             ObjEntry *right = vm_stack_pop_entry(vm, "OP", pc);
             ObjEntry *left = vm_stack_pop_entry(vm, "OP", pc);
             if (!left || !right) return 0;
@@ -4716,7 +5224,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_make_number_result(vm, out));
             break;
         }
-        case BC_NEG: {
+        case BC_NEG:
+#ifdef __GNUC__
+BC_L_NEG:
+#endif
+        {
             ObjEntry *value = vm_stack_pop_entry(vm, "NEG", pc);
             if (!value) return 0;
             if (vm->strict_mode && disturb_obj_type(value->obj) == DISTURB_T_NULL) {
@@ -4731,7 +5243,11 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             vm_stack_push_entry(vm, vm_make_number_result(vm, out));
             break;
         }
-        case BC_NOT: {
+        case BC_NOT:
+#ifdef __GNUC__
+BC_L_NOT:
+#endif
+        {
             ObjEntry *value = vm_stack_pop_entry(vm, "NOT", pc);
             if (!value) return 0;
             int res = vm_entry_truthy(value) ? 0 : 1;
@@ -4739,9 +5255,16 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             break;
         }
         case BC_POP:
+#ifdef __GNUC__
+BC_L_POP:
+#endif
             vm_pop_stack(vm);
             break;
-        case BC_DUP: {
+        case BC_DUP:
+#ifdef __GNUC__
+BC_L_DUP:
+#endif
+        {
             ObjEntry *top = vm_stack_peek(vm->stack_entry->obj, 0);
             if (!top) {
                 fprintf(stderr, "bytecode error at pc %zu: DUP empty stack\n", pc);
@@ -4758,23 +5281,27 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
             break;
         }
         case BC_GC:
+#ifdef __GNUC__
+BC_L_GC:
+#endif
             vm_gc(vm);
             break;
         case BC_DUMP:
+#ifdef __GNUC__
+BC_L_DUMP:
+#endif
             vm_dump_global(vm);
             break;
         default:
+#ifdef __GNUC__
+BC_L_UNKNOWN:
+#endif
             fprintf(stderr, "bytecode error at pc %zu: unknown opcode %u\n", pc, (unsigned)op);
             return 0;
         }
-        if (vm->gc_rate > 0) {
-            vm->gc_counter++;
-            if (vm->gc_counter >= vm->gc_rate) {
-                vm->gc_counter = 0;
-                vm_gc(vm);
-            }
-        }
-    }
+    DISPATCH();
+VM_DONE:
+#undef DISPATCH
     return 1;
 }
 

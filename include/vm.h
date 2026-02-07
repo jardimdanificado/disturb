@@ -15,7 +15,7 @@
 
 #include "bytecode.h"
 
-#define DISTURB_VERSION "0.17.0"
+#define DISTURB_VERSION "0.18.0"
 
 #define PANIC(message) do {\
         fprintf(stderr, "DISTURB ERROR:" message "\n");\
@@ -54,6 +54,7 @@ enum {
 struct ObjEntry {
     List *obj;
     ObjEntry *key;
+    Int reg_index;
     unsigned in_use : 1;
     unsigned mark : 1;
     unsigned is_string : 1;
@@ -77,8 +78,22 @@ struct VM {
     FreeDataNode *free_list_data;
     FreeNode *free_node_pool;
     FreeDataNode *free_data_node_pool;
+    size_t free_list_obj_count;
+    size_t free_list_data_count;
+    size_t free_list_data_bytes;
     ListSlab *list_slabs;
     EntrySlab *entry_slabs;
+    ObjEntry *int_cache_entries;
+    List *int_cache_objs;
+    unsigned char *int_cache_data;
+    size_t int_cache_count;
+    Int *reg_free;
+    Int reg_free_count;
+    Int reg_free_cap;
+    List **obj_ref_keys;
+    size_t *obj_ref_vals;
+    size_t obj_ref_cap;
+    size_t obj_ref_count;
     size_t gc_rate;
     size_t gc_counter;
     Int call_override_len;

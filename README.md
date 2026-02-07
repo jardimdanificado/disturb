@@ -2,30 +2,18 @@
 
 Disturb is a stack-oriented VM with a C-like source syntax that compiles to a compact RPN bytecode. The language focuses on safety and explicit behavior: everything lives under the global table, and missing lookups return a null table.
 
-Disturb means Distributable Urb, at least that was the original idea, disturb been built from ground with its foundation rooted into the urb 0.9.5, but eventually disturb became its own thing, currently urb 0.9.4a is used as a unsafe but fast alternative runtime;
+Disturb means Distributable Urb, at least that was the original idea;
 
 ## Quick Start
 
 | Command | Purpose |
 | --- | --- |
 | `make` | Build `disturb` |
-| `./disturb file.disturb` | Run source with the Disturb backend (default) |
-| `./disturb --dist file.disturb` | Explicit Disturb backend |
-| `./disturb --urb file.disturb` | Run with URB runtime compatibility layer |
+| `./disturb file.disturb` | Run source |
 | `./disturb --compile-bytecode script.disturb output.bytecode` | Compile a script into raw bytecode |
 | `./disturb --run-bytecode output.bytecode [args...]` | Run a previously compiled bytecode file |
 | `./disturb --repl` | Interactive REPL |
 | `./disturb --help` | Show CLI help |
-
-## URB runtime (experimental)
-
-`--urb` compiles source to Disturb bytecode and executes it through a URB-based compatibility runtime. This is an early implementation focused on performance. Safety checks and GC are intentionally omitted.
-
-Status summary (URB):
-- Implemented: core bytecode execution, objects/strings/tables, methods, eval/parse/emit, papagaio, IO/system/FFI (when enabled at build).
-- Partially implemented: manual GC APIs (`gc.free`, `gc.new`).
-- No-ops / stripped at translation: `gc.collect`, `gc.sweep`, `gc.debug`, `gc.stats`, `gc.flush`, and `BC_GC` bytecode.
-- Not implemented: safety checks and strict-mode enforcement beyond the minimal compatibility behavior.
 
 ## Core Model
 

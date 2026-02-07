@@ -1,5 +1,4 @@
 #include "vm.h"
-#include "urb_runtime.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -87,8 +86,6 @@ static void print_help(void)
 {
     puts("usage:");
     puts("  disturb [script.disturb] [args...]");
-    puts("  disturb --dist [script.disturb] [args...]");
-    puts("  disturb --urb [script.disturb] [args...]");
     puts("  disturb --compile-bytecode script.disturb output.bytecode");
     puts("  disturb --run-bytecode output.bytecode [args...]");
     puts("  disturb --help");
@@ -224,50 +221,6 @@ static int repl_run(int argc, char **argv)
     return 0;
 }
 
-static int backend_from_flag(const char *arg, int *use_urb)
-{
-    if (!arg || !use_urb) return 0;
-    if (strcmp(arg, "--urb") == 0) {
-        *use_urb = 1;
-        return 1;
-    }
-    if (strcmp(arg, "--dist") == 0) {
-        *use_urb = 0;
-        return 1;
-    }
-    return 0;
-}
-
-static int run_urb_script(const char *path, int script_argc, char **script_argv)
-{
-    FILE *fp = fopen(path, "r");
-    if (!fp) {
-        perror("open");
-        return 1;
-    }
-    Bytecode bc;
-    char err[256];
-    err[0] = 0;
-    char *src = read_all_text(fp);
-    if (!src) {
-        fprintf(stderr, "failed to read file\n");
-        fclose(fp);
-        return 1;
-    }
-    strip_shebang(src);
-    if (!vm_compile_source(src, &bc, err, sizeof(err))) {
-        fprintf(stderr, "%s\n", err[0] ? err : "compile error");
-        free(src);
-        fclose(fp);
-        return 1;
-    }
-    free(src);
-    fclose(fp);
-    int ok = urb_exec_bytecode(bc.data, bc.len, script_argc, script_argv);
-    bc_free(&bc);
-    return ok ? 0 : 1;
-}
-
 static int run_disturb_script(const char *path, int script_argc, char **script_argv)
 {
     VM vm;
@@ -344,7 +297,7 @@ static int compile_bytecode_file(const char *src_path, const char *out_path)
     return 0;
 }
 
-static int run_bytecode_file(const char *path, int script_argc, char **script_argv, int use_urb)
+static int run_bytecode_file(const char *path, int script_argc, char **script_argv)
 {
     FILE *fp = fopen(path, "rb");
     if (!fp) {
@@ -358,22 +311,17 @@ static int run_bytecode_file(const char *path, int script_argc, char **script_ar
         fprintf(stderr, "failed to read bytecode file\n");
         return 1;
     }
-    int result;
-    if (use_urb) {
-        result = urb_exec_bytecode(data, len, script_argc, script_argv) ? 0 : 1;
-    } else {
-        VM vm;
-        vm_init(&vm);
-        vm_add_args(&vm, script_argc, script_argv);
-        int ok = vm_exec_bytecode(&vm, data, len);
-        vm_free(&vm);
-        result = ok ? 0 : 1;
-    }
+    VM vm;
+    vm_init(&vm);
+    vm_add_args(&vm, script_argc, script_argv);
+    int ok = vm_exec_bytecode(&vm, data, len);
+    vm_free(&vm);
+    int result = ok ? 0 : 1;
     free(data);
     return result;
 }
 
-int main(int argc, char **argv)
+static int disturb_main(int argc, char **argv)
 {
     if (argc <= 1) {
         return repl_run(argc, argv);
@@ -386,14 +334,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    int use_urb = 0;
-#ifdef DISTURB_DEFAULT_BACKEND_URB
-    use_urb = 1;
-#endif
     int argi = 1;
-    if (backend_from_flag(argv[argi], &use_urb)) {
-        argi++;
-    }
     if (argc <= argi) {
         fprintf(stderr, "disturb expects a source or bytecode file\n");
         return 1;
@@ -415,13 +356,19 @@ int main(int argc, char **argv)
         const char *bytecode_path = argv[argi + 1];
         int script_argc = argc - (argi + 2);
         char **script_argv = argv + argi + 2;
-        return run_bytecode_file(bytecode_path, script_argc, script_argv, use_urb);
+        return run_bytecode_file(bytecode_path, script_argc, script_argv);
     }
 
     int script_argc = argc - (argi + 1);
     char **script_argv = argv + argi + 1;
-    if (use_urb) {
-        return run_urb_script(cmd, script_argc, script_argv);
-    }
     return run_disturb_script(cmd, script_argc, script_argv);
+}
+
+int main(int argc, char **argv)
+{
+    setvbuf(stdout, NULL, _IOFBF, 1 << 20);
+    int code = disturb_main(argc, argv);
+    fflush(stdout);
+    setvbuf(stdout, NULL, _IONBF, 0);
+    return code;
 }
