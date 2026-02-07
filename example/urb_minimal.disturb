@@ -1,5 +1,3 @@
-// Example compatible with current URB runtime scope (core ops + print/println/len)
-
 global.title = "urb demo";
 println(global.title);
 
