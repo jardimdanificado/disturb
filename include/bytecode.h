@@ -54,7 +54,8 @@ enum {
     BC_AND,
     BC_OR,
     BC_PUSH_CHAR_RAW,
-    BC_PUSH_STRING_RAW
+    BC_PUSH_STRING_RAW,
+    BC_UNSTRICT
 };
 
 void bc_init(Bytecode *bc);

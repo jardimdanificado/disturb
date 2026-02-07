@@ -42,7 +42,8 @@ enum {
     POOL_MAX_DATA_COUNT = 32768,
     POOL_MAX_DATA_BYTES = 65536,
     INT_CACHE_MIN = 0,
-    INT_CACHE_MAX = 100000
+    INT_CACHE_MAX = 100000,
+    INTERN_TABLE_INIT_CAP = 2048
 };
 
 int lre_check_stack_overflow(void *opaque, size_t alloca_size)
@@ -72,6 +73,7 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
                                     ObjEntry *value, size_t pc);
 static void vm_obj_ref_move(VM *vm, List *old_obj, List *new_obj);
 static void vm_entry_set_obj(VM *vm, ObjEntry *entry, List *obj);
+static ObjEntry *vm_make_key_len(VM *vm, const char *name, size_t len);
 
 
 static void sb_init(StrBuf *b)
@@ -909,6 +911,147 @@ static int disturb_bytes_eq_cstr(const List *obj, const char *s)
     return disturb_bytes_eq_bytes(obj, s, strlen(s));
 }
 
+static uint32_t vm_hash_bytes(const char *bytes, size_t len)
+{
+    uint32_t hash = 2166136261u;
+    for (size_t i = 0; i < len; i++) {
+        hash ^= (uint32_t)(unsigned char)bytes[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+static int vm_intern_root_push(VM *vm, ObjEntry *key_entry)
+{
+    if (!vm || !key_entry) return 0;
+    if (vm->intern_size == vm->intern_roots_cap) {
+        size_t next_cap = vm->intern_roots_cap == 0 ? 256 : vm->intern_roots_cap * 2;
+        ObjEntry **next = (ObjEntry**)realloc(vm->intern_roots, next_cap * sizeof(ObjEntry*));
+        if (!next) return 0;
+        vm->intern_roots = next;
+        vm->intern_roots_cap = next_cap;
+    }
+    vm->intern_roots[vm->intern_size] = key_entry;
+    return 1;
+}
+
+static int vm_intern_rehash(VM *vm, size_t new_cap)
+{
+    if (!vm || new_cap == 0 || (new_cap & (new_cap - 1)) != 0) return 0;
+    InternEntry *new_table = (InternEntry*)calloc(new_cap, sizeof(InternEntry));
+    if (!new_table) return 0;
+    size_t count = 0;
+
+    if (vm->intern_table && vm->intern_cap > 0) {
+        size_t mask = new_cap - 1;
+        for (size_t i = 0; i < vm->intern_cap; i++) {
+            InternEntry *src = &vm->intern_table[i];
+            if (!src->key_entry) continue;
+            size_t idx = (size_t)src->hash & mask;
+            while (new_table[idx].key_entry) idx = (idx + 1) & mask;
+            new_table[idx] = *src;
+            count++;
+        }
+    }
+
+    free(vm->intern_table);
+    vm->intern_table = new_table;
+    vm->intern_cap = new_cap;
+    vm->intern_size = count;
+    return 1;
+}
+
+static void vm_intern_init(VM *vm)
+{
+    if (!vm) return;
+    vm->intern_table = NULL;
+    vm->intern_cap = 0;
+    vm->intern_size = 0;
+    vm->intern_roots = NULL;
+    vm->intern_roots_cap = 0;
+    if (!vm_intern_rehash(vm, INTERN_TABLE_INIT_CAP)) {
+        vm->intern_table = NULL;
+        vm->intern_cap = 0;
+        vm->intern_size = 0;
+    }
+}
+
+static void vm_intern_free(VM *vm)
+{
+    if (!vm) return;
+    free(vm->intern_table);
+    free(vm->intern_roots);
+    vm->intern_table = NULL;
+    vm->intern_cap = 0;
+    vm->intern_size = 0;
+    vm->intern_roots = NULL;
+    vm->intern_roots_cap = 0;
+}
+
+static ObjEntry *vm_intern_lookup_hashed(VM *vm, const char *bytes, size_t len, uint32_t hash)
+{
+    if (!vm || !bytes || !vm->keyintern_enabled || !vm->intern_table || vm->intern_cap == 0) return NULL;
+    if (len > UINT32_MAX) return NULL;
+    size_t mask = vm->intern_cap - 1;
+    size_t idx = (size_t)hash & mask;
+    while (1) {
+        InternEntry *slot = &vm->intern_table[idx];
+        ObjEntry *entry = slot->key_entry;
+        if (!entry) return NULL;
+        if (slot->hash == hash && slot->len == (uint32_t)len &&
+            entry->obj && disturb_bytes_eq_bytes(entry->obj, bytes, len)) {
+            return entry;
+        }
+        idx = (idx + 1) & mask;
+    }
+}
+
+static ObjEntry *vm_intern_lookup(VM *vm, const char *bytes, size_t len)
+{
+    if (!vm || !bytes || !vm->keyintern_enabled || !vm->intern_table || vm->intern_cap == 0) return NULL;
+    if (len > UINT32_MAX) return NULL;
+    return vm_intern_lookup_hashed(vm, bytes, len, vm_hash_bytes(bytes, len));
+}
+
+static ObjEntry *vm_intern_insert_hashed(VM *vm, ObjEntry *key_entry, const char *bytes,
+                                         size_t len, uint32_t hash)
+{
+    if (!vm || !key_entry || !bytes || !vm->keyintern_enabled ||
+        !vm->intern_table || vm->intern_cap == 0) {
+        return key_entry;
+    }
+    if (len > UINT32_MAX) return key_entry;
+
+    if ((vm->intern_size + 1) * 10 >= vm->intern_cap * 7) {
+        if (!vm_intern_rehash(vm, vm->intern_cap * 2)) {
+            return key_entry;
+        }
+    }
+
+    size_t mask = vm->intern_cap - 1;
+    size_t idx = (size_t)hash & mask;
+    while (1) {
+        InternEntry *slot = &vm->intern_table[idx];
+        if (!slot->key_entry) {
+            if (!vm_intern_root_push(vm, key_entry)) {
+                /* OOM fallback: keep behavior correct by skipping interning. */
+                return key_entry;
+            }
+            slot->key_entry = key_entry;
+            slot->hash = hash;
+            slot->len = (uint32_t)len;
+            vm->intern_size++;
+            return key_entry;
+        }
+        if (slot->hash == hash && slot->len == (uint32_t)len &&
+            slot->key_entry->obj &&
+            disturb_bytes_eq_bytes(slot->key_entry->obj, bytes, len)) {
+            return slot->key_entry;
+        }
+        idx = (idx + 1) & mask;
+    }
+}
+
 static void vm_reg_init(VM *vm)
 {
     vm->reg_cap = 64;
@@ -934,6 +1077,12 @@ static void vm_reg_init(VM *vm)
     vm->obj_ref_vals = NULL;
     vm->obj_ref_cap = 0;
     vm->obj_ref_count = 0;
+    vm->intern_table = NULL;
+    vm->intern_cap = 0;
+    vm->intern_size = 0;
+    vm->intern_roots = NULL;
+    vm->intern_roots_cap = 0;
+    vm->keyintern_enabled = 1;
 }
 
 static int vm_reg_free_push(VM *vm, Int idx)
@@ -1147,13 +1296,7 @@ void vm_release_entry(VM *vm, ObjEntry *entry)
 
 static ObjEntry *vm_make_key(VM *vm, const char *name)
 {
-    List *key_obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, name, strlen(name));
-    ObjEntry *entry = vm_reg_alloc(vm, key_obj);
-    if (entry) {
-        entry->is_string = 1;
-        entry->explicit_string = 1;
-    }
-    return entry;
+    return vm_make_key_len(vm, name, strlen(name));
 }
 
 static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_name)
@@ -1195,24 +1338,41 @@ ObjEntry *vm_make_native_entry_data(VM *vm, const char *key, NativeFn fn, void *
 
 static ObjEntry *vm_make_key_len(VM *vm, const char *name, size_t len)
 {
+    uint32_t hash = 0;
+    if (vm && vm->keyintern_enabled) {
+        ObjEntry *interned = vm_intern_lookup(vm, name, len);
+        if (interned) return interned;
+        hash = vm_hash_bytes(name, len);
+    }
+
     List *key_obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, name, len);
     ObjEntry *entry = vm_reg_alloc(vm, key_obj);
     if (entry) {
         entry->is_string = 1;
         entry->explicit_string = 1;
+        if (vm && vm->keyintern_enabled) {
+            ObjEntry *canonical = vm_intern_insert_hashed(vm, entry, name, len, hash);
+            if (canonical && canonical != entry) {
+                vm_release_entry(vm, entry);
+                return canonical;
+            }
+        }
     }
     return entry;
 }
 
 static ObjEntry *vm_find_by_key(VM *vm, const char *name)
 {
+    size_t len = strlen(name);
+    ObjEntry *wanted = (vm && vm->keyintern_enabled) ? vm_intern_lookup(vm, name, len) : NULL;
     for (Int i = 0; i < vm->reg_count; i++) {
         ObjEntry *entry = vm->reg[i];
         if (!entry || !entry->in_use) continue;
         ObjEntry *key = vm_entry_key(entry);
         if (!key) continue;
         if (!entry_is_string(key)) continue;
-        if (disturb_bytes_eq_cstr(key->obj, name)) return entry;
+        if (wanted && key == wanted) return entry;
+        if (disturb_bytes_eq_bytes(key->obj, name, len)) return entry;
     }
     return NULL;
 }
@@ -1224,18 +1384,74 @@ static void vm_global_add(VM *vm, ObjEntry *entry)
 
 int vm_global_remove_by_key(VM *vm, const char *name)
 {
+    size_t len = strlen(name);
+    ObjEntry *wanted = (vm && vm->keyintern_enabled) ? vm_intern_lookup(vm, name, len) : NULL;
     List *global = vm->global_entry->obj;
     for (Int i = 2; i < global->size; i++) {
         ObjEntry *entry = (ObjEntry*)global->data[i].p;
         ObjEntry *key = vm_entry_key(entry);
         if (!key) continue;
         if (!entry_is_string(key)) continue;
-        if (disturb_bytes_eq_cstr(key->obj, name)) {
+        if ((wanted && key == wanted) || disturb_bytes_eq_bytes(key->obj, name, len)) {
             urb_remove(global, i);
             return 1;
         }
     }
     return 0;
+}
+
+static void vm_mark_entry_root(VM *vm, ObjEntry *root)
+{
+    (void)vm;
+    if (!root || !root->in_use || root->mark) return;
+    List *mark_stack = urb_new(16);
+    Value v;
+    v.p = root;
+    urb_push(mark_stack, v);
+    while (mark_stack->size > 0) {
+        ObjEntry *entry = (ObjEntry*)urb_pop(mark_stack).p;
+        if (!entry || !entry->in_use || entry->mark) continue;
+        entry->mark = 1;
+        ObjEntry *key = vm_entry_key(entry);
+        if (key && key->in_use && !key->mark) {
+            Value kv;
+            kv.p = key;
+            urb_push(mark_stack, kv);
+        }
+        if (!entry->obj) continue;
+        Int type = disturb_obj_type(entry->obj);
+        if (type == DISTURB_T_TABLE) {
+            List *obj = entry->obj;
+            for (Int j = 2; j < obj->size; j++) {
+                ObjEntry *child = (ObjEntry*)obj->data[j].p;
+                if (child && child->in_use && !child->mark) {
+                    Value cv;
+                    cv.p = child;
+                    urb_push(mark_stack, cv);
+                }
+            }
+        }
+    }
+    urb_free(mark_stack);
+}
+
+static void vm_mark_interned_keys(VM *vm)
+{
+    /*
+     * Regression note:
+     * - keyintern=0 must be near-zero overhead in hot paths.
+     * - GC used to scan intern_cap slots every cycle.
+     * Fix:
+     * - lookups are skipped when key interning is disabled;
+     * - interned keys are tracked in a compact root list and GC marks only
+     *   intern_size entries instead of scanning the full hash table capacity.
+     */
+    if (!vm || vm->intern_size == 0 || !vm->intern_roots) return;
+    for (size_t i = 0; i < vm->intern_size; i++) {
+        ObjEntry *key_entry = vm->intern_roots[i];
+        if (!key_entry || !key_entry->in_use) continue;
+        key_entry->mark = 1;
+    }
 }
 
 void vm_gc(VM *vm)
@@ -1262,40 +1478,9 @@ void vm_gc(VM *vm)
     const size_t root_count = sizeof(roots) / sizeof(roots[0]);
 
     for (size_t i = 0; i < root_count; i++) {
-        ObjEntry *root = roots[i];
-        if (!root || !root->in_use) continue;
-        if (root->mark) continue;
-        /* iterative mark using a simple stack */
-        List *mark_stack = urb_new(16);
-        Value v;
-        v.p = root;
-        urb_push(mark_stack, v);
-        while (mark_stack->size > 0) {
-            ObjEntry *entry = (ObjEntry*)urb_pop(mark_stack).p;
-            if (!entry || !entry->in_use || entry->mark) continue;
-            entry->mark = 1;
-            ObjEntry *key = vm_entry_key(entry);
-            if (key && key->in_use && !key->mark) {
-                Value kv;
-                kv.p = key;
-                urb_push(mark_stack, kv);
-            }
-            if (!entry->obj) continue;
-            Int type = disturb_obj_type(entry->obj);
-            if (type == DISTURB_T_TABLE) {
-                List *obj = entry->obj;
-                for (Int j = 2; j < obj->size; j++) {
-                    ObjEntry *child = (ObjEntry*)obj->data[j].p;
-                    if (child && child->in_use && !child->mark) {
-                        Value cv;
-                        cv.p = child;
-                        urb_push(mark_stack, cv);
-                    }
-                }
-            }
-        }
-        urb_free(mark_stack);
+        vm_mark_entry_root(vm, roots[i]);
     }
+    vm_mark_interned_keys(vm);
 
     /* sweep */
     for (Int i = 0; i < vm->reg_count; i++) {
@@ -1330,9 +1515,10 @@ ObjEntry *vm_global_find_by_key(List *global, const char *name)
     return NULL;
 }
 
-static ObjEntry *vm_object_find_direct(List *obj, const char *name, size_t len)
+static ObjEntry *vm_object_find_direct(VM *vm, List *obj, const char *name, size_t len)
 {
     if (!obj) return NULL;
+    ObjEntry *wanted = (vm && vm->keyintern_enabled) ? vm_intern_lookup(vm, name, len) : NULL;
     Int start = 2;
     Int type = disturb_obj_type(obj);
     if (type == DISTURB_T_NATIVE || type == DISTURB_T_LAMBDA) start = 3;
@@ -1342,6 +1528,7 @@ static ObjEntry *vm_object_find_direct(List *obj, const char *name, size_t len)
         ObjEntry *key = vm_entry_key(entry);
         if (!key) continue;
         if (!entry_is_string(key)) continue;
+        if (wanted && key == wanted) return entry;
         if (disturb_bytes_eq_bytes(key->obj, name, len)) return entry;
     }
     return NULL;
@@ -1349,12 +1536,12 @@ static ObjEntry *vm_object_find_direct(List *obj, const char *name, size_t len)
 
 static ObjEntry *vm_object_find_by_key_len(VM *vm, List *obj, const char *name, size_t len)
 {
-    ObjEntry *entry = vm_object_find_direct(obj, name, len);
+    ObjEntry *entry = vm_object_find_direct(vm, obj, name, len);
     if (entry) return entry;
     if (!vm || !vm->common_entry || obj == vm->common_entry->obj) {
         return vm ? vm->null_entry : NULL;
     }
-    entry = vm_object_find_direct(vm->common_entry->obj, name, len);
+    entry = vm_object_find_direct(vm, vm->common_entry->obj, name, len);
     if (entry) return entry;
     return vm ? vm->null_entry : NULL;
 }
@@ -2098,6 +2285,7 @@ void vm_init(VM *vm)
 {
     memset(vm, 0, sizeof(*vm));
     vm_reg_init(vm);
+    vm_intern_init(vm);
     vm->gc_entry = NULL;
     vm->gc_rate = 0;
     vm->gc_counter = 0;
@@ -2105,6 +2293,7 @@ void vm_init(VM *vm)
     vm->has_call_override = 0;
     vm->call_entry = NULL;
     vm->strict_mode = 0;
+    vm->keyintern_enabled = 1;
 
     vm->int_cache_count = (size_t)(INT_CACHE_MAX - INT_CACHE_MIN + 1);
     vm->int_cache_entries = (ObjEntry*)calloc(vm->int_cache_count, sizeof(ObjEntry));
@@ -2429,6 +2618,7 @@ void vm_free(VM *vm)
     free(vm->reg_free);
     free(vm->obj_ref_keys);
     free(vm->obj_ref_vals);
+    vm_intern_free(vm);
     free(vm->reg);
 }
 
@@ -3104,6 +3294,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             break;
         }
         case BC_STRICT:
+        case BC_UNSTRICT:
             break;
         case BC_JMP:
         case BC_JMP_IF_FALSE: {
@@ -3371,9 +3562,17 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
     if (vm && target == vm->gc_entry && vm_key_is(index, "rate")) {
         return vm_make_int_value(vm, (Int)vm->gc_rate);
     }
+    if (vm && target == vm->gc_entry && vm_key_is(index, "strict")) {
+        return vm_make_int_value(vm, vm->strict_mode ? 1 : 0);
+    }
+    if (vm && target == vm->gc_entry && vm_key_is(index, "keyintern")) {
+        return vm_make_int_value(vm, vm->keyintern_enabled ? 1 : 0);
+    }
     if (vm_key_is(index, "name")) {
         ObjEntry *key = vm_entry_key(target);
-        return key ? key : vm->null_entry;
+        if (!key) return vm->null_entry;
+        ObjEntry *copy = vm_clone_entry_shallow_copy(vm, key, NULL);
+        return copy ? copy : key;
     }
     if (vm_key_is(index, "type")) {
         return vm_make_type_name(vm, target);
@@ -3822,7 +4021,7 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
 
     if (index && entry_is_string(index)) {
         if (vm && vm->common_entry) {
-            ObjEntry *method = vm_object_find_direct(vm->common_entry->obj,
+            ObjEntry *method = vm_object_find_direct(vm, vm->common_entry->obj,
                                                      disturb_bytes_data(index->obj),
                                                      disturb_bytes_len(index->obj));
             if (method) return method;
@@ -3884,11 +4083,16 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
     Int start = 2;
     Int type = disturb_obj_type(obj);
     if (type == DISTURB_T_NATIVE || type == DISTURB_T_LAMBDA) start = 3;
+    ObjEntry *wanted = (vm && vm->keyintern_enabled) ? vm_intern_lookup(vm, name, len) : NULL;
     ObjEntry *found = NULL;
     for (Int i = start; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         ObjEntry *key = vm_entry_key(entry);
         if (!key || !entry_is_string(key)) continue;
+        if (wanted && key == wanted) {
+            found = entry;
+            break;
+        }
         if (disturb_bytes_eq_bytes(key->obj, name, len)) {
             found = entry;
             break;
@@ -3961,17 +4165,42 @@ int vm_object_set_by_key(VM *vm, ObjEntry *target, const char *name, size_t len,
 static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc)
 {
     if (!target || !index || !entry_is_string(index)) return 0;
-    if (vm && target == vm->gc_entry && vm_key_is(index, "rate")) {
-        Int iv = 0;
-        Float fv = 0;
-        int is_float = 0;
-        if (!vm_entry_number(value, &iv, &fv, &is_float, "gc.rate", pc) || is_float || iv < 0) {
-            fprintf(stderr, "bytecode error at pc %zu: gc.rate expects non-negative int\n", pc);
-            return -1;
+    if (vm && target == vm->gc_entry) {
+        /* gc.* assignments are runtime toggles only; they do not affect parser decisions. */
+        if (vm_key_is(index, "rate")) {
+            Int iv = 0;
+            Float fv = 0;
+            int is_float = 0;
+            if (!vm_entry_number(value, &iv, &fv, &is_float, "gc.rate", pc) || is_float || iv < 0) {
+                fprintf(stderr, "bytecode error at pc %zu: gc.rate expects non-negative int\n", pc);
+                return -1;
+            }
+            vm->gc_rate = (size_t)iv;
+            vm->gc_counter = 0;
+            return 1;
         }
-        vm->gc_rate = (size_t)iv;
-        vm->gc_counter = 0;
-        return 1;
+        if (vm_key_is(index, "strict")) {
+            Int iv = 0;
+            Float fv = 0;
+            int is_float = 0;
+            if (!vm_entry_number(value, &iv, &fv, &is_float, "gc.strict", pc) || is_float) {
+                fprintf(stderr, "bytecode error at pc %zu: gc.strict expects int\n", pc);
+                return -1;
+            }
+            vm->strict_mode = iv != 0;
+            return 1;
+        }
+        if (vm_key_is(index, "keyintern")) {
+            Int iv = 0;
+            Float fv = 0;
+            int is_float = 0;
+            if (!vm_entry_number(value, &iv, &fv, &is_float, "gc.keyintern", pc) || is_float) {
+                fprintf(stderr, "bytecode error at pc %zu: gc.keyintern expects int\n", pc);
+                return -1;
+            }
+            vm->keyintern_enabled = iv != 0;
+            return 1;
+        }
     }
     if (vm_key_is(index, "name")) {
         if (!value || disturb_obj_type(value->obj) == DISTURB_T_NULL) {
@@ -4183,6 +4412,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         [BC_CALL] = &&BC_L_CALL,
         [BC_CALL_EX] = &&BC_L_CALL_EX,
         [BC_STRICT] = &&BC_L_STRICT,
+        [BC_UNSTRICT] = &&BC_L_UNSTRICT,
         [BC_JMP] = &&BC_L_JMP,
         [BC_JMP_IF_FALSE] = &&BC_L_JMP_IF_FALSE,
         [BC_RETURN] = &&BC_L_RETURN,
@@ -4851,7 +5081,7 @@ BC_L_LOAD_GLOBAL:
             }
             ObjEntry *entry = NULL;
             if (vm->local_entry) {
-                entry = vm_object_find_direct(vm->local_entry->obj, (char*)name, name_len);
+                entry = vm_object_find_direct(vm, vm->local_entry->obj, (char*)name, name_len);
             }
             if (!entry) {
                 entry = vm_object_find_by_key_len(vm, vm->global_entry->obj, (char*)name, name_len);
@@ -4907,6 +5137,12 @@ BC_L_STRICT:
 #endif
             vm->strict_mode = 1;
             break;
+        case BC_UNSTRICT:
+#ifdef __GNUC__
+BC_L_UNSTRICT:
+#endif
+            vm->strict_mode = 0;
+            break;
         case BC_CALL:
         case BC_CALL_EX:
 #ifdef __GNUC__
@@ -4958,7 +5194,7 @@ BC_L_CALL_EX:
                     if (target == vm->null_entry) target = NULL;
                 } else if (this_type == DISTURB_T_INT || this_type == DISTURB_T_FLOAT || this_type == DISTURB_T_VIEW) {
                     if (vm->common_entry) {
-                        target = vm_object_find_direct(vm->common_entry->obj, (char*)name, name_len);
+                        target = vm_object_find_direct(vm, vm->common_entry->obj, (char*)name, name_len);
                     }
                 }
             }

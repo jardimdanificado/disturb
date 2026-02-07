@@ -518,6 +518,12 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 bc_free(out);
                 return 0;
             }
+        } else if (op_len == 8 && memcmp(op_name, "UNSTRICT", 8) == 0) {
+            if (!bc_emit_u8(out, BC_UNSTRICT)) {
+                ast_err(err, err_cap, "failed to emit UNSTRICT");
+                bc_free(out);
+                return 0;
+            }
         } else if (op_len == 4 && memcmp(op_name, "CALL", 4) == 0) {
             ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
             ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
@@ -996,6 +1002,8 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
             sb_append_char(out, ' ');
             sb_append_n(out, name, name_len);
         } else if (op_len == 6 && memcmp(op_name, "STRICT", 6) == 0) {
+            // no args
+        } else if (op_len == 8 && memcmp(op_name, "UNSTRICT", 8) == 0) {
             // no args
         } else if (op_len == 4 && memcmp(op_name, "CALL", 4) == 0) {
             ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");

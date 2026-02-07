@@ -61,6 +61,12 @@ struct ObjEntry {
     unsigned explicit_string : 1;
 };
 
+typedef struct {
+    ObjEntry *key_entry;
+    uint32_t hash;
+    uint32_t len;
+} InternEntry;
+
 struct VM {
     ObjEntry **reg;
     Int reg_count;
@@ -94,11 +100,17 @@ struct VM {
     size_t *obj_ref_vals;
     size_t obj_ref_cap;
     size_t obj_ref_count;
+    InternEntry *intern_table;
+    size_t intern_cap;
+    size_t intern_size;
+    ObjEntry **intern_roots;
+    size_t intern_roots_cap;
     size_t gc_rate;
     size_t gc_counter;
     Int call_override_len;
     int has_call_override;
     int strict_mode;
+    int keyintern_enabled;
 };
 
 struct FreeNode {

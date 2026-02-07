@@ -2898,42 +2898,55 @@ static int parse_statement(Parser *p, Bytecode *bc)
         Parser probe = *p;
         Token next = next_token(&probe);
         Token after = next_token(&probe);
-        int is_strict = next.kind == TOK_STRING &&
-                        next.str_len == 6 &&
-                        memcmp(next.str, "strict", 6) == 0 &&
-                        after.kind == TOK_SEMI;
-        if (!is_strict && next.kind == TOK_IDENT &&
-            next.len == 6 && memcmp(next.start, "strict", 6) == 0 &&
-            after.kind == TOK_SEMI) {
-            is_strict = 1;
+        int mode = 0;
+        if (after.kind == TOK_SEMI) {
+            if (next.kind == TOK_STRING) {
+                if (next.str_len == 6 && memcmp(next.str, "strict", 6) == 0) mode = 1;
+                else if (next.str_len == 8 && memcmp(next.str, "nostrict", 8) == 0) mode = -1;
+            } else if (next.kind == TOK_IDENT) {
+                if (next.len == 6 && memcmp(next.start, "strict", 6) == 0) mode = 1;
+                else if (next.len == 8 && memcmp(next.start, "nostrict", 8) == 0) mode = -1;
+            }
         }
         token_free(&next);
         token_free(&after);
-        if (is_strict) {
+        if (mode != 0) {
             advance(p);
             if (p->current.kind == TOK_STRING) {
-                if (p->current.str_len != 6 ||
-                    memcmp(p->current.str, "strict", 6) != 0) {
-                    parser_error(p, "expected \"strict\" after use");
+                if ((mode > 0 && (p->current.str_len != 6 ||
+                                  memcmp(p->current.str, "strict", 6) != 0)) ||
+                    (mode < 0 && (p->current.str_len != 8 ||
+                                  memcmp(p->current.str, "nostrict", 8) != 0))) {
+                    parser_error(p, mode > 0 ? "expected \"strict\" after use"
+                                             : "expected \"nostrict\" after use");
                     return 0;
                 }
             } else if (p->current.kind == TOK_IDENT) {
-                if (p->current.len != 6 ||
-                    memcmp(p->current.start, "strict", 6) != 0) {
-                    parser_error(p, "expected strict after use");
+                if ((mode > 0 && (p->current.len != 6 ||
+                                  memcmp(p->current.start, "strict", 6) != 0)) ||
+                    (mode < 0 && (p->current.len != 8 ||
+                                  memcmp(p->current.start, "nostrict", 8) != 0))) {
+                    parser_error(p, mode > 0 ? "expected strict after use"
+                                             : "expected nostrict after use");
                     return 0;
                 }
             } else {
-                parser_error(p, "expected strict after use");
+                parser_error(p, mode > 0 ? "expected strict after use"
+                                         : "expected nostrict after use");
                 return 0;
             }
             advance(p);
-            if (!expect(p, TOK_SEMI, "expected ';' after use strict")) return 0;
-            if (!bc_emit_u8(bc, BC_STRICT)) {
-                parser_error(p, "failed to emit STRICT");
+            if (!expect(p, TOK_SEMI, mode > 0 ? "expected ';' after use strict"
+                                              : "expected ';' after use nostrict")) {
                 return 0;
             }
-            p->strict_mode = 1;
+            /* Directives toggle parser strict mode and emit runtime strict toggle bytecode. */
+            if (!bc_emit_u8(bc, mode > 0 ? BC_STRICT : BC_UNSTRICT)) {
+                parser_error(p, mode > 0 ? "failed to emit STRICT"
+                                         : "failed to emit UNSTRICT");
+                return 0;
+            }
+            p->strict_mode = mode > 0;
             return 1;
         }
     }
