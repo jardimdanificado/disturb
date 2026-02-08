@@ -49,6 +49,7 @@ typedef union {
     int64_t i;
     uint64_t u;
     double f;
+    float f32;
     void *p;
 } FfiValue;
 
@@ -606,12 +607,17 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             Float fv = 0;
             Int iv = 0;
             int is_float = 0;
-            if (!arg || !entry_number_scalar(arg, &iv, &fv, &is_float)) {
-                values[i].f = 0.0;
-            } else {
-                values[i].f = is_float ? (double)fv : (double)iv;
+            double val = 0.0;
+            if (arg && entry_number_scalar(arg, &iv, &fv, &is_float)) {
+                val = is_float ? (double)fv : (double)iv;
             }
-            argv[i] = &values[i].f;
+            if (t->base == FFI_BASE_F32) {
+                values[i].f32 = (float)val;
+                argv[i] = &values[i].f32;
+            } else {
+                values[i].f = val;
+                argv[i] = &values[i].f;
+            }
             continue;
         }
         if (ffi_arg_is_int(t)) {
@@ -688,7 +694,8 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     }
 
     if (ffi_arg_is_float(&fn->ret)) {
-        ffi_push_entry(vm, vm_make_float_value(vm, (Float)ret.f));
+        Float rv = (fn->ret.base == FFI_BASE_F32) ? (Float)ret.f32 : (Float)ret.f;
+        ffi_push_entry(vm, vm_make_float_value(vm, rv));
         return;
     }
     if (ffi_arg_is_int(&fn->ret)) {
