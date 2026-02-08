@@ -503,7 +503,7 @@ static List *disturb_obj_new_bytes(Int type, ObjEntry *key_entry, const char *s,
 
     List *obj = (List*)malloc(sizeof(List));
     if (!obj) return NULL;
-    size_t bytes = 2 * sizeof(Value) + len;
+    size_t bytes = 2 * sizeof(Value) + len + 1;  /* +1 for NUL sentinel */
     obj->data = (Value*)malloc(bytes);
     if (!obj->data) {
         free(obj);
@@ -516,6 +516,7 @@ static List *disturb_obj_new_bytes(Int type, ObjEntry *key_entry, const char *s,
     if (len && s) {
         memcpy(disturb_bytes_data(obj), s, len);
     }
+    disturb_bytes_data(obj)[len] = '\0';  /* NUL-terminate for FFI safety */
     return obj;
 }
 
@@ -574,7 +575,7 @@ void vm_free_list(VM *vm, List *obj)
 
 static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s, size_t len)
 {
-    size_t need_bytes = 2 * sizeof(Value) + len;
+    size_t need_bytes = 2 * sizeof(Value) + len + 1;  /* +1 for NUL sentinel */
     List *obj = NULL;
     if (vm && vm->free_list_objs) {
         FreeNode *node = vm->free_list_objs;
@@ -632,6 +633,7 @@ static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s
     obj->data[0].i = type;
     obj->data[1].p = key_entry;
     if (len && s) memcpy(disturb_bytes_data(obj), s, len);
+    disturb_bytes_data(obj)[len] = '\0';  /* NUL-terminate for FFI safety */
     return obj;
 }
 
@@ -892,7 +894,7 @@ List *disturb_bytes_append(List *obj, const char *bytes, size_t len)
     if (new_len > disturb_bytes_max() - 2) {
         PANIC("byte object too large.");
     }
-    size_t bytes_size = 2 * sizeof(Value) + new_len;
+    size_t bytes_size = 2 * sizeof(Value) + new_len + 1;  /* +1 for NUL sentinel */
     Value *data = (Value*)realloc(obj->data, bytes_size);
     if (!data && bytes_size > 0) {
         PANIC("failed to resize byte object.");
@@ -901,6 +903,7 @@ List *disturb_bytes_append(List *obj, const char *bytes, size_t len)
     if (len) {
         memcpy(disturb_bytes_data(obj) + old_len, bytes, len);
     }
+    disturb_bytes_data(obj)[new_len] = '\0';  /* NUL-terminate for FFI safety */
     obj->size = (UHalf)(new_len + 2);
     obj->capacity = (UHalf)(new_len + 2);
     return obj;
