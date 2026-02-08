@@ -571,7 +571,27 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             argv[i] = &values[i].p;
             continue;
         }
-        if (t->base == FFI_BASE_PTR || t->is_ptr || t->is_array) {
+        if (t->base == FFI_BASE_PTR) {
+            if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+                values[i].p = NULL;
+            } else {
+                Int iv = 0;
+                Float fv = 0;
+                int is_float = 0;
+                if (entry_number_scalar(arg, &iv, &fv, &is_float)) {
+                    uintptr_t addr = is_float ? (uintptr_t)(UInt)((Int)fv) : (uintptr_t)(UInt)iv;
+                    values[i].p = (void*)addr;
+                } else if (disturb_obj_type(arg->obj) == DISTURB_T_INT || disturb_obj_type(arg->obj) == DISTURB_T_FLOAT) {
+                    // Backward-compatible: allow passing an int[]/float[] buffer where void* is expected.
+                    values[i].p = disturb_bytes_data(arg->obj);
+                } else {
+                    values[i].p = NULL;
+                }
+            }
+            argv[i] = &values[i].p;
+            continue;
+        }
+        if (t->is_ptr || t->is_array) {
             if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
                 values[i].p = NULL;
             } else if (disturb_obj_type(arg->obj) == DISTURB_T_INT || disturb_obj_type(arg->obj) == DISTURB_T_FLOAT) {
