@@ -1,5 +1,4 @@
 # Disturb
-[![CI](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml/badge.svg)](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml)
 
 Disturb is a stack-oriented VM with a C-like source syntax that compiles to a compact RPN bytecode. The language focuses on safety and explicit behavior: everything lives under the global table, and missing lookups return a null table.
 
@@ -360,6 +359,8 @@ Signature notes:
 - `int[N]` return defaults to `N`, and can be overridden by `name!N()`.
 - `char*`/`unsigned char*` map to Disturb strings (copied on return).
 - `void*` maps to a Disturb int (uintptr).
+- `@schema` passes/returns a struct by value, where `schema` is a global struct schema table.
+  - by-value currently requires natural C layout (no `__meta.packed` / forced align).
 
 Struct views with automatic C-like layout (padding/alignment) are also supported:
 
@@ -387,6 +388,15 @@ Struct-view API:
 - `ffi.view(ptr, schema_or_layout)` -> live memory view.
 - `ffi.offsetof(schema_or_layout, "d.b")` -> byte offset for nested field paths.
 - `ffi.bind(ptr, "i32 add(i32, i32)")` -> turns a function pointer into a callable native.
+
+By-value struct example:
+```disturb
+outer = { a = "int32", b = "float64", d = { a = "int8", b = "int16" } };
+lib = ffi.load("libx.so",
+  "i32 sum_outer(@outer)",
+  "@outer make_outer(i32, f64, i8, i16)"
+);
+```
 
 Array schema syntax:
 - fixed array: `"int64[8]"`, `"float32[3]"`
@@ -476,10 +486,4 @@ The tutorial-style examples live in `example/guide` and are numbered:
 
 Stress cases include deep nesting and large list construction to push recursion and indexing.
 
-### Benchmarks
-
-The benchmark script measures:
-- Cross-language literal list parsing, deep object access, and string length for Disturb/Lua/Node/Python/C if present
-
-Run:
-- `RUNS=5 BIN=./disturb tests/bench.sh`
+[![CI](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml/badge.svg)](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml)

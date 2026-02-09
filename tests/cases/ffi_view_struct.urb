@@ -1,5 +1,15 @@
 fail = 0;
 
+schema = {
+  a = "int32",
+  b = "float64",
+  d = {
+    a = "int8",
+    b = "int16"
+  }
+};
+outer = schema;
+
 load_fixture = (path){
   return ffi.load(path,
     "void* make_outer()",
@@ -22,7 +32,9 @@ load_fixture = (path){
     "i32 arr_outer_off_f32s()",
     "i32 arr_outer_get_val(void*, i32)",
     "f32 arr_outer_get_f32(void*, i32)",
-    "void* get_add_i32_ptr()"
+    "void* get_add_i32_ptr()",
+    "i32 sum_outer_value(@outer)",
+    "@outer make_outer_value(i32, f64, i8, i16)"
   );
 };
 
@@ -33,15 +45,6 @@ if (lib == null) {
   println(1);
   return 0;
 }
-
-schema = {
-  a = "int32",
-  b = "float64",
-  d = {
-    a = "int8",
-    b = "int16"
-  }
-};
 
 layout = ffi.compile(schema);
 
@@ -98,5 +101,19 @@ lib.free_arr_outer(arr_ptr);
 add_ptr = lib.get_add_i32_ptr();
 add = ffi.bind(add_ptr, "i32 add(i32, i32)");
 if (add(20, 22) != 42) { fail++; }
+
+ptr2 = lib.make_outer();
+v2 = ffi.view(ptr2, layout);
+v2.a = 10;
+v2.d.a = 2;
+v2.d.b = 3;
+if (lib.sum_outer_value(v2) != 15) { fail++; }
+lib.free_outer(ptr2);
+
+ret = lib.make_outer_value(7, 1.5, 2, 9);
+if (ret.a != 7) { fail++; }
+if (ret.d.a != 2) { fail++; }
+if (ret.d.b != 9) { fail++; }
+if (ret.b != 1.5) { fail++; }
 
 println(fail);

@@ -69,3 +69,18 @@ void* get_add_i32_ptr(void)
 {
     return (void*)&add_i32;
 }
+
+int sum_outer_value(struct Outer o)
+{
+    return (int)o.a + (int)o.d.a + (int)o.d.b;
+}
+
+struct Outer make_outer_value(int32_t a, double b, int8_t da, int16_t db)
+{
+    struct Outer o;
+    o.a = a;
+    o.b = b;
+    o.d.a = da;
+    o.d.b = db;
+    return o;
+}

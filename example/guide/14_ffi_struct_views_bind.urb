@@ -8,9 +8,18 @@ load_fixture = (path){
     "void free_outer(void*)",
     "i32 outer_get_a(void*)",
     "i32 inner_get_b(void*)",
-    "void* get_add_i32_ptr()"
+    "void* get_add_i32_ptr()",
+    "i32 sum_outer_value(@outer)",
+    "@outer make_outer_value(i32, f64, i8, i16)"
   );
 };
+
+schema = {
+  a = "int32",
+  b = "float64",
+  d = { a = "int8", b = "int16" }
+};
+outer = schema;
 
 lib = load_fixture("./tests/ffi/libffi_view_struct.so");
 if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
@@ -21,12 +30,6 @@ if (lib == null) {
   return 0;
 }
 
-schema = {
-  a = "int32",
-  b = "float64",
-  d = { a = "int8", b = "int16" }
-};
-
 ptr = lib.make_outer();
 v = ffi.view(ptr, schema);
 v.a = 45;
@@ -36,8 +39,13 @@ println(v.a);
 println(v.d.b);
 println(lib.outer_get_a(ptr));
 println(lib.inner_get_b(ptr));
+println(lib.sum_outer_value(v));
 lib.free_outer(ptr);
 
 add_ptr = lib.get_add_i32_ptr();
 add = ffi.bind(add_ptr, "i32 add(i32, i32)");
 println(add(20, 22));
+
+ret = lib.make_outer_value(7, 1.5, 2, 9);
+println(ret.a);
+println(ret.d.b);

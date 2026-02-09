@@ -31,11 +31,17 @@ typedef enum {
     FFI_BASE_PTR
 } FfiBase;
 
+typedef struct FfiLayout FfiLayout;
+
 typedef struct {
     FfiBase base;
     int is_ptr;
     int is_array;
     int array_len;
+    char *schema_name; /* @schema for by-value struct */
+    FfiLayout *schema_layout; /* resolved layout for @schema */
+    ffi_type *schema_ffi_type; /* resolved ffi type for @schema */
+    void *schema_ffi_owner; /* owned dynamic ffi type graph */
 } FfiType;
 
 typedef struct {
@@ -63,8 +69,6 @@ typedef enum {
     FFI_LAYOUT_STRUCT,
     FFI_LAYOUT_ARRAY
 } FfiLayoutKind;
-
-typedef struct FfiLayout FfiLayout;
 
 typedef struct {
     char *name;
@@ -94,6 +98,13 @@ typedef struct FfiLayoutCacheNode {
     struct FfiLayoutCacheNode *next;
 } FfiLayoutCacheNode;
 
+typedef struct FfiDynTypeNode {
+    ffi_type type;
+    ffi_type **elements;
+    struct FfiDynTypeNode **owned_children;
+    int owned_count;
+} FfiDynTypeNode;
+
 typedef struct {
     char *data;
     size_t len;
@@ -112,6 +123,7 @@ typedef struct {
     uintptr_t base_ptr;
     size_t base_offset;
     FfiLayout *layout;
+    void *owned_mem;
 } FfiViewHandle;
 
 typedef struct {
@@ -131,6 +143,39 @@ enum {
 static FfiLayoutCacheNode *g_ffi_layout_cache = NULL;
 static FfiArrayViewHandle *ffi_array_view_handle_from_entry(ObjEntry *entry);
 static int parse_base_type(const char *name, FfiBase *out);
+static char *ffi_strdup(const char *s);
+
+static void ffi_dyn_type_node_free(FfiDynTypeNode *node)
+{
+    if (!node) return;
+    for (int i = 0; i < node->owned_count; i++) {
+        ffi_dyn_type_node_free(node->owned_children[i]);
+    }
+    free(node->owned_children);
+    free(node->elements);
+    free(node);
+}
+
+static void ffi_type_release_runtime(FfiType *t)
+{
+    if (!t) return;
+    free(t->schema_name);
+    t->schema_name = NULL;
+    if (t->schema_ffi_owner) {
+        ffi_dyn_type_node_free((FfiDynTypeNode*)t->schema_ffi_owner);
+        t->schema_ffi_owner = NULL;
+    }
+    t->schema_ffi_type = NULL;
+    t->schema_layout = NULL;
+}
+
+static void ffi_types_release_array(FfiType *arr, int count)
+{
+    if (!arr) return;
+    for (int i = 0; i < count; i++) {
+        ffi_type_release_runtime(&arr[i]);
+    }
+}
 
 #ifdef _WIN32
 static char g_ffi_dl_error[256];
@@ -222,6 +267,10 @@ static void ffi_function_release(void *data)
     if (!fn) return;
     fn->refcount--;
     if (fn->refcount > 0) return;
+    ffi_type_release_runtime(&fn->ret);
+    for (int i = 0; i < fn->argc; i++) {
+        ffi_type_release_runtime(&fn->args[i]);
+    }
     free(fn->args);
     free(fn->arg_types);
     free(fn);
@@ -983,7 +1032,7 @@ static FfiLayoutHandle *ffi_layout_handle_from_entry(ObjEntry *entry)
     return h;
 }
 
-static FfiViewHandle *ffi_view_handle_new(uintptr_t base_ptr, FfiLayout *layout, size_t base_offset)
+static FfiViewHandle *ffi_view_handle_new(uintptr_t base_ptr, FfiLayout *layout, size_t base_offset, void *owned_mem)
 {
     FfiViewHandle *h = (FfiViewHandle*)calloc(1, sizeof(FfiViewHandle));
     if (!h) return NULL;
@@ -992,6 +1041,7 @@ static FfiViewHandle *ffi_view_handle_new(uintptr_t base_ptr, FfiLayout *layout,
     h->base_ptr = base_ptr;
     h->base_offset = base_offset;
     h->layout = layout;
+    h->owned_mem = owned_mem;
     return h;
 }
 
@@ -1008,6 +1058,8 @@ static void ffi_view_handle_free(void *data)
     if (!h || h->magic != FFI_VIEW_HANDLE_MAGIC) return;
     h->refcount--;
     if (h->refcount <= 0) {
+        free(h->owned_mem);
+        h->owned_mem = NULL;
         h->magic = 0;
         free(h);
     }
@@ -1178,6 +1230,34 @@ static int parse_base_type(const char *name, FfiBase *out)
 
 static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
 {
+    memset(out, 0, sizeof(*out));
+    sig_skip_ws(p);
+    if (p->src[p->pos] == '@') {
+        p->pos++;
+        char schema[64];
+        if (!sig_read_ident(p, schema, sizeof(schema))) {
+            snprintf(err, err_cap, "expected schema name after '@'");
+            return 0;
+        }
+        out->schema_name = ffi_strdup(schema);
+        if (!out->schema_name) {
+            snprintf(err, err_cap, "out of memory");
+            return 0;
+        }
+        out->base = FFI_BASE_VOID;
+        out->is_ptr = 0;
+        out->is_array = 0;
+        out->array_len = -1;
+        sig_skip_ws(p);
+        if (p->src[p->pos] == '*' || p->src[p->pos] == '[') {
+            snprintf(err, err_cap, "'@%s' supports by-value struct only", schema);
+            free(out->schema_name);
+            out->schema_name = NULL;
+            return 0;
+        }
+        return 1;
+    }
+
     char ident[64];
     if (!sig_read_ident(p, ident, sizeof(ident))) {
         snprintf(err, err_cap, "expected type");
@@ -1328,7 +1408,9 @@ static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_c
         for (;;) {
             FfiType arg = {0};
             if (!sig_parse_type(&p, &arg, err, err_cap)) {
+                ffi_types_release_array(args, argc);
                 free(args);
+                ffi_type_release_runtime(&ret);
                 return NULL;
             }
             sig_skip_arg_name(&p);
@@ -1337,7 +1419,10 @@ static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_c
                 FfiType *tmp = (FfiType*)realloc(args, (size_t)next * sizeof(FfiType));
                 if (!tmp) {
                     snprintf(err, err_cap, "out of memory");
+                    ffi_type_release_runtime(&arg);
+                    ffi_types_release_array(args, argc);
                     free(args);
+                    ffi_type_release_runtime(&ret);
                     return NULL;
                 }
                 args = tmp;
@@ -1348,14 +1433,18 @@ static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_c
             if (sig_match_char(&p, ',')) continue;
             if (sig_match_char(&p, ')')) break;
             snprintf(err, err_cap, "expected ',' or ')'");
+            ffi_types_release_array(args, argc);
             free(args);
+            ffi_type_release_runtime(&ret);
             return NULL;
         }
     }
 
     FfiFunction *fn = (FfiFunction*)calloc(1, sizeof(FfiFunction));
     if (!fn) {
+        ffi_types_release_array(args, argc);
         free(args);
+        ffi_type_release_runtime(&ret);
         return NULL;
     }
     fn->refcount = 1;
@@ -1364,6 +1453,8 @@ static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_c
     fn->argc = argc;
     *out_name = ffi_strdup(name);
     if (!*out_name) {
+        ffi_types_release_array(args, argc);
+        ffi_type_release_runtime(&ret);
         free(args);
         free(fn);
         return NULL;
@@ -1492,8 +1583,25 @@ static FfiLayout *ffi_layout_from_schema_or_layout(ObjEntry *entry, char *err, s
 static ObjEntry *ffi_make_struct_view(VM *vm, uintptr_t base_ptr, FfiLayout *layout, size_t base_offset)
 {
     if (!layout || layout->kind != FFI_LAYOUT_STRUCT) return NULL;
-    FfiViewHandle *h = ffi_view_handle_new(base_ptr, layout, base_offset);
+    FfiViewHandle *h = ffi_view_handle_new(base_ptr, layout, base_offset, NULL);
     if (!h) return NULL;
+    ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
+                                                ffi_view_handle_free, ffi_view_handle_clone);
+    if (!entry) {
+        ffi_view_handle_free(h);
+        return NULL;
+    }
+    return entry;
+}
+
+static ObjEntry *ffi_make_struct_view_owned(VM *vm, void *owned_mem, FfiLayout *layout)
+{
+    if (!layout || layout->kind != FFI_LAYOUT_STRUCT || !owned_mem) return NULL;
+    FfiViewHandle *h = ffi_view_handle_new((uintptr_t)owned_mem, layout, 0, owned_mem);
+    if (!h) {
+        free(owned_mem);
+        return NULL;
+    }
     ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
                                                 ffi_view_handle_free, ffi_view_handle_clone);
     if (!entry) {
@@ -1798,6 +1906,169 @@ int ffi_native_index_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *va
     return 1;
 }
 
+static int ffi_layout_is_byvalue_compatible(FfiLayout *layout, char *err, size_t err_cap)
+{
+    if (!layout) {
+        snprintf(err, err_cap, "ffi: missing struct layout");
+        return 0;
+    }
+    if (layout->kind == FFI_LAYOUT_PRIM) return 1;
+    if (layout->kind == FFI_LAYOUT_ARRAY) {
+        if (layout->array_len <= 0) {
+            snprintf(err, err_cap, "ffi: unsized arrays are not supported in by-value structs");
+            return 0;
+        }
+        return ffi_layout_is_byvalue_compatible(layout->elem, err, err_cap);
+    }
+    if (layout->packed || layout->forced_align > 0) {
+        snprintf(err, err_cap, "ffi: packed/forced-align structs are not supported for by-value calls");
+        return 0;
+    }
+    for (int i = 0; i < layout->field_count; i++) {
+        if (!ffi_layout_is_byvalue_compatible(layout->fields[i].layout, err, err_cap)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ffi_build_dynamic_type_for_layout(FfiLayout *layout, ffi_type **out_type,
+                                             FfiDynTypeNode **out_owner, char *err, size_t err_cap)
+{
+    if (!layout || !out_type || !out_owner) return 0;
+    *out_type = NULL;
+    *out_owner = NULL;
+
+    if (layout->kind == FFI_LAYOUT_PRIM) {
+        *out_type = ffi_type_for_base(layout->base);
+        return 1;
+    }
+
+    if (layout->kind == FFI_LAYOUT_ARRAY) {
+        if (layout->array_len <= 0 || !layout->elem) {
+            snprintf(err, err_cap, "ffi: invalid by-value array layout");
+            return 0;
+        }
+
+        ffi_type *elem_type = NULL;
+        FfiDynTypeNode *elem_owner = NULL;
+        if (!ffi_build_dynamic_type_for_layout(layout->elem, &elem_type, &elem_owner, err, err_cap)) {
+            return 0;
+        }
+
+        FfiDynTypeNode *node = (FfiDynTypeNode*)calloc(1, sizeof(FfiDynTypeNode));
+        if (!node) {
+            ffi_dyn_type_node_free(elem_owner);
+            snprintf(err, err_cap, "ffi: out of memory");
+            return 0;
+        }
+        node->elements = (ffi_type**)calloc((size_t)layout->array_len + 1, sizeof(ffi_type*));
+        if (!node->elements) {
+            ffi_dyn_type_node_free(elem_owner);
+            free(node);
+            snprintf(err, err_cap, "ffi: out of memory");
+            return 0;
+        }
+        for (int i = 0; i < layout->array_len; i++) {
+            node->elements[i] = elem_type;
+        }
+        node->elements[layout->array_len] = NULL;
+        node->type.type = FFI_TYPE_STRUCT;
+        node->type.elements = node->elements;
+        if (elem_owner) {
+            node->owned_children = (FfiDynTypeNode**)calloc(1, sizeof(FfiDynTypeNode*));
+            if (!node->owned_children) {
+                ffi_dyn_type_node_free(elem_owner);
+                ffi_dyn_type_node_free(node);
+                snprintf(err, err_cap, "ffi: out of memory");
+                return 0;
+            }
+            node->owned_children[0] = elem_owner;
+            node->owned_count = 1;
+        }
+        *out_type = &node->type;
+        *out_owner = node;
+        return 1;
+    }
+
+    if (layout->kind != FFI_LAYOUT_STRUCT) {
+        snprintf(err, err_cap, "ffi: unsupported layout kind for by-value calls");
+        return 0;
+    }
+
+    FfiDynTypeNode *node = (FfiDynTypeNode*)calloc(1, sizeof(FfiDynTypeNode));
+    if (!node) {
+        snprintf(err, err_cap, "ffi: out of memory");
+        return 0;
+    }
+    node->elements = (ffi_type**)calloc((size_t)layout->field_count + 1, sizeof(ffi_type*));
+    if (!node->elements) {
+        free(node);
+        snprintf(err, err_cap, "ffi: out of memory");
+        return 0;
+    }
+
+    for (int i = 0; i < layout->field_count; i++) {
+        ffi_type *field_type = NULL;
+        FfiDynTypeNode *field_owner = NULL;
+        if (!ffi_build_dynamic_type_for_layout(layout->fields[i].layout, &field_type, &field_owner, err, err_cap)) {
+            ffi_dyn_type_node_free(node);
+            return 0;
+        }
+        node->elements[i] = field_type;
+        if (field_owner) {
+            FfiDynTypeNode **next =
+                (FfiDynTypeNode**)realloc(node->owned_children, (size_t)(node->owned_count + 1) * sizeof(FfiDynTypeNode*));
+            if (!next) {
+                ffi_dyn_type_node_free(field_owner);
+                ffi_dyn_type_node_free(node);
+                snprintf(err, err_cap, "ffi: out of memory");
+                return 0;
+            }
+            node->owned_children = next;
+            node->owned_children[node->owned_count++] = field_owner;
+        }
+    }
+    node->elements[layout->field_count] = NULL;
+    node->type.type = FFI_TYPE_STRUCT;
+    node->type.elements = node->elements;
+    *out_type = &node->type;
+    *out_owner = node;
+    return 1;
+}
+
+static int ffi_resolve_schema_type(VM *vm, FfiType *t, char *err, size_t err_cap)
+{
+    if (!t || !t->schema_name) return 1;
+    if (!vm || !vm->global_entry || !vm->global_entry->obj) {
+        snprintf(err, err_cap, "ffi: missing global table");
+        return 0;
+    }
+
+    ObjEntry *schema = vm_global_find_by_key(vm->global_entry->obj, t->schema_name);
+    if (!schema) {
+        snprintf(err, err_cap, "ffi: unknown schema '@%s'", t->schema_name);
+        return 0;
+    }
+
+    FfiLayout *layout = ffi_compile_schema_cached(schema, err, err_cap);
+    if (!layout) return 0;
+    if (layout->kind != FFI_LAYOUT_STRUCT) {
+        snprintf(err, err_cap, "ffi: '@%s' must reference a struct schema", t->schema_name);
+        return 0;
+    }
+    if (!ffi_layout_is_byvalue_compatible(layout, err, err_cap)) return 0;
+
+    ffi_type *ft = NULL;
+    FfiDynTypeNode *owner = NULL;
+    if (!ffi_build_dynamic_type_for_layout(layout, &ft, &owner, err, err_cap)) return 0;
+
+    t->schema_layout = layout;
+    t->schema_ffi_type = ft;
+    t->schema_ffi_owner = owner;
+    return 1;
+}
+
 static void native_ffi_call(VM *vm, List *stack, List *global)
 {
     (void)global;
@@ -1843,6 +2114,30 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             }
         }
         FfiType *t = &fn->args[i];
+        if (t->schema_name) {
+            uintptr_t src_addr = 0;
+            uintptr_t base_ptr = 0;
+            size_t base_offset = 0;
+            FfiLayout *layout = NULL;
+            if (arg && ffi_view_decode(arg, &base_ptr, &base_offset, &layout) && layout == t->schema_layout) {
+                src_addr = base_ptr + base_offset;
+            } else if (arg) {
+                Int iv = 0;
+                Float fv = 0;
+                int is_float = 0;
+                if (entry_number_scalar(arg, &iv, &fv, &is_float)) {
+                    src_addr = (uintptr_t)(UInt)(is_float ? (Int)fv : iv);
+                }
+            }
+            if (!src_addr) {
+                free(values);
+                free(argv);
+                fprintf(stderr, "ffi: invalid value for by-value struct arg %d (@%s)\n", i, t->schema_name);
+                return;
+            }
+            argv[i] = (void*)src_addr;
+            continue;
+        }
         if (t->base == FFI_BASE_CSTR) {
             const char *s = NULL;
             if (arg && entry_as_cstr(arg, &s)) {
@@ -1916,10 +2211,33 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     }
 
     FfiValue ret = {0};
-    ffi_call(&fn->cif, FFI_FN(fn->fn_ptr), &ret, argv);
+    void *ret_buf = NULL;
+    void *ret_ptr = &ret;
+    if (fn->ret.schema_name) {
+        ret_buf = calloc(1, fn->ret.schema_layout ? fn->ret.schema_layout->size : 0);
+        if (!ret_buf) {
+            free(values);
+            free(argv);
+            fprintf(stderr, "ffi: out of memory\n");
+            return;
+        }
+        ret_ptr = ret_buf;
+    }
+    ffi_call(&fn->cif, FFI_FN(fn->fn_ptr), ret_ptr, argv);
 
     free(values);
     free(argv);
+
+    if (fn->ret.schema_name) {
+        ObjEntry *view = ffi_make_struct_view_owned(vm, ret_buf, fn->ret.schema_layout);
+        if (!view) {
+            free(ret_buf);
+            ffi_push_entry(vm, vm->null_entry);
+            return;
+        }
+        ffi_push_entry(vm, view);
+        return;
+    }
 
     if (fn->ret.base == FFI_BASE_VOID) {
         ffi_push_entry(vm, vm->null_entry);
@@ -1987,7 +2305,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, vm->null_entry);
 }
 
-static int ffi_prepare(FfiFunction *fn, const char *name, void *handle, char *err, size_t err_cap)
+static int ffi_prepare(VM *vm, FfiFunction *fn, const char *name, void *handle, char *err, size_t err_cap)
 {
     fn->handle = handle;
     fn->fn_ptr = ffi_dlsym(handle, name);
@@ -1995,6 +2313,12 @@ static int ffi_prepare(FfiFunction *fn, const char *name, void *handle, char *er
         snprintf(err, err_cap, "ffi: missing symbol '%s'", name);
         return 0;
     }
+
+    if (!ffi_resolve_schema_type(vm, &fn->ret, err, err_cap)) return 0;
+    for (int i = 0; i < fn->argc; i++) {
+        if (!ffi_resolve_schema_type(vm, &fn->args[i], err, err_cap)) return 0;
+    }
+
     fn->arg_types = (ffi_type**)calloc((size_t)fn->argc, sizeof(ffi_type*));
     if (!fn->arg_types) {
         snprintf(err, err_cap, "ffi: out of memory");
@@ -2002,13 +2326,19 @@ static int ffi_prepare(FfiFunction *fn, const char *name, void *handle, char *er
     }
     for (int i = 0; i < fn->argc; i++) {
         FfiType *t = &fn->args[i];
+        if (t->schema_name) {
+            fn->arg_types[i] = t->schema_ffi_type;
+            continue;
+        }
         if (t->is_ptr || t->is_array || t->base == FFI_BASE_CSTR || t->base == FFI_BASE_PTR) {
             fn->arg_types[i] = &ffi_type_pointer;
         } else {
             fn->arg_types[i] = ffi_type_for_base(t->base);
         }
     }
-    if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_CSTR || fn->ret.base == FFI_BASE_PTR) {
+    if (fn->ret.schema_name) {
+        fn->ret_type = fn->ret.schema_ffi_type;
+    } else if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_CSTR || fn->ret.base == FFI_BASE_PTR) {
         fn->ret_type = &ffi_type_pointer;
     } else {
         fn->ret_type = ffi_type_for_base(fn->ret.base);
@@ -2021,13 +2351,18 @@ static int ffi_prepare(FfiFunction *fn, const char *name, void *handle, char *er
     return 1;
 }
 
-static int ffi_prepare_ptr(FfiFunction *fn, void *fn_ptr, char *err, size_t err_cap)
+static int ffi_prepare_ptr(VM *vm, FfiFunction *fn, void *fn_ptr, char *err, size_t err_cap)
 {
     fn->handle = NULL;
     fn->fn_ptr = fn_ptr;
     if (!fn->fn_ptr) {
         snprintf(err, err_cap, "ffi.bind expects non-null function pointer");
         return 0;
+    }
+
+    if (!ffi_resolve_schema_type(vm, &fn->ret, err, err_cap)) return 0;
+    for (int i = 0; i < fn->argc; i++) {
+        if (!ffi_resolve_schema_type(vm, &fn->args[i], err, err_cap)) return 0;
     }
 
     fn->arg_types = (ffi_type**)calloc((size_t)fn->argc, sizeof(ffi_type*));
@@ -2037,13 +2372,19 @@ static int ffi_prepare_ptr(FfiFunction *fn, void *fn_ptr, char *err, size_t err_
     }
     for (int i = 0; i < fn->argc; i++) {
         FfiType *t = &fn->args[i];
+        if (t->schema_name) {
+            fn->arg_types[i] = t->schema_ffi_type;
+            continue;
+        }
         if (t->is_ptr || t->is_array || t->base == FFI_BASE_CSTR || t->base == FFI_BASE_PTR) {
             fn->arg_types[i] = &ffi_type_pointer;
         } else {
             fn->arg_types[i] = ffi_type_for_base(t->base);
         }
     }
-    if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_CSTR || fn->ret.base == FFI_BASE_PTR) {
+    if (fn->ret.schema_name) {
+        fn->ret_type = fn->ret.schema_ffi_type;
+    } else if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_CSTR || fn->ret.base == FFI_BASE_PTR) {
         fn->ret_type = &ffi_type_pointer;
     } else {
         fn->ret_type = ffi_type_for_base(fn->ret.base);
@@ -2093,7 +2434,7 @@ void native_ffi_bind(VM *vm, List *stack, List *global)
         fprintf(stderr, "%s\n", err[0] ? err : "ffi: invalid signature");
         return;
     }
-    if (!ffi_prepare_ptr(fn, (void*)addr, err, sizeof(err))) {
+    if (!ffi_prepare_ptr(vm, fn, (void*)addr, err, sizeof(err))) {
         fprintf(stderr, "%s\n", err[0] ? err : "ffi: prepare failed");
         free((void*)name);
         ffi_function_release(fn);
@@ -2161,7 +2502,7 @@ void native_ffi_load(VM *vm, List *stack, List *global)
             fprintf(stderr, "%s\n", err[0] ? err : "ffi: invalid signature");
             continue;
         }
-        if (!ffi_prepare(fn, name, handle, err, sizeof(err))) {
+        if (!ffi_prepare(vm, fn, name, handle, err, sizeof(err))) {
             fprintf(stderr, "%s\n", err[0] ? err : "ffi: prepare failed");
             free((void*)name);
             ffi_function_release(fn);
