@@ -407,6 +407,16 @@ Current limitations:
 - No bitfields
 - No variadic struct members
 
+## Modules
+
+Use `import(path)` to load a module.
+
+- If `path` ends with `.disturb`, that file is loaded directly.
+- Otherwise Disturb treats it as a package directory and loads `path/<basename(path)>.disturb`.
+  - Example: `import("lib/math")` loads `lib/math/math.disturb`.
+- Module code runs in an isolated VM and exports a value via top-level `return`.
+- Imports are cached by resolved path; importing the same module again returns the same module object.
+
 ## Build Flags
 
 Optional features can be disabled at build time:

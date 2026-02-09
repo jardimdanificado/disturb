@@ -1,0 +1,52 @@
+fail = 0;
+secret = 999;
+
+m1 = import("tests/modules/math.disturb");
+m2 = import("tests/modules/math.disturb");
+
+if (m1 === m2) {
+} else {
+  fail++;
+}
+
+if (m1.tag == "math") {
+} else {
+  fail++;
+}
+
+if (m1.add(2, 3) == 5) {
+} else {
+  fail++;
+}
+
+if (m1.secret == 7) {
+} else {
+  fail++;
+}
+
+if (secret == 999) {
+} else {
+  fail++;
+}
+if (module_only == null) {
+} else {
+  fail++;
+}
+
+pkg = import("tests/modules/pkg");
+if (pkg.tag == "pkg") {
+} else {
+  fail++;
+}
+if (pkg.count == 1) {
+} else {
+  fail++;
+}
+
+pkg2 = import("tests/modules/pkg");
+if (pkg === pkg2) {
+} else {
+  fail++;
+}
+
+println(fail);

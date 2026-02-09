@@ -1,6 +1,11 @@
 # Changelog
 
 ## 0.18.0
+- add `import(path)` module/package loader:
+  - `*.disturb` paths load directly;
+  - non-`.disturb` paths load `path/<basename(path)>.disturb`;
+  - module code runs isolated and exports through top-level `return`;
+  - imports are cached per resolved path.
 - add FFI struct view system with automatic C-like layout compiler (padding/alignment), nested schemas, and live pointer-backed field access (`ffi.compile`, `ffi.sizeof`, `ffi.alignof`, `ffi.view`, `ffi.offsetof`).
 - add string-based schema types for FFI struct views (e.g. `"int32"`, `"float64"`, `"ptr"`), with support for `__meta.packed`, `__meta.align`, and `__order`.
 - add string-based schema array syntax: `"int64[8]"` (fixed inline array) and `"int32[]"` (unsized/pointer-style).

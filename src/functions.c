@@ -1146,6 +1146,142 @@ static int write_file_bytes(const char *path, const char *data, size_t len)
     return wrote == len;
 }
 
+static int ends_with_disturb_ext(const char *s, size_t len)
+{
+    static const char ext[] = ".disturb";
+    size_t ext_len = sizeof(ext) - 1;
+    if (len < ext_len) return 0;
+    return memcmp(s + (len - ext_len), ext, ext_len) == 0;
+}
+
+static char *module_resolve_path(const char *path, size_t path_len, size_t *out_len)
+{
+    if (!path || path_len == 0) return NULL;
+
+    size_t len = path_len;
+    while (len > 0 && (path[len - 1] == '/' || path[len - 1] == '\\')) len--;
+    if (len == 0) return NULL;
+
+    if (ends_with_disturb_ext(path, len)) {
+        char *out = (char*)malloc(len + 1);
+        if (!out) return NULL;
+        memcpy(out, path, len);
+        out[len] = 0;
+        if (out_len) *out_len = len;
+        return out;
+    }
+
+    size_t base_start = 0;
+    for (size_t i = len; i > 0; i--) {
+        char c = path[i - 1];
+        if (c == '/' || c == '\\') {
+            base_start = i;
+            break;
+        }
+    }
+    size_t base_len = len - base_start;
+    if (base_len == 0) return NULL;
+
+    size_t out_size = len + 1 + base_len + (sizeof(".disturb") - 1);
+    char *out = (char*)malloc(out_size + 1);
+    if (!out) return NULL;
+    size_t at = 0;
+    memcpy(out + at, path, len);
+    at += len;
+    out[at++] = '/';
+    memcpy(out + at, path + base_start, base_len);
+    at += base_len;
+    memcpy(out + at, ".disturb", sizeof(".disturb") - 1);
+    at += sizeof(".disturb") - 1;
+    out[at] = 0;
+    if (out_len) *out_len = at;
+    return out;
+}
+
+static ObjEntry *module_cache_get(VM *vm, List *global, const char *path, size_t path_len)
+{
+    (void)vm;
+    ObjEntry *cache = vm_global_find_by_key(global, "__modules");
+    if (!cache || disturb_obj_type(cache->obj) != DISTURB_T_TABLE) return NULL;
+    return object_find_by_key_len(cache->obj, path, path_len);
+}
+
+static ObjEntry *module_cache_ensure(VM *vm, List *global)
+{
+    ObjEntry *cache = vm_global_find_by_key(global, "__modules");
+    if (cache && disturb_obj_type(cache->obj) == DISTURB_T_TABLE) return cache;
+    cache = vm_make_table_value(vm, 8);
+    if (!cache) return NULL;
+    if (!vm_object_set_by_key(vm, vm->global_entry, "__modules", 9, cache)) return NULL;
+    return vm_global_find_by_key(global, "__modules");
+}
+
+static void native_import(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *arg0 = native_arg(stack, argc, 0);
+    const char *raw_path = NULL;
+    size_t raw_len = 0;
+    if (!entry_as_string(arg0, &raw_path, &raw_len)) {
+        fprintf(stderr, "import expects string path\n");
+        return;
+    }
+
+    size_t resolved_len = 0;
+    char *resolved = module_resolve_path(raw_path, raw_len, &resolved_len);
+    if (!resolved) {
+        fprintf(stderr, "import failed: invalid module path\n");
+        return;
+    }
+
+    ObjEntry *cached = module_cache_get(vm, global, resolved, resolved_len);
+    if (cached) {
+        push_entry(vm, stack, cached);
+        free(resolved);
+        return;
+    }
+
+    size_t src_len = 0;
+    char *src = read_file_bytes(resolved, &src_len);
+    if (!src && src_len == 0) {
+        fprintf(stderr, "import failed: could not read '%s'\n", resolved);
+        free(resolved);
+        return;
+    }
+
+    VM module_vm;
+    vm_init(&module_vm);
+    ObjEntry *ret = vm_eval_source(&module_vm, src ? src : "", src_len);
+    if (!ret) ret = module_vm.null_entry;
+
+    ObjEntry *exported = NULL;
+    if (ret == module_vm.null_entry || disturb_obj_type(ret->obj) == DISTURB_T_NULL) {
+        exported = vm->null_entry;
+    } else {
+        exported = vm_clone_entry_deep(vm, ret, NULL);
+    }
+
+    vm_free(&module_vm);
+    free(src);
+
+    if (!exported) {
+        fprintf(stderr, "import failed: could not clone module export\n");
+        free(resolved);
+        return;
+    }
+
+    ObjEntry *cache = module_cache_ensure(vm, global);
+    if (!cache || !vm_object_set_by_key(vm, cache, resolved, resolved_len, exported)) {
+        fprintf(stderr, "import failed: cache set failed\n");
+        free(resolved);
+        return;
+    }
+
+    ObjEntry *stored = module_cache_get(vm, global, resolved, resolved_len);
+    push_entry(vm, stack, stored ? stored : exported);
+    free(resolved);
+}
+
 static void native_print(VM *vm, List *stack, List *global)
 {
     (void)vm;
@@ -3189,6 +3325,7 @@ NativeFn vm_lookup_native(const char *name)
     #ifdef DISTURB_ENABLE_SYSTEM
     if (strcmp(name, "system") == 0) return native_system;
     #endif
+    if (strcmp(name, "import") == 0) return native_import;
     #ifdef DISTURB_ENABLE_FFI
     if (strcmp(name, "ffiLoad") == 0) return native_ffi_load;
     #endif

@@ -45,6 +45,7 @@ run_case locals
 run_case strict
 run_case strict_toggle
 run_case value
+run_case modules
 # run_case asm
 
 run_ffi_case() {

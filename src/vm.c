@@ -2662,6 +2662,8 @@ void vm_init(VM *vm)
     entry = vm_define_native(vm, "system", "system");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     #endif
+    entry = vm_define_native(vm, "import", "import");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "eval", "eval");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "parse", "parse");
