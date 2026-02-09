@@ -1,0 +1,33 @@
+lib = ffi.load("./tests/ffi/libffi_view_struct.so",
+  "void* make_outer()",
+  "void free_outer(void*)",
+  "i32 outer_sizeof()",
+  "i32 outer_off_d()",
+  "i32 inner_off_b()",
+  "i32 outer_get_a(void*)",
+  "i32 inner_get_b(void*)"
+);
+
+schema = {
+  a = "int32",
+  b = "float64",
+  d = {
+    a = "int8",
+    b = "int16"
+  }
+};
+
+layout = ffi.compile(schema);
+println("sizeof: " + ffi.sizeof(layout).string);
+println("offsetof(d.b): " + ffi.offsetof(layout, "d.b").string);
+
+ptr = lib.make_outer();
+v = ffi.view(ptr, layout);
+
+v.a = 45;
+v.d.b = 45;
+
+println("outer.a: " + lib.outer_get_a(ptr).string);
+println("inner.b: " + lib.inner_get_b(ptr).string);
+
+lib.free_outer(ptr);

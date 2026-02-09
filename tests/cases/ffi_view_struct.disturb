@@ -1,0 +1,87 @@
+fail = 0;
+
+lib = ffi.load("./tests/ffi/libffi_view_struct.so",
+  "void* make_outer()",
+  "void free_outer(void*)",
+  "i32 outer_sizeof()",
+  "i32 outer_off_a()",
+  "i32 outer_off_b()",
+  "i32 outer_off_d()",
+  "i32 inner_off_a()",
+  "i32 inner_off_b()",
+  "i32 outer_get_a(void*)",
+  "f64 outer_get_b(void*)",
+  "i32 inner_get_a(void*)",
+  "i32 inner_get_b(void*)",
+  "void* make_arr_outer()",
+  "void free_arr_outer(void*)",
+  "i32 arr_outer_sizeof()",
+  "i32 arr_outer_off_head()",
+  "i32 arr_outer_off_vals()",
+  "i32 arr_outer_off_f32s()",
+  "i32 arr_outer_get_val(void*, i32)",
+  "f32 arr_outer_get_f32(void*, i32)"
+);
+
+schema = {
+  a = "int32",
+  b = "float64",
+  d = {
+    a = "int8",
+    b = "int16"
+  }
+};
+
+layout = ffi.compile(schema);
+
+if (ffi.sizeof(layout) != lib.outer_sizeof()) { fail++; }
+if (ffi.offsetof(layout, "a") != lib.outer_off_a()) { fail++; }
+if (ffi.offsetof(layout, "b") != lib.outer_off_b()) { fail++; }
+if (ffi.offsetof(layout, "d") != lib.outer_off_d()) { fail++; }
+if (ffi.offsetof(layout, "d.a") != lib.outer_off_d() + lib.inner_off_a()) { fail++; }
+if (ffi.offsetof(layout, "d.b") != lib.outer_off_d() + lib.inner_off_b()) { fail++; }
+
+arr_schema = {
+  head = "int32",
+  vals = "int64[8]",
+  f32s = "float[3]"
+};
+
+if (ffi.sizeof(arr_schema) != lib.arr_outer_sizeof()) { fail++; }
+if (ffi.offsetof(arr_schema, "head") != lib.arr_outer_off_head()) { fail++; }
+if (ffi.offsetof(arr_schema, "vals") != lib.arr_outer_off_vals()) { fail++; }
+if (ffi.offsetof(arr_schema, "f32s") != lib.arr_outer_off_f32s()) { fail++; }
+
+if (ffi.sizeof({ p = "int32[]" }) != ffi.sizeof({ p = "ptr" })) { fail++; }
+
+ptr = lib.make_outer();
+v = ffi.view(ptr, layout);
+
+if (v.a != 0) { fail++; }
+if (v.d.a != 0) { fail++; }
+if (v.d.b != 0) { fail++; }
+
+v.a = 45;
+v.b = 10.5;
+v.d.b = 45;
+v.d.a = 128;
+
+if (lib.outer_get_a(ptr) != 45) { fail++; }
+if (lib.inner_get_b(ptr) != 45) { fail++; }
+if (lib.inner_get_a(ptr) != -128) { fail++; }
+
+if (v.a != 45) { fail++; }
+if (v.d.b != 45) { fail++; }
+if (v.d.a != -128) { fail++; }
+
+lib.free_outer(ptr);
+
+arr_ptr = lib.make_arr_outer();
+arr_v = ffi.view(arr_ptr, arr_schema);
+arr_v.vals[2] = 77;
+arr_v.f32s[1] = 1.5;
+if (lib.arr_outer_get_val(arr_ptr, 2) != 77) { fail++; }
+if (lib.arr_outer_get_f32(arr_ptr, 1) != 1.5) { fail++; }
+lib.free_arr_outer(arr_ptr);
+
+println(fail);

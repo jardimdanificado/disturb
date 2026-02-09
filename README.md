@@ -360,6 +360,53 @@ Signature notes:
 - `char*`/`unsigned char*` map to Disturb strings (copied on return).
 - `void*` maps to a Disturb int (uintptr).
 
+Struct views with automatic C-like layout (padding/alignment) are also supported:
+
+```disturb
+schema = {
+  a = "int32",
+  b = "float64",
+  d = { a = "int8", b = "int16" },
+  arr = "int64[8]"
+};
+
+layout = ffi.compile(schema);
+ptr = lib.make_outer();
+v = ffi.view(ptr, layout);
+
+v.a = 45;
+v.d.b = 45;
+println(v.a);
+```
+
+Struct-view API:
+- `ffi.compile(schema)` -> compiled layout object (cacheable).
+- `ffi.sizeof(schema_or_layout)` -> struct size in bytes.
+- `ffi.alignof(schema_or_layout)` -> struct alignment in bytes.
+- `ffi.view(ptr, schema_or_layout)` -> live memory view.
+- `ffi.offsetof(schema_or_layout, "d.b")` -> byte offset for nested field paths.
+
+Array schema syntax:
+- fixed array: `"int64[8]"`, `"float32[3]"`
+- unsized array/pointer-style: `"int32[]"` (treated as pointer-sized field in layout)
+
+Supported schema field types are strings:
+- sized integers: `"int8"`, `"uint8"`, `"int16"`, `"uint16"`, `"int32"`, `"uint32"`, `"int64"`, `"uint64"`
+- unsized aliases: `"char"`, `"uchar"`, `"short"`, `"ushort"`, `"int"`, `"uint"`, `"long"`, `"ulong"`
+- floats: `"float32"`, `"float64"`, `"float"` (`float32`), `"double"` (`float64`)
+- pointer: `"ptr"`
+- nested struct tables
+
+Schema metadata:
+- `__meta = { packed = 1 }` uses packed layout (`align = 1`).
+- `__meta = { align = N }` enforces minimum struct alignment.
+- If your table implementation does not preserve insertion order, set `__order = ["a","b","d"]`.
+
+Current limitations:
+- No unions
+- No bitfields
+- No variadic struct members
+
 ## Build Flags
 
 Optional features can be disabled at build time:
@@ -367,7 +414,7 @@ Optional features can be disabled at build time:
 ```bash
 make ENABLE_IO=0        # disable read/write
 make ENABLE_SYSTEM=0    # disable system()
-make ENABLE_FFI=0       # disable ffi.load
+make ENABLE_FFI=0       # disable ffi module
 ```
 
 ## Tests
@@ -393,6 +440,7 @@ The tutorial-style examples live in `example/guide` and are numbered:
 - `example/guide/09_metaprogramming.disturb`
 - `example/guide/10_strict_mode.disturb`
 - `example/guide/11_ffi_system.disturb`
+- `example/ffi_view_struct.disturb` (FFI struct view demo; requires `tests/ffi/libffi_view_struct.so`)
 - `example/guide/12_references_and_copy.disturb`
 - `example/guide/13_manual_gc.disturb`
 

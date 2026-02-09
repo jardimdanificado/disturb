@@ -1,6 +1,10 @@
 # Changelog
 
 ## 0.18.0
+- add FFI struct view system with automatic C-like layout compiler (padding/alignment), nested schemas, and live pointer-backed field access (`ffi.compile`, `ffi.sizeof`, `ffi.alignof`, `ffi.view`, `ffi.offsetof`).
+- add string-based schema types for FFI struct views (e.g. `"int32"`, `"float64"`, `"ptr"`), with support for `__meta.packed`, `__meta.align`, and `__order`.
+- add string-based schema array syntax: `"int64[8]"` (fixed inline array) and `"int32[]"` (unsized/pointer-style).
+- add FFI struct integration test using a dedicated shared C fixture (`tests/ffi/ffi_view_struct.c`) plus runtime test-case wiring in `tests/run.sh`.
 - remove the separate URB backend and keep a single unified runtime.
 - remove URB runtime/bridge sources and headers from the build (`src/urb_runtime.c`, `src/urb_bridge.c`, `include/urb_runtime.h`, `include/urb_bridge.h`).
 - simplify CLI backend behavior by removing `--urb`/`--dist` selection and always running the unified VM backend.

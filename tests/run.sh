@@ -47,6 +47,22 @@ run_case strict_toggle
 run_case value
 # run_case asm
 
+run_ffi_case() {
+  name=$1
+  src="tests/cases/${name}.disturb"
+  expected="tests/expected/${name}.out"
+  actual="tests/expected/${name}.actual"
+
+  echo "ffi case: $name"
+  "$BIN" "$src" > "$actual"
+  if ! diff -u "$expected" "$actual"; then
+    echo "ffi test failed: $name" >&2
+    exit 1
+  fi
+  rm -f "$actual"
+  echo "ffi case: $name ok"
+}
+
 run_negative() {
   name=$1
   src="tests/negative/${name}.disturb"
@@ -81,6 +97,21 @@ run_negative meta_capacity_string
 run_negative byte_range
 run_negative strict_mixed_list
 run_negative bitwise_float
+
+probe_file="$(mktemp)"
+echo 'println(ffi.type);' > "$probe_file"
+if "$BIN" "$probe_file" >/dev/null 2>/dev/null; then
+  if command -v gcc >/dev/null 2>&1; then
+    echo "building ffi struct test library"
+    gcc -shared -fPIC tests/ffi/ffi_view_struct.c -o tests/ffi/libffi_view_struct.so
+    run_ffi_case ffi_view_struct
+  else
+    echo "gcc not found; skipping ffi struct view test"
+  fi
+else
+  echo "ffi module unavailable; skipping ffi struct view test"
+fi
+rm -f "$probe_file"
 
 if command -v valgrind >/dev/null 2>&1; then
   echo "valgrind: leak check (tests/cases/basic.disturb)"

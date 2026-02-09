@@ -196,6 +196,14 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len);
 ObjEntry *vm_make_native_entry_data(VM *vm, const char *key, NativeFn fn, void *data,
                                     void (*free_data)(void *), void (*clone_data)(void *));
 
+#ifdef DISTURB_ENABLE_FFI
+int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out);
+int ffi_view_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc);
+int ffi_native_index_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out, size_t pc);
+int ffi_native_index_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc);
+void ffi_module_install(VM *vm, ObjEntry *ffi_entry);
+#endif
+
 NativeFn vm_lookup_native(const char *name);
 
 int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap);

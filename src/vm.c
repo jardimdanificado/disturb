@@ -2765,14 +2765,10 @@ void vm_init(VM *vm)
 
     #ifdef DISTURB_ENABLE_FFI
     ObjEntry *ffi_key = vm_make_key(vm, "ffi");
-    List *ffi_obj = vm_alloc_list(vm, DISTURB_T_TABLE, ffi_key, 1);
+    List *ffi_obj = vm_alloc_list(vm, DISTURB_T_TABLE, ffi_key, 24);
     ObjEntry *ffi_entry = vm_reg_alloc(vm, ffi_obj);
     vm_global_add(vm, ffi_entry);
-    ObjEntry *load_entry = vm_make_native_entry(vm, "load", "ffiLoad");
-    if (load_entry) {
-        ffi_obj = disturb_table_add(ffi_obj, load_entry);
-        vm_entry_set_obj(vm, ffi_entry, ffi_obj);
-    }
+    ffi_module_install(vm, ffi_entry);
     #endif
 }
 
@@ -3793,6 +3789,11 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
 {
     (void)pc;
     if (!target || !index || !entry_is_string(index)) return NULL;
+#ifdef DISTURB_ENABLE_FFI
+    ObjEntry *ffi_meta = NULL;
+    int ffi_handled = ffi_view_meta_get(vm, target, index, &ffi_meta);
+    if (ffi_handled) return ffi_meta;
+#endif
     if (vm && target == vm->gc_entry && vm_key_is(index, "rate")) {
         return vm_make_int_value(vm, (Int)vm->gc_rate);
     }
@@ -4252,6 +4253,14 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
                                          disturb_bytes_data(index->obj),
                                          disturb_bytes_len(index->obj));
     }
+#ifdef DISTURB_ENABLE_FFI
+    if (type == DISTURB_T_NATIVE) {
+        ObjEntry *ffi_out = NULL;
+        int handled = ffi_native_index_get(vm, target, index, &ffi_out, pc);
+        if (handled < 0) return NULL;
+        if (handled > 0) return ffi_out ? ffi_out : vm->null_entry;
+    }
+#endif
 
     if (index && entry_is_string(index)) {
         if (vm && vm->common_entry) {
@@ -4399,6 +4408,10 @@ int vm_object_set_by_key(VM *vm, ObjEntry *target, const char *name, size_t len,
 static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc)
 {
     if (!target || !index || !entry_is_string(index)) return 0;
+#ifdef DISTURB_ENABLE_FFI
+    int ffi_handled = ffi_view_meta_set(vm, target, index, value, pc);
+    if (ffi_handled != 0) return ffi_handled;
+#endif
     if (vm && target == vm->gc_entry) {
         /* gc.* assignments are runtime toggles only; they do not affect parser decisions. */
         if (vm_key_is(index, "rate")) {
@@ -5115,6 +5128,13 @@ BC_L_STORE_INDEX:
             if (meta > 0) break;
 
             Int type = disturb_obj_type(target->obj);
+#ifdef DISTURB_ENABLE_FFI
+            if (type == DISTURB_T_NATIVE) {
+                int ffi_handled = ffi_native_index_set(vm, target, index, value, pc);
+                if (ffi_handled < 0) return 0;
+                if (ffi_handled > 0) break;
+            }
+#endif
             if (type == DISTURB_T_TABLE && entry_is_string(index)) {
                 if (!vm_object_set_by_key_len(vm, &target->obj,
                                               disturb_bytes_data(index->obj),
