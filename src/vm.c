@@ -2658,10 +2658,6 @@ void vm_init(VM *vm)
     entry = vm_define_native(vm, "write", "write");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     #endif
-    #ifdef DISTURB_ENABLE_SYSTEM
-    entry = vm_define_native(vm, "system", "system");
-    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
-    #endif
     entry = vm_define_native(vm, "import", "import");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "eval", "eval");

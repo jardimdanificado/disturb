@@ -1,6 +1,5 @@
 CC = gcc
 ENABLE_IO ?= 1
-ENABLE_SYSTEM ?= 1
 ENABLE_FFI ?= 1
 
 CFLAGS = -O2 -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp -Ilib/
@@ -9,10 +8,6 @@ LDFLAGS = -lm
 
 ifeq ($(ENABLE_IO),1)
 	CFLAGS += -DDISTURB_ENABLE_IO
-endif
-
-ifeq ($(ENABLE_SYSTEM),1)
-	CFLAGS += -DDISTURB_ENABLE_SYSTEM
 endif
 
 ifeq ($(ENABLE_FFI),1)

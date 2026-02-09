@@ -59,3 +59,13 @@ int arr_outer_off_vals(void) { return (int)offsetof(struct ArrOuter, vals); }
 int arr_outer_off_f32s(void) { return (int)offsetof(struct ArrOuter, f32s); }
 int arr_outer_get_val(struct ArrOuter *o, int idx) { return o ? (int)o->vals[idx] : 0; }
 float arr_outer_get_f32(struct ArrOuter *o, int idx) { return o ? o->f32s[idx] : 0.0f; }
+
+int add_i32(int a, int b)
+{
+    return a + b;
+}
+
+void* get_add_i32_ptr(void)
+{
+    return (void*)&add_i32;
+}

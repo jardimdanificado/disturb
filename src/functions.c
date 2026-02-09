@@ -1492,30 +1492,6 @@ static void native_write(VM *vm, List *stack, List *global)
 }
 #endif
 
-#ifdef DISTURB_ENABLE_SYSTEM
-static void native_system(VM *vm, List *stack, List *global)
-{
-    uint32_t argc = native_argc(vm, global);
-    ObjEntry *arg0 = native_arg(stack, argc, 0);
-    const char *cmd = NULL;
-    size_t cmd_len = 0;
-    if (!entry_as_string(arg0, &cmd, &cmd_len)) {
-        fprintf(stderr, "system expects a string\n");
-        return;
-    }
-    char *buf = (char*)malloc(cmd_len + 1);
-    if (!buf) {
-        fprintf(stderr, "system out of memory\n");
-        return;
-    }
-    memcpy(buf, cmd, cmd_len);
-    buf[cmd_len] = 0;
-    int rc = system(buf);
-    free(buf);
-    push_number(vm, stack, (double)rc);
-}
-#endif
-
 static void native_eval(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -3321,9 +3297,6 @@ NativeFn vm_lookup_native(const char *name)
     #ifdef DISTURB_ENABLE_IO
     if (strcmp(name, "read") == 0) return native_read;
     if (strcmp(name, "write") == 0) return native_write;
-    #endif
-    #ifdef DISTURB_ENABLE_SYSTEM
-    if (strcmp(name, "system") == 0) return native_system;
     #endif
     if (strcmp(name, "import") == 0) return native_import;
     #ifdef DISTURB_ENABLE_FFI

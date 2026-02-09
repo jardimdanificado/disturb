@@ -1911,6 +1911,40 @@ static int ffi_prepare(FfiFunction *fn, const char *name, void *handle, char *er
         snprintf(err, err_cap, "ffi: missing symbol '%s'", name);
         return 0;
     }
+    fn->arg_types = (ffi_type**)calloc((size_t)fn->argc, sizeof(ffi_type*));
+    if (!fn->arg_types) {
+        snprintf(err, err_cap, "ffi: out of memory");
+        return 0;
+    }
+    for (int i = 0; i < fn->argc; i++) {
+        FfiType *t = &fn->args[i];
+        if (t->is_ptr || t->is_array || t->base == FFI_BASE_CSTR || t->base == FFI_BASE_PTR) {
+            fn->arg_types[i] = &ffi_type_pointer;
+        } else {
+            fn->arg_types[i] = ffi_type_for_base(t->base);
+        }
+    }
+    if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_CSTR || fn->ret.base == FFI_BASE_PTR) {
+        fn->ret_type = &ffi_type_pointer;
+    } else {
+        fn->ret_type = ffi_type_for_base(fn->ret.base);
+    }
+
+    if (ffi_prep_cif(&fn->cif, FFI_DEFAULT_ABI, (unsigned)fn->argc, fn->ret_type, fn->arg_types) != FFI_OK) {
+        snprintf(err, err_cap, "ffi: failed to prepare call");
+        return 0;
+    }
+    return 1;
+}
+
+static int ffi_prepare_ptr(FfiFunction *fn, void *fn_ptr, char *err, size_t err_cap)
+{
+    fn->handle = NULL;
+    fn->fn_ptr = fn_ptr;
+    if (!fn->fn_ptr) {
+        snprintf(err, err_cap, "ffi.bind expects non-null function pointer");
+        return 0;
+    }
 
     fn->arg_types = (ffi_type**)calloc((size_t)fn->argc, sizeof(ffi_type*));
     if (!fn->arg_types) {
@@ -1936,6 +1970,60 @@ static int ffi_prepare(FfiFunction *fn, const char *name, void *handle, char *er
         return 0;
     }
     return 1;
+}
+
+void native_ffi_bind(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "ffi.bind expects ptr and signature\n");
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *sig_entry = ffi_native_arg(stack, argc, 1);
+
+    Int iv = 0;
+    Float fv = 0;
+    int is_float = 0;
+    if (!entry_number_scalar(ptr_entry, &iv, &fv, &is_float)) {
+        fprintf(stderr, "ffi.bind expects numeric ptr\n");
+        return;
+    }
+    uintptr_t addr = (uintptr_t)(UInt)(is_float ? (Int)fv : iv);
+    if (addr == 0) {
+        fprintf(stderr, "ffi.bind expects non-null ptr\n");
+        return;
+    }
+
+    const char *sig = NULL;
+    if (!entry_as_cstr(sig_entry, &sig)) {
+        fprintf(stderr, "ffi.bind expects string signature\n");
+        return;
+    }
+
+    char err[128] = {0};
+    const char *name = NULL;
+    FfiFunction *fn = ffi_parse_signature(sig, err, sizeof(err), &name);
+    if (!fn) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi: invalid signature");
+        return;
+    }
+    if (!ffi_prepare_ptr(fn, (void*)addr, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi: prepare failed");
+        free((void*)name);
+        ffi_function_release(fn);
+        return;
+    }
+
+    ObjEntry *entry = vm_make_native_entry_data(vm, name, native_ffi_call, fn,
+                                                ffi_function_release, ffi_function_retain);
+    free((void*)name);
+    if (!entry) {
+        ffi_function_release(fn);
+        return;
+    }
+    ffi_push_entry(vm, entry);
 }
 
 void native_ffi_load(VM *vm, List *stack, List *global)
@@ -2176,6 +2264,7 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
 {
     if (!vm || !ffi_entry) return;
     ffi_add_module_fn(vm, ffi_entry, "load", native_ffi_load);
+    ffi_add_module_fn(vm, ffi_entry, "bind", native_ffi_bind);
     ffi_add_module_fn(vm, ffi_entry, "compile", native_ffi_compile);
     ffi_add_module_fn(vm, ffi_entry, "sizeof", native_ffi_sizeof);
     ffi_add_module_fn(vm, ffi_entry, "alignof", native_ffi_alignof);

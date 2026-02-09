@@ -385,6 +385,7 @@ Struct-view API:
 - `ffi.alignof(schema_or_layout)` -> struct alignment in bytes.
 - `ffi.view(ptr, schema_or_layout)` -> live memory view.
 - `ffi.offsetof(schema_or_layout, "d.b")` -> byte offset for nested field paths.
+- `ffi.bind(ptr, "i32 add(i32, i32)")` -> turns a function pointer into a callable native.
 
 Array schema syntax:
 - fixed array: `"int64[8]"`, `"float32[3]"`
@@ -406,6 +407,7 @@ Current limitations:
 - No unions
 - No bitfields
 - No variadic struct members
+- `ffi.bind` does not own pointer lifetime; keep the source library/context alive.
 
 ## Modules
 
@@ -417,13 +419,20 @@ Use `import(path)` to load a module.
 - Module code runs in an isolated VM and exports a value via top-level `return`.
 - Imports are cached by resolved path; importing the same module again returns the same module object.
 
+Bundled module example: `modules/tcc`
+- Import with `tcc = import("modules/tcc");`.
+- Load `libtcc` with `mod = tcc.auto()` or `mod = tcc.load("/path/to/libtcc.so")`.
+- Create a state with `ctx = mod.new()` and compile code with `ctx.compile("int add(int a,int b){return a+b;}")`.
+- Set outputs with `ctx.setOutputType(mod.OUTPUT_OBJ)` / `OUTPUT_EXE` / `OUTPUT_DLL` and emit files with `ctx.outputFile("out.o")`.
+- Resolve symbols after relocation via `ctx.relocate()` and `ctx.getSymbol("name")`.
+- See `example/tcc.urb` for a full minimal flow.
+
 ## Build Flags
 
 Optional features can be disabled at build time:
 
 ```bash
 make ENABLE_IO=0        # disable read/write
-make ENABLE_SYSTEM=0    # disable system()
 make ENABLE_FFI=0       # disable ffi module
 ```
 
@@ -451,6 +460,7 @@ The tutorial-style examples live in `example/guide` and are numbered:
 - `example/guide/10_strict_mode.urb`
 - `example/guide/11_ffi_system.urb`
 - `example/ffi_view_struct.urb` (FFI struct view demo; requires `tests/ffi/libffi_view_struct.so`)
+- `example/tcc.urb` (TinyCC module demo; requires `libtcc` installed)
 - `example/guide/12_references_and_copy.urb`
 - `example/guide/13_manual_gc.urb`
 

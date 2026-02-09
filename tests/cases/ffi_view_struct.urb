@@ -20,7 +20,8 @@ lib = ffi.load("./tests/ffi/libffi_view_struct.so",
   "i32 arr_outer_off_vals()",
   "i32 arr_outer_off_f32s()",
   "i32 arr_outer_get_val(void*, i32)",
-  "f32 arr_outer_get_f32(void*, i32)"
+  "f32 arr_outer_get_f32(void*, i32)",
+  "void* get_add_i32_ptr()"
 );
 
 schema = {
@@ -83,5 +84,9 @@ arr_v.f32s[1] = 1.5;
 if (lib.arr_outer_get_val(arr_ptr, 2) != 77) { fail++; }
 if (lib.arr_outer_get_f32(arr_ptr, 1) != 1.5) { fail++; }
 lib.free_arr_outer(arr_ptr);
+
+add_ptr = lib.get_add_i32_ptr();
+add = ffi.bind(add_ptr, "i32 add(i32, i32)");
+if (add(20, 22) != 42) { fail++; }
 
 println(fail);

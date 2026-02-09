@@ -1,0 +1,167 @@
+// modules/tcc/tcc.urb
+// TinyCC (libtcc) binding for Disturb via ffi.
+
+return {
+  _api = null,
+
+  _load_api = (lib_path){
+    return ffi.load(lib_path,
+      "void* tcc_new()",
+      "void tcc_delete(void*)",
+      "void tcc_set_lib_path(void*, char*)",
+      "i32 tcc_set_options(void*, char*)",
+      "i32 tcc_add_include_path(void*, char*)",
+      "i32 tcc_add_sysinclude_path(void*, char*)",
+      "void tcc_define_symbol(void*, char*, char*)",
+      "void tcc_undefine_symbol(void*, char*)",
+      "i32 tcc_add_file(void*, char*)",
+      "i32 tcc_compile_string(void*, char*)",
+      "i32 tcc_set_output_type(void*, i32)",
+      "i32 tcc_add_library_path(void*, char*)",
+      "i32 tcc_add_library(void*, char*)",
+      "i32 tcc_add_symbol(void*, char*, void*)",
+      "i32 tcc_output_file(void*, char*)",
+      "i32 tcc_relocate(void*)",
+      "void* tcc_get_symbol(void*, char*)"
+    );
+  },
+
+  _make_module = (api, resolved_path){
+    return {
+      path = resolved_path,
+      _api = api,
+
+      OUTPUT_MEMORY = 1,
+      OUTPUT_EXE = 2,
+      OUTPUT_OBJ = 3,
+      OUTPUT_DLL = 4,
+      OUTPUT_PREPROCESS = 5,
+
+      new = (){
+        ptr = this._api.tcc_new();
+        if (ptr == null || ptr == 0) {
+          return null;
+        }
+        return {
+          ptr = ptr,
+          _api = this._api,
+
+          isOpen = (){
+            return this.ptr != null && this.ptr != 0;
+          },
+
+          close = (){
+            if (this.ptr != null && this.ptr != 0) {
+              this._api.tcc_delete(this.ptr);
+              this.ptr = 0;
+            }
+            return 0;
+          },
+
+          setLibPath = (path){
+            this._api.tcc_set_lib_path(this.ptr, path);
+            return 0;
+          },
+
+          setOptions = (opts){
+            return this._api.tcc_set_options(this.ptr, opts);
+          },
+
+          addIncludePath = (path){
+            return this._api.tcc_add_include_path(this.ptr, path);
+          },
+
+          addSysincludePath = (path){
+            return this._api.tcc_add_sysinclude_path(this.ptr, path);
+          },
+
+          define = (name, value = null){
+            this._api.tcc_define_symbol(this.ptr, name, value);
+            return 0;
+          },
+
+          undefine = (name){
+            this._api.tcc_undefine_symbol(this.ptr, name);
+            return 0;
+          },
+
+          addFile = (path){
+            return this._api.tcc_add_file(this.ptr, path);
+          },
+
+          compile = (code){
+            return this._api.tcc_compile_string(this.ptr, code);
+          },
+
+          setOutputType = (out_type){
+            return this._api.tcc_set_output_type(this.ptr, out_type);
+          },
+
+          addLibraryPath = (path){
+            return this._api.tcc_add_library_path(this.ptr, path);
+          },
+
+          addLibrary = (name){
+            return this._api.tcc_add_library(this.ptr, name);
+          },
+
+          addSymbol = (name, addr){
+            return this._api.tcc_add_symbol(this.ptr, name, addr);
+          },
+
+          outputFile = (path){
+            return this._api.tcc_output_file(this.ptr, path);
+          },
+
+          relocate = (){
+            return this._api.tcc_relocate(this.ptr);
+          },
+
+          getSymbol = (name){
+            return this._api.tcc_get_symbol(this.ptr, name);
+          }
+        };
+      }
+    };
+  },
+
+  // Carrega libtcc de um caminho explícito.
+  load = (lib_path){
+    api = this._load_api(lib_path);
+    if (api == null) {
+      return null;
+    }
+    return this._make_module(api, lib_path);
+  },
+
+  // Tenta nomes padrão de biblioteca.
+  auto = (){
+    mod = this.load("libtcc.so");
+    if (mod != null) {
+      return mod;
+    }
+    mod = this.load("libtcc.so.1");
+    if (mod != null) {
+      return mod;
+    }
+    mod = this.load("libtcc.dylib");
+    if (mod != null) {
+      return mod;
+    }
+    return this.load("libtcc.dll");
+  },
+
+  // Atalho: abre uma TCCState já pronta (ou null em falha).
+  open = (lib_path = null){
+    mod = null;
+    if (lib_path == null) {
+      mod = this.auto();
+    } else {
+      mod = this.load(lib_path);
+    }
+    if (mod == null) {
+      return null;
+    }
+    return mod.new();
+  }
+};
