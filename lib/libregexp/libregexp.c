@@ -21,7 +21,12 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+
+#if defined(_WIN32) || defined(__MINGW32__) || defined(__MINGW64__)
+#include <malloc.h>
+#else
 #include <alloca.h>
+#endif
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdarg.h>
