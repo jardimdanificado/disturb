@@ -1,0 +1,8 @@
+// example/guide/modules/counter.urb
+count = 0;
+count++;
+
+return {
+  tag = "counter",
+  value = count
+};

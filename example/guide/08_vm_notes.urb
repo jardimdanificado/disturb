@@ -29,7 +29,8 @@ tmp = {x = 1};
 gc.sweep(tmp);   // mark for reuse (no free)
 tmp = {y = 2};
 gc.free(tmp);    // force free (cannot on shared/protected entries)
-gc.flush();      // free all reuse pools
+gc.debug();      // inspect reuse pools
+gc.stats();      // memory stats snapshot
 
 // Allocate a fresh table with optional reserve size.
 buf = gc.new(4);

@@ -1,7 +1,7 @@
 // 11_ffi_system.urb
-// FFI and system calls (optional build flags).
+// FFI basics (optional build flag).
 
-// Requires building with ENABLE_FFI=1 and ENABLE_SYSTEM=1.
+// Requires building with ENABLE_FFI=1.
 // Example on Linux (libc path may differ on your system).
 lib = ffi.load("libc.so.6",
   "i32 puts(char*)",

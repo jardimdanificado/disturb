@@ -1,0 +1,18 @@
+// 13_modules_packages.urb
+// Module import, package import and cache behavior.
+
+math = import("example/guide/modules/math");
+println(math.tag);
+println(math.add(2, 3));
+println(math.answer());
+
+// Importing a .urb file directly.
+counter1 = import("example/guide/modules/counter.urb");
+counter2 = import("example/guide/modules/counter.urb");
+
+println(counter1.tag);
+println(counter1.value);
+println(counter1 === counter2); // import cache
+
+// Module runs isolated: this global should stay null.
+println(base == null);

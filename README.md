@@ -459,10 +459,11 @@ The tutorial-style examples live in `example/guide` and are numbered:
 - `example/guide/09_metaprogramming.urb`
 - `example/guide/10_strict_mode.urb`
 - `example/guide/11_ffi_system.urb`
+- `example/guide/12_references_and_copy.urb`
+- `example/guide/13_modules_packages.urb`
+- `example/guide/14_ffi_struct_views_bind.urb`
 - `example/ffi_view_struct.urb` (FFI struct view demo; requires `tests/ffi/libffi_view_struct.so`)
 - `example/tcc.urb` (TinyCC module demo; requires `libtcc` installed)
-- `example/guide/12_references_and_copy.urb`
-- `example/guide/13_manual_gc.urb`
 
 ### Negative and Stress Tests
 
