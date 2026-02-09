@@ -1,6 +1,11 @@
 # Changelog
 
 ## 1.1.1
+- add GitHub Actions CI (`.github/workflows/ci.yml`) with Linux build/test jobs for default build and `ENABLE_FFI=0`.
+- expand CI matrix to Linux/macOS/Windows (MSYS2/MinGW), running default (FFI) and `ENABLE_FFI=0` builds.
+- add cross-platform dynamic library loading fallback in FFI (`dlopen/dlsym` on Unix, `LoadLibrary/GetProcAddress` on Windows).
+- make FFI fixture/examples portable across `.so`, `.dylib`, and `.dll`.
+- add `tests/run_examples.sh` to execute all example scripts under `example/`.
 - removed "system" native function.
 - add `import(path)` module/package loader:
   - `*.urb` paths load directly;

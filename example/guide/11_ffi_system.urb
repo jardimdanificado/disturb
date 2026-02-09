@@ -2,11 +2,21 @@
 // FFI basics (optional build flag).
 
 // Requires building with ENABLE_FFI=1.
-// Example on Linux (libc path may differ on your system).
-lib = ffi.load("libc.so.6",
-  "i32 puts(char*)",
-  "char* getenv(char*)"
-);
+// Tries common libc names across Linux/macOS/Windows.
+load_libc = (path){
+  return ffi.load(path,
+    "i32 puts(char*)",
+    "char* getenv(char*)"
+  );
+};
+
+lib = load_libc("libc.so.6");
+if (lib == null) { lib = load_libc("libSystem.B.dylib"); }
+if (lib == null) { lib = load_libc("msvcrt.dll"); }
+if (lib == null) {
+  println("libc not found");
+  return 0;
+}
 
 lib.puts("hello from ffi");
 println(lib.getenv("HOME"));

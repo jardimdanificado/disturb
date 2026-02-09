@@ -1,14 +1,20 @@
 // 14_ffi_struct_views_bind.urb
 // Advanced FFI: struct views + function pointer bind.
-// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.so built.
+// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll) built.
 
-lib = ffi.load("./tests/ffi/libffi_view_struct.so",
-  "void* make_outer()",
-  "void free_outer(void*)",
-  "i32 outer_get_a(void*)",
-  "i32 inner_get_b(void*)",
-  "void* get_add_i32_ptr()"
-);
+load_fixture = (path){
+  return ffi.load(path,
+    "void* make_outer()",
+    "void free_outer(void*)",
+    "i32 outer_get_a(void*)",
+    "i32 inner_get_b(void*)",
+    "void* get_add_i32_ptr()"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
 
 if (lib == null) {
   println("ffi test library not available");

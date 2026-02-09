@@ -99,20 +99,38 @@ run_negative byte_range
 run_negative strict_mixed_list
 run_negative bitwise_float
 
-probe_file="$(mktemp)"
-echo 'println(ffi.type);' > "$probe_file"
-if "$BIN" "$probe_file" >/dev/null 2>/dev/null; then
-  if command -v gcc >/dev/null 2>&1; then
-    echo "building ffi struct test library"
-    gcc -shared -fPIC tests/ffi/ffi_view_struct.c -o tests/ffi/libffi_view_struct.so
-    run_ffi_case ffi_view_struct
-  else
-    echo "gcc not found; skipping ffi struct view test"
-  fi
+if [ "${SKIP_FFI:-0}" = "1" ]; then
+  echo "SKIP_FFI=1; skipping ffi struct view test"
 else
-  echo "ffi module unavailable; skipping ffi struct view test"
+  probe_file="$(mktemp)"
+  echo 'println(ffi.bind.type);' > "$probe_file"
+  if "$BIN" "$probe_file" >/dev/null 2>/dev/null; then
+    if command -v gcc >/dev/null 2>&1; then
+      uname_s="$(uname -s 2>/dev/null || echo Unknown)"
+      lib_ext="so"
+      cflags_shared="-shared -fPIC"
+      case "$uname_s" in
+        Darwin)
+          lib_ext="dylib"
+          cflags_shared="-dynamiclib"
+          ;;
+        MINGW*|MSYS*|CYGWIN*)
+          lib_ext="dll"
+          cflags_shared="-shared -Wl,--export-all-symbols"
+          ;;
+      esac
+      echo "building ffi struct test library"
+      rm -f tests/ffi/libffi_view_struct.so tests/ffi/libffi_view_struct.dylib tests/ffi/libffi_view_struct.dll
+      gcc $cflags_shared tests/ffi/ffi_view_struct.c -o "tests/ffi/libffi_view_struct.$lib_ext"
+      run_ffi_case ffi_view_struct
+    else
+      echo "gcc not found; skipping ffi struct view test"
+    fi
+  else
+    echo "ffi module unavailable; skipping ffi struct view test"
+  fi
+  rm -f "$probe_file"
 fi
-rm -f "$probe_file"
 
 if command -v valgrind >/dev/null 2>&1; then
   echo "valgrind: leak check (tests/cases/basic.urb)"

@@ -1,10 +1,19 @@
 // FFI example (requires ENABLE_FFI=1 and a compatible shared library).
-// Adjust the library path to your system.
+// Tries common libc names across Linux/macOS/Windows.
+load_libc = (path){
+  return ffi.load(path,
+    "i32 puts(char*)",
+    "char* getenv(char*)"
+  );
+};
 
-lib = ffi.load("libc.so.6",
-  "i32 puts(char*)",
-  "char* getenv(char*)"
-);
+lib = load_libc("libc.so.6");
+if (lib == null) { lib = load_libc("libSystem.B.dylib"); }
+if (lib == null) { lib = load_libc("msvcrt.dll"); }
+if (lib == null) {
+  println("libc not found");
+  return 0;
+}
 
 lib.puts("hello from ffi");
 println(lib.getenv("HOME"));

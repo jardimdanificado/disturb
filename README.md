@@ -1,4 +1,5 @@
 # Disturb
+[![CI](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml/badge.svg)](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml)
 
 Disturb is a stack-oriented VM with a C-like source syntax that compiles to a compact RPN bytecode. The language focuses on safety and explicit behavior: everything lives under the global table, and missing lookups return a null table.
 
@@ -441,6 +442,7 @@ make ENABLE_FFI=0       # disable ffi module
 | Command | Purpose |
 | --- | --- |
 | `tests/run.sh` | Runs all language and asm tests |
+| `tests/run_examples.sh` | Runs all `.urb` examples under `example/` |
 | `tests/bench.sh` | Runs benchmarks (best-effort) |
 
 Test sources live in `tests/cases`, expected outputs in `tests/expected`.

@@ -1,28 +1,38 @@
 fail = 0;
 
-lib = ffi.load("./tests/ffi/libffi_view_struct.so",
-  "void* make_outer()",
-  "void free_outer(void*)",
-  "i32 outer_sizeof()",
-  "i32 outer_off_a()",
-  "i32 outer_off_b()",
-  "i32 outer_off_d()",
-  "i32 inner_off_a()",
-  "i32 inner_off_b()",
-  "i32 outer_get_a(void*)",
-  "f64 outer_get_b(void*)",
-  "i32 inner_get_a(void*)",
-  "i32 inner_get_b(void*)",
-  "void* make_arr_outer()",
-  "void free_arr_outer(void*)",
-  "i32 arr_outer_sizeof()",
-  "i32 arr_outer_off_head()",
-  "i32 arr_outer_off_vals()",
-  "i32 arr_outer_off_f32s()",
-  "i32 arr_outer_get_val(void*, i32)",
-  "f32 arr_outer_get_f32(void*, i32)",
-  "void* get_add_i32_ptr()"
-);
+load_fixture = (path){
+  return ffi.load(path,
+    "void* make_outer()",
+    "void free_outer(void*)",
+    "i32 outer_sizeof()",
+    "i32 outer_off_a()",
+    "i32 outer_off_b()",
+    "i32 outer_off_d()",
+    "i32 inner_off_a()",
+    "i32 inner_off_b()",
+    "i32 outer_get_a(void*)",
+    "f64 outer_get_b(void*)",
+    "i32 inner_get_a(void*)",
+    "i32 inner_get_b(void*)",
+    "void* make_arr_outer()",
+    "void free_arr_outer(void*)",
+    "i32 arr_outer_sizeof()",
+    "i32 arr_outer_off_head()",
+    "i32 arr_outer_off_vals()",
+    "i32 arr_outer_off_f32s()",
+    "i32 arr_outer_get_val(void*, i32)",
+    "f32 arr_outer_get_f32(void*, i32)",
+    "void* get_add_i32_ptr()"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println(1);
+  return 0;
+}
 
 schema = {
   a = "int32",

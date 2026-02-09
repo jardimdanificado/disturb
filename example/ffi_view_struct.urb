@@ -1,12 +1,22 @@
-lib = ffi.load("./tests/ffi/libffi_view_struct.so",
-  "void* make_outer()",
-  "void free_outer(void*)",
-  "i32 outer_sizeof()",
-  "i32 outer_off_d()",
-  "i32 inner_off_b()",
-  "i32 outer_get_a(void*)",
-  "i32 inner_get_b(void*)"
-);
+load_fixture = (path){
+  return ffi.load(path,
+    "void* make_outer()",
+    "void free_outer(void*)",
+    "i32 outer_sizeof()",
+    "i32 outer_off_d()",
+    "i32 inner_off_b()",
+    "i32 outer_get_a(void*)",
+    "i32 inner_get_b(void*)"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println("ffi test library not available");
+  return 0;
+}
 
 schema = {
   a = "int32",

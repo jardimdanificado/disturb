@@ -1,13 +1,19 @@
 #ifdef DISTURB_ENABLE_FFI
 
 #include "vm.h"
-#include <dlfcn.h>
 #include <ffi.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <stdarg.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 typedef enum {
     FFI_BASE_VOID = 0,
@@ -125,6 +131,84 @@ enum {
 static FfiLayoutCacheNode *g_ffi_layout_cache = NULL;
 static FfiArrayViewHandle *ffi_array_view_handle_from_entry(ObjEntry *entry);
 static int parse_base_type(const char *name, FfiBase *out);
+
+#ifdef _WIN32
+static char g_ffi_dl_error[256];
+
+static void ffi_dl_set_error_win32(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(g_ffi_dl_error, sizeof(g_ffi_dl_error), fmt, ap);
+    va_end(ap);
+}
+
+static void ffi_dl_set_error_last(const char *prefix)
+{
+    DWORD code = GetLastError();
+    if (code == 0) {
+        ffi_dl_set_error_win32("%s", prefix);
+        return;
+    }
+    char *msg = NULL;
+    DWORD n = FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+                                 FORMAT_MESSAGE_IGNORE_INSERTS,
+                             NULL, code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                             (LPSTR)&msg, 0, NULL);
+    if (n > 0 && msg) {
+        while (n > 0 && (msg[n - 1] == '\r' || msg[n - 1] == '\n')) {
+            msg[n - 1] = 0;
+            n--;
+        }
+        ffi_dl_set_error_win32("%s: %s", prefix, msg);
+    } else {
+        ffi_dl_set_error_win32("%s (code=%lu)", prefix, (unsigned long)code);
+    }
+    if (msg) LocalFree(msg);
+}
+
+static void *ffi_dlopen(const char *path)
+{
+    SetLastError(0);
+    HMODULE h = LoadLibraryA(path);
+    if (!h) {
+        ffi_dl_set_error_last("ffi.load failed");
+    }
+    return (void*)h;
+}
+
+static void *ffi_dlsym(void *handle, const char *name)
+{
+    SetLastError(0);
+    FARPROC p = GetProcAddress((HMODULE)handle, name);
+    if (!p) {
+        ffi_dl_set_error_last("ffi: missing symbol");
+        return NULL;
+    }
+    return (void*)p;
+}
+
+static const char *ffi_dlerror_msg(void)
+{
+    return g_ffi_dl_error[0] ? g_ffi_dl_error : "ffi dynamic loading error";
+}
+#else
+static void *ffi_dlopen(const char *path)
+{
+    return dlopen(path, RTLD_LAZY);
+}
+
+static void *ffi_dlsym(void *handle, const char *name)
+{
+    return dlsym(handle, name);
+}
+
+static const char *ffi_dlerror_msg(void)
+{
+    const char *e = dlerror();
+    return e ? e : "ffi dynamic loading error";
+}
+#endif
 
 static void ffi_function_retain(void *data)
 {
@@ -1906,7 +1990,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
 static int ffi_prepare(FfiFunction *fn, const char *name, void *handle, char *err, size_t err_cap)
 {
     fn->handle = handle;
-    fn->fn_ptr = dlsym(handle, name);
+    fn->fn_ptr = ffi_dlsym(handle, name);
     if (!fn->fn_ptr) {
         snprintf(err, err_cap, "ffi: missing symbol '%s'", name);
         return 0;
@@ -2050,9 +2134,9 @@ void native_ffi_load(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi.load expects string path\n");
         return;
     }
-    void *handle = dlopen(path, RTLD_LAZY);
+    void *handle = ffi_dlopen(path);
     if (!handle) {
-        fprintf(stderr, "ffi.load failed: %s\n", dlerror());
+        fprintf(stderr, "%s\n", ffi_dlerror_msg());
         return;
     }
 

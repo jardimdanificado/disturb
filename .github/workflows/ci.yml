@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  unix:
+    name: Unix (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libffi-dev valgrind
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install libffi
+
+      - name: Build + tests (FFI)
+        run: |
+          if [ "${RUNNER_OS}" = "macOS" ]; then
+            export CPATH="$(brew --prefix libffi)/include"
+            export LIBRARY_PATH="$(brew --prefix libffi)/lib"
+          fi
+          make clean
+          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)"
+          tests/run.sh
+          tests/run_examples.sh
+
+      - name: Build + tests (ENABLE_FFI=0)
+        run: |
+          make clean
+          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" ENABLE_FFI=0
+          BIN=./disturb SKIP_FFI=1 tests/run.sh
+
+  windows:
+    name: Windows (MSYS2/MinGW64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            make
+            diffutils
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-libffi
+
+      - name: Build + tests (FFI)
+        shell: msys2 {0}
+        run: |
+          make clean
+          make -j2
+          BIN=./disturb.exe tests/run.sh
+          BIN=./disturb.exe tests/run_examples.sh
+
+      - name: Build + tests (ENABLE_FFI=0)
+        shell: msys2 {0}
+        run: |
+          make clean
+          make -j2 ENABLE_FFI=0
+          BIN=./disturb.exe SKIP_FFI=1 tests/run.sh
