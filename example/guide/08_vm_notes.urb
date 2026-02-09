@@ -1,4 +1,4 @@
-// 08_vm_notes.disturb
+// 08_vm_notes.urb
 // VM-level behaviors and "oddities".
 
 // global is a real table and holds builtins and your globals.

@@ -1,4 +1,4 @@
-eval(read("example/asm_lib.disturb"));
+eval(read("example/asm_lib.urb"));
 
 src = read("tests/asm/input.asm");
 bytecode = asm(src);

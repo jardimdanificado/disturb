@@ -1,4 +1,4 @@
-// 03_indexing_objects.disturb
+// 03_indexing_objects.urb
 // Indexing, table keys, and array-like behavior.
 
 data = {nums = [10, 20, 30], msg = "hi"};

@@ -1,4 +1,4 @@
-// 10_strict_mode.disturb
+// 10_strict_mode.urb
 // Strict mode (opt-in) for numeric discipline and string printing.
 
 use strict;

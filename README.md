@@ -9,8 +9,8 @@ Disturb means Distributable Urb, at least that was the original idea;
 | Command | Purpose |
 | --- | --- |
 | `make` | Build `disturb` |
-| `./disturb file.disturb` | Run source |
-| `./disturb --compile-bytecode script.disturb output.bytecode` | Compile a script into raw bytecode |
+| `./disturb file.urb` | Run source |
+| `./disturb --compile-bytecode script.urb output.bytecode` | Compile a script into raw bytecode |
 | `./disturb --run-bytecode output.bytecode [args...]` | Run a previously compiled bytecode file |
 | `./disturb --repl` | Interactive REPL |
 | `./disturb --help` | Show CLI help |
@@ -297,17 +297,17 @@ Notes:
 - `emit(bytecode)` returns a disassembly-style text view of bytecode bytes.
 - `evalBytecode(bytes)` executes bytecode and returns `null`.
 
-A pure Disturb assembler/disassembler is available in `example/asm_lib.disturb`:
+A pure Disturb assembler/disassembler is available in `example/asm_lib.urb`:
 
 ```disturb
-eval(read("example/asm_lib.disturb"));
+eval(read("example/asm_lib.urb"));
 bytes = asm("PUSH_INT 1\nPUSH_INT 2\nADD\n");
 println(disasm(bytes));
 ```
 
 ## Bytecode Text
 
-`emit(bytecode)` returns a disassembly-style text format. `example/asm_lib.disturb` can assemble that text back into bytecode bytes.
+`emit(bytecode)` returns a disassembly-style text format. `example/asm_lib.urb` can assemble that text back into bytecode bytes.
 
 The internal bytecode AST is no longer a public API.
 - `gc()` runs a collection.
@@ -411,9 +411,9 @@ Current limitations:
 
 Use `import(path)` to load a module.
 
-- If `path` ends with `.disturb`, that file is loaded directly.
-- Otherwise Disturb treats it as a package directory and loads `path/<basename(path)>.disturb`.
-  - Example: `import("lib/math")` loads `lib/math/math.disturb`.
+- If `path` ends with `.urb`, that file is loaded directly.
+- Otherwise Disturb treats it as a package directory and loads `path/<basename(path)>.urb`.
+  - Example: `import("lib/math")` loads `lib/math/math.urb`.
 - Module code runs in an isolated VM and exports a value via top-level `return`.
 - Imports are cached by resolved path; importing the same module again returns the same module object.
 
@@ -439,20 +439,20 @@ Test sources live in `tests/cases`, expected outputs in `tests/expected`.
 ## Guide Examples
 
 The tutorial-style examples live in `example/guide` and are numbered:
-- `example/guide/01_intro.disturb`
-- `example/guide/02_types_literals.disturb`
-- `example/guide/03_indexing_objects.disturb`
-- `example/guide/04_operators_truthiness.disturb`
-- `example/guide/05_functions_methods.disturb`
-- `example/guide/06_control_flow.disturb`
-- `example/guide/07_strings_bytes_io_eval.disturb`
-- `example/guide/08_vm_notes.disturb`
-- `example/guide/09_metaprogramming.disturb`
-- `example/guide/10_strict_mode.disturb`
-- `example/guide/11_ffi_system.disturb`
-- `example/ffi_view_struct.disturb` (FFI struct view demo; requires `tests/ffi/libffi_view_struct.so`)
-- `example/guide/12_references_and_copy.disturb`
-- `example/guide/13_manual_gc.disturb`
+- `example/guide/01_intro.urb`
+- `example/guide/02_types_literals.urb`
+- `example/guide/03_indexing_objects.urb`
+- `example/guide/04_operators_truthiness.urb`
+- `example/guide/05_functions_methods.urb`
+- `example/guide/06_control_flow.urb`
+- `example/guide/07_strings_bytes_io_eval.urb`
+- `example/guide/08_vm_notes.urb`
+- `example/guide/09_metaprogramming.urb`
+- `example/guide/10_strict_mode.urb`
+- `example/guide/11_ffi_system.urb`
+- `example/ffi_view_struct.urb` (FFI struct view demo; requires `tests/ffi/libffi_view_struct.so`)
+- `example/guide/12_references_and_copy.urb`
+- `example/guide/13_manual_gc.urb`
 
 ### Negative and Stress Tests
 

@@ -85,13 +85,13 @@ static unsigned char *read_all_bytes(FILE *fp, size_t *out_len)
 static void print_help(void)
 {
     puts("usage:");
-    puts("  disturb [script.disturb] [args...]");
-    puts("  disturb --compile-bytecode script.disturb output.bytecode");
+    puts("  disturb [script.urb] [args...]");
+    puts("  disturb --compile-bytecode script.urb output.bytecode");
     puts("  disturb --run-bytecode output.bytecode [args...]");
     puts("  disturb --help");
     puts("");
     puts("notes:");
-    puts("  asm/disasm are available in example/asm_lib.disturb.");
+    puts("  asm/disasm are available in example/asm_lib.urb.");
 }
 
 static void repl_update_state(const char *line, int *depth, int *in_single, int *in_double, int *escape)
@@ -343,7 +343,7 @@ static int disturb_main(int argc, char **argv)
     const char *cmd = argv[argi];
     if (strcmp(cmd, "--compile-bytecode") == 0) {
         if (argc - argi < 3) {
-            fprintf(stderr, "usage: disturb --compile-bytecode script.disturb output.bytecode\n");
+            fprintf(stderr, "usage: disturb --compile-bytecode script.urb output.bytecode\n");
             return 1;
         }
         return compile_bytecode_file(argv[argi + 1], argv[argi + 2]);

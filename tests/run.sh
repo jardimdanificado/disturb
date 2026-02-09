@@ -10,7 +10,7 @@ fi
 
 run_case() {
   name=$1
-  src="tests/cases/${name}.disturb"
+  src="tests/cases/${name}.urb"
   expected="tests/expected/${name}.out"
   actual="tests/expected/${name}.actual"
 
@@ -50,7 +50,7 @@ run_case modules
 
 run_ffi_case() {
   name=$1
-  src="tests/cases/${name}.disturb"
+  src="tests/cases/${name}.urb"
   expected="tests/expected/${name}.out"
   actual="tests/expected/${name}.actual"
 
@@ -66,7 +66,7 @@ run_ffi_case() {
 
 run_negative() {
   name=$1
-  src="tests/negative/${name}.disturb"
+  src="tests/negative/${name}.urb"
   expect="tests/negative/${name}.err"
   actual_out="tests/negative/${name}.out.actual"
   actual_err="tests/negative/${name}.err.actual"
@@ -115,9 +115,9 @@ fi
 rm -f "$probe_file"
 
 if command -v valgrind >/dev/null 2>&1; then
-  echo "valgrind: leak check (tests/cases/basic.disturb)"
+  echo "valgrind: leak check (tests/cases/basic.urb)"
   valgrind --leak-check=full --error-exitcode=1 \
-    "$BIN" tests/cases/basic.disturb >/dev/null
+    "$BIN" tests/cases/basic.urb >/dev/null
 else
   echo "valgrind not found; skipping leak check"
 fi

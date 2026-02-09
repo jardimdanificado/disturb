@@ -2,8 +2,8 @@
 
 ## 0.18.0
 - add `import(path)` module/package loader:
-  - `*.disturb` paths load directly;
-  - non-`.disturb` paths load `path/<basename(path)>.disturb`;
+  - `*.urb` paths load directly;
+  - non-`.urb` paths load `path/<basename(path)>.urb`;
   - module code runs isolated and exports through top-level `return`;
   - imports are cached per resolved path.
 - add FFI struct view system with automatic C-like layout compiler (padding/alignment), nested schemas, and live pointer-backed field access (`ffi.compile`, `ffi.sizeof`, `ffi.alignof`, `ffi.view`, `ffi.offsetof`).
@@ -59,7 +59,7 @@
 - Add build flags to disable IO (`ENABLE_IO`), system (`ENABLE_SYSTEM`), or FFI (`ENABLE_FFI`).
 - Add `.value` meta to copy/assign entry contents without changing identity.
 - Add `use strict;` numeric mode with `1i/1u/1f` suffixes and stricter int/float checks.
-- Add pure Disturb assembler/disassembler in `example/asm_lib.disturb`.
+- Add pure Disturb assembler/disassembler in `example/asm_lib.urb`.
 
 ## 0.14.1
 - Apply Papagaio processing to all string literals, with `\$` escape support.

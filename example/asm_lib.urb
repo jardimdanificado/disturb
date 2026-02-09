@@ -1,4 +1,4 @@
-// asm_lib.disturb
+// asm_lib.urb
 // Pure Disturb assembler/disassembler for bytecode text format.
 
 asm_unescape = (s){

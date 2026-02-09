@@ -1146,9 +1146,9 @@ static int write_file_bytes(const char *path, const char *data, size_t len)
     return wrote == len;
 }
 
-static int ends_with_disturb_ext(const char *s, size_t len)
+static int ends_with_script_ext(const char *s, size_t len)
 {
-    static const char ext[] = ".disturb";
+    static const char ext[] = ".urb";
     size_t ext_len = sizeof(ext) - 1;
     if (len < ext_len) return 0;
     return memcmp(s + (len - ext_len), ext, ext_len) == 0;
@@ -1162,7 +1162,7 @@ static char *module_resolve_path(const char *path, size_t path_len, size_t *out_
     while (len > 0 && (path[len - 1] == '/' || path[len - 1] == '\\')) len--;
     if (len == 0) return NULL;
 
-    if (ends_with_disturb_ext(path, len)) {
+    if (ends_with_script_ext(path, len)) {
         char *out = (char*)malloc(len + 1);
         if (!out) return NULL;
         memcpy(out, path, len);
@@ -1182,7 +1182,7 @@ static char *module_resolve_path(const char *path, size_t path_len, size_t *out_
     size_t base_len = len - base_start;
     if (base_len == 0) return NULL;
 
-    size_t out_size = len + 1 + base_len + (sizeof(".disturb") - 1);
+    size_t out_size = len + 1 + base_len + (sizeof(".urb") - 1);
     char *out = (char*)malloc(out_size + 1);
     if (!out) return NULL;
     size_t at = 0;
@@ -1191,8 +1191,8 @@ static char *module_resolve_path(const char *path, size_t path_len, size_t *out_
     out[at++] = '/';
     memcpy(out + at, path + base_start, base_len);
     at += base_len;
-    memcpy(out + at, ".disturb", sizeof(".disturb") - 1);
-    at += sizeof(".disturb") - 1;
+    memcpy(out + at, ".urb", sizeof(".urb") - 1);
+    at += sizeof(".urb") - 1;
     out[at] = 0;
     if (out_len) *out_len = at;
     return out;
