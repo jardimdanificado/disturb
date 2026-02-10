@@ -190,9 +190,9 @@ jobs:
         run: |
           version="${{ inputs.version }}"
           notes="$(awk -v v="$version" '
-            $0 ~ "^## " v "$" { in=1; next }
-            in && $0 ~ "^## " { exit }
-            in { print }
+            $0 ~ "^## " v "$" { in_section=1; next }
+            in_section && $0 ~ "^## " { exit }
+            in_section { print }
           ' CHANGELOG.md)"
           if [ -z "$notes" ]; then
             notes="Release v$version"
