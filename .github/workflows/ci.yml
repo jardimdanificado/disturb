@@ -119,16 +119,18 @@ jobs:
           cmake --build build-msvc --config Release -j2
 
       - name: Probe ffi.load/ffi.bind availability
-        shell: bash
+        shell: powershell
         run: |
-          probe_file="$(mktemp)"
-          cat > "$probe_file" <<'EOF'
+          $probe = Join-Path $env:TEMP "msvc_ffi_probe.urb"
+          @"
           println(ffi.load.type);
           println(ffi.bind.type);
-          EOF
-          ./build-msvc/Release/disturb.exe "$probe_file" > /tmp/msvc_ffi_probe.out
-          grep -F "native" /tmp/msvc_ffi_probe.out >/dev/null
-          rm -f "$probe_file" /tmp/msvc_ffi_probe.out
+          "@ | Set-Content -Encoding ASCII $probe
+          $out = & .\build-msvc\Release\disturb.exe $probe
+          if ($out -notmatch "native") {
+            throw "ffi probe failed: expected 'native' in output; got: $out"
+          }
+          Remove-Item -Force $probe
 
       - name: Tests
         shell: bash

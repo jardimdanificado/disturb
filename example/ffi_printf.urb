@@ -1,0 +1,22 @@
+// ffi_printf.urb
+// Example of variadic printf via FFI (ffi.load + ...)
+// Requires ENABLE_FFI=1 and ENABLE_FFI_CALLS=1.
+
+load_libc = (path){
+  return ffi.load(path,
+    "i32 printf(char*, ...)"
+  );
+};
+
+lib = load_libc("libc.so.6");
+if (lib == null) { lib = load_libc("libSystem.B.dylib"); }
+if (lib == null) { lib = load_libc("msvcrt.dll"); }
+if (lib == null) {
+  println("libc not found");
+  return 0;
+}
+
+n1 = lib.printf("hello from disturb + printf");
+n2 = lib.printf(" | int=%d float=%.2f str=%s", 42, 3.14159, "ok");
+
+println("printf return bytes:", n1, n2);
