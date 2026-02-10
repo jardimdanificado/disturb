@@ -29,7 +29,7 @@
 #include <string.h>
 #include <inttypes.h>
 
-// contains minor modifications by jardimdafinifcado to support msvc
+// contains small modifications by jardimdafinifcado to support msvc
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -38,12 +38,14 @@
 #define force_inline __forceinline
 #define no_inline __declspec(noinline)
 #define __maybe_unused
+#define PRINTF_LIKE(fmtpos, argpos)
 #else
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 #define force_inline inline __attribute__((always_inline))
 #define no_inline __attribute__((noinline))
 #define __maybe_unused __attribute__((unused))
+#define PRINTF_LIKE(fmtpos, argpos) __attribute__((format(printf, fmtpos, argpos)))
 #endif
 
 #define xglue(x, y) x ## y
@@ -365,8 +367,7 @@ static inline int dbuf_put_u64(DynBuf *s, uint64_t val)
     }
 }
 
-int __attribute__((format(printf, 2, 3))) dbuf_printf(DynBuf *s,
-                                                      const char *fmt, ...);
+int PRINTF_LIKE(2, 3) dbuf_printf(DynBuf *s, const char *fmt, ...);
 void dbuf_free(DynBuf *s);
 static inline BOOL dbuf_error(DynBuf *s) {
     return s->error;
