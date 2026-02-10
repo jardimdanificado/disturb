@@ -23,12 +23,24 @@ permissions:
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - name: Linux
+            os: ubuntu-latest
+            target: linux
+          - name: macOS
+            os: macos-latest
+            target: macos
+          - name: Windows (MSYS2/MinGW64)
+            os: windows-latest
+            target: windows-mingw
+          - name: Windows (MSVC)
+            os: windows-latest
+            target: windows-msvc
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,19 +54,19 @@ jobs:
           fi
 
       - name: Install dependencies (Ubuntu)
-        if: runner.os == 'Linux'
+        if: matrix.target == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential libffi-dev
 
       - name: Install dependencies (macOS)
-        if: runner.os == 'macOS'
+        if: matrix.target == 'macos'
         run: |
           brew update
           brew install libffi
 
-      - name: Setup MSYS2 (Windows)
-        if: runner.os == 'Windows'
+      - name: Setup MSYS2 (Windows MinGW)
+        if: matrix.target == 'windows-mingw'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
@@ -66,7 +78,7 @@ jobs:
             mingw-w64-x86_64-libffi
 
       - name: Build binary (Linux/macOS)
-        if: runner.os != 'Windows'
+        if: matrix.target == 'linux' || matrix.target == 'macos'
         shell: bash
         run: |
           if [ "${RUNNER_OS}" = "macOS" ]; then
@@ -76,15 +88,22 @@ jobs:
           make clean
           make -j"$(getconf _NPROCESSORS_ONLN || echo 2)"
 
-      - name: Build binary (Windows)
-        if: runner.os == 'Windows'
+      - name: Build binary (Windows MinGW)
+        if: matrix.target == 'windows-mingw'
         shell: msys2 {0}
         run: |
           make clean
           make -j2
 
+      - name: Build binary (Windows MSVC)
+        if: matrix.target == 'windows-msvc'
+        shell: powershell
+        run: |
+          cmake -S . -B build-msvc -A x64 -DENABLE_FFI_CALLS=OFF
+          cmake --build build-msvc --config Release -j2
+
       - name: Package artifact (Linux)
-        if: runner.os == 'Linux'
+        if: matrix.target == 'linux'
         shell: bash
         run: |
           mkdir -p dist
@@ -93,7 +112,7 @@ jobs:
           tar -czf "dist/disturb-v${{ inputs.version }}-linux-x64.tar.gz" -C dist disturb README.md CHANGELOG.md
 
       - name: Package artifact (macOS)
-        if: runner.os == 'macOS'
+        if: matrix.target == 'macos'
         shell: bash
         run: |
           mkdir -p dist
@@ -101,19 +120,28 @@ jobs:
           cp README.md CHANGELOG.md dist/
           tar -czf "dist/disturb-v${{ inputs.version }}-macos-x64.tar.gz" -C dist disturb README.md CHANGELOG.md
 
-      - name: Package artifact (Windows)
-        if: runner.os == 'Windows'
+      - name: Package artifact (Windows MinGW)
+        if: matrix.target == 'windows-mingw'
         shell: msys2 {0}
         run: |
           mkdir -p dist
           cp disturb.exe dist/
           cp README.md CHANGELOG.md dist/
-          powershell -NoProfile -Command "Compress-Archive -Path dist\\disturb.exe,dist\\README.md,dist\\CHANGELOG.md -DestinationPath dist\\disturb-v${{ inputs.version }}-windows-x64.zip -Force"
+          powershell -NoProfile -Command "Compress-Archive -Path dist\\disturb.exe,dist\\README.md,dist\\CHANGELOG.md -DestinationPath dist\\disturb-v${{ inputs.version }}-windows-x64-mingw.zip -Force"
+
+      - name: Package artifact (Windows MSVC)
+        if: matrix.target == 'windows-msvc'
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build-msvc/Release/disturb.exe dist/
+          Copy-Item README.md,CHANGELOG.md dist/
+          Compress-Archive -Path dist/disturb.exe,dist/README.md,dist/CHANGELOG.md -DestinationPath dist/disturb-v${{ inputs.version }}-windows-x64-msvc.zip -Force
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: disturb-${{ runner.os }}
+          name: disturb-${{ matrix.target }}
           path: dist/*
           if-no-files-found: error
 
@@ -171,4 +199,3 @@ jobs:
           body: ${{ steps.notes.outputs.body }}
           prerelease: ${{ inputs.prerelease }}
           files: artifacts/**/*
-

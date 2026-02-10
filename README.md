@@ -33,6 +33,18 @@ make ENABLE_EMBEDDED=1
 
 `ENABLE_EMBEDDED=1` forces an embeddable profile by disabling IO natives, dynamic FFI calls (`ffi.load`/`ffi.bind`), and `import` while keeping FFI core layout/view/memory APIs.
 
+MSVC build (Windows):
+
+```powershell
+cmake -S . -B build-msvc -A x64 -DENABLE_FFI_CALLS=OFF
+cmake --build build-msvc --config Release
+.\build-msvc\Release\disturb.exe --help
+```
+
+Notes:
+- The MSVC CI profile currently validates with `ENABLE_FFI_CALLS=OFF` (FFI core remains enabled).
+- To enable dynamic calls (`ffi.load`/`ffi.bind`) under MSVC, provide a `libffi` build (headers + `.lib`/`.dll`) and configure CMake paths accordingly.
+
 ## CLI
 
 ```text

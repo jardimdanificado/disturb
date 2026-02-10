@@ -94,3 +94,23 @@ jobs:
           make clean
           make -j2 ENABLE_EMBEDDED=1
           BIN=./disturb.exe SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
+
+  windows-msvc:
+    name: Windows (MSVC)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure (CMake + MSVC)
+        run: |
+          cmake -S . -B build-msvc -A x64 -DENABLE_FFI_CALLS=OFF
+
+      - name: Build (Release)
+        run: |
+          cmake --build build-msvc --config Release -j2
+
+      - name: Tests (SKIP_FFI=1)
+        shell: bash
+        run: |
+          BIN=./build-msvc/Release/disturb.exe SKIP_FFI=1 tests/run.sh
