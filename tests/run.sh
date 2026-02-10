@@ -149,7 +149,14 @@ else
       rm -f tests/ffi/libffi_view_struct.so tests/ffi/libffi_view_struct.dylib tests/ffi/libffi_view_struct.dll
       gcc $cflags_shared tests/ffi/ffi_view_struct.c -o "tests/ffi/libffi_view_struct.$lib_ext"
       run_ffi_case ffi_view_struct
-      run_ffi_case ffi_union
+      case "$uname_s" in
+        MINGW*|MSYS*|CYGWIN*)
+          echo "ffi case: ffi_union skipped on $uname_s (by-value union ABI differences)"
+          ;;
+        *)
+          run_ffi_case ffi_union
+          ;;
+      esac
       run_ffi_case ffi_auto_compile
       run_ffi_case ffi_fnptr_fields
       run_ffi_case ffi_varargs

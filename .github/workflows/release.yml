@@ -99,7 +99,15 @@ jobs:
         if: matrix.target == 'windows-msvc'
         shell: powershell
         run: |
-          cmake -S . -B build-msvc -A x64 -DENABLE_FFI_CALLS=OFF
+          $vcpkg = "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe"
+          if (-not (Test-Path $vcpkg)) {
+            throw "vcpkg not found at $vcpkg"
+          }
+          & $vcpkg install libffi:x64-windows-static
+          cmake -S . -B build-msvc -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DENABLE_FFI_CALLS=ON
           cmake --build build-msvc --config Release -j2
 
       - name: Package artifact (Linux)
