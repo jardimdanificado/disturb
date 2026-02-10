@@ -154,7 +154,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: disturb-${{ matrix.target }}
-          path: dist/*
+          path: dist/disturb-v${{ inputs.version }}-*
           if-no-files-found: error
 
   release:
@@ -210,4 +210,4 @@ jobs:
           name: v${{ inputs.version }}
           body: ${{ steps.notes.outputs.body }}
           prerelease: ${{ inputs.prerelease }}
-          files: artifacts/**/*
+          files: artifacts/**/disturb-v${{ inputs.version }}-*
