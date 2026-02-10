@@ -6,7 +6,10 @@
 - add dedicated FFI function-pointer-field test coverage: `ffi_fnptr_fields`.
 - add dedicated FFI auto-compile coverage: `ffi_auto_compile`.
 - skip `ffi_union` case on MinGW/MSYS CI targets due platform-specific by-value union ABI differences in libffi; keep coverage on Unix targets.
-- enable `ENABLE_FFI_CALLS=ON` for MSVC CI/release builds using `libffi` from `vcpkg` (`x64-windows-static`), restoring `ffi.load`/`ffi.bind` availability on Windows MSVC artifacts.
+- enable `ENABLE_FFI_CALLS=ON` for MSVC CI/release builds using `libffi` from `vcpkg` (`x64-windows`), restoring `ffi.load`/`ffi.bind` availability on Windows MSVC artifacts.
+- switch MSVC CI/release `vcpkg` triplet to `x64-windows` and align MSVC runtime selection (`/MD`/`/MDd`) to avoid CRT mismatch warnings (`LNK4098`).
+- fix MSVC CI probe step to execute the Disturb binary correctly when checking `ffi.load`/`ffi.bind`.
+- include `docs/` and `example/` directories in all release artifacts.
 - add function-pointer-field example: `example/ffi_fnptr_fields.urb`.
 - add optional compile example: `example/ffi_auto_compile_optional.urb`.
 - update docs to make `ffi.compile` optional in common flows and document `function<...>` (`fn<...>` alias accepted).

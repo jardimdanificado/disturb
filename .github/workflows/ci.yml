@@ -98,20 +98,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install libffi (vcpkg, static)
+      - name: Install libffi (vcpkg)
         shell: powershell
         run: |
           $vcpkg = "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe"
           if (-not (Test-Path $vcpkg)) {
             throw "vcpkg not found at $vcpkg"
           }
-          & $vcpkg install libffi:x64-windows-static
+          & $vcpkg install libffi:x64-windows
 
       - name: Configure (CMake + MSVC)
         run: |
           cmake -S . -B build-msvc -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
             -DENABLE_FFI_CALLS=ON
 
       - name: Build (Release)
@@ -126,7 +126,7 @@ jobs:
           println(ffi.load.type);
           println(ffi.bind.type);
           EOF
-          BIN=./build-msvc/Release/disturb.exe "$probe_file" > /tmp/msvc_ffi_probe.out
+          ./build-msvc/Release/disturb.exe "$probe_file" > /tmp/msvc_ffi_probe.out
           grep -F "native" /tmp/msvc_ffi_probe.out >/dev/null
           rm -f "$probe_file" /tmp/msvc_ffi_probe.out
 

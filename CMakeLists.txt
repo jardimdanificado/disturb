@@ -41,6 +41,8 @@ set_property(TARGET disturb PROPERTY C_STANDARD 11)
 set_property(TARGET disturb PROPERTY C_STANDARD_REQUIRED ON)
 
 if(MSVC)
+  # Keep CRT selection consistent with vcpkg x64-windows dependencies (/MD, /MDd)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
   target_compile_options(disturb PRIVATE /W4 /O2)
   target_compile_definitions(disturb PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
