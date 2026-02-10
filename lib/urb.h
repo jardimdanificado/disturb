@@ -25,12 +25,24 @@ typedef uintptr_t UInt;
     typedef double Float;
     typedef uint32_t UHalf;
     typedef int32_t Half;
+    #ifdef INT_MAX
+        #undef INT_MAX
+    #endif
+    #ifdef INT_MIN
+        #undef INT_MIN
+    #endif
     #define INT_MAX INT64_MAX
     #define INT_MIN INT64_MIN
 #else
     typedef float Float;
     typedef uint16_t UHalf;
     typedef int16_t Half;
+    #ifdef INT_MAX
+        #undef INT_MAX
+    #endif
+    #ifdef INT_MIN
+        #undef INT_MIN
+    #endif
     #define INT_MAX INT32_MAX
     #define INT_MIN INT32_MIN
 #endif
@@ -169,7 +181,6 @@ static inline void urb_unshift(List *list, Value value)
 
 static inline void urb_insert(List *list, Int index, Value value)
 {
-    Int original_index = index;
     if (list->size == list->capacity)
         urb_double(list);
 
@@ -202,7 +213,6 @@ static inline Value urb_shift(List *list)
 
 static inline Value urb_remove(List *list, Int i)
 {
-    Int original_index = i;
     i = INDEX_CYCLE(i);
 
     if (list->size <= 0)
