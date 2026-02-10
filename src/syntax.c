@@ -955,6 +955,13 @@ static int peek_is_func_literal(Parser *p)
     }
 
     for (;;) {
+        int is_vararg = 0;
+        if (tok.kind == TOK_ELLIPSIS) {
+            is_vararg = 1;
+            token_free(&tok);
+            tok = next_token(&probe);
+        }
+
         if (tok.kind != TOK_IDENT) {
             token_free(&tok);
             return 0;
@@ -962,9 +969,19 @@ static int peek_is_func_literal(Parser *p)
 
         token_free(&tok);
         tok = next_token(&probe);
-        if (tok.kind == TOK_ELLIPSIS) {
+        if (!is_vararg && tok.kind == TOK_ELLIPSIS) {
             token_free(&tok);
             tok = next_token(&probe);
+            if (tok.kind != TOK_RPAREN) {
+                token_free(&tok);
+                return 0;
+            }
+            token_free(&tok);
+            tok = next_token(&probe);
+            token_free(&tok);
+            return tok.kind == TOK_LBRACE;
+        }
+        if (is_vararg) {
             if (tok.kind != TOK_RPAREN) {
                 token_free(&tok);
                 return 0;
@@ -1344,18 +1361,22 @@ static Expr *parse_func_literal(Parser *p)
 
     if (p->current.kind != TOK_RPAREN) {
         for (;;) {
+            int is_vararg = 0;
+            if (match(p, TOK_ELLIPSIS)) {
+                is_vararg = 1;
+                has_vararg = 1;
+            }
             if (p->current.kind != TOK_IDENT) {
-                parser_error(p, "expected parameter name");
+                if (is_vararg) parser_error(p, "expected parameter name after '...'");
+                else parser_error(p, "expected parameter name");
                 return NULL;
             }
             char *name = arena_strndup(&p->arena, p->current.start, p->current.len);
             size_t len = p->current.len;
             advance(p);
-
-            int is_vararg = 0;
-            if (match(p, TOK_ELLIPSIS)) {
-                is_vararg = 1;
-                has_vararg = 1;
+            if (!is_vararg && p->current.kind == TOK_ELLIPSIS) {
+                parser_error(p, "invalid vararg syntax: use '...name'");
+                return NULL;
             }
 
             if (argc == cap) {

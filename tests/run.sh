@@ -46,6 +46,8 @@ run_case strict
 run_case strict_toggle
 run_case value
 run_case modules
+run_case varargs_prefix
+run_case call_local_lambda
 # run_case asm
 
 run_ffi_case() {
@@ -98,6 +100,7 @@ run_negative meta_capacity_string
 run_negative byte_range
 run_negative strict_mixed_list
 run_negative bitwise_float
+run_negative vararg_old_syntax
 
 if [ "${SKIP_FFI:-0}" = "1" ]; then
   echo "SKIP_FFI=1; skipping ffi struct view test"

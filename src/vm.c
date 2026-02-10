@@ -5458,7 +5458,13 @@ BC_L_CALL_EX:
                     }
                 }
             }
-            ObjEntry *entry = vm_object_find_by_key_len(vm, vm->global_entry->obj, (char*)name, name_len);
+            ObjEntry *entry = NULL;
+            if (vm->local_entry) {
+                entry = vm_object_find_direct(vm, vm->local_entry->obj, (char*)name, name_len);
+            }
+            if (!entry) {
+                entry = vm_object_find_by_key_len(vm, vm->global_entry->obj, (char*)name, name_len);
+            }
             if (entry == vm->null_entry) entry = NULL;
             if (!target) target = entry;
             if (!target) {

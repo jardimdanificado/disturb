@@ -1,489 +1,511 @@
 # Disturb
 
-Disturb is a stack-oriented VM with a C-like source syntax that compiles to a compact RPN bytecode. The language focuses on safety and explicit behavior: everything lives under the global table, and missing lookups return a null table.
+Disturb is a stack-based VM and language with C-like syntax that compiles to compact RPN bytecode.
 
-Disturb means Distributable Urb, at least that was the original idea;
+This README is a practical language reference based on the current implementation and test suite.
 
-## Quick Start
+## Additional Docs
 
-| Command | Purpose |
-| --- | --- |
-| `make` | Build `disturb` |
-| `./disturb file.urb` | Run source |
-| `./disturb --compile-bytecode script.urb output.bytecode` | Compile a script into raw bytecode |
-| `./disturb --run-bytecode output.bytecode [args...]` | Run a previously compiled bytecode file |
-| `./disturb --repl` | Interactive REPL |
-| `./disturb --help` | Show CLI help |
+- Quick syntax cheatsheet: `docs/REF_SHEET.md`
+- Detailed function-by-function reference: `docs/FUNCTION_REFERENCE.md`
 
-Notes:
-- Disturb now uses a single unified runtime backend; legacy `--urb`/`--dist` backend selection flags were removed.
+## Build
 
-## Core Model
+Requirements:
+- `gcc` (or compatible C compiler)
+- `make`
+- `libffi` headers/libs only if FFI is enabled (`ENABLE_FFI=1`, default)
 
-| Concept | Behavior |
-| --- | --- |
-| Global root | `a = b;` is the same as `global.a = b;` |
-| Table type | `table` (formerly `any`) is the generic container |
-| Null | Missing globals/keys return `null` |
-| Natives | Built-in and stored in `global` as tables |
-| Common | Shared methods live on `global.common` |
-| this | Method calls bind `this` to the call target |
+Build:
 
-## Semantics and Oddities
+```bash
+make
+./disturb --help
+```
 
-- Everything is an object backed by a list; even scalars are just length-1 lists.
-- Indexing a single-element list (`a[0]`) yields the same value as `a`, but not the same object identity.
-- `=` is reference assignment: collections store references, not copies.
-- Use `.clone()` for a shallow copy or `.copy()` for a deep copy when you want a snapshot.
-- Strings are int lists with a `.string` view; in strict mode you must use `.string` to print as text.
-- Missing keys/indexes resolve to `null` instead of throwing.
+Optional flags:
 
-## Types and Literals
+```bash
+make ENABLE_IO=0
+make ENABLE_FFI=0
+```
 
-| Type | Literal | Notes |
-| --- | --- | --- |
-| int | `1` | Integer list values |
-| float | `3.14` | Float list values |
-| char | `'c'` | Single-byte string |
-| string | `"abc"` | String with length > 1 |
-| table | `{a = 1}` | Keyed container |
+## CLI
 
-## Construction
-
-| Form | Result |
-| --- | --- |
-| `[1, 2]` | Int list |
-| `[1, 2.5]` | Float list |
-| `{a = b}` | Table with keys |
+```text
+disturb [script.urb] [args...]
+disturb --compile-bytecode script.urb output.bytecode
+disturb --run-bytecode output.bytecode [args...]
+disturb --help
+```
 
 Notes:
-- `[]` builds an int list; if any element is float, the list is float. Use `.toInt()`/`.toFloat()` for explicit conversion.
-- Lists are homogeneous: an int list never mixes floats. If any element is fractional, the entire list becomes float and ints are converted.
-- Strings are int lists of bytes; `'c'` is a length-1 string and `"abc"` is length > 1. Use `.string` (type view) to treat an int list as text.
-- Table literals now use `{...}` exclusively; the `table` prefix is no longer supported.
-- Plain `{}` is reserved for tables, while `(args){...}` still introduces a lambda.
-- Compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`) and increment/decrement statements (`++i`, `i++`, `--i`, `i--`) mutate the left-hand target in place; increments add/subtract `1`.
-- Compound assignments (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`) and increment/decrement statements (`++i`, `i++`, `--i`, `i--`) mutate the left-hand target in place; increments add/subtract `1`.
-- Numeric suffixes: `1i` (int), `1u` (unsigned int, treated as int), `1f` (float).
+- No-arg execution starts the REPL.
+- `--compile-bytecode` emits raw bytecode.
+- `--run-bytecode` runs raw bytecode.
 
-## Expressions and Operators
+## First Script
 
-Operators follow standard precedence with parentheses support:
-- Unary: `!`, unary `-`
-- Multiplicative: `*`, `/`, `%`
-- Additive: `+`, `-`
-- Shift: `<<`, `>>`
-- Comparisons: `<`, `<=`, `>`, `>=`
-- Equality: `==`, `!=`, `===`, `!==`
-- Bitwise: `&`, `^`, `|`, unary `~`
-- Logical: `&&`, `||`
+```disturb
+msg = "hello";
+println(msg);
+```
 
-Notes:
-- Logical and comparison operators return ints (`1` or `0`).
-- `null` and numeric `0` (int/float) are false; everything else is true.
-- `+` concatenates when either side is a string/char; non-strings stringify to Disturb literals.
-- `===` is strict identity equality (fast, shallow): same type and same underlying identity/value only. Strings use string object identity (not content).
-- `!==` is strict identity inequality (the negation of `===`).
-- `==` is value equality: numbers compare by numeric value (`1 == 1.0`), strings by content, tables by recursive structural value (cycle-safe), functions by reference.
-- `===` exists for identity-sensitive code (references, wrapper objects, FFI handle wrappers) and when you need O(1) identity checks.
-- `a ?= b` assigns `b` only when `a` is `null`.
-- Assignment and `++`/`--` forms are expressions and return a value (prefix returns the updated value, postfix returns the previous value).
-- String indexing assignments accept either single-byte strings or numeric values `0-255`.
-- List indexing on int/float lists returns numeric scalars; string indexing returns a single-byte string.
+Run:
+
+```bash
+./disturb file.urb
+```
+
+## Language Model
+
+Core behavior:
+- assignment is global by default: `x = 1;` is equivalent to `global.x = 1;`
+- missing globals/keys evaluate to `null`
+- `global` is a real table
+- `global.common` stores common methods
+- method calls bind `this` to the target (`obj.fn()`)
+
+Type names used by `.type`:
+- `null`
+- `int`
+- `float`
+- `char`
+- `string`
+- `table`
+- `native`
+- `lambda`
+- `view` (FFI views)
+
+## Syntax Basics
+
+Statements end with `;`.
+
+Comments:
+
+```disturb
+// line comment
+/* block comment */
+```
+
+Blocks use `{ ... }`.
+
+Table literal also uses `{ ... }`, while lambda literal uses `(args){ ... }`.
+
+## Values and Literals
+
+Supported literal forms:
+- int: `1`
+- float: `3.14`
+- int suffix: `1i`
+- unsigned suffix alias (stored as int): `1u`
+- float suffix: `1f`
+- char: `'a'` (must be exactly one byte)
+- string: `"abc"`
+- list: `[1, 2, 3]`
+- table: `{a = 1, b = "x"}`
+
+Special global:
+- `inf` (positive infinity float)
+
+List behavior:
+- numeric lists are homogeneous (`int` list or `float` list)
+- mixed numeric literals like `[1, 2.5]` become float lists in non-strict mode
+- string values are byte lists with string semantics
+
+## Truthiness
+
+False values:
+- `null`
+- numeric zero (`0`, `0.0`)
+
+Everything else is true.
+
+## Operators
+
+### Arithmetic and unary
+- `+ - * / %`
+- unary `-`
+
+### Logical
+- `!`
+- `&&`
+- `||`
+
+### Comparison
+- `< <= > >=`
+- `== !=`
+- `=== !==`
+
+### Bitwise (int only)
+- `& | ^ ~ << >>`
+
+### Assignment
+- `=`
+- `+= -= *= /= %= &= |= ^= <<= >>=`
+- `?=` (assign only if target is `null`)
+- `++ --` (prefix and postfix)
+
+Operator semantics highlights:
+- comparisons/logical ops return numeric booleans (`1` or `0`)
+- `+` concatenates when one side is string/char
+- `==` compares by value
+- `===` compares strict identity/type-level equality semantics
+- assignment/compound/inc-dec forms are expressions (usable inside larger expressions)
+
+## Equality Semantics
+
+`==` / `!=`:
+- numbers compare by numeric value (`1 == 1.0` is true)
+- strings compare by content
+- tables compare structurally (deep, cycle-safe)
+- functions compare by identity
+
+`===` / `!==`:
+- strict identity-sensitive equality
+- useful for reference identity checks
+
+## Indexing and Access
+
+Supported forms:
+- `obj.key`
+- `obj["key"]`
+- `obj[k]` where `k` is string-like key
+- `list[i]`
+- `string[i]`
+
+Rules:
+- numeric indexing is 0-based
+- out-of-range numeric index errors
+- key indexing is for tables
+- string index yields a single-byte char value
+- string index assignment accepts single-byte char or byte numeric value
+
+## Variables, Scope, and Calls
+
+### Global and local scope
+- top-level assignments write to `global`
+- lambda bodies use local scope
+- `local` is available inside lambdas
+- globals are still reachable via `global.name`
+
+### Function/lambda definition
+
+```disturb
+add = (a, b){ return a + b; };
+```
+
+Parameters:
+- positional params
+- default params: `(a, b = 10){ ... }`
+- varargs: `(head, ...rest){ ... }` (must be last)
+- missing non-default params become `null`
+
+Returns:
+- `return expr;`
+- `return;` returns `null`
+
+Calls:
+- regular call: `add(1, 2)`
+- method call with `this`: `obj.add(7)`
+- table-call convention: if a table has a method with its own name, calling the table invokes it
+
+## Control Flow
+
+Supported:
+- `if (...) { ... }`
+- `if (...) { ... } else if (...) { ... } else { ... }`
+- `while (...) { ... }`
+- `for (init; cond; step) { ... }`
+- `each(v in expr) { ... }`
+- `break;`
+- `continue;`
+- `switch/case/default`
+- labels and `goto`
+
+Switch behavior:
+- first matching case executes
+- no fall-through
+- `default` runs when no case matches
+
+## Reference Semantics and Copies
+
+Assignment shares references:
+
+```disturb
+a = {x = 1, y = {z = 2}};
+b = a;
+b.y.z = 9;
+println(a.y.z); // 9
+```
+
+Copy helpers:
+- `clone()` shallow copy
+- `copy()` deep copy
+
+```disturb
+c = a.clone();
+d = a.copy();
+```
+
+## Meta Properties
+
+Each entry exposes metadata fields:
+- `.name`
+- `.type`
+- `.value`
+- `.size`
+- `.capacity`
+
+Common uses:
+- inspect runtime shape: `println(x.type);`
+- resize containers: `x.size = 10;`, `x.capacity = 32;`
+- replace value while keeping identity slot: `x.value = {...};`
+
+Important constraints:
+- `.name` expects string or `null`
+- `.size` expects integer
+- `.capacity` expects numeric value
 
 ## Strict Mode
 
-Enable strict numeric rules with directives:
-```
+Strict directives:
+
+```disturb
 use strict;
 use nostrict;
 ```
 
-In strict mode:
-- Mixed int/float arithmetic and comparisons are errors.
-- Numeric list literals cannot mix ints and floats.
-- Numeric suffixes (`1i`, `1u`, `1f`) are honored for literal type selection.
-- Number/string comparisons are errors.
-- Using `null` in numeric ops is an error.
-- `print`/`println` only render text for `.string`; raw string literals print as int lists.
+Accepted forms:
+- `use strict;`
+- `use "strict";`
+- `use nostrict;`
+- `use "nostrict";`
 
-Notes:
-- `use strict;` and `use nostrict;` (also `use "strict";` / `use "nostrict";`) can appear anywhere; effects start from that point onward.
-- Directives affect both layers:
-  - parser strictness (compile-time checks for following code)
-  - runtime strictness (emits bytecode that toggles VM strict mode)
-- Runtime strict can also be toggled dynamically with `gc.strict = 0/1;` and follows last-write-wins behavior.
+Effects:
+- parser strictness from directive point onward
+- runtime strictness toggled in emitted bytecode
 
-## Control Flow
+Strict mode rules:
+- forbids mixed int/float arithmetic
+- forbids mixed int/float numeric comparisons
+- forbids number/string comparisons
+- forbids `null` in numeric operations
+- forbids mixed int/float numeric list literals
+- string text output should use `.string`
 
-Supported control flow forms:
-- `if (cond) { ... } else { ... }`
-- `if (cond) { ... } else if (cond) { ... }`
-- `while (cond) { ... }`
-- `for (init; cond; step) { ... }`
-- `each(value in expr) { ... }`
-- `break;` and `continue;`
+Runtime toggle:
 
-Notes:
-- `each` iterates in index order. For tables, the entry key is available via `value.name`.
-- `switch (expr) { case literal: ... }` performs equality checks (strings/ints/floats) and exits after the first matching case; `default` runs if no case matches (no fall-through, so `break` is unnecessary).
-- Performance: the current compiler emits a linear chain of comparisons, so runtime is similar to `if/else`. There is no jump-table optimization yet; dense integer switches would benefit if one is added.
-- Use `label:` definitions and `goto label;` statements for direct jumps; `goto` resolves labels at compile time.
+```disturb
+global.gc.strict = 1;
+global.gc.strict = 0;
+```
 
-## Lambdas
+## Built-in Functions and Methods
 
-- Define lambdas by assigning a parameter list and body:
-- `name = (a, b, rest...){ println(a + b); }`
-- `name = (a = 1, b = "x"){ println(a + b); }`
+Disturb installs common functions in `global.common`, so they are callable as methods and as globals.
 
-- Rules:
-- Parameters are identifiers only.
-- `...` marks the last parameter as a vararg list (stored as a table list).
-- Missing arguments default to `null` unless a default value is provided.
-- `return expr;` exits a lambda and returns a value. `return;` returns `null`.
-- Calls bind `this` to the call target (`obj.method()` sets `this` to `obj`).
-- Calling a table by name (e.g. `obj()`) uses a method with the same name inside that table.
-- Calls can be used inside expressions (`x = add(1, 2);`).
+### Core
+- `print`
+- `println`
+- `len`
+- `pretty`
+- `clone`
+- `copy`
+- `toInt`
+- `toFloat`
+- `gc`
 
-## Indexing
+### IO (when `ENABLE_IO=1`)
+- `read(path)`
+- `write(path, data)`
 
-| Syntax | Meaning |
-| --- | --- |
-| `a[i]` | Numeric indexing |
-| `a.key` | Table key lookup |
-| `a["key"]` | Table key lookup |
-| `a[string_obj]` | Table key lookup |
+### Modules and metaprogramming
+- `import`
+- `eval`
+- `parse`
+- `emit`
+- `evalBytecode`
+- `bytecodeToAst`
+- `astToSource`
 
-Rules:
-- Only `table` supports string/key indexing.
-- Indexing strings yields a single-byte string.
-- Indexing supports infinite nesting.
-- `inf` is a global float constant (positive infinity).
+### Math
+- `append`
+- `add sub mul div mod pow`
+- `min max abs floor ceil round sqrt`
+- `sin cos tan asin acos atan log exp`
 
-## Meta Properties
+### String/bytes
+- `slice`
+- `substr`
+- `split`
+- `join`
+- `upper`
+- `lower`
+- `trim`
+- `startsWith`
+- `endsWith`
+- `replace`
+- `replaceAll`
+- `papagaio`
 
-Every entry exposes meta properties via string keys:
+### Table/list mutation and query
+- `keys`
+- `values`
+- `has`
+- `delete`
+- `push`
+- `pop`
+- `shift`
+- `unshift`
+- `insert`
+- `remove`
 
-| Property | Type | Description |
-| --- | --- | --- |
-| `.name` | string | Key name in its parent (`global.a.name == "a"`) |
-| `.type` | string | `null`, `int`, `float`, `char`, `string`, `table`, `native`, `lambda`, `view` |
-| `.value` | any | Copy of the entry value (keyless) |
-| `.size` | int | Used slots (elements for int/float lists, bytes for strings) |
-| `.capacity` | int | Allocated slots (elements for int/float lists, bytes for strings) |
+## Print vs Println
 
-Notes:
-- `.name` and `.type` are writable. `.name = null` clears the key. `.type` is pure type punning (no conversion).
-- Setting `.size` changes used slots; if larger than capacity it reallocates.
-- Setting `.capacity` reallocates; the table remains in the same entry slot.
-- Setting `.value` replaces the entry contents without changing its key or identity.
+- `print(...)` prints values with typed/literal style.
+- `println(...)` prints plain value style.
+- `print()` / `println()` with no args read the top of stack when available.
 
-## Bytecode
+## Script Arguments
 
-The bytecode is RPN stack-based. There is no const pool; literals are inline.
+CLI arguments are exposed as globals:
+- `arg_0`, `arg_1`, ...
+- `args` table
+- `argc` (string value)
 
-| Opcode | Stack effect | Purpose |
-| --- | --- | --- |
-| `PUSH_INT` | `-- int` | Push int literal |
-| `PUSH_FLOAT` | `-- float` | Push float literal |
-| `PUSH_CHAR` | `-- char` | Push char literal |
-| `PUSH_STRING` | `-- string` | Push string literal |
-| `PUSH_CHAR_RAW` | `-- char` | Push char literal (no papagaio) |
-| `PUSH_STRING_RAW` | `-- string` | Push string literal (no papagaio) |
-| `BUILD_INT n` | `v… -- list` | Build int list |
-| `BUILD_FLOAT n` | `v… -- list` | Build float list |
-| `BUILD_OBJECT n` | `k v… -- obj` | Build object |
-| `INDEX` | `obj idx -- value` | Indexing |
-| `STORE_INDEX` | `obj idx val --` | Assign by index/key |
-| `LOAD_ROOT` | `-- global` | Push global root |
-| `LOAD_GLOBAL` | `-- value` | Lookup in global |
-| `LOAD_THIS` | `-- this` | Load current `this` |
-| `STORE_GLOBAL` | `val --` | Store in global |
-| `SET_THIS` | `val --` | Set current `this` |
-| `CALL` | `args --` | Call native |
-| `JMP` | `--` | Unconditional jump |
-| `JMP_IF_FALSE` | `cond --` | Jump if false |
-| `RETURN` | `val? --` | Return from function |
-| `POP` | `val --` | Drop |
-| `DUP` | `val -- val val` | Duplicate |
-| `GC` | `--` | Collect |
-| `STRICT` | `--` | Enable runtime strict mode |
-| `UNSTRICT` | `--` | Disable runtime strict mode |
-| `DUMP` | `--` | Dump global |
-| `ADD` | `a b -- out` | Add/concat |
-| `SUB` | `a b -- out` | Subtract |
-| `MUL` | `a b -- out` | Multiply |
-| `DIV` | `a b -- out` | Divide |
-| `MOD` | `a b -- out` | Modulo |
-| `BITAND` | `a b -- out` | Bitwise and (int) |
-| `BITOR` | `a b -- out` | Bitwise or (int) |
-| `BITXOR` | `a b -- out` | Bitwise xor (int) |
-| `SHL` | `a b -- out` | Shift left (int) |
-| `SHR` | `a b -- out` | Shift right (int) |
-| `NEG` | `a -- out` | Unary minus |
-| `BNOT` | `a -- out` | Bitwise not (int) |
-| `NOT` | `a -- out` | Logical not |
-| `EQ` | `a b -- out` | Value equality (`==`) |
-| `SEQ` | `a b -- out` | Strict identity equality (`===`) |
-| `SNEQ` | `a b -- out` | Strict identity inequality (`!==`) |
-| `NEQ` | `a b -- out` | Inequality |
-| `LT` | `a b -- out` | Less than |
-| `LTE` | `a b -- out` | Less or equal |
-| `GT` | `a b -- out` | Greater than |
-| `GTE` | `a b -- out` | Greater or equal |
-| `AND` | `a b -- out` | Logical and |
-| `OR` | `a b -- out` | Logical or |
+Example:
 
-## Safety Notes and Oddities
+```disturb
+println(argc);
+println(args.pretty());
+println(arg_0);
+```
 
-- Missing globals/keys yield `null` instead of error.
-- `global` is a real table; `global.name[0]` is valid.
-- Strings are `char` objects; `char` vs `string` is decided by length.
- - Assignments are reference-based; use `clone()` for shallow copies or `copy()` for deep copies.
- - Lambda bodies now use local scope; assign to `global.name` to update globals explicitly. The local scope is available as `local` inside lambdas.
- Resizing always keeps the same table entry slot to preserve references.
-## Built-in Methods
- Cross-language literal list parsing, deep table access, and string length for Disturb/Lua/Node/Python/C if present
- `BUILD_OBJECT n` | `k v… -- obj` | Build table |
+## Modules (`import`)
 
-Math:
-- `add`, `sub`, `mul`, `div`, `mod`, `pow`, `min`, `max`
-- `abs`, `floor`, `ceil`, `round`, `sqrt`
-- `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `log`, `exp`
-
-Strings:
-- `slice`, `substr`, `split`, `join`, `upper`, `lower`, `trim`
-- `startsWith`, `endsWith`, `replace`, `replaceAll`
-
-Tables/Arrays:
-- `keys`, `values`, `has`, `delete`
-- `push`, `pop`, `shift`, `unshift`, `insert`, `remove`
-
-Values:
-- `clone` (shallow copy), `copy` (deep copy)
+`import(path)` behavior:
+- if `path` ends with `.urb`, loads that file directly
+- otherwise loads package entry: `path/<basename(path)>.urb`
+- module runs in isolated VM
+- module export is the top-level `return` value
+- loaded modules are cached by resolved path
 
 Examples:
-```disturb
-a = {x = 1, y = {z = 2}};
-b = a;
-c = a.clone();
-d = a.copy();
+- `import("tests/modules/math.urb")`
+- `import("tests/modules/pkg")` -> loads `tests/modules/pkg/pkg.urb`
 
-b.x = 9;
-b.y.z = 8;
+## Bytecode and Metaprogramming
 
-println(a.x);   // 9
-println(c.x);   // 9 (shallow copy shares children)
-println(d.x);   // 1 (deep copy)
-```
-
-Formatting:
-- `pretty`
-
-IO(might not be available in all environments):
-- `read`, `write`
-
-Metaprogramming:
-- `parse`, `emit`, `evalBytecode`, `eval`
-
-GC:
-- `gc`, `global.gc`
-
-Notes:
-- `read(path)` returns a string with file contents.
-- `write(path, data)` writes a stringified value and returns `1` on success.
-- `eval(code)` executes code in the current VM and returns `null`.
-- `parse(source)` compiles source into bytecode bytes.
-- `emit(bytecode)` returns a disassembly-style text view of bytecode bytes.
-- `evalBytecode(bytes)` executes bytecode and returns `null`.
-
-A pure Disturb assembler/disassembler is available in `example/asm_lib.urb`:
+Compile and run from source text:
 
 ```disturb
-eval(read("example/asm_lib.urb"));
-bytes = asm("PUSH_INT 1\nPUSH_INT 2\nADD\n");
-println(disasm(bytes));
+bc = parse("println(1 + 2);");
+println(emit(bc));
+evalBytecode(bc);
 ```
 
-## Bytecode Text
+Assembler/disassembler example is provided in:
+- `example/asm_lib.urb`
 
-`emit(bytecode)` returns a disassembly-style text format. `example/asm_lib.urb` can assemble that text back into bytecode bytes.
+## Papagaio
 
-The internal bytecode AST is no longer a public API.
-- `gc()` runs a collection.
-- `global.gc.rate = N` sets auto-GC frequency (`0` disables periodic GC checks).
-- `global.gc.strict = 0/1` toggles runtime strict checks immediately.
-- `global.gc.keyintern = 0/1` toggles key interning for newly created keys (existing interned keys are kept).
-- `global.gc.collect()` runs a manual reachability collection and marks unreachable values for reuse.
-- `global.gc.free(value)` frees the value and replaces it with `null` (manual management).
-- `global.gc.sweep(value)` marks the value for reuse immediately and replaces it with `null`.
-- `global.gc.flush()` frees all values currently waiting for reuse.
-- `global.gc.new(size)` allocates a table with reserved capacity.
-- `global.gc.debug()` prints the reuse pools (sizes and totals).
-- `global.gc.stats()` prints memory usage by reuse/inuse/noref blocks.
-- Comments are supported via `//` and `/* ... */`.
+Papagaio processing applies to string literals containing `$`.
+Use `\$` to keep literal `$`.
 
-Papagaio processing is applied to string literals that contain `$` (including escaped `\$`, which the parser stores as a papagaio-escape sigil). Literals without `$` compile to raw string opcodes and skip papagaio. Use `\$` to escape a literal `$`.
+Supported patterns include:
+- `$pattern{...}{...}`
+- `$regex ... {...}`
+- `$eval{...}`
 
-`replace` and `replaceAll` perform literal substring replacement (first match vs all matches). For Papagaio patterns on runtime strings, use `papagaio(text)` with `$pattern{...}{...}` directives embedded in the text:
-- `papagaio("$pattern{hello $name}{Oi $name}hello Joao")`
-- `papagaio("\$pattern{a}{b}a")`
+Runtime API:
+- `papagaio(text)`
 
-Papagaio tokens:
-- `$pattern{...}{...}` defines a pattern+replacement pair (nested patterns are supported).
-- `$regex name {pattern}` captures regex matches (use `$regex{0}`/`{1}`... in replacements).
-- `$eval{...}` evaluates Disturb code; use `return` to produce a value.
-- `this` inside `$eval{}` points to `global.papagaio`, which exposes `content` and `match`.
+Papagaio runtime context is exposed under `global.papagaio` (for `content` and `match` access inside eval blocks).
 
-`print`/`println` with no arguments prints the top of the stack if present.
+## GC and Runtime Controls
 
-## FFI
+Manual GC helpers are under `global.gc`:
+- `collect()`
+- `free(value)`
+- `sweep(value)`
+- `new(size)`
+- `debug()`
+- `stats()`
 
-FFI is optional (see build flags below). Load a shared library and bind C-style signatures:
+Runtime flags:
+- `global.gc.strict = 0|1`
+- `global.gc.keyintern = 0|1`
 
-```disturb
-lib = ffi.load("libmylib.so",
-  "i32 add(i32, i32)",
-  "char* getenv(char*)",
-  "i32[] make()"
-);
+Compatibility alias:
+- `gc()` is available and maps to collection behavior.
 
-println(lib.add(1, 2));
-println(lib.getenv("HOME"));
-println(lib.make!64()); // override return length for int[]/float[]
-```
+## FFI (optional)
 
-Signature notes:
-- `int[]`/`float[]` inputs pass a pointer to the list data (length is not passed).
-- `int[]`/`float[]` return defaults to length `0`; use `name!N()` to override.
-- `int[N]` return defaults to `N`, and can be overridden by `name!N()`.
-- `char*`/`unsigned char*` map to Disturb strings (copied on return).
-- `void*` maps to a Disturb int (uintptr).
-- `@schema` passes/returns a struct by value, where `schema` is a global struct schema table.
-  - by-value currently requires natural C layout (no `__meta.packed` / forced align).
+Requires build with `ENABLE_FFI=1`.
 
-Struct views with automatic C-like layout (padding/alignment) are also supported:
+Main API:
+- `ffi.load(libPath, "signature", ...)`
+- `ffi.bind(ptr, "signature")`
+- `ffi.compile(schema)`
+- `ffi.new(schemaOrLayout)`
+- `ffi.sizeof(schemaOrLayout)`
+- `ffi.alignof(schemaOrLayout)`
+- `ffi.offsetof(schemaOrLayout, "field.path")`
+- `ffi.view(ptr, schemaOrLayout)`
 
-```disturb
-schema = {
-  a = "int32",
-  b = "float64",
-  d = { a = "int8", b = "int16" },
-  arr = "int64[8]"
-};
+Supported workflow:
+- call C functions
+- map pointers to callable functions
+- compile C-like struct schemas
+- create live pointer-backed struct views
+- handle nested structs and fixed arrays in layouts
 
-layout = ffi.compile(schema);
-ptr = lib.make_outer();
-v = ffi.view(ptr, layout);
-
-v.a = 45;
-v.d.b = 45;
-println(v.a);
-```
-
-Struct-view API:
-- `ffi.compile(schema)` -> compiled layout object (cacheable).
-- `ffi.sizeof(schema_or_layout)` -> struct size in bytes.
-- `ffi.alignof(schema_or_layout)` -> struct alignment in bytes.
-- `ffi.view(ptr, schema_or_layout)` -> live memory view.
-- `ffi.offsetof(schema_or_layout, "d.b")` -> byte offset for nested field paths.
-- `ffi.bind(ptr, "i32 add(i32, i32)")` -> turns a function pointer into a callable native.
-
-By-value struct example:
-```disturb
-outer = { a = "int32", b = "float64", d = { a = "int8", b = "int16" } };
-lib = ffi.load("libx.so",
-  "i32 sum_outer(@outer)",
-  "@outer make_outer(i32, f64, i8, i16)"
-);
-```
-
-Array schema syntax:
-- fixed array: `"int64[8]"`, `"float32[3]"`
-- unsized array/pointer-style: `"int32[]"` (treated as pointer-sized field in layout)
-
-Supported schema field types are strings:
-- sized integers: `"int8"`, `"uint8"`, `"int16"`, `"uint16"`, `"int32"`, `"uint32"`, `"int64"`, `"uint64"`
-- unsized aliases: `"char"`, `"uchar"`, `"short"`, `"ushort"`, `"int"`, `"uint"`, `"long"`, `"ulong"`
-- floats: `"float32"`, `"float64"`, `"float"` (`float32`), `"double"` (`float64`)
-- pointer: `"ptr"`
-- nested struct tables
-
-Schema metadata:
-- `__meta = { packed = 1 }` uses packed layout (`align = 1`).
-- `__meta = { align = N }` enforces minimum struct alignment.
-- If your table implementation does not preserve insertion order, set `__order = ["a","b","d"]`.
-
-Current limitations:
-- No unions
-- No bitfields
-- No variadic struct members
-- `ffi.bind` does not own pointer lifetime; keep the source library/context alive.
-
-## Modules
-
-Use `import(path)` to load a module.
-
-- If `path` ends with `.urb`, that file is loaded directly.
-- Otherwise Disturb treats it as a package directory and loads `path/<basename(path)>.urb`.
-  - Example: `import("lib/math")` loads `lib/math/math.urb`.
-- Module code runs in an isolated VM and exports a value via top-level `return`.
-- Imports are cached by resolved path; importing the same module again returns the same module object.
-
-Bundled module example: `modules/tcc`
-- Import with `tcc = import("modules/tcc");`.
-- Load `libtcc` with `mod = tcc.auto()` or `mod = tcc.load("/path/to/libtcc.so")`.
-- Create a state with `ctx = mod.new()` and compile code with `ctx.compile("int add(int a,int b){return a+b;}")`.
-- Set outputs with `ctx.setOutputType(mod.OUTPUT_OBJ)` / `OUTPUT_EXE` / `OUTPUT_DLL` and emit files with `ctx.outputFile("out.o")`.
-- Resolve symbols after relocation via `ctx.relocate()` and `ctx.getSymbol("name")`.
-- See `example/tcc.urb` for a full minimal flow.
-
-## Build Flags
-
-Optional features can be disabled at build time:
-
-```bash
-make ENABLE_IO=0        # disable read/write
-make ENABLE_FFI=0       # disable ffi module
-```
+Examples:
+- `example/guide/11_ffi_system.urb`
+- `example/guide/14_ffi_struct_views_bind.urb`
+- `example/ffi_view_struct.urb`
 
 ## Tests
 
-| Command | Purpose |
-| --- | --- |
-| `tests/run.sh` | Runs all language and asm tests |
-| `tests/run_examples.sh` | Runs all `.urb` examples under `example/` |
-| `tests/bench.sh` | Runs benchmarks (best-effort) |
+Main language tests:
 
-Test sources live in `tests/cases`, expected outputs in `tests/expected`.
+```bash
+tests/run.sh
+```
 
-## Guide Examples
+Run all examples:
 
-The tutorial-style examples live in `example/guide` and are numbered:
-- `example/guide/01_intro.urb`
-- `example/guide/02_types_literals.urb`
-- `example/guide/03_indexing_objects.urb`
-- `example/guide/04_operators_truthiness.urb`
-- `example/guide/05_functions_methods.urb`
-- `example/guide/06_control_flow.urb`
-- `example/guide/07_strings_bytes_io_eval.urb`
-- `example/guide/08_vm_notes.urb`
-- `example/guide/09_metaprogramming.urb`
-- `example/guide/10_strict_mode.urb`
-- `example/guide/11_ffi_system.urb`
-- `example/guide/12_references_and_copy.urb`
-- `example/guide/13_modules_packages.urb`
-- `example/guide/14_ffi_struct_views_bind.urb`
-- `example/ffi_view_struct.urb` (FFI struct view demo; requires `tests/ffi/libffi_view_struct.so`)
-- `example/tcc.urb` (TinyCC module demo; requires `libtcc` installed)
+```bash
+tests/run_examples.sh
+```
 
-### Negative and Stress Tests
+Test folders:
+- `tests/cases` positive/stress cases
+- `tests/negative` expected error cases
+- `tests/ffi` FFI fixtures
 
-| Folder | Purpose |
-| --- | --- |
-| `tests/negative` | Parser and runtime error cases (stderr checks) |
-| `tests/cases` | Positive and stress cases |
+## Guide
 
-Stress cases include deep nesting and large list construction to push recursion and indexing.
+Tutorial scripts live in `example/guide`:
+
+1. `example/guide/01_intro.urb`
+2. `example/guide/02_types_literals.urb`
+3. `example/guide/03_indexing_objects.urb`
+4. `example/guide/04_operators_truthiness.urb`
+5. `example/guide/05_functions_methods.urb`
+6. `example/guide/06_control_flow.urb`
+7. `example/guide/07_strings_bytes_io_eval.urb`
+8. `example/guide/08_vm_notes.urb`
+9. `example/guide/09_metaprogramming.urb`
+10. `example/guide/10_strict_mode.urb`
+11. `example/guide/11_ffi_system.urb`
+12. `example/guide/12_references_and_copy.urb`
+13. `example/guide/13_modules_packages.urb`
+14. `example/guide/14_ffi_struct_views_bind.urb`
+
+## Changelog
+
+Release history is in `CHANGELOG.md`.
 
 [![CI](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml/badge.svg)](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml)

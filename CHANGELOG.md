@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+- change lambda vararg syntax from `name...` to `...name`; old trailing form now errors with guidance (`invalid vararg syntax: use '...name'`).
+- fix lambda callback resolution in calls: when calling `a()` inside a lambda, call target lookup now checks local scope before global scope, so callback args work without `local.a()`.
+- add `ffi.new(schemaOrLayout)` to allocate zeroed struct memory and return a numeric pointer for use with `ffi.view(...)`.
+- add/adjust tests for new vararg syntax, lambda callback behavior, and `ffi.new` flow in FFI struct tests.
+
 ## 1.1.1
 - add GitHub Actions CI (`.github/workflows/ci.yml`) with Linux build/test jobs for default build and `ENABLE_FFI=0`.
 - expand CI matrix to Linux/macOS/Windows (MSYS2/MinGW), running default (FFI) and `ENABLE_FFI=0` builds.

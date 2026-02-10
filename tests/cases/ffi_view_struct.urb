@@ -110,6 +110,18 @@ v2.d.b = 3;
 if (lib.sum_outer_value(v2) != 15) { fail++; }
 lib.free_outer(ptr2);
 
+ptr3 = ffi.new(layout);
+if (ptr3 == 0) { fail++; }
+v3 = ffi.view(ptr3, layout);
+if (v3.a != 0) { fail++; }
+if (v3.d.a != 0) { fail++; }
+if (v3.d.b != 0) { fail++; }
+v3.a = 20;
+v3.d.a = 3;
+v3.d.b = 4;
+if (lib.sum_outer_value(v3) != 27) { fail++; }
+lib.free_outer(ptr3);
+
 ret = lib.make_outer_value(7, 1.5, 2, 9);
 if (ret.a != 7) { fail++; }
 if (ret.d.a != 2) { fail++; }

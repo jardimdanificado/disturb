@@ -3,7 +3,7 @@ sum = (a, b){ println(a + b); };
 sum(2, 3);
 
 // Varargs must be named and come last.
-var = (a, rest...){ println(a); println(rest.size); };
+var = (a, ...rest){ println(a); println(rest.size); };
 var(1);
 var(1, 2, 3);
 

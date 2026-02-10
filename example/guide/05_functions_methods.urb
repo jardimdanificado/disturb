@@ -11,7 +11,7 @@ println(greet());
 println(greet("disturb"));
 
 // Varargs must be named and come last.
-sum = (head, rest...){
+sum = (head, ...rest){
   total = head;
   each(v in rest) { total = total + v; }
   return total;

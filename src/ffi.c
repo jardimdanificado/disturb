@@ -2549,6 +2549,34 @@ void native_ffi_compile(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, entry);
 }
 
+void native_ffi_new(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.new expects schema or compiled layout\n");
+        return;
+    }
+    ObjEntry *schema_or_layout = ffi_native_arg(stack, argc, 0);
+    char err[160] = {0};
+    FfiLayout *layout = ffi_layout_from_schema_or_layout(schema_or_layout, err, sizeof(err));
+    if (!layout) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi: new failed");
+        return;
+    }
+    if (layout->kind != FFI_LAYOUT_STRUCT) {
+        fprintf(stderr, "ffi.new expects struct schema/layout\n");
+        return;
+    }
+    size_t bytes = layout->size ? layout->size : 1;
+    void *mem = calloc(1, bytes);
+    if (!mem) {
+        fprintf(stderr, "ffi: out of memory\n");
+        return;
+    }
+    ffi_push_entry(vm, vm_make_int_value(vm, (Int)(uintptr_t)mem));
+}
+
 void native_ffi_sizeof(VM *vm, List *stack, List *global)
 {
     (void)global;
@@ -2691,6 +2719,7 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
     ffi_add_module_fn(vm, ffi_entry, "load", native_ffi_load);
     ffi_add_module_fn(vm, ffi_entry, "bind", native_ffi_bind);
     ffi_add_module_fn(vm, ffi_entry, "compile", native_ffi_compile);
+    ffi_add_module_fn(vm, ffi_entry, "new", native_ffi_new);
     ffi_add_module_fn(vm, ffi_entry, "sizeof", native_ffi_sizeof);
     ffi_add_module_fn(vm, ffi_entry, "alignof", native_ffi_alignof);
     ffi_add_module_fn(vm, ffi_entry, "view", native_ffi_view);
