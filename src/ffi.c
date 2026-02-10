@@ -1,7 +1,9 @@
 #ifdef DISTURB_ENABLE_FFI
 
 #include "vm.h"
+#ifdef DISTURB_ENABLE_FFI_CALLS
 #include <ffi.h>
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,10 +49,12 @@ typedef struct {
     char *schema_name; /* struct<schema> or pointer<schema> */
     int schema_is_pointer; /* 0 => struct<schema>, 1 => pointer<schema> */
     FfiLayout *schema_layout; /* resolved struct layout for schema */
-    ffi_type *schema_ffi_type; /* resolved ffi type for struct<schema> */
+    void *schema_ffi_type; /* resolved ffi type for struct<schema> */
     void *schema_ffi_owner; /* owned dynamic ffi type graph */
 } FfiType;
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
+static char *ffi_strdup(const char *s);
 typedef struct {
     int refcount;
     void *handle;
@@ -70,6 +74,7 @@ typedef union {
     float f32;
     void *p;
 } FfiValue;
+#endif
 
 typedef enum {
     FFI_LAYOUT_PRIM = 1,
@@ -111,8 +116,10 @@ typedef struct FfiLayoutCacheNode {
 } FfiLayoutCacheNode;
 
 typedef struct FfiDynTypeNode {
+#ifdef DISTURB_ENABLE_FFI_CALLS
     ffi_type type;
     ffi_type **elements;
+#endif
     struct FfiDynTypeNode **owned_children;
     int owned_count;
 } FfiDynTypeNode;
@@ -167,7 +174,6 @@ static FfiPtrHandle *ffi_ptr_handle_from_entry(ObjEntry *entry);
 static int ffi_view_decode(ObjEntry *entry, uintptr_t *base_ptr, size_t *base_offset, FfiLayout **layout);
 static void native_ffi_handle_noop(VM *vm, List *stack, List *global);
 static int parse_base_type(const char *name, FfiBase *out);
-static char *ffi_strdup(const char *s);
 static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_len);
 
 static void ffi_dyn_type_node_free(FfiDynTypeNode *node)
@@ -177,7 +183,9 @@ static void ffi_dyn_type_node_free(FfiDynTypeNode *node)
         ffi_dyn_type_node_free(node->owned_children[i]);
     }
     free(node->owned_children);
+#ifdef DISTURB_ENABLE_FFI_CALLS
     free(node->elements);
+#endif
     free(node);
 }
 
@@ -187,11 +195,16 @@ static void ffi_type_release_runtime(FfiType *t)
     free(t->schema_name);
     t->schema_name = NULL;
     t->schema_is_pointer = 0;
+#ifdef DISTURB_ENABLE_FFI_CALLS
     if (t->schema_ffi_owner) {
         ffi_dyn_type_node_free((FfiDynTypeNode*)t->schema_ffi_owner);
         t->schema_ffi_owner = NULL;
     }
     t->schema_ffi_type = NULL;
+#else
+    t->schema_ffi_owner = NULL;
+    t->schema_ffi_type = NULL;
+#endif
     t->schema_layout = NULL;
 }
 
@@ -281,6 +294,7 @@ static const char *ffi_dlerror_msg(void)
 }
 #endif
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
 static void ffi_function_retain(void *data)
 {
     FfiFunction *fn = (FfiFunction*)data;
@@ -301,6 +315,7 @@ static void ffi_function_release(void *data)
     free(fn->arg_types);
     free(fn);
 }
+#endif
 
 static int entry_is_string(ObjEntry *entry)
 {
@@ -368,6 +383,7 @@ static int ffi_entry_to_ptr(ObjEntry *entry, uintptr_t *out_ptr)
     return 0;
 }
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
 static ffi_type *ffi_type_for_base(FfiBase base)
 {
     switch (base) {
@@ -409,6 +425,7 @@ static size_t ffi_elem_size(const FfiType *t)
         return sizeof(void*);
     }
 }
+#endif
 
 static size_t ffi_align_up(size_t value, size_t align)
 {
@@ -1449,6 +1466,7 @@ static FfiLayoutField *ffi_layout_find_field(FfiLayout *layout, const char *name
     return NULL;
 }
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
 typedef struct {
     const char *src;
     size_t pos;
@@ -1797,7 +1815,53 @@ static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_c
     }
     return fn;
 }
+#endif
 
+#ifndef DISTURB_ENABLE_FFI_CALLS
+static int parse_base_type(const char *name, FfiBase *out)
+{
+    if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
+    if (strcmp(name, "char") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "schar") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "uchar") == 0 || strcmp(name, "u8") == 0) { *out = FFI_BASE_U8; return 1; }
+    if (strcmp(name, "int8_t") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "uint8_t") == 0) { *out = FFI_BASE_U8; return 1; }
+    if (strcmp(name, "i8") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "i16") == 0 || strcmp(name, "short") == 0) { *out = FFI_BASE_I16; return 1; }
+    if (strcmp(name, "u16") == 0 || strcmp(name, "ushort") == 0) { *out = FFI_BASE_U16; return 1; }
+    if (strcmp(name, "int16_t") == 0) { *out = FFI_BASE_I16; return 1; }
+    if (strcmp(name, "uint16_t") == 0) { *out = FFI_BASE_U16; return 1; }
+    if (strcmp(name, "i32") == 0 || strcmp(name, "int") == 0) { *out = FFI_BASE_I32; return 1; }
+    if (strcmp(name, "u32") == 0 || strcmp(name, "uint") == 0) { *out = FFI_BASE_U32; return 1; }
+    if (strcmp(name, "int32_t") == 0) { *out = FFI_BASE_I32; return 1; }
+    if (strcmp(name, "uint32_t") == 0) { *out = FFI_BASE_U32; return 1; }
+    if (strcmp(name, "i64") == 0 || strcmp(name, "long") == 0 || strcmp(name, "longlong") == 0) { *out = FFI_BASE_I64; return 1; }
+    if (strcmp(name, "u64") == 0 || strcmp(name, "ulong") == 0 || strcmp(name, "ulonglong") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "int64_t") == 0) { *out = FFI_BASE_I64; return 1; }
+    if (strcmp(name, "uint64_t") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "f32") == 0 || strcmp(name, "float") == 0) { *out = FFI_BASE_F32; return 1; }
+    if (strcmp(name, "f64") == 0 || strcmp(name, "double") == 0) { *out = FFI_BASE_F64; return 1; }
+    if (strcmp(name, "size_t") == 0 || strcmp(name, "uintptr_t") == 0) {
+#if SIZE_MAX == UINT64_MAX
+        *out = FFI_BASE_U64;
+#else
+        *out = FFI_BASE_U32;
+#endif
+        return 1;
+    }
+    if (strcmp(name, "intptr_t") == 0 || strcmp(name, "ptrdiff_t") == 0) {
+#if SIZE_MAX == UINT64_MAX
+        *out = FFI_BASE_I64;
+#else
+        *out = FFI_BASE_I32;
+#endif
+        return 1;
+    }
+    return 0;
+}
+#endif
+
+#ifdef DISTURB_ENABLE_FFI_CALLS
 static ObjEntry *ffi_make_int_list(VM *vm, int count)
 {
     ObjEntry *entry = vm_make_int_list(vm, (Int)count);
@@ -1857,6 +1921,7 @@ static int ffi_arg_is_int(const FfiType *t)
         return 0;
     }
 }
+#endif
 
 static void ffi_push_entry(VM *vm, ObjEntry *entry)
 {
@@ -2380,6 +2445,7 @@ int ffi_native_index_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *va
     return 1;
 }
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
 static int ffi_layout_is_byvalue_compatible(FfiLayout *layout, char *err, size_t err_cap)
 {
     if (!layout) {
@@ -3017,6 +3083,19 @@ void native_ffi_load(VM *vm, List *stack, List *global)
     }
     ffi_push_entry(vm, table);
 }
+#else
+void native_ffi_bind(VM *vm, List *stack, List *global)
+{
+    (void)vm; (void)stack; (void)global;
+    fprintf(stderr, "ffi.bind unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+}
+
+void native_ffi_load(VM *vm, List *stack, List *global)
+{
+    (void)vm; (void)stack; (void)global;
+    fprintf(stderr, "ffi.load unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+}
+#endif
 
 void native_ffi_compile(VM *vm, List *stack, List *global)
 {
@@ -3290,8 +3369,10 @@ static void ffi_add_module_fn(VM *vm, ObjEntry *ffi_entry, const char *name, Nat
 void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
 {
     if (!vm || !ffi_entry) return;
+#ifdef DISTURB_ENABLE_FFI_CALLS
     ffi_add_module_fn(vm, ffi_entry, "load", native_ffi_load);
     ffi_add_module_fn(vm, ffi_entry, "bind", native_ffi_bind);
+#endif
     ffi_add_module_fn(vm, ffi_entry, "compile", native_ffi_compile);
     ffi_add_module_fn(vm, ffi_entry, "new", native_ffi_new);
     ffi_add_module_fn(vm, ffi_entry, "free", native_ffi_free);

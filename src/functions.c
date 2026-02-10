@@ -1154,6 +1154,7 @@ static int ends_with_script_ext(const char *s, size_t len)
     return memcmp(s + (len - ext_len), ext, ext_len) == 0;
 }
 
+#ifndef DISTURB_EMBEDDED
 static char *module_resolve_path(const char *path, size_t path_len, size_t *out_len)
 {
     if (!path || path_len == 0) return NULL;
@@ -1281,6 +1282,7 @@ static void native_import(VM *vm, List *stack, List *global)
     push_entry(vm, stack, stored ? stored : exported);
     free(resolved);
 }
+#endif
 
 static void native_print(VM *vm, List *stack, List *global)
 {
@@ -3298,7 +3300,9 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "read") == 0) return native_read;
     if (strcmp(name, "write") == 0) return native_write;
     #endif
+    #ifndef DISTURB_EMBEDDED
     if (strcmp(name, "import") == 0) return native_import;
+    #endif
     #ifdef DISTURB_ENABLE_FFI
     if (strcmp(name, "ffiLoad") == 0) return native_ffi_load;
     #endif

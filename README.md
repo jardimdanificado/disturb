@@ -28,7 +28,10 @@ Optional flags:
 ```bash
 make ENABLE_IO=0
 make ENABLE_FFI=0
+make ENABLE_EMBEDDED=1
 ```
+
+`ENABLE_EMBEDDED=1` forces an embeddable profile by disabling IO natives, dynamic FFI calls (`ffi.load`/`ffi.bind`), and `import` while keeping FFI core layout/view/memory APIs.
 
 ## CLI
 
@@ -443,6 +446,7 @@ Compatibility alias:
 ## FFI (optional)
 
 Requires build with `ENABLE_FFI=1`.
+Dynamic foreign calls (`ffi.load`, `ffi.bind`) require `ENABLE_FFI_CALLS=1` (default in desktop builds; disabled by `ENABLE_EMBEDDED=1`).
 
 Main API:
 - `ffi.load(libPath, "signature", ...)`

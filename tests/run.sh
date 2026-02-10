@@ -45,7 +45,11 @@ run_case locals
 run_case strict
 run_case strict_toggle
 run_case value
-run_case modules
+if [ "${EMBEDDED_MODE:-0}" = "1" ]; then
+  echo "EMBEDDED_MODE=1; skipping modules case"
+else
+  run_case modules
+fi
 run_case varargs_prefix
 run_case call_local_lambda
 # run_case asm
@@ -104,6 +108,20 @@ run_negative vararg_old_syntax
 
 if [ "${SKIP_FFI:-0}" = "1" ]; then
   echo "SKIP_FFI=1; skipping ffi struct view test"
+  if [ "${EMBEDDED_MODE:-0}" = "1" ]; then
+    probe_file="$(mktemp)"
+    cat > "$probe_file" <<'EOF'
+s = { a = "int32" };
+println(ffi.sizeof(s));
+EOF
+    if ! "$BIN" "$probe_file" >/dev/null 2>/dev/null; then
+      echo "embedded ffi core probe failed" >&2
+      rm -f "$probe_file"
+      exit 1
+    fi
+    rm -f "$probe_file"
+    echo "embedded ffi core probe ok"
+  fi
 else
   probe_file="$(mktemp)"
   echo 'println(ffi.bind.type);' > "$probe_file"

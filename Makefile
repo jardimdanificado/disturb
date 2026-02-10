@@ -1,6 +1,8 @@
 CC = gcc
 ENABLE_IO ?= 1
 ENABLE_FFI ?= 1
+ENABLE_FFI_CALLS ?= 1
+ENABLE_EMBEDDED ?= 0
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 IS_WINDOWS := $(findstring MINGW,$(UNAME_S))
 
@@ -8,16 +10,26 @@ CFLAGS = -O2 -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp -Ilib/
 LIBREGEXP_CFLAGS = -Wno-unused-parameter -Wno-sign-compare -Wno-pedantic
 LDFLAGS = -lm
 
+ifeq ($(ENABLE_EMBEDDED),1)
+	ENABLE_IO := 0
+	ENABLE_FFI := 1
+	ENABLE_FFI_CALLS := 0
+	CFLAGS += -DDISTURB_EMBEDDED
+endif
+
 ifeq ($(ENABLE_IO),1)
 	CFLAGS += -DDISTURB_ENABLE_IO
 endif
 
 ifeq ($(ENABLE_FFI),1)
 	CFLAGS += -DDISTURB_ENABLE_FFI
+ifeq ($(ENABLE_FFI_CALLS),1)
+	CFLAGS += -DDISTURB_ENABLE_FFI_CALLS
 	LDFLAGS += -lffi
 ifeq ($(IS_WINDOWS),)
 ifneq ($(UNAME_S),Darwin)
 	LDFLAGS += -ldl
+endif
 endif
 endif
 endif

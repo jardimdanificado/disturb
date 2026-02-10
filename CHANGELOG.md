@@ -12,6 +12,7 @@
 - add `ffi.viewArray(ptr, elemSpec, len)` for array views over raw/typed pointers.
 - make pointer-submember access in views return nested views when field type is `pointer<schema>`.
 - make `ffi.new` allocations owned by GC (via pointer handles), with optional manual release via `ffi.free`.
+- add `ENABLE_EMBEDDED=1` build profile to disable features not suitable for Arduino-like targets (IO natives, dynamic FFI calls `ffi.load`/`ffi.bind`, and `import`) while keeping FFI core APIs.
 - add/adjust tests for new vararg syntax, lambda callback behavior, new FFI signature forms, and `ffi.new`/`ffi.free` flow in FFI struct tests.
 - update docs/examples to reflect vararg, FFI signature, and memory APIs.
 
