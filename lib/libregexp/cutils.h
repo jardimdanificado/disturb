@@ -29,11 +29,22 @@
 #include <string.h>
 #include <inttypes.h>
 
+// contains minor modifications by jardimdafinifcado to support msvc
+
+#ifdef _MSC_VER
+#include <intrin.h>
+#define likely(x) (x)
+#define unlikely(x) (x)
+#define force_inline __forceinline
+#define no_inline __declspec(noinline)
+#define __maybe_unused
+#else
 #define likely(x)       __builtin_expect(!!(x), 1)
 #define unlikely(x)     __builtin_expect(!!(x), 0)
 #define force_inline inline __attribute__((always_inline))
 #define no_inline __attribute__((noinline))
 #define __maybe_unused __attribute__((unused))
+#endif
 
 #define xglue(x, y) x ## y
 #define glue(x, y) xglue(x, y)
@@ -128,82 +139,120 @@ static inline int64_t min_int64(int64_t a, int64_t b)
 /* WARNING: undefined if a = 0 */
 static inline int clz32(unsigned int a)
 {
+#ifdef _MSC_VER
+    unsigned long idx;
+    _BitScanReverse(&idx, a);
+    return 31 - (int)idx;
+#else
     return __builtin_clz(a);
+#endif
 }
 
 /* WARNING: undefined if a = 0 */
 static inline int clz64(uint64_t a)
 {
+#ifdef _MSC_VER
+    unsigned long idx;
+#if defined(_M_X64) || defined(_M_ARM64)
+    _BitScanReverse64(&idx, (unsigned __int64)a);
+    return 63 - (int)idx;
+#else
+    uint32_t hi = (uint32_t)(a >> 32);
+    if (hi) {
+        _BitScanReverse(&idx, hi);
+        return 63 - (int)idx;
+    }
+    _BitScanReverse(&idx, (uint32_t)a);
+    return 31 - (int)idx;
+#endif
+#else
     return __builtin_clzll(a);
+#endif
 }
 
 /* WARNING: undefined if a = 0 */
 static inline int ctz32(unsigned int a)
 {
+#ifdef _MSC_VER
+    unsigned long idx;
+    _BitScanForward(&idx, a);
+    return (int)idx;
+#else
     return __builtin_ctz(a);
+#endif
 }
 
 /* WARNING: undefined if a = 0 */
 static inline int ctz64(uint64_t a)
 {
+#ifdef _MSC_VER
+    unsigned long idx;
+#if defined(_M_X64) || defined(_M_ARM64)
+    _BitScanForward64(&idx, (unsigned __int64)a);
+    return (int)idx;
+#else
+    uint32_t lo = (uint32_t)a;
+    if (lo) {
+        _BitScanForward(&idx, lo);
+        return (int)idx;
+    }
+    _BitScanForward(&idx, (uint32_t)(a >> 32));
+    return 32 + (int)idx;
+#endif
+#else
     return __builtin_ctzll(a);
+#endif
 }
-
-struct __attribute__((packed)) packed_u64 {
-    uint64_t v;
-};
-
-struct __attribute__((packed)) packed_u32 {
-    uint32_t v;
-};
-
-struct __attribute__((packed)) packed_u16 {
-    uint16_t v;
-};
 
 static inline uint64_t get_u64(const uint8_t *tab)
 {
-    return ((const struct packed_u64 *)tab)->v;
+    uint64_t v;
+    memcpy_no_ub(&v, tab, sizeof(v));
+    return v;
 }
 
 static inline int64_t get_i64(const uint8_t *tab)
 {
-    return (int64_t)((const struct packed_u64 *)tab)->v;
+    return (int64_t)get_u64(tab);
 }
 
 static inline void put_u64(uint8_t *tab, uint64_t val)
 {
-    ((struct packed_u64 *)tab)->v = val;
+    memcpy_no_ub(tab, &val, sizeof(val));
 }
 
 static inline uint32_t get_u32(const uint8_t *tab)
 {
-    return ((const struct packed_u32 *)tab)->v;
+    uint32_t v;
+    memcpy_no_ub(&v, tab, sizeof(v));
+    return v;
 }
 
 static inline int32_t get_i32(const uint8_t *tab)
 {
-    return (int32_t)((const struct packed_u32 *)tab)->v;
+    return (int32_t)get_u32(tab);
 }
 
 static inline void put_u32(uint8_t *tab, uint32_t val)
 {
-    ((struct packed_u32 *)tab)->v = val;
+    memcpy_no_ub(tab, &val, sizeof(val));
 }
 
 static inline uint32_t get_u16(const uint8_t *tab)
 {
-    return ((const struct packed_u16 *)tab)->v;
+    uint16_t v;
+    memcpy_no_ub(&v, tab, sizeof(v));
+    return v;
 }
 
 static inline int32_t get_i16(const uint8_t *tab)
 {
-    return (int16_t)((const struct packed_u16 *)tab)->v;
+    return (int16_t)get_u16(tab);
 }
 
 static inline void put_u16(uint8_t *tab, uint16_t val)
 {
-    ((struct packed_u16 *)tab)->v = val;
+    memcpy_no_ub(tab, &val, sizeof(val));
 }
 
 static inline uint32_t get_u8(const uint8_t *tab)
