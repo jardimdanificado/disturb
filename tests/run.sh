@@ -105,7 +105,11 @@ run_negative byte_range
 run_negative strict_mixed_list
 run_negative bitwise_float
 run_negative vararg_old_syntax
-run_negative ffi_const_write_strict
+if [ "${SKIP_FFI:-0}" = "1" ]; then
+  echo "SKIP_FFI=1; skipping negative ffi_const_write_strict"
+else
+  run_negative ffi_const_write_strict
+fi
 
 if [ "${SKIP_FFI:-0}" = "1" ]; then
   echo "SKIP_FFI=1; skipping ffi struct view test"
