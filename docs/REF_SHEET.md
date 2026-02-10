@@ -181,18 +181,26 @@ Requires `ENABLE_FFI=1`.
 Main API:
 - `ffi.load(...)`
 - `ffi.bind(ptr, sig)`
+- `ffi.callback(sig, lambda)`
 - `ffi.compile(schema)`
 - `ffi.new(schemaOrLayout)` (allocates zeroed struct memory; returns owned pointer handle)
 - `ffi.free(ptr)`
+- `ffi.buffer(len)` (owned raw buffer)
+- `ffi.string(ptr[, len])`
 - `ffi.sizeof(...)`
 - `ffi.alignof(...)`
 - `ffi.offsetof(..., "field.path")`
 - `ffi.view(ptr, schemaOrLayout)`
 - `ffi.viewArray(ptr, elemSpec, len)`
-- signatures: `struct<schema>`, `pointer<schema>`, `void*` (raw)
-- schema fields support composition with strings: `"struct<name>"`, `"pointer<name>"`
+- signatures: `struct<schema>`, `union<schema>`, `pointer<schema>`, `void*` (raw)
+- schema fields support composition with strings: `"struct<name>"`, `"union<name>"`, `"pointer<name>"`
 - bitfield declaration: `"uint8:3"`, `"uint32:5"` (inside struct)
 - union declaration: `__meta = { union = 1 }`
+- qualifiers accepted: `const`, `volatile`, `restrict`
+- variadic signatures: `...` (in `ffi.load`/`ffi.bind`)
+- `const` writes in views:
+  - strict off: warning + ignored write
+  - strict on: panic/abort
 
 ## Script Args
 

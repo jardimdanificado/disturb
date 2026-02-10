@@ -74,6 +74,11 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
 static void vm_obj_ref_move(VM *vm, List *old_obj, List *new_obj);
 static void vm_entry_set_obj(VM *vm, ObjEntry *entry, List *obj);
 static ObjEntry *vm_make_key_len(VM *vm, const char *name, size_t len);
+static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc, ObjEntry *local);
+static void vm_stack_push_entry(VM *vm, ObjEntry *entry);
+static void vm_stack_remove_range(List *stack, Int start, Int count);
+static void vm_set_argc(VM *vm, uint32_t argc);
+static void vm_release_local_scope(VM *vm, ObjEntry *local, List *stack);
 
 
 static void sb_init(StrBuf *b)
@@ -3245,6 +3250,81 @@ void vm_call_native(VM *vm, const char *key)
         return;
     }
     fn(vm, vm->stack_entry->obj, vm->global_entry->obj);
+}
+
+int vm_call_entry(VM *vm, ObjEntry *target, uint32_t argc, ObjEntry **argv, ObjEntry **out_ret)
+{
+    if (out_ret) *out_ret = NULL;
+    if (!vm || !target || !target->obj) return 0;
+    Int t = disturb_obj_type(target->obj);
+    if (t != DISTURB_T_NATIVE && t != DISTURB_T_LAMBDA) return 0;
+
+    ObjEntry *old_this = vm->this_entry;
+    Int old_argc = 0;
+    if (vm->argc_entry) vm_read_int_at(vm->argc_entry->obj, 0, &old_argc);
+    Int old_override = vm->call_override_len;
+    int old_has_override = vm->has_call_override;
+    ObjEntry *old_call_entry = vm->call_entry;
+
+    vm_set_argc(vm, argc);
+    vm->call_override_len = -1;
+    vm->has_call_override = 0;
+    vm->call_entry = target;
+
+    for (uint32_t i = 0; i < argc; i++) {
+        vm_stack_push_entry(vm, argv && argv[i] ? argv[i] : vm->null_entry);
+    }
+    Int stack_before = vm->stack_entry->obj->size;
+
+    if (t == DISTURB_T_NATIVE) {
+        if (target->obj->size < 3) return 0;
+        NativeBox *box = (NativeBox*)target->obj->data[2].p;
+        NativeFn fn = box ? box->fn : NULL;
+        if (!fn) return 0;
+        fn(vm, vm->stack_entry->obj, vm->global_entry->obj);
+    } else {
+        if (target->obj->size < 3) return 0;
+        FunctionBox *box = (FunctionBox*)target->obj->data[2].p;
+        if (!box) return 0;
+        ObjEntry *old_local = vm->local_entry;
+        ObjEntry *local = vm_make_table_value(vm, (Int)box->argc);
+        vm->local_entry = local;
+        if (!vm_bind_args(vm, box, vm->stack_entry->obj, argc, local)) {
+            vm->local_entry = old_local;
+            if (local) vm_release_local_scope(vm, local, vm->stack_entry->obj);
+            return 0;
+        }
+        if (!vm_exec_bytecode(vm, box->code, box->len)) {
+            vm->local_entry = old_local;
+            if (local) vm_release_local_scope(vm, local, vm->stack_entry->obj);
+            return 0;
+        }
+        vm->local_entry = old_local;
+        if (local) vm_release_local_scope(vm, local, vm->stack_entry->obj);
+    }
+
+    int has_return = vm->stack_entry->obj->size > stack_before;
+    if (argc > 0 && vm->stack_entry->obj->size >= stack_before) {
+        Int start = (Int)stack_before - (Int)argc;
+        vm_stack_remove_range(vm->stack_entry->obj, start, (Int)argc);
+    }
+    if (!has_return) {
+        vm_stack_push_entry(vm, vm->null_entry);
+    }
+    ObjEntry *ret = vm_stack_peek(vm->stack_entry->obj, 0);
+    if (out_ret) *out_ret = ret ? ret : vm->null_entry;
+    if (vm->stack_entry->obj->size > 2) {
+        urb_pop(vm->stack_entry->obj);
+    }
+
+    vm->this_entry = old_this;
+    vm->call_override_len = old_override;
+    vm->has_call_override = old_has_override;
+    vm->call_entry = old_call_entry;
+    if (vm->argc_entry && vm->argc_entry->obj->size >= 3) {
+        vm_set_int_single(vm->argc_entry->obj, old_argc);
+    }
+    return 1;
 }
 
 void vm_dump_global(VM *vm)

@@ -1,7 +1,7 @@
 // TinyCC module example.
 // Requires: import system + FFI + libtcc available in the dynamic loader path.
 
-tcc = import("modules/tcc");
+tcc = import("lib/tcc");
 mod = tcc.auto();
 
 if (mod == null) {

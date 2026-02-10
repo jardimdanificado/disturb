@@ -36,7 +36,9 @@ load_fixture = (path){
     "f32 arr_outer_get_f32(void*, i32)",
     "void* get_add_i32_ptr()",
     "i32 sum_outer_value(struct<outer>)",
-    "struct<outer> make_outer_value(i32, f64, i8, i16)"
+    "struct<outer> make_outer_value(i32, f64, i8, i16)",
+    "i32 sum_variadic_i32(i32, ...)",
+    "i32 call_cb_i32(void*, i32, i32)"
   );
 };
 
@@ -103,6 +105,7 @@ lib.free_arr_outer(arr_ptr);
 add_ptr = lib.get_add_i32_ptr();
 add = ffi.bind(add_ptr, "i32 add(i32, i32)");
 if (add(20, 22) != 42) { fail++; }
+if (lib.sum_variadic_i32(4, 1, 2, 3, 4) != 10) { fail++; }
 
 ptr2 = lib.make_outer();
 v2 = ffi.view(ptr2, layout);
@@ -174,5 +177,34 @@ arr_view = ffi.viewArray(arr_ptr, "int32", 4);
 arr_view[2] = 77;
 if (arr_view[2] != 77) { fail++; }
 ffi.free(arr_ptr);
+
+const_schema = {
+  a = "const int32",
+  b = "int32"
+};
+const_ptr = ffi.new(const_schema);
+const_view = ffi.view(const_ptr, const_schema);
+const_view.a = 99;
+const_view.b = 11;
+if (const_view.a != 0) { fail++; }
+if (const_view.b != 11) { fail++; }
+ffi.free(const_ptr);
+
+const_arr = ffi.viewArray(ffi.buffer(8), "const int32", 2);
+const_arr[0] = 55;
+if (const_arr[0] != 0) { fail++; }
+
+buf = ffi.buffer(4);
+bv = ffi.viewArray(buf, "u8", 4);
+bv[0] = 104;
+bv[1] = 105;
+bv[2] = 0;
+bv[3] = 33;
+if (ffi.string(buf) != "hi") { fail++; }
+if (ffi.string(buf, 2) != "hi") { fail++; }
+ffi.free(buf);
+
+cb = ffi.callback("i32 cb(i32, i32)", (a, b){ return a + b; });
+if (lib.call_cb_i32(cb, 9, 4) != 13) { fail++; }
 
 println(fail);

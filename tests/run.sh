@@ -105,6 +105,7 @@ run_negative byte_range
 run_negative strict_mixed_list
 run_negative bitwise_float
 run_negative vararg_old_syntax
+run_negative ffi_const_write_strict
 
 if [ "${SKIP_FFI:-0}" = "1" ]; then
   echo "SKIP_FFI=1; skipping ffi struct view test"
@@ -144,6 +145,11 @@ else
       rm -f tests/ffi/libffi_view_struct.so tests/ffi/libffi_view_struct.dylib tests/ffi/libffi_view_struct.dll
       gcc $cflags_shared tests/ffi/ffi_view_struct.c -o "tests/ffi/libffi_view_struct.$lib_ext"
       run_ffi_case ffi_view_struct
+      run_ffi_case ffi_union
+      run_ffi_case ffi_varargs
+      run_ffi_case ffi_buffers_strings
+      run_ffi_case ffi_callbacks
+      run_ffi_case ffi_const_views
     else
       echo "gcc not found; skipping ffi struct view test"
     fi

@@ -190,6 +190,7 @@ ObjEntry *vm_define_native(VM *vm, const char *key, const char *fn_name);
 void vm_push_stack(VM *vm, const char *key);
 void vm_pop_stack(VM *vm);
 void vm_call_native(VM *vm, const char *key);
+int vm_call_entry(VM *vm, ObjEntry *target, uint32_t argc, ObjEntry **argv, ObjEntry **out_ret);
 int vm_global_remove_by_key(VM *vm, const char *name);
 int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len);
 

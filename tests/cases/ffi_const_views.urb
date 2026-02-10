@@ -1,0 +1,40 @@
+fail = 0;
+
+inner = {
+  x = "int32",
+  y = "int32"
+};
+
+schema = {
+  a = "const int32",
+  b = "volatile int32",
+  c = "restrict int32",
+  d = "const struct<inner>",
+  e = "int32[3]",
+  f = "const int32[2]"
+};
+
+ptr = ffi.new(schema);
+v = ffi.view(ptr, schema);
+
+v.a = 100;
+if (v.a != 0) { fail++; }
+
+v.b = 7;
+v.c = 9;
+if (v.b != 7) { fail++; }
+if (v.c != 9) { fail++; }
+
+v.d.x = 77;
+if (v.d.x != 0) { fail++; }
+
+v.e[0] = 11;
+v.e[1] = 22;
+if (v.e[0] != 11) { fail++; }
+if (v.e[1] != 22) { fail++; }
+
+v.f[0] = 33;
+if (v.f[0] != 0) { fail++; }
+
+ffi.free(ptr);
+println(fail);

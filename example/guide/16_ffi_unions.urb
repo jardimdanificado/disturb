@@ -1,0 +1,42 @@
+// 16_ffi_unions.urb
+// FFI unions: declaration, by-value calls, and typed union pointers.
+// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
+
+half = { lo = "int16", hi = "int16" };
+
+bits = {
+  __meta = { union = 1 },
+  i = "int32",
+  f = "float",
+  p = "struct<half>"
+};
+
+load_fixture = (path){
+  return ffi.load(path,
+    "i32 bits_take_value_i(union<bits>)",
+    "union<bits> make_bits_value_i(i32)",
+    "void bits_write_i(pointer<bits>, i32)"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println("ffi test library not available");
+  return 0;
+}
+
+ptr = ffi.new(bits);
+v = ffi.view(ptr, bits);
+
+v.i = 42;
+println(lib.bits_take_value_i(v));
+
+lib.bits_write_i(ptr, 1234);
+println(v.i);
+
+ret = lib.make_bits_value_i(77);
+println(ret.i);
+
+ffi.free(ptr);

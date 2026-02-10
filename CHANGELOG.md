@@ -16,6 +16,13 @@
 - add CMake build support and a Windows MSVC CI job (`windows-msvc`) validating build/tests with `ENABLE_FFI_CALLS=OFF`.
 - update manual release workflow to publish explicit Windows artifacts for both toolchains: `disturb-vX.Y.Z-windows-x64-mingw.zip` and `disturb-vX.Y.Z-windows-x64-msvc.zip`.
 - add/adjust tests for new vararg syntax, lambda callback behavior, new FFI signature forms, and `ffi.new`/`ffi.free` flow in FFI struct tests.
+- add FFI qualifiers support for signatures/schema type strings: `const`, `volatile`, `restrict` (with `const` write-protection on views).
+- enforce `const` writes in FFI views/array-views: strict mode now aborts, non-strict prints warning and ignores the write.
+- add FFI variadic call support (`...`) in `ffi.bind`/`ffi.load` signatures with runtime vararg type inference.
+- add `ffi.callback(signature, lambda)` to expose lambda callbacks as C function pointers via libffi closures.
+- add `ffi.buffer(len)` and `ffi.string(ptr[,len])` helpers for pointer/string/buffer ergonomics.
+- add dedicated FFI regression coverage: `ffi_varargs`, `ffi_callbacks`, `ffi_buffers_strings`, `ffi_const_views`, and strict-mode negative test `ffi_const_write_strict`.
+- add new examples for advanced FFI flows: `example/ffi_callbacks_varargs_buffers.urb` and `example/guide/15_ffi_callbacks_varargs_buffers.urb`.
 - update docs/examples to reflect vararg, FFI signature, and memory APIs.
 
 ## 1.1.1

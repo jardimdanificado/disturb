@@ -1,0 +1,76 @@
+// ffi_union.urb
+// Demonstrates union schemas with:
+// - __meta = { union = 1 }
+// - union<schema> by-value args/returns
+// - pointer<schema> to union memory
+// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll)
+
+half = {
+  lo = "int16",
+  hi = "int16"
+};
+
+bits = {
+  __meta = { union = 1 },
+  i = "int32",
+  f = "float",
+  p = "struct<half>"
+};
+
+holder = {
+  tag = "int32",
+  payload = "union<bits>"
+};
+
+holder_ptr = {
+  tag = "int32",
+  payload = "union<bits>",
+  ref = "pointer<bits>"
+};
+
+load_fixture = (path){
+  return ffi.load(path,
+    "i32 bits_take_value_i(union<bits>)",
+    "union<bits> make_bits_value_i(i32)",
+    "void bits_write_i(pointer<bits>, i32)",
+    "i32 holder_take_payload_i(struct<holder>)"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println("ffi test library not available");
+  return 0;
+}
+
+bp = ffi.new(bits);
+bv = ffi.view(bp, bits);
+bv.i = 42;
+println("take union by value:");
+println(lib.bits_take_value_i(bv));
+
+lib.bits_write_i(bp, 99);
+println("union ptr updated:");
+println(bv.i);
+
+ret = lib.make_bits_value_i(1234);
+println("union return by value:");
+println(ret.i);
+
+hp = ffi.new(holder);
+hv = ffi.view(hp, holder);
+hv.payload.i = 77;
+println("holder payload:");
+println(lib.holder_take_payload_i(hv));
+
+hp2 = ffi.new(holder_ptr);
+hv2 = ffi.view(hp2, holder_ptr);
+hv2.ref = bp;
+println("holder ref points to:");
+println(hv2.ref.i);
+
+ffi.free(hp);
+ffi.free(hp2);
+ffi.free(bp);

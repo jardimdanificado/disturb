@@ -1,4 +1,4 @@
-// modules/tcc/tcc.urb
+// lib/tcc.urb
 // TinyCC (libtcc) binding for Disturb via ffi.
 
 return {

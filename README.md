@@ -2,8 +2,6 @@
 
 Disturb is a stack-based VM and language with C-like syntax that compiles to compact RPN bytecode.
 
-This README is a practical language reference based on the current implementation and test suite.
-
 ## Additional Docs
 
 - Quick syntax cheatsheet: `docs/REF_SHEET.md`
@@ -455,17 +453,19 @@ Runtime flags:
 Compatibility alias:
 - `gc()` is available and maps to collection behavior.
 
-## FFI (optional)
+## FFI
 
-Requires build with `ENABLE_FFI=1`.
 Dynamic foreign calls (`ffi.load`, `ffi.bind`) require `ENABLE_FFI_CALLS=1` (default in desktop builds; disabled by `ENABLE_EMBEDDED=1`).
 
 Main API:
 - `ffi.load(libPath, "signature", ...)`
 - `ffi.bind(ptr, "signature")`
+- `ffi.callback("signature", lambda)`
 - `ffi.compile(schema)`
 - `ffi.new(schemaOrLayout)`
 - `ffi.free(ptr)`
+- `ffi.buffer(len)`
+- `ffi.string(ptr)` / `ffi.string(ptr, len)`
 - `ffi.sizeof(schemaOrLayout)`
 - `ffi.alignof(schemaOrLayout)`
 - `ffi.offsetof(schemaOrLayout, "field.path")`
@@ -474,14 +474,21 @@ Main API:
 
 Signature struct typing:
 - by-value struct: `struct<schema>` (example: `i32 sum(struct<outer>)`)
+- by-value union: `union<schema>` (example: `i32 inspect(union<bits>)`)
 - typed pointer: `pointer<schema>` (example: `void free_outer(pointer<outer>)`)
 - raw/generic pointer stays `void*`
 
 Schema composition:
 - schema fields must be type strings
-- use `struct<otherSchema>` or `pointer<otherSchema>` inside field declarations
+- use `struct<otherSchema>`, `union<otherSchema>`, or `pointer<otherSchema>` inside field declarations
 - unions: `__meta = { union = 1 }`
 - bitfields: use `"type:bits"` (example: `"uint8:3"`, `"uint32:5"`)
+- qualifiers accepted in schema/signatures: `const`, `volatile`, `restrict`
+- variadic signatures accepted via `...` in `ffi.load`/`ffi.bind`
+
+Const behavior in views:
+- non-strict mode: warns and ignores write
+- strict mode: aborts with panic
 
 Ownership:
 - `ffi.new` returns an owned pointer handle (GC releases memory if unreachable)
@@ -497,7 +504,9 @@ Supported workflow:
 Examples:
 - `example/guide/11_ffi_system.urb`
 - `example/guide/14_ffi_struct_views_bind.urb`
+- `example/guide/15_ffi_callbacks_varargs_buffers.urb`
 - `example/ffi_view_struct.urb`
+- `example/ffi_callbacks_varargs_buffers.urb`
 
 ## Tests
 
@@ -512,33 +521,5 @@ Run all examples:
 ```bash
 tests/run_examples.sh
 ```
-
-Test folders:
-- `tests/cases` positive/stress cases
-- `tests/negative` expected error cases
-- `tests/ffi` FFI fixtures
-
-## Guide
-
-Tutorial scripts live in `example/guide`:
-
-1. `example/guide/01_intro.urb`
-2. `example/guide/02_types_literals.urb`
-3. `example/guide/03_indexing_objects.urb`
-4. `example/guide/04_operators_truthiness.urb`
-5. `example/guide/05_functions_methods.urb`
-6. `example/guide/06_control_flow.urb`
-7. `example/guide/07_strings_bytes_io_eval.urb`
-8. `example/guide/08_vm_notes.urb`
-9. `example/guide/09_metaprogramming.urb`
-10. `example/guide/10_strict_mode.urb`
-11. `example/guide/11_ffi_system.urb`
-12. `example/guide/12_references_and_copy.urb`
-13. `example/guide/13_modules_packages.urb`
-14. `example/guide/14_ffi_struct_views_bind.urb`
-
-## Changelog
-
-Release history is in `CHANGELOG.md`.
 
 [![CI](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml/badge.svg)](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml)

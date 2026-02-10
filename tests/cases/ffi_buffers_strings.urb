@@ -1,0 +1,36 @@
+fail = 0;
+
+load_fixture = (path){
+  return ffi.load(path,
+    "i32 cstr_len(char*)",
+    "i32 write_seq_u8(void*, i32, i32)",
+    "i32 read_u8(void*, i32)"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println(1);
+  return 0;
+}
+
+buf = ffi.buffer(8);
+arr = ffi.viewArray(buf, "u8", 8);
+
+arr[0] = 65;
+arr[1] = 66;
+arr[2] = 67;
+arr[3] = 0;
+if (ffi.string(buf) != "ABC") { fail++; }
+if (ffi.string(buf, 3) != "ABC") { fail++; }
+if (lib.cstr_len(buf) != 3) { fail++; }
+
+if (lib.write_seq_u8(buf, 5, 10) != 5) { fail++; }
+if (arr[0] != 10) { fail++; }
+if (arr[4] != 14) { fail++; }
+if (lib.read_u8(buf, 2) != 12) { fail++; }
+
+ffi.free(buf);
+println(fail);

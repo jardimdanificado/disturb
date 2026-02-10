@@ -314,20 +314,33 @@ FFI appears under global `ffi` only when built with `ENABLE_FFI=1`.
 Primary APIs used by examples/tests:
 - `ffi.load(libPath, sig, ...)`
 - `ffi.bind(ptr, sig)`
+- `ffi.callback(sig, lambda)` (builds C callback pointer from lambda)
 - `ffi.compile(schema)`
 - `ffi.new(schemaOrLayout)` (allocates zeroed struct memory and returns owned pointer handle)
 - `ffi.free(ptr)`
+- `ffi.buffer(len)` (owned raw byte buffer)
+- `ffi.string(ptr)` / `ffi.string(ptr, len)`
 - `ffi.sizeof(schemaOrLayout)`
 - `ffi.alignof(schemaOrLayout)`
 - `ffi.offsetof(schemaOrLayout, "field.path")`
 - `ffi.view(ptr, schemaOrLayout)`
 - `ffi.viewArray(ptr, elemSpec, len)`
-- signatures support: `struct<schema>` (by-value), `pointer<schema>` (typed pointer), `void*` (raw pointer)
-- schema field declarations are strings only; compose with `"struct<name>"` / `"pointer<name>"`
+- signatures support: `struct<schema>` (by-value struct), `union<schema>` (by-value union), `pointer<schema>` (typed pointer), `void*` (raw pointer)
+- schema field declarations are strings only; compose with `"struct<name>"`, `"union<name>"`, and `"pointer<name>"`
 - bitfields are declared as `"type:bits"` (e.g., `"uint8:3"`)
 - unions are declared via `__meta = { union = 1 }`
+- qualifiers accepted in signatures/schema strings: `const`, `volatile`, `restrict`
+- view write behavior on `const` fields/elements:
+  - non-strict: warns and ignores write
+  - strict: aborts runtime (`PANIC`)
+- variadic signatures are supported with `...` (for `ffi.load`/`ffi.bind`)
 
 See:
 - `example/guide/11_ffi_system.urb`
 - `example/guide/14_ffi_struct_views_bind.urb`
+- `example/guide/15_ffi_callbacks_varargs_buffers.urb`
 - `tests/cases/ffi_view_struct.urb`
+- `tests/cases/ffi_varargs.urb`
+- `tests/cases/ffi_callbacks.urb`
+- `tests/cases/ffi_buffers_strings.urb`
+- `tests/cases/ffi_const_views.urb`
