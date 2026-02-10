@@ -192,6 +192,7 @@ Main API:
 - `ffi.offsetof(..., "field.path")`
 - `ffi.view(ptr, schemaOrLayout)`
 - `ffi.viewArray(ptr, elemSpec, len)`
+- `ffi.compile(schema)` is optional: schema tables are auto-compiled/cached when accepted.
 - signatures: `struct<schema>`, `union<schema>`, `pointer<schema>`, `void*` (raw)
 - schema fields support composition with strings: `"struct<name>"`, `"union<name>"`, `"pointer<name>"`
 - function pointer fields: `"function<signature>"` (example: `"function<i32 cb(i32, i32)>"`; `"fn<...>"` alias accepted)

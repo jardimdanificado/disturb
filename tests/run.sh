@@ -146,6 +146,7 @@ else
       gcc $cflags_shared tests/ffi/ffi_view_struct.c -o "tests/ffi/libffi_view_struct.$lib_ext"
       run_ffi_case ffi_view_struct
       run_ffi_case ffi_union
+      run_ffi_case ffi_auto_compile
       run_ffi_case ffi_fnptr_fields
       run_ffi_case ffi_varargs
       run_ffi_case ffi_buffers_strings

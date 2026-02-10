@@ -472,6 +472,10 @@ Main API:
 - `ffi.view(ptr, schemaOrLayout)`
 - `ffi.viewArray(ptr, elemSpec, len)`
 
+Notes:
+- `ffi.compile(schema)` is optional for normal use.
+- `ffi.view/sizeof/alignof/offsetof/new` accept either a schema table or a compiled layout handle; schema tables are auto-compiled and cached internally.
+
 Signature struct typing:
 - by-value struct: `struct<schema>` (example: `i32 sum(struct<outer>)`)
 - by-value union: `union<schema>` (example: `i32 inspect(union<bits>)`)
@@ -509,6 +513,7 @@ Examples:
 - `example/ffi_view_struct.urb`
 - `example/ffi_callbacks_varargs_buffers.urb`
 - `example/ffi_fnptr_fields.urb`
+- `example/ffi_auto_compile_optional.urb`
 
 ## Tests
 

@@ -1,0 +1,42 @@
+// ffi_auto_compile_optional.urb
+// ffi.compile is optional: passing a schema table auto-compiles/caches layout.
+// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
+
+inner = { a = "int8", b = "int16" };
+outer = {
+  a = "int32",
+  b = "float64",
+  d = "struct<inner>"
+};
+
+load_fixture = (path){
+  return ffi.load(path,
+    "pointer<outer> make_outer()",
+    "void free_outer(pointer<outer>)",
+    "i32 outer_get_a(pointer<outer>)",
+    "i32 inner_get_b(pointer<outer>)"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println("ffi test library not available");
+  return 0;
+}
+
+ptr = lib.make_outer();
+
+v = ffi.view(ptr, outer); // schema path (auto compile)
+v.a = 45;
+v.d.b = 11;
+println(lib.outer_get_a(ptr));
+println(lib.inner_get_b(ptr));
+
+layout = ffi.compile(outer); // still available when you want explicit handle
+v2 = ffi.view(ptr, layout);
+println(v2.a);
+println(v2.d.b);
+
+lib.free_outer(ptr);

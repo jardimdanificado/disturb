@@ -1,0 +1,57 @@
+fail = 0;
+
+inner = { a = "int8", b = "int16" };
+outer = {
+  a = "int32",
+  b = "float64",
+  d = "struct<inner>"
+};
+
+load_fixture = (path){
+  return ffi.load(path,
+    "pointer<outer> make_outer()",
+    "void free_outer(pointer<outer>)",
+    "i32 outer_sizeof()",
+    "i32 outer_off_a()",
+    "i32 outer_off_d()",
+    "i32 inner_off_b()",
+    "i32 outer_get_a(pointer<outer>)",
+    "i32 inner_get_b(pointer<outer>)"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println(1);
+  return 0;
+}
+
+layout = ffi.compile(outer);
+
+if (ffi.sizeof(outer) != ffi.sizeof(layout)) { fail++; }
+if (ffi.alignof(outer) != ffi.alignof(layout)) { fail++; }
+if (ffi.offsetof(outer, "a") != ffi.offsetof(layout, "a")) { fail++; }
+if (ffi.offsetof(outer, "d.b") != ffi.offsetof(layout, "d.b")) { fail++; }
+
+if (ffi.sizeof(outer) != lib.outer_sizeof()) { fail++; }
+if (ffi.offsetof(outer, "a") != lib.outer_off_a()) { fail++; }
+if (ffi.offsetof(outer, "d") != lib.outer_off_d()) { fail++; }
+if (ffi.offsetof(outer, "d.b") != (lib.outer_off_d() + lib.inner_off_b())) { fail++; }
+
+ptr = lib.make_outer();
+v_schema = ffi.view(ptr, outer);  // auto compile path
+v_layout = ffi.view(ptr, layout); // precompiled path
+
+v_schema.a = 31;
+v_layout.d.b = 9;
+
+if (lib.outer_get_a(ptr) != 31) { fail++; }
+if (lib.inner_get_b(ptr) != 9) { fail++; }
+
+if (v_schema.a != 31) { fail++; }
+if (v_layout.d.b != 9) { fail++; }
+
+lib.free_outer(ptr);
+println(fail);

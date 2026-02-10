@@ -325,6 +325,7 @@ Primary APIs used by examples/tests:
 - `ffi.offsetof(schemaOrLayout, "field.path")`
 - `ffi.view(ptr, schemaOrLayout)`
 - `ffi.viewArray(ptr, elemSpec, len)`
+- `ffi.compile(schema)` is optional in common flows; schema tables are auto-compiled/cached when passed to `ffi.view`, `ffi.sizeof`, `ffi.alignof`, `ffi.offsetof`, and `ffi.new`.
 - signatures support: `struct<schema>` (by-value struct), `union<schema>` (by-value union), `pointer<schema>` (typed pointer), `void*` (raw pointer)
 - schema field declarations are strings only; compose with `"struct<name>"`, `"union<name>"`, and `"pointer<name>"`
 - function pointer fields: `"function<signature>"` (example: `"function<i32 cb(i32, i32)>"`; `"fn<...>"` alias accepted)
@@ -343,5 +344,6 @@ See:
 - `tests/cases/ffi_view_struct.urb`
 - `tests/cases/ffi_varargs.urb`
 - `tests/cases/ffi_callbacks.urb`
+- `tests/cases/ffi_auto_compile.urb`
 - `tests/cases/ffi_buffers_strings.urb`
 - `tests/cases/ffi_const_views.urb`

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1
+- add function pointer fields in schemas via `function<signature>` (example: `cb = "function<i32 cb(i32, i32)>"`; `fn<...>` kept as alias), including read-as-bound-callable in `ffi.view` and assignment from C pointers or `ffi.callback(...)`.
+- make schema compilation automatic in FFI call sites that accept schema/layout (`ffi.view`, `ffi.new`, `ffi.sizeof`, `ffi.alignof`, `ffi.offsetof`); `ffi.compile` remains available as optional explicit step.
+- add dedicated FFI function-pointer-field test coverage: `ffi_fnptr_fields`.
+- add dedicated FFI auto-compile coverage: `ffi_auto_compile`.
+- add function-pointer-field example: `example/ffi_fnptr_fields.urb`.
+- add optional compile example: `example/ffi_auto_compile_optional.urb`.
+- update docs to make `ffi.compile` optional in common flows and document `function<...>` (`fn<...>` alias accepted).
+
 ## 1.2.0
 - change lambda vararg syntax from `name...` to `...name`; old trailing form now errors with guidance (`invalid vararg syntax: use '...name'`).
 - fix lambda callback resolution in calls: when calling `a()` inside a lambda, call target lookup now checks local scope before global scope, so callback args work without `local.a()`.
@@ -9,7 +18,6 @@
 - keep `void*` for raw/generic pointers in signatures.
 - require schema field declarations to be type strings; nested inline schema tables in field values are rejected.
 - add schema unions (`__meta = { union = 1 }`) and bitfields (`"type:bits"`).
-- add function pointer fields in schemas via `function<signature>` (example: `cb = "function<i32 cb(i32, i32)>"`; `fn<...>` kept as alias), including read-as-bound-callable in `ffi.view` and assignment from C pointers or `ffi.callback(...)`.
 - add `ffi.viewArray(ptr, elemSpec, len)` for array views over raw/typed pointers.
 - make pointer-submember access in views return nested views when field type is `pointer<schema>`.
 - make `ffi.new` allocations owned by GC (via pointer handles), with optional manual release via `ffi.free`.
@@ -23,9 +31,7 @@
 - add `ffi.callback(signature, lambda)` to expose lambda callbacks as C function pointers via libffi closures.
 - add `ffi.buffer(len)` and `ffi.string(ptr[,len])` helpers for pointer/string/buffer ergonomics.
 - add dedicated FFI regression coverage: `ffi_varargs`, `ffi_callbacks`, `ffi_buffers_strings`, `ffi_const_views`, and strict-mode negative test `ffi_const_write_strict`.
-- add dedicated FFI function-pointer-field test coverage: `ffi_fnptr_fields`.
 - add new examples for advanced FFI flows: `example/ffi_callbacks_varargs_buffers.urb` and `example/guide/15_ffi_callbacks_varargs_buffers.urb`.
-- add function-pointer-field example: `example/ffi_fnptr_fields.urb`.
 - update docs/examples to reflect vararg, FFI signature, and memory APIs.
 
 ## 1.1.1
