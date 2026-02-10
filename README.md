@@ -481,6 +481,7 @@ Signature struct typing:
 Schema composition:
 - schema fields must be type strings
 - use `struct<otherSchema>`, `union<otherSchema>`, or `pointer<otherSchema>` inside field declarations
+- function pointer fields: `function<signature>` (example: `cb = "function<i32 cb(i32, i32)>"`; `fn<...>` also accepted as alias)
 - unions: `__meta = { union = 1 }`
 - bitfields: use `"type:bits"` (example: `"uint8:3"`, `"uint32:5"`)
 - qualifiers accepted in schema/signatures: `const`, `volatile`, `restrict`
@@ -507,6 +508,7 @@ Examples:
 - `example/guide/15_ffi_callbacks_varargs_buffers.urb`
 - `example/ffi_view_struct.urb`
 - `example/ffi_callbacks_varargs_buffers.urb`
+- `example/ffi_fnptr_fields.urb`
 
 ## Tests
 

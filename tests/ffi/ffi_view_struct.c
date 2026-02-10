@@ -36,6 +36,12 @@ struct UnionHolder {
     union Bits payload;
 };
 
+typedef int (*fn_i32_i32)(int, int);
+int add_i32(int a, int b);
+struct FnHolder {
+    fn_i32_i32 cb;
+};
+
 struct Outer* make_outer(void)
 {
     struct Outer *o = (struct Outer*)calloc(1, sizeof(struct Outer));
@@ -99,6 +105,19 @@ int holder_sizeof(void) { return (int)sizeof(struct UnionHolder); }
 int holder_off_tag(void) { return (int)offsetof(struct UnionHolder, tag); }
 int holder_off_payload(void) { return (int)offsetof(struct UnionHolder, payload); }
 int holder_take_payload_i(struct UnionHolder h) { return (int)h.payload.i; }
+
+int fn_holder_sizeof(void) { return (int)sizeof(struct FnHolder); }
+int fn_holder_off_cb(void) { return (int)offsetof(struct FnHolder, cb); }
+void fn_holder_set_add(struct FnHolder *h)
+{
+    if (!h) return;
+    h->cb = &add_i32;
+}
+int fn_holder_call(struct FnHolder *h, int a, int b)
+{
+    if (!h || !h->cb) return 0;
+    return h->cb(a, b);
+}
 
 int add_i32(int a, int b)
 {

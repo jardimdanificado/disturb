@@ -327,6 +327,7 @@ Primary APIs used by examples/tests:
 - `ffi.viewArray(ptr, elemSpec, len)`
 - signatures support: `struct<schema>` (by-value struct), `union<schema>` (by-value union), `pointer<schema>` (typed pointer), `void*` (raw pointer)
 - schema field declarations are strings only; compose with `"struct<name>"`, `"union<name>"`, and `"pointer<name>"`
+- function pointer fields: `"function<signature>"` (example: `"function<i32 cb(i32, i32)>"`; `"fn<...>"` alias accepted)
 - bitfields are declared as `"type:bits"` (e.g., `"uint8:3"`)
 - unions are declared via `__meta = { union = 1 }`
 - qualifiers accepted in signatures/schema strings: `const`, `volatile`, `restrict`

@@ -1,0 +1,44 @@
+fail = 0;
+
+holder = {
+  cb = "function<i32 call(i32, i32)>"
+};
+
+load_fixture = (path){
+  return ffi.load(path,
+    "i32 fn_holder_sizeof()",
+    "i32 fn_holder_off_cb()",
+    "void fn_holder_set_add(pointer<holder>)",
+    "i32 fn_holder_call(pointer<holder>, i32, i32)",
+    "void* get_add_i32_ptr()"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println(1);
+  return 0;
+}
+
+if (ffi.sizeof(holder) != lib.fn_holder_sizeof()) { fail++; }
+if (ffi.offsetof(holder, "cb") != lib.fn_holder_off_cb()) { fail++; }
+
+p = ffi.new(holder);
+v = ffi.view(p, holder);
+
+lib.fn_holder_set_add(p);
+f0 = v.cb;
+if (f0(20, 22) != 42) { fail++; }
+
+cb = ffi.callback("i32 cb(i32, i32)", (a, b){ return a * b; });
+v.cb = cb;
+if (lib.fn_holder_call(p, 6, 7) != 42) { fail++; }
+
+v.cb = lib.get_add_i32_ptr();
+f1 = v.cb;
+if (f1(10, 5) != 15) { fail++; }
+
+ffi.free(p);
+println(fail);

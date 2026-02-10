@@ -1,0 +1,39 @@
+// ffi_fnptr_fields.urb
+// Function pointer fields in schemas via function<signature>.
+// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
+
+holder = {
+  cb = "function<i32 cb(i32, i32)>"
+};
+
+load_fixture = (path){
+  return ffi.load(path,
+    "void fn_holder_set_add(pointer<holder>)",
+    "i32 fn_holder_call(pointer<holder>, i32, i32)",
+    "void* get_add_i32_ptr()"
+  );
+};
+
+lib = load_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println("ffi test library not available");
+  return 0;
+}
+
+p = ffi.new(holder);
+v = ffi.view(p, holder);
+
+lib.fn_holder_set_add(p);
+f = v.cb;
+println(f(20, 22));
+
+v.cb = ffi.callback("i32 cb(i32, i32)", (a, b){ return a * b; });
+println(lib.fn_holder_call(p, 6, 7));
+
+v.cb = lib.get_add_i32_ptr();
+f2 = v.cb;
+println(f2(10, 5));
+
+ffi.free(p);

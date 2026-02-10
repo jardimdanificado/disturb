@@ -106,6 +106,7 @@ typedef struct {
     size_t name_len;
     size_t offset;
     FfiLayout *layout;
+    char *fn_sig; /* non-NULL => function pointer field (function<signature>, fn<...> alias) */
     int is_const;
     int bit_width;   /* 0 => normal field, >0 => bitfield width */
     int bit_shift;   /* bit offset inside storage unit */
@@ -210,6 +211,7 @@ static int parse_base_type(const char *name, FfiBase *out);
 static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_len);
 #ifdef DISTURB_ENABLE_FFI_CALLS
 static FfiCallback *ffi_callback_from_entry(ObjEntry *entry);
+static ObjEntry *ffi_bind_ptr_sig_entry(VM *vm, uintptr_t addr, const char *sig, char *err, size_t err_cap);
 #endif
 
 static void ffi_dyn_type_node_free(FfiDynTypeNode *node)
@@ -1057,6 +1059,65 @@ static int ffi_parse_schema_type_string(const char *name, size_t len,
     return 1;
 }
 
+static int ffi_parse_schema_fnptr_string(const char *name, size_t len, int *out_is_const,
+                                         char *out_sig, size_t out_sig_cap)
+{
+    if (!name || len == 0 || !out_sig || out_sig_cap == 0) return 0;
+    while (len > 0 && (*name == ' ' || *name == '\t' || *name == '\n' || *name == '\r')) {
+        name++;
+        len--;
+    }
+    while (len > 0 && (name[len - 1] == ' ' || name[len - 1] == '\t' || name[len - 1] == '\n' || name[len - 1] == '\r')) {
+        len--;
+    }
+    int saw_const = 0;
+    for (;;) {
+        while (len > 0 && (*name == ' ' || *name == '\t' || *name == '\n' || *name == '\r')) {
+            name++;
+            len--;
+        }
+        if (len >= 5 && memcmp(name, "const", 5) == 0 &&
+            (len == 5 || name[5] == ' ' || name[5] == '\t' || name[5] == '\n' || name[5] == '\r')) {
+            saw_const = 1;
+            name += 5;
+            len -= 5;
+            continue;
+        }
+        if (len >= 8 && memcmp(name, "volatile", 8) == 0 &&
+            (len == 8 || name[8] == ' ' || name[8] == '\t' || name[8] == '\n' || name[8] == '\r')) {
+            name += 8;
+            len -= 8;
+            continue;
+        }
+        if (len >= 8 && memcmp(name, "restrict", 8) == 0 &&
+            (len == 8 || name[8] == ' ' || name[8] == '\t' || name[8] == '\n' || name[8] == '\r')) {
+            name += 8;
+            len -= 8;
+            continue;
+        }
+        break;
+    }
+
+    while (len > 0 && (*name == ' ' || *name == '\t' || *name == '\n' || *name == '\r')) {
+        name++;
+        len--;
+    }
+    size_t head_len = 0;
+    if (len >= 10 && memcmp(name, "function<", 9) == 0 && name[len - 1] == '>') {
+        head_len = 9;
+    } else if (len >= 5 && memcmp(name, "fn<", 3) == 0 && name[len - 1] == '>') {
+        head_len = 3; /* compatibility alias */
+    } else {
+        return 0;
+    }
+    size_t sig_len = len - (head_len + 1); /* function<...> or fn<...> */
+    if (sig_len == 0 || sig_len + 1 > out_sig_cap) return 0;
+    memcpy(out_sig, name + head_len, sig_len);
+    out_sig[sig_len] = 0;
+    if (out_is_const) *out_is_const = saw_const ? 1 : 0;
+    return 1;
+}
+
 static int ffi_parse_schema_ref_string(const char *name, size_t len,
                                        int *out_is_pointer, int *out_is_union, int *out_is_const,
                                        char *out_schema, size_t out_cap)
@@ -1213,6 +1274,7 @@ static void ffi_layout_free(FfiLayout *layout)
     if (layout->kind == FFI_LAYOUT_STRUCT && layout->fields) {
         for (int i = 0; i < layout->field_count; i++) {
             free(layout->fields[i].name);
+            free(layout->fields[i].fn_sig);
             ffi_layout_free(layout->fields[i].layout);
         }
         free(layout->fields);
@@ -1264,6 +1326,18 @@ UNUSED_FN static int ffi_build_schema_sig(VM *vm, ObjEntry *schema, FfiSigBuf *s
     }
 
     {
+        const char *fn_decl = NULL;
+        char fn_sig[192];
+        int fn_const = 0;
+        if (entry_as_cstr(schema, &fn_decl) &&
+            ffi_parse_schema_fnptr_string(fn_decl, disturb_bytes_len(schema->obj), &fn_const,
+                                          fn_sig, sizeof(fn_sig))) {
+            return ffi_sigbuf_append_cstr(sig, "Fnptr(") &&
+                   ffi_sigbuf_append_cstr(sig, fn_sig) &&
+                   ffi_sigbuf_append_cstr(sig, ",") &&
+                   ffi_sigbuf_append_u64(sig, (uint64_t)(fn_const ? 1 : 0)) &&
+                   ffi_sigbuf_append_cstr(sig, ")");
+        }
         FfiBase base = FFI_BASE_VOID;
         int is_array = 0;
         int array_len = 0;
@@ -1362,6 +1436,26 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
     }
 
     {
+        const char *fn_decl = NULL;
+        char fn_sig[192];
+        int fn_const = 0;
+        if (entry_as_cstr(schema, &fn_decl) &&
+            ffi_parse_schema_fnptr_string(fn_decl, disturb_bytes_len(schema->obj), &fn_const,
+                                          fn_sig, sizeof(fn_sig))) {
+            size_t size = sizeof(void*);
+            FfiLayout *layout = (FfiLayout*)calloc(1, sizeof(FfiLayout));
+            if (!layout) {
+                snprintf(err, err_cap, "ffi: out of memory");
+                return NULL;
+            }
+            layout->kind = FFI_LAYOUT_PRIM;
+            layout->base = FFI_BASE_PTR;
+            layout->is_const = fn_const ? 1 : 0;
+            layout->size = size;
+            layout->align = size;
+            return layout;
+        }
+
         FfiBase base = FFI_BASE_VOID;
         int is_array = 0;
         int array_len = 0;
@@ -1605,6 +1699,22 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
         layout->fields[i].name_len = fields_ref[i].name_len;
         layout->fields[i].offset = field_offset;
         layout->fields[i].layout = child;
+        {
+            char fn_sig[192];
+            int fn_const = 0;
+            if (ffi_parse_schema_fnptr_string(field_decl, disturb_bytes_len(fields_ref[i].value->obj),
+                                              &fn_const, fn_sig, sizeof(fn_sig))) {
+                size_t n = strlen(fn_sig);
+                layout->fields[i].fn_sig = (char*)malloc(n + 1);
+                if (!layout->fields[i].fn_sig) {
+                    snprintf(err, err_cap, "ffi: out of memory");
+                    free(fields_ref);
+                    ffi_layout_free(layout);
+                    return NULL;
+                }
+                memcpy(layout->fields[i].fn_sig, fn_sig, n + 1);
+            }
+        }
         layout->fields[i].is_const = (child->is_const ||
                                       ffi_decl_has_const_prefix(field_decl, disturb_bytes_len(fields_ref[i].value->obj))) ? 1 : 0;
         layout->fields[i].bit_width = bit_width;
@@ -2563,6 +2673,8 @@ static int ffi_layout_equal(const FfiLayout *a, const FfiLayout *b)
         if (a->fields[i].name_len != b->fields[i].name_len) return 0;
         if (memcmp(a->fields[i].name, b->fields[i].name, a->fields[i].name_len) != 0) return 0;
         if (a->fields[i].offset != b->fields[i].offset) return 0;
+        if (!!a->fields[i].fn_sig != !!b->fields[i].fn_sig) return 0;
+        if (a->fields[i].fn_sig && strcmp(a->fields[i].fn_sig, b->fields[i].fn_sig) != 0) return 0;
         if (!ffi_layout_equal(a->fields[i].layout, b->fields[i].layout)) return 0;
     }
     return 1;
@@ -2796,6 +2908,30 @@ int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
             ObjEntry *sub = ffi_make_struct_view(vm, ptr, sub_layout, 0, child_readonly);
             if (out) *out = sub ? sub : vm->null_entry;
             return 1;
+        }
+        if (field->layout->base == FFI_BASE_PTR && field->fn_sig) {
+            uintptr_t ptr = 0;
+            void *p = NULL;
+            memcpy(&p, (void*)addr, sizeof(p));
+            ptr = (uintptr_t)p;
+            if (!ptr) {
+                if (out) *out = vm->null_entry;
+                return 1;
+            }
+#ifdef DISTURB_ENABLE_FFI_CALLS
+            char err[160] = {0};
+            ObjEntry *fn = ffi_bind_ptr_sig_entry(vm, ptr, field->fn_sig, err, sizeof(err));
+            if (!fn) {
+                fprintf(stderr, "%s\n", err[0] ? err : "ffi: failed to bind function pointer field");
+                if (out) *out = vm->null_entry;
+                return 1;
+            }
+            if (out) *out = fn;
+            return 1;
+#else
+            if (out) *out = vm_make_int_value(vm, (Int)(UInt)ptr);
+            return 1;
+#endif
         }
         ObjEntry *v = ffi_load_prim_value(vm, addr, field->layout->base);
         if (out) *out = v ? v : vm->null_entry;
@@ -3531,6 +3667,31 @@ static int ffi_prepare_ptr(VM *vm, FfiFunction *fn, void *fn_ptr, char *err, siz
     return 1;
 }
 
+static ObjEntry *ffi_bind_ptr_sig_entry(VM *vm, uintptr_t addr, const char *sig, char *err, size_t err_cap)
+{
+    if (!vm || !addr || !sig) {
+        snprintf(err, err_cap, "ffi.bind expects non-null ptr and signature");
+        return NULL;
+    }
+    const char *name = NULL;
+    FfiFunction *fn = ffi_parse_signature(sig, err, err_cap, &name);
+    if (!fn) return NULL;
+    if (!ffi_prepare_ptr(vm, fn, (void*)addr, err, err_cap)) {
+        free((void*)name);
+        ffi_function_release(fn);
+        return NULL;
+    }
+    ObjEntry *entry = vm_make_native_entry_data(vm, name, native_ffi_call, fn,
+                                                ffi_function_release, ffi_function_retain);
+    free((void*)name);
+    if (!entry) {
+        ffi_function_release(fn);
+        snprintf(err, err_cap, "ffi: failed to create bound function");
+        return NULL;
+    }
+    return entry;
+}
+
 void native_ffi_callback(VM *vm, List *stack, List *global)
 {
     (void)global;
@@ -3679,24 +3840,9 @@ void native_ffi_bind(VM *vm, List *stack, List *global)
     }
 
     char err[128] = {0};
-    const char *name = NULL;
-    FfiFunction *fn = ffi_parse_signature(sig, err, sizeof(err), &name);
-    if (!fn) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi: invalid signature");
-        return;
-    }
-    if (!ffi_prepare_ptr(vm, fn, (void*)addr, err, sizeof(err))) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi: prepare failed");
-        free((void*)name);
-        ffi_function_release(fn);
-        return;
-    }
-
-    ObjEntry *entry = vm_make_native_entry_data(vm, name, native_ffi_call, fn,
-                                                ffi_function_release, ffi_function_retain);
-    free((void*)name);
+    ObjEntry *entry = ffi_bind_ptr_sig_entry(vm, addr, sig, err, sizeof(err));
     if (!entry) {
-        ffi_function_release(fn);
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi: bind failed");
         return;
     }
     ffi_push_entry(vm, entry);
