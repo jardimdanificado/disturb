@@ -9,6 +9,12 @@
 #include <limits.h>
 #include <stdarg.h>
 
+#if defined(__GNUC__) || defined(__clang__)
+#define UNUSED_FN __attribute__((unused))
+#else
+#define UNUSED_FN
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -38,9 +44,10 @@ typedef struct {
     int is_ptr;
     int is_array;
     int array_len;
-    char *schema_name; /* @schema for by-value struct */
-    FfiLayout *schema_layout; /* resolved layout for @schema */
-    ffi_type *schema_ffi_type; /* resolved ffi type for @schema */
+    char *schema_name; /* struct<schema> or pointer<schema> */
+    int schema_is_pointer; /* 0 => struct<schema>, 1 => pointer<schema> */
+    FfiLayout *schema_layout; /* resolved struct layout for schema */
+    ffi_type *schema_ffi_type; /* resolved ffi type for struct<schema> */
     void *schema_ffi_owner; /* owned dynamic ffi type graph */
 } FfiType;
 
@@ -75,17 +82,22 @@ typedef struct {
     size_t name_len;
     size_t offset;
     FfiLayout *layout;
+    int bit_width;   /* 0 => normal field, >0 => bitfield width */
+    int bit_shift;   /* bit offset inside storage unit */
 } FfiLayoutField;
 
 struct FfiLayout {
     FfiLayoutKind kind;
     FfiBase base;
     FfiLayout *elem;
+    FfiLayout *pointee; /* for FFI_BASE_PTR when typed pointer field exists */
     int array_len;
     size_t size;
     size_t align;
     int packed;
     int forced_align;
+    int is_union;
+    int bit_width; /* only for primitive bitfield declarations */
     int field_count;
     FfiLayoutField *fields;
 };
@@ -132,18 +144,31 @@ typedef struct {
     uintptr_t base_ptr;
     FfiLayout *elem_layout;
     int len;
+    int own_elem_layout;
 } FfiArrayViewHandle;
+
+typedef struct {
+    uint32_t magic;
+    int refcount;
+    uintptr_t ptr;
+    int owned;
+} FfiPtrHandle;
 
 enum {
     FFI_LAYOUT_HANDLE_MAGIC = 0x4646494cU, /* FFIL */
     FFI_VIEW_HANDLE_MAGIC = 0x46464956U,   /* FFIV */
-    FFI_ARRAY_VIEW_HANDLE_MAGIC = 0x46464941U /* FFIA */
+    FFI_ARRAY_VIEW_HANDLE_MAGIC = 0x46464941U, /* FFIA */
+    FFI_PTR_HANDLE_MAGIC = 0x46464950U /* FFIP */
 };
 
 static FfiLayoutCacheNode *g_ffi_layout_cache = NULL;
 static FfiArrayViewHandle *ffi_array_view_handle_from_entry(ObjEntry *entry);
+static FfiPtrHandle *ffi_ptr_handle_from_entry(ObjEntry *entry);
+static int ffi_view_decode(ObjEntry *entry, uintptr_t *base_ptr, size_t *base_offset, FfiLayout **layout);
+static void native_ffi_handle_noop(VM *vm, List *stack, List *global);
 static int parse_base_type(const char *name, FfiBase *out);
 static char *ffi_strdup(const char *s);
+static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_len);
 
 static void ffi_dyn_type_node_free(FfiDynTypeNode *node)
 {
@@ -161,6 +186,7 @@ static void ffi_type_release_runtime(FfiType *t)
     if (!t) return;
     free(t->schema_name);
     t->schema_name = NULL;
+    t->schema_is_pointer = 0;
     if (t->schema_ffi_owner) {
         ffi_dyn_type_node_free((FfiDynTypeNode*)t->schema_ffi_owner);
         t->schema_ffi_owner = NULL;
@@ -314,6 +340,34 @@ static int entry_as_cstr(ObjEntry *entry, const char **out)
     return 1;
 }
 
+static int ffi_entry_to_ptr(ObjEntry *entry, uintptr_t *out_ptr)
+{
+    if (!out_ptr) return 0;
+    *out_ptr = 0;
+    if (!entry || !entry->in_use || disturb_obj_type(entry->obj) == DISTURB_T_NULL) return 1;
+    FfiPtrHandle *ph = ffi_ptr_handle_from_entry(entry);
+    if (ph) {
+        *out_ptr = ph->ptr;
+        return 1;
+    }
+    uintptr_t base_ptr = 0;
+    size_t base_offset = 0;
+    FfiLayout *layout = NULL;
+    if (ffi_view_decode(entry, &base_ptr, &base_offset, &layout)) {
+        (void)layout;
+        *out_ptr = base_ptr + base_offset;
+        return 1;
+    }
+    Int iv = 0;
+    Float fv = 0;
+    int is_float = 0;
+    if (entry_number_scalar(entry, &iv, &fv, &is_float)) {
+        *out_ptr = (uintptr_t)(UInt)(is_float ? (Int)fv : iv);
+        return 1;
+    }
+    return 0;
+}
+
 static ffi_type *ffi_type_for_base(FfiBase base)
 {
     switch (base) {
@@ -363,7 +417,7 @@ static size_t ffi_align_up(size_t value, size_t align)
     return rem ? (value + (align - rem)) : value;
 }
 
-static uint64_t ffi_hash_bytes(const char *data, size_t len)
+UNUSED_FN static uint64_t ffi_hash_bytes(const char *data, size_t len)
 {
     uint64_t h = 1469598103934665603ULL;
     for (size_t i = 0; i < len; i++) {
@@ -373,14 +427,14 @@ static uint64_t ffi_hash_bytes(const char *data, size_t len)
     return h;
 }
 
-static void ffi_sigbuf_init(FfiSigBuf *b)
+UNUSED_FN static void ffi_sigbuf_init(FfiSigBuf *b)
 {
     b->data = NULL;
     b->len = 0;
     b->cap = 0;
 }
 
-static int ffi_sigbuf_grow(FfiSigBuf *b, size_t add)
+UNUSED_FN static int ffi_sigbuf_grow(FfiSigBuf *b, size_t add)
 {
     if (add > SIZE_MAX - b->len - 1) return 0;
     size_t need = b->len + add + 1;
@@ -397,7 +451,7 @@ static int ffi_sigbuf_grow(FfiSigBuf *b, size_t add)
     return 1;
 }
 
-static int ffi_sigbuf_append_bytes(FfiSigBuf *b, const char *s, size_t len)
+UNUSED_FN static int ffi_sigbuf_append_bytes(FfiSigBuf *b, const char *s, size_t len)
 {
     if (!len) return 1;
     if (!ffi_sigbuf_grow(b, len)) return 0;
@@ -407,12 +461,12 @@ static int ffi_sigbuf_append_bytes(FfiSigBuf *b, const char *s, size_t len)
     return 1;
 }
 
-static int ffi_sigbuf_append_cstr(FfiSigBuf *b, const char *s)
+UNUSED_FN static int ffi_sigbuf_append_cstr(FfiSigBuf *b, const char *s)
 {
     return ffi_sigbuf_append_bytes(b, s, strlen(s));
 }
 
-static int ffi_sigbuf_append_u64(FfiSigBuf *b, uint64_t v)
+UNUSED_FN static int ffi_sigbuf_append_u64(FfiSigBuf *b, uint64_t v)
 {
     char tmp[32];
     int n = snprintf(tmp, sizeof(tmp), "%llu", (unsigned long long)v);
@@ -420,7 +474,7 @@ static int ffi_sigbuf_append_u64(FfiSigBuf *b, uint64_t v)
     return ffi_sigbuf_append_bytes(b, tmp, (size_t)n);
 }
 
-static void ffi_sigbuf_free(FfiSigBuf *b)
+UNUSED_FN static void ffi_sigbuf_free(FfiSigBuf *b)
 {
     free(b->data);
     b->data = NULL;
@@ -441,6 +495,28 @@ static ObjEntry *ffi_table_find_field(List *obj, const char *name, size_t name_l
     return NULL;
 }
 
+static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_len)
+{
+    if (!vm || !name || name_len == 0) return NULL;
+    if (vm->local_entry && vm->local_entry->obj &&
+        disturb_obj_type(vm->local_entry->obj) == DISTURB_T_TABLE) {
+        ObjEntry *local_hit = ffi_table_find_field(vm->local_entry->obj, name, name_len);
+        if (local_hit && disturb_obj_type(local_hit->obj) != DISTURB_T_NULL) return local_hit;
+    }
+    char tmp[96];
+    char *q = tmp;
+    if (name_len + 1 > sizeof(tmp)) {
+        q = (char*)malloc(name_len + 1);
+        if (!q) return NULL;
+    }
+    memcpy(q, name, name_len);
+    q[name_len] = 0;
+    ObjEntry *global_hit = vm_global_find_by_key(vm->global_entry ? vm->global_entry->obj : NULL, q);
+    if (q != tmp) free(q);
+    if (global_hit && disturb_obj_type(global_hit->obj) == DISTURB_T_NULL) return NULL;
+    return global_hit;
+}
+
 typedef struct {
     const char *name;
     size_t name_len;
@@ -451,6 +527,7 @@ typedef struct {
     int packed;
     int has_align;
     int align;
+    int is_union;
 } FfiSchemaMeta;
 
 static int ffi_parse_schema_meta(ObjEntry *schema, FfiSchemaMeta *meta, char *err, size_t err_cap)
@@ -458,6 +535,7 @@ static int ffi_parse_schema_meta(ObjEntry *schema, FfiSchemaMeta *meta, char *er
     meta->packed = 0;
     meta->has_align = 0;
     meta->align = 0;
+    meta->is_union = 0;
     if (!schema || disturb_obj_type(schema->obj) != DISTURB_T_TABLE) return 1;
     ObjEntry *meta_entry = ffi_table_find_field(schema->obj, "__meta", 6);
     if (!meta_entry || disturb_obj_type(meta_entry->obj) == DISTURB_T_NULL) return 1;
@@ -499,6 +577,17 @@ static int ffi_parse_schema_meta(ObjEntry *schema, FfiSchemaMeta *meta, char *er
         }
         meta->has_align = 1;
         meta->align = (int)iv;
+    }
+    ObjEntry *union_entry = ffi_table_find_field(meta_entry->obj, "union", 5);
+    if (union_entry) {
+        Int iv = 0;
+        Float fv = 0;
+        int is_float = 0;
+        if (!entry_number_scalar(union_entry, &iv, &fv, &is_float)) {
+            snprintf(err, err_cap, "ffi: schema.__meta.union expects number");
+            return 0;
+        }
+        meta->is_union = is_float ? (((Int)fv) != 0) : (iv != 0);
     }
     return 1;
 }
@@ -617,12 +706,13 @@ static int ffi_schema_collect_fields(ObjEntry *schema, FfiSchemaFieldRef **out_f
 }
 
 static int ffi_parse_schema_type_string(const char *name, size_t len,
-                                        FfiBase *out_base, int *out_is_array, int *out_len)
+                                        FfiBase *out_base, int *out_is_array, int *out_len, int *out_bits)
 {
     if (!name || len == 0 || len >= 64) return 0;
     char buf[64];
     memcpy(buf, name, len);
     buf[len] = 0;
+    if (out_bits) *out_bits = 0;
 
     char *lb = strchr(buf, '[');
     int is_array = 0;
@@ -642,6 +732,16 @@ static int ffi_parse_schema_type_string(const char *name, size_t len,
             is_array = 1;
             array_len = (int)n;
         }
+    }
+
+    char *colon = strchr(buf, ':');
+    if (colon) {
+        if (is_array) return 0;
+        char *end = NULL;
+        long bits = strtol(colon + 1, &end, 10);
+        if (!end || *end != 0 || bits <= 0 || bits > 64) return 0;
+        *colon = 0;
+        if (out_bits) *out_bits = (int)bits;
     }
 
     FfiBase base = FFI_BASE_VOID;
@@ -666,16 +766,77 @@ static int ffi_parse_schema_type_string(const char *name, size_t len,
     return 1;
 }
 
+static int ffi_parse_schema_ref_string(const char *name, size_t len,
+                                       int *out_is_pointer, char *out_schema, size_t out_cap)
+{
+    if (!name || len == 0 || !out_schema || out_cap == 0) return 0;
+    while (len > 0 && (*name == ' ' || *name == '\t' || *name == '\n' || *name == '\r')) {
+        name++;
+        len--;
+    }
+    while (len > 0) {
+        char c = name[len - 1];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') len--;
+        else break;
+    }
+    const char *prefix = NULL;
+    size_t prefix_len = 0;
+    int is_pointer = 0;
+    if (len > 8 && memcmp(name, "struct<", 7) == 0 && name[len - 1] == '>') {
+        prefix = name + 7;
+        prefix_len = len - 8;
+        is_pointer = 0;
+    } else if (len > 9 && memcmp(name, "pointer<", 8) == 0 && name[len - 1] == '>') {
+        prefix = name + 8;
+        prefix_len = len - 9;
+        is_pointer = 1;
+    } else {
+        return 0;
+    }
+    while (prefix_len > 0 && (*prefix == ' ' || *prefix == '\t' || *prefix == '\n' || *prefix == '\r')) {
+        prefix++;
+        prefix_len--;
+    }
+    while (prefix_len > 0) {
+        char c = prefix[prefix_len - 1];
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') prefix_len--;
+        else break;
+    }
+    if (prefix_len == 0 || prefix_len + 1 > out_cap) return 0;
+    for (size_t i = 0; i < prefix_len; i++) {
+        char c = prefix[i];
+        if (!(isalnum((unsigned char)c) || c == '_')) return 0;
+    }
+    memcpy(out_schema, prefix, prefix_len);
+    out_schema[prefix_len] = 0;
+    if (out_is_pointer) *out_is_pointer = is_pointer;
+    return 1;
+}
+
 static int ffi_type_spec_from_entry(ObjEntry *entry, FfiBase *out_base, int *out_is_array, int *out_len)
 {
     const char *name = NULL;
     if (!entry_as_cstr(entry, &name)) return 0;
-    return ffi_parse_schema_type_string(name, disturb_bytes_len(entry->obj), out_base, out_is_array, out_len);
+    return ffi_parse_schema_type_string(name, disturb_bytes_len(entry->obj),
+                                        out_base, out_is_array, out_len, NULL);
+}
+
+static int ffi_schema_ref_spec_from_entry(ObjEntry *entry, int *out_is_pointer,
+                                          char *out_schema, size_t out_cap)
+{
+    const char *name = NULL;
+    if (!entry_as_cstr(entry, &name)) return 0;
+    return ffi_parse_schema_ref_string(name, disturb_bytes_len(entry->obj),
+                                       out_is_pointer, out_schema, out_cap);
 }
 
 static void ffi_layout_free(FfiLayout *layout)
 {
     if (!layout) return;
+    if (layout->pointee) {
+        ffi_layout_free(layout->pointee);
+        layout->pointee = NULL;
+    }
     if (layout->kind == FFI_LAYOUT_ARRAY && layout->elem) {
         ffi_layout_free(layout->elem);
     }
@@ -715,9 +876,9 @@ static int ffi_prim_size_align(FfiBase base, size_t *out_size, size_t *out_align
     }
 }
 
-static int ffi_build_schema_sig(ObjEntry *schema, FfiSigBuf *sig, int depth, char *err, size_t err_cap);
+UNUSED_FN static int ffi_build_schema_sig(VM *vm, ObjEntry *schema, FfiSigBuf *sig, int depth, char *err, size_t err_cap);
 
-static int ffi_append_field_name_sig(FfiSigBuf *sig, const char *name, size_t len)
+UNUSED_FN static int ffi_append_field_name_sig(FfiSigBuf *sig, const char *name, size_t len)
 {
     return ffi_sigbuf_append_cstr(sig, "N") &&
            ffi_sigbuf_append_u64(sig, (uint64_t)len) &&
@@ -725,7 +886,7 @@ static int ffi_append_field_name_sig(FfiSigBuf *sig, const char *name, size_t le
            ffi_sigbuf_append_bytes(sig, name, len);
 }
 
-static int ffi_build_schema_sig(ObjEntry *schema, FfiSigBuf *sig, int depth, char *err, size_t err_cap)
+UNUSED_FN static int ffi_build_schema_sig(VM *vm, ObjEntry *schema, FfiSigBuf *sig, int depth, char *err, size_t err_cap)
 {
     if (depth > 64) {
         snprintf(err, err_cap, "ffi: schema nesting too deep");
@@ -750,15 +911,33 @@ static int ffi_build_schema_sig(ObjEntry *schema, FfiSigBuf *sig, int depth, cha
                    ffi_sigbuf_append_u64(sig, (uint64_t)array_len) &&
                    ffi_sigbuf_append_cstr(sig, ");");
         }
+        int schema_is_pointer = 0;
+        char schema_name[96];
+        if (ffi_schema_ref_spec_from_entry(schema, &schema_is_pointer, schema_name, sizeof(schema_name))) {
+            if (schema_is_pointer) {
+                return ffi_sigbuf_append_cstr(sig, "Rptr(") &&
+                       ffi_sigbuf_append_cstr(sig, schema_name) &&
+                       ffi_sigbuf_append_cstr(sig, ");");
+            }
+            ObjEntry *ref_schema = ffi_lookup_schema_entry(vm, schema_name, strlen(schema_name));
+            if (!ref_schema) {
+                snprintf(err, err_cap, "ffi: unknown schema '%s' in schema field", schema_name);
+                return 0;
+            }
+            return ffi_sigbuf_append_cstr(sig, "Rval(") &&
+                   ffi_sigbuf_append_cstr(sig, schema_name) &&
+                   ffi_sigbuf_append_cstr(sig, "){") &&
+                   ffi_build_schema_sig(vm, ref_schema, sig, depth + 1, err, err_cap) &&
+                   ffi_sigbuf_append_cstr(sig, "};");
+        }
     }
 
     if (!schema || disturb_obj_type(schema->obj) != DISTURB_T_TABLE) {
         Int type = (!schema || !schema->obj) ? DISTURB_T_NULL : disturb_obj_type(schema->obj);
-        snprintf(err, err_cap, "ffi: schema field must be type string or nested struct table (got %s)",
+        snprintf(err, err_cap, "ffi: schema field must be type string (got %s)",
                  disturb_type_name(type));
         return 0;
     }
-
     FfiSchemaMeta meta;
     if (!ffi_parse_schema_meta(schema, &meta, err, err_cap)) return 0;
     FfiSchemaFieldRef *fields = NULL;
@@ -772,9 +951,16 @@ static int ffi_build_schema_sig(ObjEntry *schema, FfiSigBuf *sig, int depth, cha
     ok = ok && ffi_sigbuf_append_u64(sig, (uint64_t)(meta.has_align ? meta.align : 0));
     ok = ok && ffi_sigbuf_append_cstr(sig, "){");
     for (int i = 0; ok && i < field_count; i++) {
+        const char *field_decl = NULL;
+        if (!entry_as_cstr(fields[i].value, &field_decl)) {
+            free(fields);
+            snprintf(err, err_cap, "ffi: schema field '%.*s' must be a type string",
+                     (int)fields[i].name_len, fields[i].name);
+            return 0;
+        }
         ok = ok && ffi_append_field_name_sig(sig, fields[i].name, fields[i].name_len);
         ok = ok && ffi_sigbuf_append_cstr(sig, "=");
-        ok = ok && ffi_build_schema_sig(fields[i].value, sig, depth + 1, err, err_cap);
+        ok = ok && ffi_build_schema_sig(vm, fields[i].value, sig, depth + 1, err, err_cap);
         ok = ok && ffi_sigbuf_append_cstr(sig, ";");
     }
     ok = ok && ffi_sigbuf_append_cstr(sig, "}");
@@ -787,7 +973,7 @@ static int ffi_build_schema_sig(ObjEntry *schema, FfiSigBuf *sig, int depth, cha
     return 1;
 }
 
-static FfiLayout *ffi_compile_schema_layout(ObjEntry *schema, int depth, char *err, size_t err_cap)
+static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth, char *err, size_t err_cap)
 {
     if (depth > 64) {
         snprintf(err, err_cap, "ffi: schema nesting too deep");
@@ -798,7 +984,11 @@ static FfiLayout *ffi_compile_schema_layout(ObjEntry *schema, int depth, char *e
         FfiBase base = FFI_BASE_VOID;
         int is_array = 0;
         int array_len = 0;
-        if (ffi_type_spec_from_entry(schema, &base, &is_array, &array_len)) {
+        int bit_width = 0;
+        const char *type_name = NULL;
+        if (entry_as_cstr(schema, &type_name) &&
+            ffi_parse_schema_type_string(type_name, disturb_bytes_len(schema->obj),
+                                         &base, &is_array, &array_len, &bit_width)) {
             if (!is_array || array_len < 0) {
                 FfiBase out_base = (!is_array) ? base : FFI_BASE_PTR;
                 size_t size = 0;
@@ -816,6 +1006,7 @@ static FfiLayout *ffi_compile_schema_layout(ObjEntry *schema, int depth, char *e
                 layout->base = out_base;
                 layout->size = size;
                 layout->align = align;
+                layout->bit_width = bit_width;
                 return layout;
             }
 
@@ -841,15 +1032,51 @@ static FfiLayout *ffi_compile_schema_layout(ObjEntry *schema, int depth, char *e
             arr->size = elem_size * (size_t)array_len;
             return arr;
         }
+        int schema_is_pointer = 0;
+        char schema_name[96];
+        if (ffi_schema_ref_spec_from_entry(schema, &schema_is_pointer, schema_name, sizeof(schema_name))) {
+            if (schema_is_pointer) {
+                size_t size = sizeof(void*);
+                FfiLayout *layout = (FfiLayout*)calloc(1, sizeof(FfiLayout));
+                if (!layout) {
+                    snprintf(err, err_cap, "ffi: out of memory");
+                    return NULL;
+                }
+                layout->kind = FFI_LAYOUT_PRIM;
+                layout->base = FFI_BASE_PTR;
+                layout->size = size;
+                layout->align = size;
+                ObjEntry *ref_schema = ffi_lookup_schema_entry(vm, schema_name, strlen(schema_name));
+                if (!ref_schema) {
+                    ffi_layout_free(layout);
+                    snprintf(err, err_cap, "ffi: unknown schema '%s' in schema field", schema_name);
+                    return NULL;
+                }
+                FfiLayout *pointee = ffi_compile_schema_layout(vm, ref_schema, depth + 1, err, err_cap);
+                if (!pointee || pointee->kind != FFI_LAYOUT_STRUCT) {
+                    if (pointee) ffi_layout_free(pointee);
+                    ffi_layout_free(layout);
+                    if (!err[0]) snprintf(err, err_cap, "ffi: pointer<%s> requires struct schema", schema_name);
+                    return NULL;
+                }
+                layout->pointee = pointee;
+                return layout;
+            }
+            ObjEntry *ref_schema = ffi_lookup_schema_entry(vm, schema_name, strlen(schema_name));
+            if (!ref_schema) {
+                snprintf(err, err_cap, "ffi: unknown schema '%s' in schema field", schema_name);
+                return NULL;
+            }
+            return ffi_compile_schema_layout(vm, ref_schema, depth + 1, err, err_cap);
+        }
     }
 
     if (!schema || disturb_obj_type(schema->obj) != DISTURB_T_TABLE) {
         Int type = (!schema || !schema->obj) ? DISTURB_T_NULL : disturb_obj_type(schema->obj);
-        snprintf(err, err_cap, "ffi: schema field must be type string or nested struct table (got %s)",
+        snprintf(err, err_cap, "ffi: schema field must be type string (got %s)",
                  disturb_type_name(type));
         return NULL;
     }
-
     FfiSchemaMeta meta;
     if (!ffi_parse_schema_meta(schema, &meta, err, err_cap)) return NULL;
 
@@ -866,6 +1093,7 @@ static FfiLayout *ffi_compile_schema_layout(ObjEntry *schema, int depth, char *e
     layout->kind = FFI_LAYOUT_STRUCT;
     layout->packed = meta.packed;
     layout->forced_align = meta.has_align ? meta.align : 0;
+    layout->is_union = meta.is_union;
     layout->field_count = field_count;
     if (field_count > 0) {
         layout->fields = (FfiLayoutField*)calloc((size_t)field_count, sizeof(FfiLayoutField));
@@ -879,6 +1107,13 @@ static FfiLayout *ffi_compile_schema_layout(ObjEntry *schema, int depth, char *e
 
     size_t offset = 0;
     size_t max_align = meta.packed ? 1 : 1;
+    size_t union_size = 0;
+    int bf_open = 0;
+    FfiBase bf_base = FFI_BASE_VOID;
+    size_t bf_container_size = 0;
+    size_t bf_container_align = 1;
+    int bf_used = 0;
+    size_t bf_offset = 0;
     for (int i = 0; i < field_count; i++) {
         if (!fields_ref[i].value) {
             snprintf(err, err_cap, "ffi: schema field value missing");
@@ -886,7 +1121,15 @@ static FfiLayout *ffi_compile_schema_layout(ObjEntry *schema, int depth, char *e
             ffi_layout_free(layout);
             return NULL;
         }
-        FfiLayout *child = ffi_compile_schema_layout(fields_ref[i].value, depth + 1, err, err_cap);
+        const char *field_decl = NULL;
+        if (!entry_as_cstr(fields_ref[i].value, &field_decl)) {
+            snprintf(err, err_cap, "ffi: schema field '%.*s' must be a type string",
+                     (int)fields_ref[i].name_len, fields_ref[i].name);
+            free(fields_ref);
+            ffi_layout_free(layout);
+            return NULL;
+        }
+        FfiLayout *child = ffi_compile_schema_layout(vm, fields_ref[i].value, depth + 1, err, err_cap);
         if (!child) {
             free(fields_ref);
             ffi_layout_free(layout);
@@ -905,15 +1148,68 @@ static FfiLayout *ffi_compile_schema_layout(ObjEntry *schema, int depth, char *e
 
         size_t field_align = meta.packed ? 1 : child->align;
         if (field_align == 0) field_align = 1;
-        offset = ffi_align_up(offset, field_align);
 
+        int bit_width = child->bit_width;
+        int bit_shift = 0;
+        if (bit_width > 0) {
+            size_t container_bits = child->size * 8;
+            if (!(child->base == FFI_BASE_I8 || child->base == FFI_BASE_U8 ||
+                  child->base == FFI_BASE_I16 || child->base == FFI_BASE_U16 ||
+                  child->base == FFI_BASE_I32 || child->base == FFI_BASE_U32 ||
+                  child->base == FFI_BASE_I64 || child->base == FFI_BASE_U64) ||
+                (size_t)bit_width > container_bits || meta.is_union) {
+                snprintf(err, err_cap, "ffi: invalid bitfield declaration");
+                free(name);
+                free(fields_ref);
+                ffi_layout_free(child);
+                ffi_layout_free(layout);
+                return NULL;
+            }
+            if (!bf_open || bf_base != child->base ||
+                (size_t)(bf_used + bit_width) > container_bits) {
+                if (bf_open) offset = bf_offset + bf_container_size;
+                bf_open = 1;
+                bf_base = child->base;
+                bf_container_size = child->size;
+                bf_container_align = field_align;
+                offset = ffi_align_up(offset, bf_container_align);
+                bf_offset = offset;
+                bf_used = 0;
+            }
+            bit_shift = bf_used;
+            bf_used += bit_width;
+            if ((size_t)bf_used == container_bits) {
+                offset = bf_offset + bf_container_size;
+                bf_open = 0;
+                bf_used = 0;
+            }
+        } else if (bf_open) {
+            offset = bf_offset + bf_container_size;
+            bf_open = 0;
+            bf_used = 0;
+        }
+
+        size_t field_offset = 0;
+        if (meta.is_union) {
+            field_offset = 0;
+            if (child->size > union_size) union_size = child->size;
+        } else if (bit_width > 0) {
+            field_offset = bf_offset;
+        } else {
+            offset = ffi_align_up(offset, field_align);
+            field_offset = offset;
+            offset += child->size;
+        }
         layout->fields[i].name = name;
         layout->fields[i].name_len = fields_ref[i].name_len;
-        layout->fields[i].offset = offset;
+        layout->fields[i].offset = field_offset;
         layout->fields[i].layout = child;
-
-        offset += child->size;
+        layout->fields[i].bit_width = bit_width;
+        layout->fields[i].bit_shift = bit_shift;
         if (field_align > max_align) max_align = field_align;
+    }
+    if (bf_open) {
+        offset = bf_offset + bf_container_size;
     }
     free(fields_ref);
 
@@ -923,11 +1219,12 @@ static FfiLayout *ffi_compile_schema_layout(ObjEntry *schema, int depth, char *e
     }
     if (struct_align == 0) struct_align = 1;
     layout->align = struct_align;
-    layout->size = ffi_align_up(offset, struct_align);
+    size_t payload = meta.is_union ? union_size : offset;
+    layout->size = ffi_align_up(payload, struct_align);
     return layout;
 }
 
-static FfiLayout *ffi_cache_lookup(uint64_t hash, const char *sig, size_t sig_len)
+UNUSED_FN static FfiLayout *ffi_cache_lookup(uint64_t hash, const char *sig, size_t sig_len)
 {
     for (FfiLayoutCacheNode *it = g_ffi_layout_cache; it; it = it->next) {
         if (it->hash != hash) continue;
@@ -937,7 +1234,7 @@ static FfiLayout *ffi_cache_lookup(uint64_t hash, const char *sig, size_t sig_le
     return NULL;
 }
 
-static int ffi_cache_insert(uint64_t hash, const char *sig, size_t sig_len, FfiLayout *layout)
+UNUSED_FN static int ffi_cache_insert(uint64_t hash, const char *sig, size_t sig_len, FfiLayout *layout)
 {
     FfiLayoutCacheNode *node = (FfiLayoutCacheNode*)calloc(1, sizeof(FfiLayoutCacheNode));
     if (!node) return 0;
@@ -956,42 +1253,9 @@ static int ffi_cache_insert(uint64_t hash, const char *sig, size_t sig_len, FfiL
     return 1;
 }
 
-static FfiLayout *ffi_compile_schema_cached(ObjEntry *schema, char *err, size_t err_cap)
+static FfiLayout *ffi_compile_schema_cached(VM *vm, ObjEntry *schema, char *err, size_t err_cap)
 {
-    FfiSigBuf sig;
-    ffi_sigbuf_init(&sig);
-    if (!ffi_sigbuf_append_cstr(&sig, "PTR=") ||
-        !ffi_sigbuf_append_u64(&sig, (uint64_t)sizeof(void*)) ||
-        !ffi_sigbuf_append_cstr(&sig, ";")) {
-        ffi_sigbuf_free(&sig);
-        snprintf(err, err_cap, "ffi: out of memory");
-        return NULL;
-    }
-    if (!ffi_build_schema_sig(schema, &sig, 0, err, err_cap)) {
-        ffi_sigbuf_free(&sig);
-        return NULL;
-    }
-
-    uint64_t hash = ffi_hash_bytes(sig.data, sig.len);
-    FfiLayout *cached = ffi_cache_lookup(hash, sig.data, sig.len);
-    if (cached) {
-        ffi_sigbuf_free(&sig);
-        return cached;
-    }
-
-    FfiLayout *layout = ffi_compile_schema_layout(schema, 0, err, err_cap);
-    if (!layout) {
-        ffi_sigbuf_free(&sig);
-        return NULL;
-    }
-    if (!ffi_cache_insert(hash, sig.data, sig.len, layout)) {
-        ffi_layout_free(layout);
-        ffi_sigbuf_free(&sig);
-        snprintf(err, err_cap, "ffi: out of memory");
-        return NULL;
-    }
-    ffi_sigbuf_free(&sig);
-    return layout;
+    return ffi_compile_schema_layout(vm, schema, 0, err, err_cap);
 }
 
 static FfiLayoutHandle *ffi_layout_handle_new(FfiLayout *layout)
@@ -1075,7 +1339,7 @@ static FfiViewHandle *ffi_view_handle_from_entry(ObjEntry *entry)
     return h;
 }
 
-static FfiArrayViewHandle *ffi_array_view_handle_new(uintptr_t base_ptr, FfiLayout *elem_layout, int len)
+static FfiArrayViewHandle *ffi_array_view_handle_new(uintptr_t base_ptr, FfiLayout *elem_layout, int len, int own_elem_layout)
 {
     FfiArrayViewHandle *h = (FfiArrayViewHandle*)calloc(1, sizeof(FfiArrayViewHandle));
     if (!h) return NULL;
@@ -1084,7 +1348,63 @@ static FfiArrayViewHandle *ffi_array_view_handle_new(uintptr_t base_ptr, FfiLayo
     h->base_ptr = base_ptr;
     h->elem_layout = elem_layout;
     h->len = len;
+    h->own_elem_layout = own_elem_layout ? 1 : 0;
     return h;
+}
+
+static FfiPtrHandle *ffi_ptr_handle_new(uintptr_t ptr, int owned)
+{
+    FfiPtrHandle *h = (FfiPtrHandle*)calloc(1, sizeof(FfiPtrHandle));
+    if (!h) return NULL;
+    h->magic = FFI_PTR_HANDLE_MAGIC;
+    h->refcount = 1;
+    h->ptr = ptr;
+    h->owned = owned ? 1 : 0;
+    return h;
+}
+
+static void ffi_ptr_handle_clone(void *data)
+{
+    FfiPtrHandle *h = (FfiPtrHandle*)data;
+    if (!h || h->magic != FFI_PTR_HANDLE_MAGIC) return;
+    h->refcount++;
+}
+
+static void ffi_ptr_handle_free(void *data)
+{
+    FfiPtrHandle *h = (FfiPtrHandle*)data;
+    if (!h || h->magic != FFI_PTR_HANDLE_MAGIC) return;
+    h->refcount--;
+    if (h->refcount > 0) return;
+    if (h->owned && h->ptr) {
+        free((void*)h->ptr);
+        h->ptr = 0;
+    }
+    h->magic = 0;
+    free(h);
+}
+
+static FfiPtrHandle *ffi_ptr_handle_from_entry(ObjEntry *entry)
+{
+    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    NativeBox *box = (NativeBox*)entry->obj->data[2].p;
+    if (!box || !box->data) return NULL;
+    FfiPtrHandle *h = (FfiPtrHandle*)box->data;
+    if (!h || h->magic != FFI_PTR_HANDLE_MAGIC) return NULL;
+    return h;
+}
+
+static ObjEntry *ffi_make_ptr_handle_entry(VM *vm, uintptr_t ptr, int owned)
+{
+    FfiPtrHandle *h = ffi_ptr_handle_new(ptr, owned);
+    if (!h) return NULL;
+    ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
+                                                ffi_ptr_handle_free, ffi_ptr_handle_clone);
+    if (!entry) {
+        ffi_ptr_handle_free(h);
+        return NULL;
+    }
+    return entry;
 }
 
 static void ffi_array_view_handle_clone(void *data)
@@ -1100,6 +1420,10 @@ static void ffi_array_view_handle_free(void *data)
     if (!h || h->magic != FFI_ARRAY_VIEW_HANDLE_MAGIC) return;
     h->refcount--;
     if (h->refcount <= 0) {
+        if (h->own_elem_layout && h->elem_layout) {
+            ffi_layout_free(h->elem_layout);
+            h->elem_layout = NULL;
+        }
         h->magic = 0;
         free(h);
     }
@@ -1232,11 +1556,26 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
 {
     memset(out, 0, sizeof(*out));
     sig_skip_ws(p);
-    if (p->src[p->pos] == '@') {
-        p->pos++;
+
+    char ident[64];
+    if (!sig_read_ident(p, ident, sizeof(ident))) {
+        snprintf(err, err_cap, "expected type");
+        return 0;
+    }
+
+    if (strcmp(ident, "struct") == 0 || strcmp(ident, "pointer") == 0) {
+        int is_ptr_schema = (strcmp(ident, "pointer") == 0);
+        if (!sig_match_char(p, '<')) {
+            snprintf(err, err_cap, "expected '<' after %s", ident);
+            return 0;
+        }
         char schema[64];
         if (!sig_read_ident(p, schema, sizeof(schema))) {
-            snprintf(err, err_cap, "expected schema name after '@'");
+            snprintf(err, err_cap, "expected schema name in %s<...>", ident);
+            return 0;
+        }
+        if (!sig_match_char(p, '>')) {
+            snprintf(err, err_cap, "expected '>' after schema name");
             return 0;
         }
         out->schema_name = ffi_strdup(schema);
@@ -1244,24 +1583,21 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
             snprintf(err, err_cap, "out of memory");
             return 0;
         }
+        out->schema_is_pointer = is_ptr_schema;
         out->base = FFI_BASE_VOID;
         out->is_ptr = 0;
         out->is_array = 0;
         out->array_len = -1;
         sig_skip_ws(p);
         if (p->src[p->pos] == '*' || p->src[p->pos] == '[') {
-            snprintf(err, err_cap, "'@%s' supports by-value struct only", schema);
+            snprintf(err, err_cap, "%s<%s> does not support '*' or '[]' suffix",
+                     ident, schema);
             free(out->schema_name);
             out->schema_name = NULL;
+            out->schema_is_pointer = 0;
             return 0;
         }
         return 1;
-    }
-
-    char ident[64];
-    if (!sig_read_ident(p, ident, sizeof(ident))) {
-        snprintf(err, err_cap, "expected type");
-        return 0;
     }
 
     char combined[64];
@@ -1540,7 +1876,20 @@ static void native_ffi_handle_noop(VM *vm, List *stack, List *global)
 
 static ObjEntry *ffi_make_array_view_entry(VM *vm, uintptr_t base_ptr, FfiLayout *elem_layout, int len)
 {
-    FfiArrayViewHandle *h = ffi_array_view_handle_new(base_ptr, elem_layout, len);
+    FfiArrayViewHandle *h = ffi_array_view_handle_new(base_ptr, elem_layout, len, 0);
+    if (!h) return NULL;
+    ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
+                                                ffi_array_view_handle_free, ffi_array_view_handle_clone);
+    if (!entry) {
+        ffi_array_view_handle_free(h);
+        return NULL;
+    }
+    return entry;
+}
+
+static ObjEntry *ffi_make_array_view_entry_owned(VM *vm, uintptr_t base_ptr, FfiLayout *elem_layout, int len)
+{
+    FfiArrayViewHandle *h = ffi_array_view_handle_new(base_ptr, elem_layout, len, 1);
     if (!h) return NULL;
     ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
                                                 ffi_array_view_handle_free, ffi_array_view_handle_clone);
@@ -1573,11 +1922,48 @@ static ObjEntry *ffi_native_arg(List *stack, uint32_t argc, uint32_t idx)
     return (ObjEntry*)stack->data[pos].p;
 }
 
-static FfiLayout *ffi_layout_from_schema_or_layout(ObjEntry *entry, char *err, size_t err_cap)
+static FfiLayout *ffi_layout_from_schema_or_layout(VM *vm, ObjEntry *entry, char *err, size_t err_cap)
 {
     FfiLayoutHandle *h = ffi_layout_handle_from_entry(entry);
     if (h && h->layout) return h->layout;
-    return ffi_compile_schema_cached(entry, err, err_cap);
+    return ffi_compile_schema_cached(vm, entry, err, err_cap);
+}
+
+static FfiLayout *ffi_layout_from_elem_spec(VM *vm, ObjEntry *entry, char *err, size_t err_cap)
+{
+    FfiLayoutHandle *h = ffi_layout_handle_from_entry(entry);
+    if (h && h->layout) return h->layout;
+
+    const char *s = NULL;
+    if (entry_as_cstr(entry, &s)) {
+        FfiBase base = FFI_BASE_VOID;
+        int is_array = 0;
+        int len = 0;
+        int bits = 0;
+        if (ffi_parse_schema_type_string(s, disturb_bytes_len(entry->obj),
+                                         &base, &is_array, &len, &bits)) {
+            if (is_array || bits > 0) {
+                snprintf(err, err_cap, "ffi.viewArray element type must be scalar or struct schema");
+                return NULL;
+            }
+            size_t sz = 0, al = 0;
+            if (!ffi_prim_size_align(base, &sz, &al)) {
+                snprintf(err, err_cap, "ffi.viewArray unsupported element type");
+                return NULL;
+            }
+            FfiLayout *elem = (FfiLayout*)calloc(1, sizeof(FfiLayout));
+            if (!elem) {
+                snprintf(err, err_cap, "ffi: out of memory");
+                return NULL;
+            }
+            elem->kind = FFI_LAYOUT_PRIM;
+            elem->base = base;
+            elem->size = sz;
+            elem->align = al;
+            return elem;
+        }
+    }
+    return ffi_compile_schema_cached(vm, entry, err, err_cap);
 }
 
 static ObjEntry *ffi_make_struct_view(VM *vm, uintptr_t base_ptr, FfiLayout *layout, size_t base_offset)
@@ -1623,6 +2009,29 @@ static int ffi_view_decode(ObjEntry *entry, uintptr_t *base_ptr, size_t *base_of
     if (base_ptr) *base_ptr = h->base_ptr;
     if (base_offset) *base_offset = h->base_offset;
     if (layout) *layout = h->layout;
+    return 1;
+}
+
+static int ffi_layout_equal(const FfiLayout *a, const FfiLayout *b)
+{
+    if (a == b) return 1;
+    if (!a || !b) return 0;
+    if (a->kind != b->kind) return 0;
+    if (a->size != b->size || a->align != b->align) return 0;
+    if (a->kind == FFI_LAYOUT_PRIM) {
+        return a->base == b->base;
+    }
+    if (a->kind == FFI_LAYOUT_ARRAY) {
+        if (a->array_len != b->array_len) return 0;
+        return ffi_layout_equal(a->elem, b->elem);
+    }
+    if (a->field_count != b->field_count) return 0;
+    for (int i = 0; i < a->field_count; i++) {
+        if (a->fields[i].name_len != b->fields[i].name_len) return 0;
+        if (memcmp(a->fields[i].name, b->fields[i].name, a->fields[i].name_len) != 0) return 0;
+        if (a->fields[i].offset != b->fields[i].offset) return 0;
+        if (!ffi_layout_equal(a->fields[i].layout, b->fields[i].layout)) return 0;
+    }
     return 1;
 }
 
@@ -1694,15 +2103,7 @@ static int ffi_store_prim_value(FfiBase base, uintptr_t addr, ObjEntry *value)
     if (!value) return 0;
     if (base == FFI_BASE_PTR) {
         uintptr_t raw = 0;
-        if (disturb_obj_type(value->obj) == DISTURB_T_NULL) {
-            raw = 0;
-        } else {
-            Int iv = 0;
-            Float fv = 0;
-            int is_float = 0;
-            if (!entry_number_scalar(value, &iv, &fv, &is_float)) return 0;
-            raw = (uintptr_t)(UInt)(is_float ? (Int)fv : iv);
-        }
+        if (!ffi_entry_to_ptr(value, &raw)) return 0;
         void *p = (void*)raw;
         memcpy((void*)addr, &p, sizeof(p));
         return 1;
@@ -1769,6 +2170,54 @@ static int ffi_store_prim_value(FfiBase base, uintptr_t addr, ObjEntry *value)
     }
 }
 
+static uint64_t ffi_read_u64_le(uintptr_t addr, size_t size)
+{
+    uint64_t v = 0;
+    memcpy(&v, (void*)addr, size);
+    return v;
+}
+
+static int64_t ffi_sign_extend_bits(uint64_t v, int bits)
+{
+    if (bits <= 0 || bits >= 64) return (int64_t)v;
+    uint64_t m = 1ULL << (bits - 1);
+    return (int64_t)((v ^ m) - m);
+}
+
+static ObjEntry *ffi_load_bitfield_value(VM *vm, FfiLayoutField *field, uintptr_t addr)
+{
+    if (!field || !field->layout || field->bit_width <= 0) return vm->null_entry;
+    uint64_t raw = ffi_read_u64_le(addr, field->layout->size);
+    uint64_t mask = (field->bit_width >= 64) ? UINT64_MAX : ((1ULL << field->bit_width) - 1ULL);
+    uint64_t bits = (raw >> field->bit_shift) & mask;
+    switch (field->layout->base) {
+    case FFI_BASE_I8:
+    case FFI_BASE_I16:
+    case FFI_BASE_I32:
+    case FFI_BASE_I64:
+        return vm_make_int_value(vm, (Int)ffi_sign_extend_bits(bits, field->bit_width));
+    default:
+        return vm_make_int_value(vm, (Int)bits);
+    }
+}
+
+static int ffi_store_bitfield_value(FfiLayoutField *field, uintptr_t addr, ObjEntry *value)
+{
+    if (!field || !field->layout || field->bit_width <= 0 || !value) return 0;
+    Int iv = 0;
+    Float fv = 0;
+    int is_float = 0;
+    if (!entry_number_scalar(value, &iv, &fv, &is_float)) return 0;
+    int64_t in = is_float ? (int64_t)fv : (int64_t)iv;
+    uint64_t mask = (field->bit_width >= 64) ? UINT64_MAX : ((1ULL << field->bit_width) - 1ULL);
+    uint64_t u = ((uint64_t)in) & mask;
+    uint64_t raw = ffi_read_u64_le(addr, field->layout->size);
+    raw &= ~(mask << field->bit_shift);
+    raw |= (u << field->bit_shift);
+    memcpy((void*)addr, &raw, field->layout->size);
+    return 1;
+}
+
 int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
 {
     if (out) *out = NULL;
@@ -1794,6 +2243,24 @@ int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
 
     uintptr_t addr = base_ptr + base_offset + field->offset;
     if (field->layout->kind == FFI_LAYOUT_PRIM) {
+        if (field->bit_width > 0) {
+            ObjEntry *v = ffi_load_bitfield_value(vm, field, addr);
+            if (out) *out = v ? v : vm->null_entry;
+            return 1;
+        }
+        if (field->layout->base == FFI_BASE_PTR && field->layout->pointee) {
+            uintptr_t ptr = 0;
+            void *p = NULL;
+            memcpy(&p, (void*)addr, sizeof(p));
+            ptr = (uintptr_t)p;
+            if (!ptr) {
+                if (out) *out = vm->null_entry;
+                return 1;
+            }
+            ObjEntry *sub = ffi_make_struct_view(vm, ptr, field->layout->pointee, 0);
+            if (out) *out = sub ? sub : vm->null_entry;
+            return 1;
+        }
         ObjEntry *v = ffi_load_prim_value(vm, addr, field->layout->base);
         if (out) *out = v ? v : vm->null_entry;
         return 1;
@@ -1834,6 +2301,13 @@ int ffi_view_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value
         return -1;
     }
     uintptr_t addr = base_ptr + base_offset + field->offset;
+    if (field->bit_width > 0) {
+        if (!ffi_store_bitfield_value(field, addr, value)) {
+            fprintf(stderr, "ffi.view: invalid value for bitfield '%.*s'\n", (int)name_len, name);
+            return -1;
+        }
+        return 1;
+    }
     if (!ffi_store_prim_value(field->layout->base, addr, value)) {
         fprintf(stderr, "ffi.view: invalid value for field '%.*s'\n", (int)name_len, name);
         return -1;
@@ -2040,30 +2514,35 @@ static int ffi_build_dynamic_type_for_layout(FfiLayout *layout, ffi_type **out_t
 static int ffi_resolve_schema_type(VM *vm, FfiType *t, char *err, size_t err_cap)
 {
     if (!t || !t->schema_name) return 1;
-    if (!vm || !vm->global_entry || !vm->global_entry->obj) {
-        snprintf(err, err_cap, "ffi: missing global table");
+    if (!vm) {
+        snprintf(err, err_cap, "ffi: missing vm");
         return 0;
     }
 
-    ObjEntry *schema = vm_global_find_by_key(vm->global_entry->obj, t->schema_name);
+    ObjEntry *schema = ffi_lookup_schema_entry(vm, t->schema_name, strlen(t->schema_name));
     if (!schema) {
-        snprintf(err, err_cap, "ffi: unknown schema '@%s'", t->schema_name);
+        snprintf(err, err_cap, "ffi: unknown schema '%s'", t->schema_name);
         return 0;
     }
 
-    FfiLayout *layout = ffi_compile_schema_cached(schema, err, err_cap);
+    FfiLayout *layout = ffi_compile_schema_cached(vm, schema, err, err_cap);
     if (!layout) return 0;
     if (layout->kind != FFI_LAYOUT_STRUCT) {
-        snprintf(err, err_cap, "ffi: '@%s' must reference a struct schema", t->schema_name);
+        snprintf(err, err_cap, "ffi: '%s' must reference a struct schema", t->schema_name);
         return 0;
     }
-    if (!ffi_layout_is_byvalue_compatible(layout, err, err_cap)) return 0;
 
+    t->schema_layout = layout;
+    if (t->schema_is_pointer) {
+        t->schema_ffi_type = NULL;
+        t->schema_ffi_owner = NULL;
+        return 1;
+    }
+
+    if (!ffi_layout_is_byvalue_compatible(layout, err, err_cap)) return 0;
     ffi_type *ft = NULL;
     FfiDynTypeNode *owner = NULL;
     if (!ffi_build_dynamic_type_for_layout(layout, &ft, &owner, err, err_cap)) return 0;
-
-    t->schema_layout = layout;
     t->schema_ffi_type = ft;
     t->schema_ffi_owner = owner;
     return 1;
@@ -2115,11 +2594,23 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         }
         FfiType *t = &fn->args[i];
         if (t->schema_name) {
+            if (t->schema_is_pointer) {
+                if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+                    values[i].p = NULL;
+                } else {
+                    uintptr_t ptr = 0;
+                    if (!ffi_entry_to_ptr(arg, &ptr)) ptr = 0;
+                    values[i].p = (void*)ptr;
+                }
+                argv[i] = &values[i].p;
+                continue;
+            }
             uintptr_t src_addr = 0;
             uintptr_t base_ptr = 0;
             size_t base_offset = 0;
             FfiLayout *layout = NULL;
-            if (arg && ffi_view_decode(arg, &base_ptr, &base_offset, &layout) && layout == t->schema_layout) {
+            if (arg && ffi_view_decode(arg, &base_ptr, &base_offset, &layout) &&
+                ffi_layout_equal(layout, t->schema_layout)) {
                 src_addr = base_ptr + base_offset;
             } else if (arg) {
                 Int iv = 0;
@@ -2132,7 +2623,8 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             if (!src_addr) {
                 free(values);
                 free(argv);
-                fprintf(stderr, "ffi: invalid value for by-value struct arg %d (@%s)\n", i, t->schema_name);
+                fprintf(stderr, "ffi: invalid value for by-value struct arg %d (struct<%s>)\n",
+                        i, t->schema_name);
                 return;
             }
             argv[i] = (void*)src_addr;
@@ -2152,14 +2644,10 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
                 values[i].p = NULL;
             } else {
-                Int iv = 0;
-                Float fv = 0;
-                int is_float = 0;
-                if (entry_number_scalar(arg, &iv, &fv, &is_float)) {
-                    uintptr_t addr = is_float ? (uintptr_t)(UInt)((Int)fv) : (uintptr_t)(UInt)iv;
-                    values[i].p = (void*)addr;
+                uintptr_t ptr = 0;
+                if (ffi_entry_to_ptr(arg, &ptr)) {
+                    values[i].p = (void*)ptr;
                 } else if (disturb_obj_type(arg->obj) == DISTURB_T_INT || disturb_obj_type(arg->obj) == DISTURB_T_FLOAT) {
-                    // Backward-compatible: allow passing an int[]/float[] buffer where void* is expected.
                     values[i].p = disturb_bytes_data(arg->obj);
                 } else {
                     values[i].p = NULL;
@@ -2213,7 +2701,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     FfiValue ret = {0};
     void *ret_buf = NULL;
     void *ret_ptr = &ret;
-    if (fn->ret.schema_name) {
+    if (fn->ret.schema_name && !fn->ret.schema_is_pointer) {
         ret_buf = calloc(1, fn->ret.schema_layout ? fn->ret.schema_layout->size : 0);
         if (!ret_buf) {
             free(values);
@@ -2227,6 +2715,16 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
 
     free(values);
     free(argv);
+
+    if (fn->ret.schema_name && fn->ret.schema_is_pointer) {
+        ObjEntry *ptr_entry = ffi_make_ptr_handle_entry(vm, (uintptr_t)ret.p, 0);
+        if (!ptr_entry) {
+            ffi_push_entry(vm, vm_make_int_value(vm, (Int)(uintptr_t)ret.p));
+        } else {
+            ffi_push_entry(vm, ptr_entry);
+        }
+        return;
+    }
 
     if (fn->ret.schema_name) {
         ObjEntry *view = ffi_make_struct_view_owned(vm, ret_buf, fn->ret.schema_layout);
@@ -2327,7 +2825,7 @@ static int ffi_prepare(VM *vm, FfiFunction *fn, const char *name, void *handle, 
     for (int i = 0; i < fn->argc; i++) {
         FfiType *t = &fn->args[i];
         if (t->schema_name) {
-            fn->arg_types[i] = t->schema_ffi_type;
+            fn->arg_types[i] = t->schema_is_pointer ? &ffi_type_pointer : t->schema_ffi_type;
             continue;
         }
         if (t->is_ptr || t->is_array || t->base == FFI_BASE_CSTR || t->base == FFI_BASE_PTR) {
@@ -2337,7 +2835,7 @@ static int ffi_prepare(VM *vm, FfiFunction *fn, const char *name, void *handle, 
         }
     }
     if (fn->ret.schema_name) {
-        fn->ret_type = fn->ret.schema_ffi_type;
+        fn->ret_type = fn->ret.schema_is_pointer ? &ffi_type_pointer : fn->ret.schema_ffi_type;
     } else if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_CSTR || fn->ret.base == FFI_BASE_PTR) {
         fn->ret_type = &ffi_type_pointer;
     } else {
@@ -2373,7 +2871,7 @@ static int ffi_prepare_ptr(VM *vm, FfiFunction *fn, void *fn_ptr, char *err, siz
     for (int i = 0; i < fn->argc; i++) {
         FfiType *t = &fn->args[i];
         if (t->schema_name) {
-            fn->arg_types[i] = t->schema_ffi_type;
+            fn->arg_types[i] = t->schema_is_pointer ? &ffi_type_pointer : t->schema_ffi_type;
             continue;
         }
         if (t->is_ptr || t->is_array || t->base == FFI_BASE_CSTR || t->base == FFI_BASE_PTR) {
@@ -2383,7 +2881,7 @@ static int ffi_prepare_ptr(VM *vm, FfiFunction *fn, void *fn_ptr, char *err, siz
         }
     }
     if (fn->ret.schema_name) {
-        fn->ret_type = fn->ret.schema_ffi_type;
+        fn->ret_type = fn->ret.schema_is_pointer ? &ffi_type_pointer : fn->ret.schema_ffi_type;
     } else if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_CSTR || fn->ret.base == FFI_BASE_PTR) {
         fn->ret_type = &ffi_type_pointer;
     } else {
@@ -2530,7 +3028,7 @@ void native_ffi_compile(VM *vm, List *stack, List *global)
     }
     ObjEntry *schema = ffi_native_arg(stack, argc, 0);
     char err[160] = {0};
-    FfiLayout *layout = ffi_compile_schema_cached(schema, err, sizeof(err));
+    FfiLayout *layout = ffi_compile_schema_cached(vm, schema, err, sizeof(err));
     if (!layout) {
         fprintf(stderr, "%s\n", err[0] ? err : "ffi: compile failed");
         return;
@@ -2559,7 +3057,7 @@ void native_ffi_new(VM *vm, List *stack, List *global)
     }
     ObjEntry *schema_or_layout = ffi_native_arg(stack, argc, 0);
     char err[160] = {0};
-    FfiLayout *layout = ffi_layout_from_schema_or_layout(schema_or_layout, err, sizeof(err));
+    FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_or_layout, err, sizeof(err));
     if (!layout) {
         fprintf(stderr, "%s\n", err[0] ? err : "ffi: new failed");
         return;
@@ -2574,7 +3072,45 @@ void native_ffi_new(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi: out of memory\n");
         return;
     }
-    ffi_push_entry(vm, vm_make_int_value(vm, (Int)(uintptr_t)mem));
+    ObjEntry *owned = ffi_make_ptr_handle_entry(vm, (uintptr_t)mem, 1);
+    if (!owned) {
+        free(mem);
+        fprintf(stderr, "ffi: out of memory\n");
+        return;
+    }
+    ffi_push_entry(vm, owned);
+}
+
+void native_ffi_free(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.free expects ptr\n");
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+    if (!ptr_entry || disturb_obj_type(ptr_entry->obj) == DISTURB_T_NULL) {
+        ffi_push_entry(vm, vm->null_entry);
+        return;
+    }
+    FfiPtrHandle *h = ffi_ptr_handle_from_entry(ptr_entry);
+    if (h) {
+        if (h->owned && h->ptr) {
+            free((void*)h->ptr);
+        }
+        h->ptr = 0;
+        h->owned = 0;
+        ffi_push_entry(vm, vm->null_entry);
+        return;
+    }
+    uintptr_t ptr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr)) {
+        fprintf(stderr, "ffi.free expects ptr\n");
+        return;
+    }
+    if (ptr) free((void*)ptr);
+    ffi_push_entry(vm, vm->null_entry);
 }
 
 void native_ffi_sizeof(VM *vm, List *stack, List *global)
@@ -2587,7 +3123,7 @@ void native_ffi_sizeof(VM *vm, List *stack, List *global)
     }
     ObjEntry *arg = ffi_native_arg(stack, argc, 0);
     char err[160] = {0};
-    FfiLayout *layout = ffi_layout_from_schema_or_layout(arg, err, sizeof(err));
+    FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, arg, err, sizeof(err));
     if (!layout) {
         fprintf(stderr, "%s\n", err[0] ? err : "ffi: sizeof failed");
         return;
@@ -2605,7 +3141,7 @@ void native_ffi_alignof(VM *vm, List *stack, List *global)
     }
     ObjEntry *arg = ffi_native_arg(stack, argc, 0);
     char err[160] = {0};
-    FfiLayout *layout = ffi_layout_from_schema_or_layout(arg, err, sizeof(err));
+    FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, arg, err, sizeof(err));
     if (!layout) {
         fprintf(stderr, "%s\n", err[0] ? err : "ffi: alignof failed");
         return;
@@ -2623,16 +3159,13 @@ void native_ffi_view(VM *vm, List *stack, List *global)
     }
     ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
     ObjEntry *schema_or_layout = ffi_native_arg(stack, argc, 1);
-    Int iv = 0;
-    Float fv = 0;
-    int is_float = 0;
-    if (!entry_number_scalar(ptr_entry, &iv, &fv, &is_float)) {
-        fprintf(stderr, "ffi.view expects numeric ptr\n");
+    uintptr_t ptr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr)) {
+        fprintf(stderr, "ffi.view expects ptr\n");
         return;
     }
-    uintptr_t ptr = (uintptr_t)(UInt)(is_float ? (Int)fv : iv);
     char err[160] = {0};
-    FfiLayout *layout = ffi_layout_from_schema_or_layout(schema_or_layout, err, sizeof(err));
+    FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_or_layout, err, sizeof(err));
     if (!layout) {
         fprintf(stderr, "%s\n", err[0] ? err : "ffi: view failed");
         return;
@@ -2647,6 +3180,47 @@ void native_ffi_view(VM *vm, List *stack, List *global)
         return;
     }
     ffi_push_entry(vm, view);
+}
+
+void native_ffi_view_array(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 3) {
+        fprintf(stderr, "ffi.viewArray expects ptr, elemSpec, len\n");
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *elem_spec = ffi_native_arg(stack, argc, 1);
+    ObjEntry *len_entry = ffi_native_arg(stack, argc, 2);
+    uintptr_t ptr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr)) {
+        fprintf(stderr, "ffi.viewArray expects ptr\n");
+        return;
+    }
+    Int iv = 0;
+    Float fv = 0;
+    int is_float = 0;
+    if (!entry_number_scalar(len_entry, &iv, &fv, &is_float) || is_float || iv < 0 || iv > INT_MAX) {
+        fprintf(stderr, "ffi.viewArray expects non-negative integer len\n");
+        return;
+    }
+    char err[160] = {0};
+    FfiLayout *elem = ffi_layout_from_elem_spec(vm, elem_spec, err, sizeof(err));
+    if (!elem) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi: viewArray failed");
+        return;
+    }
+    int elem_owned = ffi_layout_handle_from_entry(elem_spec) ? 0 : 1;
+    ObjEntry *arr = elem_owned ?
+        ffi_make_array_view_entry_owned(vm, ptr, elem, (int)iv) :
+        ffi_make_array_view_entry(vm, ptr, elem, (int)iv);
+    if (!arr) {
+        if (elem_owned) ffi_layout_free(elem);
+        fprintf(stderr, "ffi: failed to create array view\n");
+        return;
+    }
+    ffi_push_entry(vm, arr);
 }
 
 void native_ffi_offsetof(VM *vm, List *stack, List *global)
@@ -2667,7 +3241,7 @@ void native_ffi_offsetof(VM *vm, List *stack, List *global)
     size_t path_len = disturb_bytes_len(path_entry->obj);
 
     char err[160] = {0};
-    FfiLayout *layout = ffi_layout_from_schema_or_layout(schema_or_layout, err, sizeof(err));
+    FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_or_layout, err, sizeof(err));
     if (!layout) {
         fprintf(stderr, "%s\n", err[0] ? err : "ffi: offsetof failed");
         return;
@@ -2720,9 +3294,11 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
     ffi_add_module_fn(vm, ffi_entry, "bind", native_ffi_bind);
     ffi_add_module_fn(vm, ffi_entry, "compile", native_ffi_compile);
     ffi_add_module_fn(vm, ffi_entry, "new", native_ffi_new);
+    ffi_add_module_fn(vm, ffi_entry, "free", native_ffi_free);
     ffi_add_module_fn(vm, ffi_entry, "sizeof", native_ffi_sizeof);
     ffi_add_module_fn(vm, ffi_entry, "alignof", native_ffi_alignof);
     ffi_add_module_fn(vm, ffi_entry, "view", native_ffi_view);
+    ffi_add_module_fn(vm, ffi_entry, "viewArray", native_ffi_view_array);
     ffi_add_module_fn(vm, ffi_entry, "offsetof", native_ffi_offsetof);
 }
 

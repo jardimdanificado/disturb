@@ -4,7 +4,16 @@
 - change lambda vararg syntax from `name...` to `...name`; old trailing form now errors with guidance (`invalid vararg syntax: use '...name'`).
 - fix lambda callback resolution in calls: when calling `a()` inside a lambda, call target lookup now checks local scope before global scope, so callback args work without `local.a()`.
 - add `ffi.new(schemaOrLayout)` to allocate zeroed struct memory and return a numeric pointer for use with `ffi.view(...)`.
-- add/adjust tests for new vararg syntax, lambda callback behavior, and `ffi.new` flow in FFI struct tests.
+- add `ffi.free(ptr)` to release memory allocated with `ffi.new`.
+- change FFI struct signature syntax to `struct<schema>` (by-value) and `pointer<schema>` (typed pointer); remove legacy `@schema`.
+- keep `void*` for raw/generic pointers in signatures.
+- require schema field declarations to be type strings; nested inline schema tables in field values are rejected.
+- add schema unions (`__meta = { union = 1 }`) and bitfields (`"type:bits"`).
+- add `ffi.viewArray(ptr, elemSpec, len)` for array views over raw/typed pointers.
+- make pointer-submember access in views return nested views when field type is `pointer<schema>`.
+- make `ffi.new` allocations owned by GC (via pointer handles), with optional manual release via `ffi.free`.
+- add/adjust tests for new vararg syntax, lambda callback behavior, new FFI signature forms, and `ffi.new`/`ffi.free` flow in FFI struct tests.
+- update docs/examples to reflect vararg, FFI signature, and memory APIs.
 
 ## 1.1.1
 - add GitHub Actions CI (`.github/workflows/ci.yml`) with Linux build/test jobs for default build and `ENABLE_FFI=0`.

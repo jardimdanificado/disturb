@@ -182,11 +182,17 @@ Main API:
 - `ffi.load(...)`
 - `ffi.bind(ptr, sig)`
 - `ffi.compile(schema)`
-- `ffi.new(schemaOrLayout)` (allocates zeroed struct memory; returns numeric ptr)
+- `ffi.new(schemaOrLayout)` (allocates zeroed struct memory; returns owned pointer handle)
+- `ffi.free(ptr)`
 - `ffi.sizeof(...)`
 - `ffi.alignof(...)`
 - `ffi.offsetof(..., "field.path")`
 - `ffi.view(ptr, schemaOrLayout)`
+- `ffi.viewArray(ptr, elemSpec, len)`
+- signatures: `struct<schema>`, `pointer<schema>`, `void*` (raw)
+- schema fields support composition with strings: `"struct<name>"`, `"pointer<name>"`
+- bitfield declaration: `"uint8:3"`, `"uint32:5"` (inside struct)
+- union declaration: `__meta = { union = 1 }`
 
 ## Script Args
 

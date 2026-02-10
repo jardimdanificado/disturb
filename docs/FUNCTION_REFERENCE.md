@@ -315,11 +315,17 @@ Primary APIs used by examples/tests:
 - `ffi.load(libPath, sig, ...)`
 - `ffi.bind(ptr, sig)`
 - `ffi.compile(schema)`
-- `ffi.new(schemaOrLayout)` (allocates zeroed struct memory and returns numeric ptr)
+- `ffi.new(schemaOrLayout)` (allocates zeroed struct memory and returns owned pointer handle)
+- `ffi.free(ptr)`
 - `ffi.sizeof(schemaOrLayout)`
 - `ffi.alignof(schemaOrLayout)`
 - `ffi.offsetof(schemaOrLayout, "field.path")`
 - `ffi.view(ptr, schemaOrLayout)`
+- `ffi.viewArray(ptr, elemSpec, len)`
+- signatures support: `struct<schema>` (by-value), `pointer<schema>` (typed pointer), `void*` (raw pointer)
+- schema field declarations are strings only; compose with `"struct<name>"` / `"pointer<name>"`
+- bitfields are declared as `"type:bits"` (e.g., `"uint8:3"`)
+- unions are declared via `__meta = { union = 1 }`
 
 See:
 - `example/guide/11_ffi_system.urb`

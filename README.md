@@ -449,10 +449,27 @@ Main API:
 - `ffi.bind(ptr, "signature")`
 - `ffi.compile(schema)`
 - `ffi.new(schemaOrLayout)`
+- `ffi.free(ptr)`
 - `ffi.sizeof(schemaOrLayout)`
 - `ffi.alignof(schemaOrLayout)`
 - `ffi.offsetof(schemaOrLayout, "field.path")`
 - `ffi.view(ptr, schemaOrLayout)`
+- `ffi.viewArray(ptr, elemSpec, len)`
+
+Signature struct typing:
+- by-value struct: `struct<schema>` (example: `i32 sum(struct<outer>)`)
+- typed pointer: `pointer<schema>` (example: `void free_outer(pointer<outer>)`)
+- raw/generic pointer stays `void*`
+
+Schema composition:
+- schema fields must be type strings
+- use `struct<otherSchema>` or `pointer<otherSchema>` inside field declarations
+- unions: `__meta = { union = 1 }`
+- bitfields: use `"type:bits"` (example: `"uint8:3"`, `"uint32:5"`)
+
+Ownership:
+- `ffi.new` returns an owned pointer handle (GC releases memory if unreachable)
+- `ffi.free(ptr)` can free explicitely (works with owned handles and raw pointers)
 
 Supported workflow:
 - call C functions

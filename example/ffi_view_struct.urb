@@ -1,12 +1,23 @@
+inner = {
+  a = "int8",
+  b = "int16"
+};
+
+outer = {
+  a = "int32",
+  b = "float64",
+  d = "struct<inner>"
+};
+
 load_fixture = (path){
   return ffi.load(path,
-    "void* make_outer()",
-    "void free_outer(void*)",
+    "pointer<outer> make_outer()",
+    "void free_outer(pointer<outer>)",
     "i32 outer_sizeof()",
     "i32 outer_off_d()",
     "i32 inner_off_b()",
-    "i32 outer_get_a(void*)",
-    "i32 inner_get_b(void*)"
+    "i32 outer_get_a(pointer<outer>)",
+    "i32 inner_get_b(pointer<outer>)"
   );
 };
 
@@ -18,14 +29,7 @@ if (lib == null) {
   return 0;
 }
 
-schema = {
-  a = "int32",
-  b = "float64",
-  d = {
-    a = "int8",
-    b = "int16"
-  }
-};
+schema = outer;
 
 layout = ffi.compile(schema);
 println("sizeof: " + ffi.sizeof(layout).string);

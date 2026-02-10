@@ -4,20 +4,21 @@
 
 load_fixture = (path){
   return ffi.load(path,
-    "void* make_outer()",
-    "void free_outer(void*)",
-    "i32 outer_get_a(void*)",
-    "i32 inner_get_b(void*)",
+    "pointer<outer> make_outer()",
+    "void free_outer(pointer<outer>)",
+    "i32 outer_get_a(pointer<outer>)",
+    "i32 inner_get_b(pointer<outer>)",
     "void* get_add_i32_ptr()",
-    "i32 sum_outer_value(@outer)",
-    "@outer make_outer_value(i32, f64, i8, i16)"
+    "i32 sum_outer_value(struct<outer>)",
+    "struct<outer> make_outer_value(i32, f64, i8, i16)"
   );
 };
 
+inner = { a = "int8", b = "int16" };
 schema = {
   a = "int32",
   b = "float64",
-  d = { a = "int8", b = "int16" }
+  d = "struct<inner>"
 };
 outer = schema;
 

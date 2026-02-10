@@ -1,29 +1,31 @@
 fail = 0;
 
+inner = {
+  a = "int8",
+  b = "int16"
+};
+
 schema = {
   a = "int32",
   b = "float64",
-  d = {
-    a = "int8",
-    b = "int16"
-  }
+  d = "struct<inner>"
 };
 outer = schema;
 
 load_fixture = (path){
   return ffi.load(path,
-    "void* make_outer()",
-    "void free_outer(void*)",
+    "pointer<outer> make_outer()",
+    "void free_outer(pointer<outer>)",
     "i32 outer_sizeof()",
     "i32 outer_off_a()",
     "i32 outer_off_b()",
     "i32 outer_off_d()",
     "i32 inner_off_a()",
     "i32 inner_off_b()",
-    "i32 outer_get_a(void*)",
+    "i32 outer_get_a(pointer<outer>)",
     "f64 outer_get_b(void*)",
-    "i32 inner_get_a(void*)",
-    "i32 inner_get_b(void*)",
+    "i32 inner_get_a(pointer<outer>)",
+    "i32 inner_get_b(pointer<outer>)",
     "void* make_arr_outer()",
     "void free_arr_outer(void*)",
     "i32 arr_outer_sizeof()",
@@ -33,8 +35,8 @@ load_fixture = (path){
     "i32 arr_outer_get_val(void*, i32)",
     "f32 arr_outer_get_f32(void*, i32)",
     "void* get_add_i32_ptr()",
-    "i32 sum_outer_value(@outer)",
-    "@outer make_outer_value(i32, f64, i8, i16)"
+    "i32 sum_outer_value(struct<outer>)",
+    "struct<outer> make_outer_value(i32, f64, i8, i16)"
   );
 };
 
@@ -120,12 +122,57 @@ v3.a = 20;
 v3.d.a = 3;
 v3.d.b = 4;
 if (lib.sum_outer_value(v3) != 27) { fail++; }
-lib.free_outer(ptr3);
+ffi.free(ptr3);
 
 ret = lib.make_outer_value(7, 1.5, 2, 9);
 if (ret.a != 7) { fail++; }
 if (ret.d.a != 2) { fail++; }
 if (ret.d.b != 9) { fail++; }
 if (ret.b != 1.5) { fail++; }
+
+u_test = {
+  __meta = { union = 1 },
+  i = "int32",
+  s = "int16"
+};
+
+bf_test = {
+  a = "uint8:3",
+  b = "uint8:5"
+};
+
+ptr_test = {
+  next = "pointer<outer>"
+};
+
+u_ptr = ffi.new(u_test);
+u_view = ffi.view(u_ptr, u_test);
+u_view.i = 4660;
+if (u_view.s != 4660) { fail++; }
+ffi.free(u_ptr);
+
+bf_ptr = ffi.new(bf_test);
+bf_view = ffi.view(bf_ptr, bf_test);
+bf_view.a = 5;
+bf_view.b = 17;
+if (bf_view.a != 5) { fail++; }
+if (bf_view.b != 17) { fail++; }
+ffi.free(bf_ptr);
+
+p_ptr = ffi.new(ptr_test);
+p_view = ffi.view(p_ptr, ptr_test);
+target_ptr = ffi.new(outer);
+target_view = ffi.view(target_ptr, outer);
+target_view.a = 88;
+p_view.next = target_ptr;
+if (p_view.next.a != 88) { fail++; }
+ffi.free(target_ptr);
+ffi.free(p_ptr);
+
+arr_ptr = ffi.new({ buf = "int32[4]" });
+arr_view = ffi.viewArray(arr_ptr, "int32", 4);
+arr_view[2] = 77;
+if (arr_view[2] != 77) { fail++; }
+ffi.free(arr_ptr);
 
 println(fail);
