@@ -525,8 +525,12 @@ Raylib wrapper:
   - `example/raylib/core_random_values.urb`
   - `example/raylib/core_delta_time.urb`
   - `example/raylib/core_window_should_close.urb`
+  - `example/raylib/core_window_flags.urb`
+  - `example/raylib/core_window_letterbox.urb`
   - `example/raylib/shapes_basic_shapes.urb`
   - `example/raylib/shapes_logo_raylib.urb`
+  - `example/raylib/shapes_logo_raylib_anim.urb`
+  - `example/raylib/shapes_colors_palette.urb`
 - If auto-load fails, pass explicit shared library path:
   - Linux: `raylib.load("../raylib/build/raylib/libraylib.so")`
   - macOS: `raylib.load("./raylib/src/libraylib.dylib")`

@@ -1,0 +1,129 @@
+// raylib [shapes] example - colors palette (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+MAX_COLORS_COUNT = 21;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - colors palette");
+rl.SetWindowSize(screenWidth, screenHeight);
+
+colorState = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+getColor = (i){
+  if (i == 0) { return rl.DARKGRAY; }
+  if (i == 1) { return rl.MAROON; }
+  if (i == 2) { return rl.ORANGE; }
+  if (i == 3) { return rl.DARKGREEN; }
+  if (i == 4) { return rl.DARKBLUE; }
+  if (i == 5) { return rl.DARKPURPLE; }
+  if (i == 6) { return rl.DARKBROWN; }
+  if (i == 7) { return rl.GRAY; }
+  if (i == 8) { return rl.RED; }
+  if (i == 9) { return rl.GOLD; }
+  if (i == 10) { return rl.LIME; }
+  if (i == 11) { return rl.BLUE; }
+  if (i == 12) { return rl.VIOLET; }
+  if (i == 13) { return rl.BROWN; }
+  if (i == 14) { return rl.LIGHTGRAY; }
+  if (i == 15) { return rl.PINK; }
+  if (i == 16) { return rl.YELLOW; }
+  if (i == 17) { return rl.GREEN; }
+  if (i == 18) { return rl.SKYBLUE; }
+  if (i == 19) { return rl.PURPLE; }
+  return rl.BEIGE;
+};
+
+getName = (i){
+  if (i == 0) { return "DARKGRAY"; }
+  if (i == 1) { return "MAROON"; }
+  if (i == 2) { return "ORANGE"; }
+  if (i == 3) { return "DARKGREEN"; }
+  if (i == 4) { return "DARKBLUE"; }
+  if (i == 5) { return "DARKPURPLE"; }
+  if (i == 6) { return "DARKBROWN"; }
+  if (i == 7) { return "GRAY"; }
+  if (i == 8) { return "RED"; }
+  if (i == 9) { return "GOLD"; }
+  if (i == 10) { return "LIME"; }
+  if (i == 11) { return "BLUE"; }
+  if (i == 12) { return "VIOLET"; }
+  if (i == 13) { return "BROWN"; }
+  if (i == 14) { return "LIGHTGRAY"; }
+  if (i == 15) { return "PINK"; }
+  if (i == 16) { return "YELLOW"; }
+  if (i == 17) { return "GREEN"; }
+  if (i == 18) { return "SKYBLUE"; }
+  if (i == 19) { return "PURPLE"; }
+  return "BEIGE";
+};
+
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+while (rl.IsWindowReady() && !rl.WindowShouldClose()) {
+  mousePoint = rl.GetMousePosition();
+
+  i = 0;
+  while (i < MAX_COLORS_COUNT) {
+    x = 20 + 100*(i%7) + 10*(i%7);
+    y = 80 + 100*(i/7) + 10*(i/7);
+
+    if (mousePoint.x >= x && mousePoint.x <= (x + 100) && mousePoint.y >= y && mousePoint.y <= (y + 100)) { colorState[i] = 1; }
+    else { colorState[i] = 0; }
+
+    i++;
+  }
+
+  rl.BeginDrawing();
+
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawText("raylib colors palette", 28, 42, 20, rl.BLACK.view);
+  rl.DrawText("press SPACE to see all colors", rl.GetScreenWidth() - 180, rl.GetScreenHeight() - 40, 10, rl.GRAY.view);
+
+  i = 0;
+  while (i < MAX_COLORS_COUNT) {
+    x = 20 + 100*(i%7) + 10*(i%7);
+    y = 80 + 100*(i/7) + 10*(i/7);
+    color = getColor(i);
+
+    alpha = 1.0;
+    if (colorState[i]) { alpha = 0.6; }
+
+    rl.DrawRectangle(x, y, 100, 100, rl.Fade(color.view, alpha));
+
+    if (rl.IsKeyDown(rl.KEY_SPACE) || colorState[i]) {
+      rl.DrawRectangle(x, y + 100 - 26, 100, 20, rl.BLACK.view);
+      rl.DrawRectangleLines(x, y, 100, 100, rl.Fade(rl.BLACK.view, 0.3));
+
+      name = getName(i);
+      textX = x + 100 - rl.MeasureText(name, 10) - 12;
+      textY = y + 100 - 20;
+      rl.DrawText(name, textX, textY, 10, color.view);
+    }
+
+    i++;
+  }
+
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;

@@ -4,8 +4,11 @@ raylib = import("lib/raylib");
 rl = raylib.load();
 if (rl == null) {
   println("raylib library not found");
+  gc.collect();
   return 0;
 }
+
+gc.rate = 100;
 
 screenWidth = 800;
 screenHeight = 450;
@@ -23,6 +26,7 @@ rl.SetTargetFPS(currentFps);
 
 if (!rl.IsWindowReady()) {
   println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
   return 0;
 }
 
@@ -67,3 +71,5 @@ while (!rl.WindowShouldClose()) {
 }
 
 rl.CloseWindow();
+gc.collect();
+return 0;

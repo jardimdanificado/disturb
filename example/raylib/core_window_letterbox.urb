@@ -1,0 +1,116 @@
+// raylib [core] example - window letterbox (Disturb port)
+
+raylib = import("lib/raylib");
+
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE | rl.FLAG_VSYNC_HINT);
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - window letterbox");
+rl.SetWindowMinSize(320, 240);
+
+gameScreenWidth = 640;
+gameScreenHeight = 480;
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+target = rl.LoadRenderTexture(gameScreenWidth, gameScreenHeight);
+rl.SetTextureFilter(target.texture, rl.TEXTURE_FILTER_BILINEAR);
+
+randomize_color = (c){
+  c.view.r = rl.GetRandomValue(100, 250);
+  c.view.g = rl.GetRandomValue(50, 150);
+  c.view.b = rl.GetRandomValue(10, 100);
+  c.view.a = 255;
+};
+
+c0 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c0);
+c1 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c1);
+c2 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c2);
+c3 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c3);
+c4 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c4);
+c5 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c5);
+c6 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c6);
+c7 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c7);
+c8 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c8);
+c9 = rl.newColor(rl.Color, 0, 0, 0, 255); randomize_color(c9);
+
+virtualMouse = rl.newVector2(rl.Vector2, 0.0, 0.0);
+src = rl.newRectangle(rl.Rectangle, 0.0, 0.0, target.texture.width, -target.texture.height);
+dst = rl.newRectangle(rl.Rectangle, 0.0, 0.0, gameScreenWidth, gameScreenHeight);
+origin = rl.newVector2(rl.Vector2, 0.0, 0.0);
+
+rl.SetTargetFPS(60);
+
+while (rl.IsWindowReady() && !rl.WindowShouldClose()) {
+  sx = rl.GetScreenWidth();
+  sy = rl.GetScreenHeight();
+
+  scaleX = sx/gameScreenWidth;
+  scaleY = sy/gameScreenHeight;
+  scale = scaleX;
+  if (scaleY < scale) { scale = scaleY; }
+
+  if (rl.IsKeyPressed(rl.KEY_SPACE)) {
+    randomize_color(c0); randomize_color(c1); randomize_color(c2); randomize_color(c3); randomize_color(c4);
+    randomize_color(c5); randomize_color(c6); randomize_color(c7); randomize_color(c8); randomize_color(c9);
+  }
+
+  mouse = rl.GetMousePosition();
+  virtualMouse.view.x = (mouse.x - (sx - (gameScreenWidth*scale))*0.5)/scale;
+  virtualMouse.view.y = (mouse.y - (sy - (gameScreenHeight*scale))*0.5)/scale;
+
+  if (virtualMouse.view.x < 0) { virtualMouse.view.x = 0; }
+  if (virtualMouse.view.y < 0) { virtualMouse.view.y = 0; }
+  if (virtualMouse.view.x > gameScreenWidth) { virtualMouse.view.x = gameScreenWidth; }
+  if (virtualMouse.view.y > gameScreenHeight) { virtualMouse.view.y = gameScreenHeight; }
+
+  rl.BeginTextureMode(target);
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawRectangle(0, (gameScreenHeight/10)*0, gameScreenWidth, gameScreenHeight/10, c0.view);
+  rl.DrawRectangle(0, (gameScreenHeight/10)*1, gameScreenWidth, gameScreenHeight/10, c1.view);
+  rl.DrawRectangle(0, (gameScreenHeight/10)*2, gameScreenWidth, gameScreenHeight/10, c2.view);
+  rl.DrawRectangle(0, (gameScreenHeight/10)*3, gameScreenWidth, gameScreenHeight/10, c3.view);
+  rl.DrawRectangle(0, (gameScreenHeight/10)*4, gameScreenWidth, gameScreenHeight/10, c4.view);
+  rl.DrawRectangle(0, (gameScreenHeight/10)*5, gameScreenWidth, gameScreenHeight/10, c5.view);
+  rl.DrawRectangle(0, (gameScreenHeight/10)*6, gameScreenWidth, gameScreenHeight/10, c6.view);
+  rl.DrawRectangle(0, (gameScreenHeight/10)*7, gameScreenWidth, gameScreenHeight/10, c7.view);
+  rl.DrawRectangle(0, (gameScreenHeight/10)*8, gameScreenWidth, gameScreenHeight/10, c8.view);
+  rl.DrawRectangle(0, (gameScreenHeight/10)*9, gameScreenWidth, gameScreenHeight/10, c9.view);
+
+  rl.DrawText("If executed inside a window,\nyou can resize the window,\nand see the screen scaling!", 10, 25, 20, rl.WHITE.view);
+  rl.DrawText(rl.TextFormat("Default Mouse: [%i , %i]", mouse.x, mouse.y), 350, 25, 20, rl.GREEN.view);
+  rl.DrawText(rl.TextFormat("Virtual Mouse: [%i , %i]", virtualMouse.view.x, virtualMouse.view.y), 350, 55, 20, rl.YELLOW.view);
+  rl.EndTextureMode();
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.BLACK.view);
+
+  dst.view.x = (sx - (gameScreenWidth*scale))*0.5;
+  dst.view.y = (sy - (gameScreenHeight*scale))*0.5;
+  dst.view.width = gameScreenWidth*scale;
+  dst.view.height = gameScreenHeight*scale;
+
+  rl.DrawTexturePro(target.texture, src.view, dst.view, origin.view, 0.0, rl.WHITE.view);
+
+  rl.EndDrawing();
+}
+
+rl.UnloadRenderTexture(target);
+rl.CloseWindow();
+gc.collect();
+return 0;

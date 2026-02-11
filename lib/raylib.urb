@@ -5,11 +5,15 @@ load = (libPath = null){
   colorSchema = { r = "u8", g = "u8", b = "u8", a = "u8" };
   vector2Schema = { x = "f32", y = "f32" };
   rectangleSchema = { x = "f32", y = "f32", width = "f32", height = "f32" };
+  textureSchema = { id = "u32", width = "i32", height = "i32", mipmaps = "i32", format = "i32" };
+  renderTextureSchema = { id = "u32", texture = "struct<RaylibTexture>", depth = "struct<RaylibTexture>" };
 
   // FFI struct<name> resolution uses VM global scope.
   global.RaylibColor = colorSchema;
   global.RaylibVector2 = vector2Schema;
   global.RaylibRectangle = rectangleSchema;
+  global.RaylibTexture = textureSchema;
+  global.RaylibRenderTexture = renderTextureSchema;
 
   lib = null;
 
@@ -21,6 +25,9 @@ load = (libPath = null){
       "void CloseWindow()",
       "void SetTargetFPS(i32)",
       "void SetExitKey(i32)",
+      "void SetConfigFlags(u32)",
+      "void SetWindowMinSize(i32, i32)",
+      "void SetWindowSize(i32, i32)",
       "void SetRandomSeed(u32)",
       "i32 GetFPS()",
       "f32 GetFrameTime()",
@@ -37,13 +44,28 @@ load = (libPath = null){
       "u8 IsCursorHidden()",
       "void ShowCursor()",
       "void HideCursor()",
+      "void ToggleFullscreen()",
+      "u8 IsWindowState(u32)",
+      "void SetWindowState(u32)",
+      "void ClearWindowState(u32)",
+      "void MinimizeWindow()",
+      "void RestoreWindow()",
+      "void MaximizeWindow()",
+      "void ToggleBorderlessWindowed()",
       "struct<RaylibVector2> GetMousePosition()",
       "void BeginDrawing()",
+      "void BeginTextureMode(struct<RaylibRenderTexture>)",
       "void EndDrawing()",
+      "void EndTextureMode()",
       "void ClearBackground(struct<RaylibColor>)",
       "void DrawFPS(i32, i32)",
       "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
+      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
+      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
+      "void SetTextureFilter(struct<RaylibTexture>, i32)",
       "char* TextFormat(char*, ...)",
+      "char* TextSubtext(char*, i32, i32)",
+      "i32 MeasureText(char*, i32)",
       "void DrawPixel(i32, i32, struct<RaylibColor>)",
       "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
@@ -55,12 +77,16 @@ load = (libPath = null){
       "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
       "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
+      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
+      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
       "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
       "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
       "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)"
+      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
+      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
+      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
     );
   }
 
@@ -72,6 +98,9 @@ load = (libPath = null){
       "void CloseWindow()",
       "void SetTargetFPS(i32)",
       "void SetExitKey(i32)",
+      "void SetConfigFlags(u32)",
+      "void SetWindowMinSize(i32, i32)",
+      "void SetWindowSize(i32, i32)",
       "void SetRandomSeed(u32)",
       "i32 GetFPS()",
       "f32 GetFrameTime()",
@@ -88,13 +117,28 @@ load = (libPath = null){
       "u8 IsCursorHidden()",
       "void ShowCursor()",
       "void HideCursor()",
+      "void ToggleFullscreen()",
+      "u8 IsWindowState(u32)",
+      "void SetWindowState(u32)",
+      "void ClearWindowState(u32)",
+      "void MinimizeWindow()",
+      "void RestoreWindow()",
+      "void MaximizeWindow()",
+      "void ToggleBorderlessWindowed()",
       "struct<RaylibVector2> GetMousePosition()",
       "void BeginDrawing()",
+      "void BeginTextureMode(struct<RaylibRenderTexture>)",
       "void EndDrawing()",
+      "void EndTextureMode()",
       "void ClearBackground(struct<RaylibColor>)",
       "void DrawFPS(i32, i32)",
       "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
+      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
+      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
+      "void SetTextureFilter(struct<RaylibTexture>, i32)",
       "char* TextFormat(char*, ...)",
+      "char* TextSubtext(char*, i32, i32)",
+      "i32 MeasureText(char*, i32)",
       "void DrawPixel(i32, i32, struct<RaylibColor>)",
       "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
@@ -106,12 +150,16 @@ load = (libPath = null){
       "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
       "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
+      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
+      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
       "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
       "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
       "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)"
+      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
+      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
+      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
     );
   }
 
@@ -123,6 +171,9 @@ load = (libPath = null){
       "void CloseWindow()",
       "void SetTargetFPS(i32)",
       "void SetExitKey(i32)",
+      "void SetConfigFlags(u32)",
+      "void SetWindowMinSize(i32, i32)",
+      "void SetWindowSize(i32, i32)",
       "void SetRandomSeed(u32)",
       "i32 GetFPS()",
       "f32 GetFrameTime()",
@@ -139,13 +190,28 @@ load = (libPath = null){
       "u8 IsCursorHidden()",
       "void ShowCursor()",
       "void HideCursor()",
+      "void ToggleFullscreen()",
+      "u8 IsWindowState(u32)",
+      "void SetWindowState(u32)",
+      "void ClearWindowState(u32)",
+      "void MinimizeWindow()",
+      "void RestoreWindow()",
+      "void MaximizeWindow()",
+      "void ToggleBorderlessWindowed()",
       "struct<RaylibVector2> GetMousePosition()",
       "void BeginDrawing()",
+      "void BeginTextureMode(struct<RaylibRenderTexture>)",
       "void EndDrawing()",
+      "void EndTextureMode()",
       "void ClearBackground(struct<RaylibColor>)",
       "void DrawFPS(i32, i32)",
       "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
+      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
+      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
+      "void SetTextureFilter(struct<RaylibTexture>, i32)",
       "char* TextFormat(char*, ...)",
+      "char* TextSubtext(char*, i32, i32)",
+      "i32 MeasureText(char*, i32)",
       "void DrawPixel(i32, i32, struct<RaylibColor>)",
       "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
@@ -157,12 +223,16 @@ load = (libPath = null){
       "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
       "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
+      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
+      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
       "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
       "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
       "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)"
+      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
+      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
+      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
     );
   }
 
@@ -174,6 +244,9 @@ load = (libPath = null){
       "void CloseWindow()",
       "void SetTargetFPS(i32)",
       "void SetExitKey(i32)",
+      "void SetConfigFlags(u32)",
+      "void SetWindowMinSize(i32, i32)",
+      "void SetWindowSize(i32, i32)",
       "void SetRandomSeed(u32)",
       "i32 GetFPS()",
       "f32 GetFrameTime()",
@@ -190,13 +263,28 @@ load = (libPath = null){
       "u8 IsCursorHidden()",
       "void ShowCursor()",
       "void HideCursor()",
+      "void ToggleFullscreen()",
+      "u8 IsWindowState(u32)",
+      "void SetWindowState(u32)",
+      "void ClearWindowState(u32)",
+      "void MinimizeWindow()",
+      "void RestoreWindow()",
+      "void MaximizeWindow()",
+      "void ToggleBorderlessWindowed()",
       "struct<RaylibVector2> GetMousePosition()",
       "void BeginDrawing()",
+      "void BeginTextureMode(struct<RaylibRenderTexture>)",
       "void EndDrawing()",
+      "void EndTextureMode()",
       "void ClearBackground(struct<RaylibColor>)",
       "void DrawFPS(i32, i32)",
       "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
+      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
+      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
+      "void SetTextureFilter(struct<RaylibTexture>, i32)",
       "char* TextFormat(char*, ...)",
+      "char* TextSubtext(char*, i32, i32)",
+      "i32 MeasureText(char*, i32)",
       "void DrawPixel(i32, i32, struct<RaylibColor>)",
       "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
@@ -208,12 +296,16 @@ load = (libPath = null){
       "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
       "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
+      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
+      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
       "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
       "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
       "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)"
+      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
+      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
+      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
     );
   }
 
@@ -225,6 +317,9 @@ load = (libPath = null){
       "void CloseWindow()",
       "void SetTargetFPS(i32)",
       "void SetExitKey(i32)",
+      "void SetConfigFlags(u32)",
+      "void SetWindowMinSize(i32, i32)",
+      "void SetWindowSize(i32, i32)",
       "void SetRandomSeed(u32)",
       "i32 GetFPS()",
       "f32 GetFrameTime()",
@@ -241,13 +336,28 @@ load = (libPath = null){
       "u8 IsCursorHidden()",
       "void ShowCursor()",
       "void HideCursor()",
+      "void ToggleFullscreen()",
+      "u8 IsWindowState(u32)",
+      "void SetWindowState(u32)",
+      "void ClearWindowState(u32)",
+      "void MinimizeWindow()",
+      "void RestoreWindow()",
+      "void MaximizeWindow()",
+      "void ToggleBorderlessWindowed()",
       "struct<RaylibVector2> GetMousePosition()",
       "void BeginDrawing()",
+      "void BeginTextureMode(struct<RaylibRenderTexture>)",
       "void EndDrawing()",
+      "void EndTextureMode()",
       "void ClearBackground(struct<RaylibColor>)",
       "void DrawFPS(i32, i32)",
       "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
+      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
+      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
+      "void SetTextureFilter(struct<RaylibTexture>, i32)",
       "char* TextFormat(char*, ...)",
+      "char* TextSubtext(char*, i32, i32)",
+      "i32 MeasureText(char*, i32)",
       "void DrawPixel(i32, i32, struct<RaylibColor>)",
       "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
@@ -259,12 +369,16 @@ load = (libPath = null){
       "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
       "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
+      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
+      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
       "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
       "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
       "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)"
+      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
+      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
+      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
     );
   }
 
@@ -276,6 +390,9 @@ load = (libPath = null){
       "void CloseWindow()",
       "void SetTargetFPS(i32)",
       "void SetExitKey(i32)",
+      "void SetConfigFlags(u32)",
+      "void SetWindowMinSize(i32, i32)",
+      "void SetWindowSize(i32, i32)",
       "void SetRandomSeed(u32)",
       "i32 GetFPS()",
       "f32 GetFrameTime()",
@@ -292,13 +409,28 @@ load = (libPath = null){
       "u8 IsCursorHidden()",
       "void ShowCursor()",
       "void HideCursor()",
+      "void ToggleFullscreen()",
+      "u8 IsWindowState(u32)",
+      "void SetWindowState(u32)",
+      "void ClearWindowState(u32)",
+      "void MinimizeWindow()",
+      "void RestoreWindow()",
+      "void MaximizeWindow()",
+      "void ToggleBorderlessWindowed()",
       "struct<RaylibVector2> GetMousePosition()",
       "void BeginDrawing()",
+      "void BeginTextureMode(struct<RaylibRenderTexture>)",
       "void EndDrawing()",
+      "void EndTextureMode()",
       "void ClearBackground(struct<RaylibColor>)",
       "void DrawFPS(i32, i32)",
       "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
+      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
+      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
+      "void SetTextureFilter(struct<RaylibTexture>, i32)",
       "char* TextFormat(char*, ...)",
+      "char* TextSubtext(char*, i32, i32)",
+      "i32 MeasureText(char*, i32)",
       "void DrawPixel(i32, i32, struct<RaylibColor>)",
       "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
@@ -310,12 +442,16 @@ load = (libPath = null){
       "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
       "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
+      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
+      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
       "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
       "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
       "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)"
+      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
+      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
+      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
     );
   }
 
@@ -327,6 +463,9 @@ load = (libPath = null){
       "void CloseWindow()",
       "void SetTargetFPS(i32)",
       "void SetExitKey(i32)",
+      "void SetConfigFlags(u32)",
+      "void SetWindowMinSize(i32, i32)",
+      "void SetWindowSize(i32, i32)",
       "void SetRandomSeed(u32)",
       "i32 GetFPS()",
       "f32 GetFrameTime()",
@@ -343,13 +482,28 @@ load = (libPath = null){
       "u8 IsCursorHidden()",
       "void ShowCursor()",
       "void HideCursor()",
+      "void ToggleFullscreen()",
+      "u8 IsWindowState(u32)",
+      "void SetWindowState(u32)",
+      "void ClearWindowState(u32)",
+      "void MinimizeWindow()",
+      "void RestoreWindow()",
+      "void MaximizeWindow()",
+      "void ToggleBorderlessWindowed()",
       "struct<RaylibVector2> GetMousePosition()",
       "void BeginDrawing()",
+      "void BeginTextureMode(struct<RaylibRenderTexture>)",
       "void EndDrawing()",
+      "void EndTextureMode()",
       "void ClearBackground(struct<RaylibColor>)",
       "void DrawFPS(i32, i32)",
       "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
+      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
+      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
+      "void SetTextureFilter(struct<RaylibTexture>, i32)",
       "char* TextFormat(char*, ...)",
+      "char* TextSubtext(char*, i32, i32)",
+      "i32 MeasureText(char*, i32)",
       "void DrawPixel(i32, i32, struct<RaylibColor>)",
       "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
@@ -361,23 +515,54 @@ load = (libPath = null){
       "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
       "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
       "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
+      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
+      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
       "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
       "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
       "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
       "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)"
+      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
+      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
+      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
     );
   }
 
   if (lib == null) { return null; }
 
-  make_color = (schema, r, g, b, a){
+  mkColor = (schema, r, g, b, a){
     ptr = ffi.new(schema);
     view = ffi.view(ptr, schema);
     view.r = r; view.g = g; view.b = b; view.a = a;
     return { ptr = ptr, view = view };
   };
+
+  LIGHTGRAY = mkColor(colorSchema, 200, 200, 200, 255);
+  GRAY = mkColor(colorSchema, 130, 130, 130, 255);
+  DARKGRAY = mkColor(colorSchema, 80, 80, 80, 255);
+  YELLOW = mkColor(colorSchema, 253, 249, 0, 255);
+  GOLD = mkColor(colorSchema, 255, 203, 0, 255);
+  ORANGE = mkColor(colorSchema, 255, 161, 0, 255);
+  PINK = mkColor(colorSchema, 255, 109, 194, 255);
+  RED = mkColor(colorSchema, 230, 41, 55, 255);
+  MAROON = mkColor(colorSchema, 190, 33, 55, 255);
+  GREEN = mkColor(colorSchema, 0, 228, 48, 255);
+  LIME = mkColor(colorSchema, 0, 158, 47, 255);
+  DARKGREEN = mkColor(colorSchema, 0, 117, 44, 255);
+  SKYBLUE = mkColor(colorSchema, 102, 191, 255, 255);
+  BLUE = mkColor(colorSchema, 0, 121, 241, 255);
+  DARKBLUE = mkColor(colorSchema, 0, 82, 172, 255);
+  PURPLE = mkColor(colorSchema, 200, 122, 255, 255);
+  VIOLET = mkColor(colorSchema, 135, 60, 190, 255);
+  DARKPURPLE = mkColor(colorSchema, 112, 31, 126, 255);
+  BEIGE = mkColor(colorSchema, 211, 176, 131, 255);
+  BROWN = mkColor(colorSchema, 127, 106, 79, 255);
+  DARKBROWN = mkColor(colorSchema, 76, 63, 47, 255);
+  WHITE = mkColor(colorSchema, 255, 255, 255, 255);
+  BLACK = mkColor(colorSchema, 0, 0, 0, 255);
+  BLANK = mkColor(colorSchema, 0, 0, 0, 0);
+  MAGENTA = mkColor(colorSchema, 255, 0, 255, 255);
+  RAYWHITE = mkColor(colorSchema, 245, 245, 245, 255);
 
   return {
     lib = lib,
@@ -385,6 +570,8 @@ load = (libPath = null){
     Color = colorSchema,
     Vector2 = vector2Schema,
     Rectangle = rectangleSchema,
+    Texture = textureSchema,
+    RenderTexture = renderTextureSchema,
 
     MOUSE_BUTTON_LEFT = 0,
     MOUSE_BUTTON_RIGHT = 1,
@@ -395,11 +582,34 @@ load = (libPath = null){
     MOUSE_BUTTON_BACK = 6,
 
     KEY_SPACE = 32,
+    KEY_B = 66,
+    KEY_F = 70,
+    KEY_G = 71,
     KEY_H = 72,
     KEY_R = 82,
     KEY_Y = 89,
+    KEY_M = 77,
     KEY_N = 78,
     KEY_NULL = 0,
+
+    TEXTURE_FILTER_POINT = 0,
+    TEXTURE_FILTER_BILINEAR = 1,
+    TEXTURE_FILTER_TRILINEAR = 2,
+
+    FLAG_VSYNC_HINT = 0x00000040,
+    FLAG_FULLSCREEN_MODE = 0x00000002,
+    FLAG_WINDOW_RESIZABLE = 0x00000004,
+    FLAG_WINDOW_UNDECORATED = 0x00000008,
+    FLAG_WINDOW_HIDDEN = 0x00000080,
+    FLAG_WINDOW_MINIMIZED = 0x00000200,
+    FLAG_WINDOW_MAXIMIZED = 0x00000400,
+    FLAG_WINDOW_UNFOCUSED = 0x00000800,
+    FLAG_WINDOW_TOPMOST = 0x00001000,
+    FLAG_WINDOW_ALWAYS_RUN = 0x00000100,
+    FLAG_WINDOW_TRANSPARENT = 0x00000010,
+    FLAG_WINDOW_HIGHDPI = 0x00002000,
+    FLAG_BORDERLESS_WINDOWED_MODE = 0x00008000,
+    FLAG_MSAA_4X_HINT = 0x00000020,
     KEY_ESCAPE = 256,
     KEY_ENTER = 257,
     KEY_TAB = 258,
@@ -411,36 +621,39 @@ load = (libPath = null){
     KEY_A = 65,
     KEY_D = 68,
     KEY_S = 83,
+    KEY_T = 84,
+    KEY_U = 85,
+    KEY_V = 86,
     KEY_W = 87,
 
-    LIGHTGRAY = make_color(colorSchema, 200, 200, 200, 255),
-    GRAY = make_color(colorSchema, 130, 130, 130, 255),
-    DARKGRAY = make_color(colorSchema, 80, 80, 80, 255),
-    YELLOW = make_color(colorSchema, 253, 249, 0, 255),
-    GOLD = make_color(colorSchema, 255, 203, 0, 255),
-    ORANGE = make_color(colorSchema, 255, 161, 0, 255),
-    PINK = make_color(colorSchema, 255, 109, 194, 255),
-    RED = make_color(colorSchema, 230, 41, 55, 255),
-    MAROON = make_color(colorSchema, 190, 33, 55, 255),
-    GREEN = make_color(colorSchema, 0, 228, 48, 255),
-    LIME = make_color(colorSchema, 0, 158, 47, 255),
-    DARKGREEN = make_color(colorSchema, 0, 117, 44, 255),
-    SKYBLUE = make_color(colorSchema, 102, 191, 255, 255),
-    BLUE = make_color(colorSchema, 0, 121, 241, 255),
-    DARKBLUE = make_color(colorSchema, 0, 82, 172, 255),
-    PURPLE = make_color(colorSchema, 200, 122, 255, 255),
-    VIOLET = make_color(colorSchema, 135, 60, 190, 255),
-    DARKPURPLE = make_color(colorSchema, 112, 31, 126, 255),
-    BEIGE = make_color(colorSchema, 211, 176, 131, 255),
-    BROWN = make_color(colorSchema, 127, 106, 79, 255),
-    DARKBROWN = make_color(colorSchema, 76, 63, 47, 255),
-    WHITE = make_color(colorSchema, 255, 255, 255, 255),
-    BLACK = make_color(colorSchema, 0, 0, 0, 255),
-    BLANK = make_color(colorSchema, 0, 0, 0, 0),
-    MAGENTA = make_color(colorSchema, 255, 0, 255, 255),
-    RAYWHITE = make_color(colorSchema, 245, 245, 245, 255),
+    LIGHTGRAY = LIGHTGRAY,
+    GRAY = GRAY,
+    DARKGRAY = DARKGRAY,
+    YELLOW = YELLOW,
+    GOLD = GOLD,
+    ORANGE = ORANGE,
+    PINK = PINK,
+    RED = RED,
+    MAROON = MAROON,
+    GREEN = GREEN,
+    LIME = LIME,
+    DARKGREEN = DARKGREEN,
+    SKYBLUE = SKYBLUE,
+    BLUE = BLUE,
+    DARKBLUE = DARKBLUE,
+    PURPLE = PURPLE,
+    VIOLET = VIOLET,
+    DARKPURPLE = DARKPURPLE,
+    BEIGE = BEIGE,
+    BROWN = BROWN,
+    DARKBROWN = DARKBROWN,
+    WHITE = WHITE,
+    BLACK = BLACK,
+    BLANK = BLANK,
+    MAGENTA = MAGENTA,
+    RAYWHITE = RAYWHITE,
 
-    newColor = make_color,
+    newColor = mkColor,
     newVector2 = (schema, x, y){
       ptr = ffi.new(schema);
       view = ffi.view(ptr, schema);
@@ -460,6 +673,9 @@ load = (libPath = null){
     CloseWindow = lib.CloseWindow,
     SetTargetFPS = lib.SetTargetFPS,
     SetExitKey = lib.SetExitKey,
+    SetConfigFlags = lib.SetConfigFlags,
+    SetWindowMinSize = lib.SetWindowMinSize,
+    SetWindowSize = lib.SetWindowSize,
     SetRandomSeed = lib.SetRandomSeed,
     GetFPS = lib.GetFPS,
     GetFrameTime = lib.GetFrameTime,
@@ -476,13 +692,28 @@ load = (libPath = null){
     IsCursorHidden = lib.IsCursorHidden,
     ShowCursor = lib.ShowCursor,
     HideCursor = lib.HideCursor,
+    ToggleFullscreen = lib.ToggleFullscreen,
+    IsWindowState = lib.IsWindowState,
+    SetWindowState = lib.SetWindowState,
+    ClearWindowState = lib.ClearWindowState,
+    MinimizeWindow = lib.MinimizeWindow,
+    RestoreWindow = lib.RestoreWindow,
+    MaximizeWindow = lib.MaximizeWindow,
+    ToggleBorderlessWindowed = lib.ToggleBorderlessWindowed,
     GetMousePosition = lib.GetMousePosition,
     BeginDrawing = lib.BeginDrawing,
+    BeginTextureMode = lib.BeginTextureMode,
     EndDrawing = lib.EndDrawing,
+    EndTextureMode = lib.EndTextureMode,
     DrawFPS = lib.DrawFPS,
     ClearBackground = lib.ClearBackground,
     DrawText = lib.DrawText,
+    LoadRenderTexture = lib.LoadRenderTexture,
+    UnloadRenderTexture = lib.UnloadRenderTexture,
+    SetTextureFilter = lib.SetTextureFilter,
     TextFormat = lib.TextFormat,
+    TextSubtext = lib.TextSubtext,
+    MeasureText = lib.MeasureText,
     DrawPixel = lib.DrawPixel,
     DrawLine = lib.DrawLine,
     DrawCircle = lib.DrawCircle,
@@ -494,12 +725,16 @@ load = (libPath = null){
     DrawRectangle = lib.DrawRectangle,
     DrawRectangleRec = lib.DrawRectangleRec,
     DrawRectangleLines = lib.DrawRectangleLines,
+    DrawRectangleLinesEx = lib.DrawRectangleLinesEx,
+    DrawTexturePro = lib.DrawTexturePro,
     DrawRectangleGradientH = lib.DrawRectangleGradientH,
     DrawTriangle = lib.DrawTriangle,
     DrawTriangleLines = lib.DrawTriangleLines,
     DrawPoly = lib.DrawPoly,
     DrawPolyLines = lib.DrawPolyLines,
-    DrawPolyLinesEx = lib.DrawPolyLinesEx
+    DrawPolyLinesEx = lib.DrawPolyLinesEx,
+    CheckCollisionPointRec = lib.CheckCollisionPointRec,
+    Fade = lib.Fade
   };
 };
 

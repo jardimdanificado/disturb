@@ -8,14 +8,18 @@ rl = raylib.load();
 if (rl == null) {
   println("raylib nao encontrada. Passe o caminho manual:");
   println("  rl = raylib.load(\"../raylib/build/raylib/libraylib.so\")");
+  gc.collect();
   return 0;
 }
+
+gc.rate = 100;
 
 rl.InitWindow(800, 450, "disturb + raylib");
 rl.SetTargetFPS(60);
 
 if (!rl.IsWindowReady()) {
   println("raylib backend grafico indisponivel (sem DISPLAY?)");
+  gc.collect();
   return 0;
 }
 
@@ -33,3 +37,5 @@ while (!rl.WindowShouldClose()) {
 }
 
 rl.CloseWindow();
+gc.collect();
+return 0;
