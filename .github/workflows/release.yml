@@ -203,6 +203,18 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Clean existing release assets for tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ inputs.version }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release view "$tag" --json assets --jq '.assets[].name' | while read -r asset; do
+              [ -n "$asset" ] || continue
+              gh release delete-asset "$tag" "$asset" -y
+            done
+          fi
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
