@@ -1,0 +1,28 @@
+// raylib [core] example - basic window (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  return 0;
+}
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - basic window");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  return 0;
+}
+
+while (!rl.WindowShouldClose()) {
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.DrawText("Congrats! You created your first window!", 190, 200, 20, rl.LIGHTGRAY.view);
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();

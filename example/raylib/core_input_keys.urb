@@ -1,0 +1,36 @@
+// raylib [core] example - input keys (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  return 0;
+}
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - input keys");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  return 0;
+}
+
+ball = rl.newVector2(rl.Vector2, screenWidth/2.0, screenHeight/2.0);
+
+while (!rl.WindowShouldClose()) {
+  if (rl.IsKeyDown(rl.KEY_RIGHT)) { ball.view.x = ball.view.x + 2.0; }
+  if (rl.IsKeyDown(rl.KEY_LEFT)) { ball.view.x = ball.view.x - 2.0; }
+  if (rl.IsKeyDown(rl.KEY_UP)) { ball.view.y = ball.view.y - 2.0; }
+  if (rl.IsKeyDown(rl.KEY_DOWN)) { ball.view.y = ball.view.y + 2.0; }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.DrawText("move the ball with arrow keys", 10, 10, 20, rl.DARKGRAY.view);
+  rl.DrawCircleV(ball.view, 50.0, rl.MAROON.view);
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();

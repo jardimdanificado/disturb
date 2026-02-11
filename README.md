@@ -515,6 +515,23 @@ Examples:
 - `example/ffi_fnptr_fields.urb`
 - `example/ffi_auto_compile_optional.urb`
 
+Raylib wrapper:
+- `lib/raylib.urb` exposes `raylib` core API via FFI (`raylib.load(path?)`)
+- Official raylib core ports:
+  - `example/raylib/core_basic_window.urb`
+  - `example/raylib/core_input_keys.urb`
+  - `example/raylib/core_input_mouse.urb`
+  - `example/raylib/core_input_mouse_wheel.urb`
+  - `example/raylib/core_random_values.urb`
+  - `example/raylib/core_delta_time.urb`
+  - `example/raylib/core_window_should_close.urb`
+  - `example/raylib/shapes_basic_shapes.urb`
+  - `example/raylib/shapes_logo_raylib.urb`
+- If auto-load fails, pass explicit shared library path:
+  - Linux: `raylib.load("../raylib/build/raylib/libraylib.so")`
+  - macOS: `raylib.load("./raylib/src/libraylib.dylib")`
+  - Windows: `raylib.load("./raylib/src/raylib.dll")`
+
 ## Tests
 
 Main language tests:
