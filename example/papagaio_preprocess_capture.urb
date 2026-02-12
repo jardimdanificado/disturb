@@ -1,0 +1,7 @@
+// papagaio_preprocess_capture.urb
+// Pattern captures become source fragments at compile-time.
+
+$pattern{SUM $a $b}{println($a + $b);}
+
+SUM 2 3
+SUM 10 20

@@ -1,0 +1,14 @@
+// papagaio_preprocess_mixed.urb
+// Same file using compile-time + runtime papagaio.
+
+// Compile-time declaration (outside string): expands before parse.
+$pattern{MAKE_HELLO $who}{println("[compile-time] ola $who");}
+
+MAKE_HELLO mundo
+
+// Runtime template (inside string): processed at runtime.
+runtime_tpl = "\$pattern{ola $nome}{[runtime] ola $nome}ola papagaio";
+println(papagaio(runtime_tpl));
+
+// Runtime via string literal with $ (processed when literal is executed).
+println("$pattern{x $n}{[runtime-literal] x=$n}x 42");

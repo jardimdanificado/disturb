@@ -426,6 +426,16 @@ Assembler/disassembler example is provided in:
 Papagaio processing applies to string literals containing `$`.
 Use `\$` to keep literal `$`.
 
+Source-level compile-time preprocessing is automatic for papagaio declarations
+outside strings/comments (`$pattern{...}{...}`, `$regex ... {...}`, `$eval{...}`).
+Papagaio declarations inside string literals stay runtime behavior.
+
+Examples:
+- `example/papagaio_preprocess_basic.urb`
+- `example/papagaio_preprocess_capture.urb`
+- `example/papagaio_preprocess_macro.urb`
+- `example/papagaio_preprocess_mixed.urb`
+
 Supported patterns include:
 - `$pattern{...}{...}`
 - `$regex ... {...}`

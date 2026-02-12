@@ -208,6 +208,7 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry);
 NativeFn vm_lookup_native(const char *name);
 
 int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap);
+int vm_compile_source_with_vm(VM *vm, const char *src, Bytecode *out, char *err, size_t err_cap);
 ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len);
 
 #endif

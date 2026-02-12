@@ -1537,7 +1537,7 @@ static void native_parse(VM *vm, List *stack, List *global)
     Bytecode bc;
     char err[256];
     err[0] = 0;
-    if (!vm_compile_source(buf, &bc, err, sizeof(err))) {
+    if (!vm_compile_source_with_vm(vm, buf, &bc, err, sizeof(err))) {
         fprintf(stderr, "%s\n", err[0] ? err : "parse error");
         free(buf);
         return;

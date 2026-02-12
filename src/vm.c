@@ -5969,7 +5969,7 @@ ObjEntry *vm_eval_source(VM *vm, const char *src, size_t len)
     Bytecode bc;
     char err[256];
     err[0] = 0;
-    if (!vm_compile_source(buf, &bc, err, sizeof(err))) {
+    if (!vm_compile_source_with_vm(vm, buf, &bc, err, sizeof(err))) {
         fprintf(stderr, "%s\n", err[0] ? err : "eval error");
         free(buf);
         return NULL;

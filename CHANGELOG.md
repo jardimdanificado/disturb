@@ -1,6 +1,10 @@
 # Changelog
 
-## 1.2.2
+## 1.3.0
+- add automatic papagaio source preprocessing at compile-time for declarations outside strings/comments (`$pattern{...}{...}`, `$regex ... {...}`, `$eval{...}`).
+- keep papagaio behavior inside string literals as runtime processing, preserving existing `papagaio(text)` and string-literal flows.
+- remove dependency on the `// @papagaio-preprocess` directive by teaching the compiler to distinguish declaration context (source) from string/comment context.
+- add mixed coverage and examples for compile-time + runtime papagaio usage in the same file (`tests/cases/papagaio_preprocessor.urb`, `example/papagaio_preprocess_mixed.urb`).
 - remove `ffi.load` from the public/runtime FFI API and from native alias resolution (`ffiLoad`), keeping dynamic calls on the explicit two-step flow.
 - standardize dynamic loading on `ffi.open(path)` + `ffi.sym(lib, name)` + `ffi.bind(ptr, sig)` + `ffi.close(lib)`.
 - fix `ffi.sym` symbol-name handling for derived strings (e.g. `split`/`trim` results) by passing a null-terminated copy to the platform loader.

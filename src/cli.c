@@ -251,15 +251,20 @@ static int run_disturb_script(const char *path, int script_argc, char **script_a
 
 static int compile_bytecode_file(const char *src_path, const char *out_path)
 {
+    VM vm;
+    vm_init(&vm);
+
     FILE *fp = fopen(src_path, "r");
     if (!fp) {
         perror("open");
+        vm_free(&vm);
         return 1;
     }
     char *src = read_all_text(fp);
     if (!src) {
         fprintf(stderr, "failed to read file\n");
         fclose(fp);
+        vm_free(&vm);
         return 1;
     }
     strip_shebang(src);
@@ -267,10 +272,11 @@ static int compile_bytecode_file(const char *src_path, const char *out_path)
     Bytecode bc;
     char err[256];
     err[0] = 0;
-    if (!vm_compile_source(src, &bc, err, sizeof(err))) {
+    if (!vm_compile_source_with_vm(&vm, src, &bc, err, sizeof(err))) {
         fprintf(stderr, "%s\n", err[0] ? err : "compile error");
         free(src);
         fclose(fp);
+        vm_free(&vm);
         return 1;
     }
     FILE *out = fopen(out_path, "wb");
@@ -279,6 +285,7 @@ static int compile_bytecode_file(const char *src_path, const char *out_path)
         bc_free(&bc);
         free(src);
         fclose(fp);
+        vm_free(&vm);
         return 1;
     }
     size_t wrote = fwrite(bc.data, 1, bc.len, out);
@@ -288,12 +295,14 @@ static int compile_bytecode_file(const char *src_path, const char *out_path)
         free(src);
         fclose(fp);
         fclose(out);
+        vm_free(&vm);
         return 1;
     }
     fclose(out);
     bc_free(&bc);
     free(src);
     fclose(fp);
+    vm_free(&vm);
     return 0;
 }
 

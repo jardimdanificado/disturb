@@ -1,5 +1,6 @@
 #include "vm.h"
 #include "bytecode.h"
+#include "papagaio.h"
 #include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -3206,60 +3207,416 @@ static int parse_program(Parser *p, Bytecode *bc)
     return 1;
 }
 
-void vm_exec_line(VM *vm, const char *line)
+typedef struct {
+    char *token;
+    char *value;
+} PreMaskEntry;
+
+typedef struct {
+    PreMaskEntry *items;
+    size_t count;
+    size_t cap;
+} PreMaskList;
+
+typedef struct {
+    char *data;
+    size_t len;
+    size_t cap;
+} PreStrBuf;
+
+static char *dup_n(const char *s, size_t len)
 {
-    Parser p;
-    memset(&p, 0, sizeof(p));
-    p.src = line;
-    p.pos = 0;
-    p.line = 1;
-    p.col = 1;
-    p.temp_id = 0;
-    p.loops = NULL;
-    p.loop_count = 0;
-    p.loop_cap = 0;
-    arena_init(&p.arena);
-    p.prev_kind = TOK_EOF;
-    p.strict_mode = 0;
-    p.current = next_token(&p);
-
-    Bytecode bc;
-    bc_init(&bc);
-
-    int ok = parse_program(&p, &bc);
-    if (p.had_error || !ok) {
-        fprintf(stderr, "%s\n", p.err[0] ? p.err : "parse error");
-        bc_free(&bc);
-        loop_free(&p);
-        label_free(&p);
-        arena_free(&p.arena);
-        token_free(&p.current);
-        return;
-    }
-
-    if (!vm_exec_bytecode(vm, bc.data, bc.len)) {
-        bc_free(&bc);
-        loop_free(&p);
-        label_free(&p);
-        arena_free(&p.arena);
-        token_free(&p.current);
-        return;
-    }
-
-    bc_free(&bc);
-    loop_free(&p);
-    label_free(&p);
-    arena_free(&p.arena);
-    token_free(&p.current);
+    char *out = (char*)malloc(len + 1);
+    if (!out) return NULL;
+    if (len) memcpy(out, s, len);
+    out[len] = 0;
+    return out;
 }
 
-int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap)
+static int prebuf_init(PreStrBuf *b, size_t hint)
+{
+    size_t cap = hint ? hint + 32 : 128;
+    b->data = (char*)malloc(cap);
+    if (!b->data) return 0;
+    b->len = 0;
+    b->cap = cap;
+    b->data[0] = 0;
+    return 1;
+}
+
+static int prebuf_grow(PreStrBuf *b, size_t add)
+{
+    if (b->len + add + 1 <= b->cap) return 1;
+    size_t next = b->cap;
+    while (next < b->len + add + 1) next <<= 1;
+    char *tmp = (char*)realloc(b->data, next);
+    if (!tmp) return 0;
+    b->data = tmp;
+    b->cap = next;
+    return 1;
+}
+
+static int prebuf_append_n(PreStrBuf *b, const char *s, size_t n)
+{
+    if (!prebuf_grow(b, n)) return 0;
+    if (n) memcpy(b->data + b->len, s, n);
+    b->len += n;
+    b->data[b->len] = 0;
+    return 1;
+}
+
+static int prebuf_append_char(PreStrBuf *b, char c)
+{
+    if (!prebuf_grow(b, 1)) return 0;
+    b->data[b->len++] = c;
+    b->data[b->len] = 0;
+    return 1;
+}
+
+static void prebuf_free(PreStrBuf *b)
+{
+    free(b->data);
+    b->data = NULL;
+    b->len = 0;
+    b->cap = 0;
+}
+
+static void premask_free(PreMaskList *masks)
+{
+    if (!masks) return;
+    for (size_t i = 0; i < masks->count; i++) {
+        free(masks->items[i].token);
+        free(masks->items[i].value);
+    }
+    free(masks->items);
+    masks->items = NULL;
+    masks->count = 0;
+    masks->cap = 0;
+}
+
+static int premask_add(PreMaskList *masks, const char *segment, size_t len, const char **out_token)
+{
+    if (masks->count == masks->cap) {
+        size_t next_cap = masks->cap ? masks->cap * 2 : 32;
+        PreMaskEntry *tmp = (PreMaskEntry*)realloc(masks->items, next_cap * sizeof(PreMaskEntry));
+        if (!tmp) return 0;
+        masks->items = tmp;
+        masks->cap = next_cap;
+    }
+
+    char tok[64];
+    int n = snprintf(tok, sizeof(tok), "__PAPAGAIO_MASK_%zu__", masks->count);
+    if (n <= 0 || (size_t)n >= sizeof(tok)) return 0;
+
+    PreMaskEntry *entry = &masks->items[masks->count];
+    entry->token = dup_n(tok, (size_t)n);
+    entry->value = dup_n(segment, len);
+    if (!entry->token || !entry->value) {
+        free(entry->token);
+        free(entry->value);
+        entry->token = NULL;
+        entry->value = NULL;
+        return 0;
+    }
+    if (out_token) *out_token = entry->token;
+    masks->count++;
+    return 1;
+}
+
+static char *replace_all_literal(const char *src, const char *needle, const char *replacement)
+{
+    size_t src_len = strlen(src);
+    size_t needle_len = strlen(needle);
+    size_t repl_len = strlen(replacement);
+    if (needle_len == 0) return dup_n(src, src_len);
+
+    size_t count = 0;
+    const char *p = src;
+    while ((p = strstr(p, needle)) != NULL) {
+        count++;
+        p += needle_len;
+    }
+
+    if (count == 0) return dup_n(src, src_len);
+
+    size_t out_len = src_len;
+    if (repl_len >= needle_len) {
+        out_len += count * (repl_len - needle_len);
+    } else {
+        out_len -= count * (needle_len - repl_len);
+    }
+    char *out = (char*)malloc(out_len + 1);
+    if (!out) return NULL;
+
+    const char *cur = src;
+    char *dst = out;
+    while ((p = strstr(cur, needle)) != NULL) {
+        size_t chunk = (size_t)(p - cur);
+        if (chunk) memcpy(dst, cur, chunk);
+        dst += chunk;
+        if (repl_len) memcpy(dst, replacement, repl_len);
+        dst += repl_len;
+        cur = p + needle_len;
+    }
+    strcpy(dst, cur);
+    return out;
+}
+
+static int source_has_compiletime_papagaio_decl(const char *masked_src)
+{
+    if (!masked_src) return 0;
+    if (strstr(masked_src, "$pattern{")) return 1;
+    if (strstr(masked_src, "$regex")) return 1;
+    if (strstr(masked_src, "$eval{")) return 1;
+    return 0;
+}
+
+static char *restore_masked_segments(const char *src, const PreMaskList *masks);
+
+static int parse_brace_block_span(const char *src, size_t n, size_t start, size_t *out_end)
+{
+    if (start >= n || src[start] != '{') return 0;
+    int depth = 1;
+    size_t i = start + 1;
+    while (i < n) {
+        if (src[i] == '{') {
+            depth++;
+        } else if (src[i] == '}') {
+            depth--;
+            if (depth == 0) {
+                if (out_end) *out_end = i + 1;
+                return 1;
+            }
+        }
+        i++;
+    }
+    return 0;
+}
+
+static int parse_decl_span(const char *src, size_t n, size_t pos, size_t *out_end)
+{
+    if (pos >= n || src[pos] != '$') return 0;
+
+    size_t i = pos;
+    if (i + 8 <= n && memcmp(src + i, "$pattern", 8) == 0) {
+        i += 8;
+        while (i < n && isspace((unsigned char)src[i])) i++;
+        if (i >= n || src[i] != '{') return 0;
+        if (!parse_brace_block_span(src, n, i, &i)) return 0;
+        while (i < n && isspace((unsigned char)src[i])) i++;
+        if (i >= n || src[i] != '{') return 0;
+        if (!parse_brace_block_span(src, n, i, &i)) return 0;
+        if (out_end) *out_end = i;
+        return 1;
+    }
+
+    if (i + 5 <= n && memcmp(src + i, "$eval", 5) == 0) {
+        i += 5;
+        while (i < n && isspace((unsigned char)src[i])) i++;
+        if (i >= n || src[i] != '{') return 0;
+        if (!parse_brace_block_span(src, n, i, &i)) return 0;
+        if (out_end) *out_end = i;
+        return 1;
+    }
+
+    if (i + 6 <= n && memcmp(src + i, "$regex", 6) == 0) {
+        i += 6;
+        while (i < n && src[i] != '{' && src[i] != '\n') i++;
+        if (i >= n || src[i] != '{') return 0;
+        if (!parse_brace_block_span(src, n, i, &i)) return 0;
+        if (out_end) *out_end = i;
+        return 1;
+    }
+
+    return 0;
+}
+
+static char *unmask_decl_segments(const char *masked_src, const PreMaskList *masks)
+{
+    size_t n = strlen(masked_src);
+    PreStrBuf out;
+    if (!prebuf_init(&out, n)) return NULL;
+
+    size_t i = 0;
+    while (i < n) {
+        size_t end = 0;
+        if (masked_src[i] == '$' && parse_decl_span(masked_src, n, i, &end) && end > i) {
+            char *seg = dup_n(masked_src + i, end - i);
+            char *restored = seg ? restore_masked_segments(seg, masks) : NULL;
+            free(seg);
+            if (!restored || !prebuf_append_n(&out, restored, strlen(restored))) {
+                free(restored);
+                prebuf_free(&out);
+                return NULL;
+            }
+            free(restored);
+            i = end;
+            continue;
+        }
+        if (!prebuf_append_char(&out, masked_src[i])) {
+            prebuf_free(&out);
+            return NULL;
+        }
+        i++;
+    }
+    return out.data;
+}
+
+static char *mask_strings_and_comments(const char *src, PreMaskList *masks)
+{
+    size_t n = strlen(src);
+    PreStrBuf out;
+    if (!prebuf_init(&out, n)) return NULL;
+
+    size_t i = 0;
+    while (i < n) {
+        char c = src[i];
+        if (c == '"' || c == '\'') {
+            size_t start = i;
+            char quote = c;
+            i++;
+            while (i < n) {
+                if (src[i] == '\\' && i + 1 < n) {
+                    i += 2;
+                    continue;
+                }
+                if (src[i] == quote) {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+            const char *token = NULL;
+            if (!premask_add(masks, src + start, i - start, &token) ||
+                !prebuf_append_n(&out, token, strlen(token))) {
+                prebuf_free(&out);
+                return NULL;
+            }
+            continue;
+        }
+
+        if (c == '/' && i + 1 < n && src[i + 1] == '/') {
+            size_t start = i;
+            i += 2;
+            while (i < n && src[i] != '\n') i++;
+            if (i < n && src[i] == '\n') i++;
+            const char *token = NULL;
+            if (!premask_add(masks, src + start, i - start, &token) ||
+                !prebuf_append_n(&out, token, strlen(token))) {
+                prebuf_free(&out);
+                return NULL;
+            }
+            continue;
+        }
+
+        if (c == '/' && i + 1 < n && src[i + 1] == '*') {
+            size_t start = i;
+            i += 2;
+            while (i + 1 < n) {
+                if (src[i] == '*' && src[i + 1] == '/') {
+                    i += 2;
+                    break;
+                }
+                i++;
+            }
+            if (i == n - 1 && src[i] != '/') i = n;
+            const char *token = NULL;
+            if (!premask_add(masks, src + start, i - start, &token) ||
+                !prebuf_append_n(&out, token, strlen(token))) {
+                prebuf_free(&out);
+                return NULL;
+            }
+            continue;
+        }
+
+        if (!prebuf_append_char(&out, c)) {
+            prebuf_free(&out);
+            return NULL;
+        }
+        i++;
+    }
+    return out.data;
+}
+
+static char *restore_masked_segments(const char *src, const PreMaskList *masks)
+{
+    char *current = dup_n(src, strlen(src));
+    if (!current) return NULL;
+
+    for (size_t i = 0; i < masks->count; i++) {
+        char *next = replace_all_literal(current, masks->items[i].token, masks->items[i].value);
+        free(current);
+        if (!next) return NULL;
+        current = next;
+    }
+    return current;
+}
+
+static int preprocess_compiletime_papagaio(VM *vm, const char *src, char **out, char *err, size_t err_cap)
+{
+    if (out) *out = NULL;
+    if (!vm || !src || !strchr(src, '$')) return 1;
+
+    PreMaskList masks;
+    memset(&masks, 0, sizeof(masks));
+
+    char *masked = mask_strings_and_comments(src, &masks);
+    if (!masked) {
+        premask_free(&masks);
+        if (err && err_cap > 0) snprintf(err, err_cap, "papagaio preprocess out of memory");
+        return 0;
+    }
+
+    if (!source_has_compiletime_papagaio_decl(masked)) {
+        free(masked);
+        premask_free(&masks);
+        return 1;
+    }
+
+    char *prepared = unmask_decl_segments(masked, &masks);
+    free(masked);
+    if (!prepared) {
+        premask_free(&masks);
+        if (err && err_cap > 0) snprintf(err, err_cap, "papagaio preprocess out of memory");
+        return 0;
+    }
+
+    char *processed = papagaio_process_text(vm, prepared, strlen(prepared));
+    free(prepared);
+    if (!processed) {
+        premask_free(&masks);
+        if (err && err_cap > 0) snprintf(err, err_cap, "papagaio preprocess error");
+        return 0;
+    }
+
+    char *restored = restore_masked_segments(processed, &masks);
+    free(processed);
+    premask_free(&masks);
+    if (!restored) {
+        if (err && err_cap > 0) snprintf(err, err_cap, "papagaio preprocess out of memory");
+        return 0;
+    }
+    if (out) *out = restored;
+    else free(restored);
+    return 1;
+}
+
+static int vm_compile_source_impl(VM *vm, const char *src, Bytecode *out, char *err, size_t err_cap)
 {
     if (!src || !out) return 0;
 
+    const char *effective_src = src;
+    char *preprocessed = NULL;
+    if (!preprocess_compiletime_papagaio(vm, src, &preprocessed, err, err_cap)) {
+        return 0;
+    }
+    if (preprocessed) {
+        effective_src = preprocessed;
+    }
+
     Parser p;
     memset(&p, 0, sizeof(p));
-    p.src = src;
+    p.src = effective_src;
     p.pos = 0;
     p.line = 1;
     p.col = 1;
@@ -3284,6 +3641,7 @@ int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap)
         label_free(&p);
         arena_free(&p.arena);
         token_free(&p.current);
+        free(preprocessed);
         return 0;
     }
 
@@ -3291,5 +3649,32 @@ int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap)
     label_free(&p);
     arena_free(&p.arena);
     token_free(&p.current);
+    free(preprocessed);
     return 1;
+}
+
+int vm_compile_source_with_vm(VM *vm, const char *src, Bytecode *out, char *err, size_t err_cap)
+{
+    return vm_compile_source_impl(vm, src, out, err, err_cap);
+}
+
+int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap)
+{
+    return vm_compile_source_impl(NULL, src, out, err, err_cap);
+}
+
+void vm_exec_line(VM *vm, const char *line)
+{
+    Bytecode bc;
+    char err[256];
+    err[0] = 0;
+    if (!vm_compile_source_with_vm(vm, line ? line : "", &bc, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "parse error");
+        return;
+    }
+    if (!vm_exec_bytecode(vm, bc.data, bc.len)) {
+        bc_free(&bc);
+        return;
+    }
+    bc_free(&bc);
 }

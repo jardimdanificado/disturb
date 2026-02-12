@@ -1,0 +1,6 @@
+// papagaio_preprocess_basic.urb
+// Source-level preprocess with papagaio (compile-time).
+
+$pattern{FALA_OI}{println("oi do compile-time");}
+
+FALA_OI
