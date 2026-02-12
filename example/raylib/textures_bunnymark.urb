@@ -1,0 +1,74 @@
+// raylib [textures] example - bunnymark (Disturb port, VM-safe)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+println("textures_bunnymark fix build: 2026-02-12c");
+
+MAX_BUNNIES = 6000;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - bunnymark");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+texBunny = rl.LoadTexture("../raylib/examples/textures/resources/raybunny.png");
+if (texBunny.id == 0) {
+  println("could not load texture: ../raylib/examples/textures/resources/raybunny.png");
+  rl.CloseWindow();
+  gc.collect();
+  return 0;
+}
+
+bunniesCount = 0;
+frame = 0;
+
+while (!rl.WindowShouldClose()) {
+  frame = frame + 1;
+  if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
+    bunniesCount = bunniesCount + 40;
+    if (bunniesCount > MAX_BUNNIES) { bunniesCount = MAX_BUNNIES; }
+  }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  i = 0;
+  while (i < bunniesCount) {
+    // Procedural bunny positions (no dynamic indexed storage in VM).
+    x = (i*37 + frame*2) % (screenWidth - texBunny.width);
+    y = (i*61 + frame*3) % (screenHeight - texBunny.height);
+    rr = 50 + ((i*11) % 190);
+    gg = 80 + ((i*17) % 160);
+    bb = 100 + ((i*23) % 140);
+    c = rl.newColor(rl.Color, rr, gg, bb, 255);
+    rl.DrawTexture(texBunny, x, y, c.view);
+    i = i + 1;
+  }
+
+  drawCalls = 1 + (bunniesCount/1024);
+  rl.DrawRectangle(0, 0, screenWidth, 40, rl.BLACK.view);
+  rl.DrawText(rl.TextFormat("bunnies: %i", bunniesCount), 120, 10, 20, rl.GREEN.view);
+  rl.DrawText(rl.TextFormat("batched draw calls: %i", drawCalls), 320, 10, 20, rl.MAROON.view);
+  rl.DrawFPS(10, 10);
+
+  rl.EndDrawing();
+}
+
+rl.UnloadTexture(texBunny);
+rl.CloseWindow();
+gc.collect();
+return 0;

@@ -1,0 +1,54 @@
+// raylib [audio] example - sound loading (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [audio] example - sound loading");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+audioEnabled = 0;
+fxWav = null;
+fxOgg = null;
+rl.InitAudioDevice();
+if (rl.IsAudioDeviceReady()) {
+  audioEnabled = 1;
+  fxWav = rl.LoadSound("../raylib/examples/audio/resources/sound.wav");
+  fxOgg = rl.LoadSound("../raylib/examples/audio/resources/target.ogg");
+}
+
+while (!rl.WindowShouldClose()) {
+  if (audioEnabled && rl.IsKeyPressed(rl.KEY_SPACE)) { rl.PlaySound(fxWav); }
+  if (audioEnabled && rl.IsKeyPressed(rl.KEY_ENTER)) { rl.PlaySound(fxOgg); }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.DrawText("Press SPACE to PLAY the WAV sound!", 200, 180, 20, rl.LIGHTGRAY.view);
+  rl.DrawText("Press ENTER to PLAY the OGG sound!", 200, 220, 20, rl.LIGHTGRAY.view);
+  if (!audioEnabled) { rl.DrawText("Audio device not available on this system", 180, 300, 20, rl.MAROON.view); }
+  rl.EndDrawing();
+}
+
+if (audioEnabled) {
+  rl.UnloadSound(fxWav);
+  rl.UnloadSound(fxOgg);
+  rl.CloseAudioDevice();
+}
+rl.CloseWindow();
+gc.collect();
+return 0;

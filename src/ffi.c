@@ -87,6 +87,12 @@ typedef struct {
 } FfiCallback;
 
 typedef union {
+    int8_t i8;
+    uint8_t u8;
+    int16_t i16;
+    uint16_t u16;
+    int32_t i32;
+    uint32_t u32;
     int64_t i;
     uint64_t u;
     double f;
@@ -222,6 +228,30 @@ static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_l
 static FfiCallback *ffi_callback_from_entry(ObjEntry *entry);
 static ObjEntry *ffi_bind_ptr_sig_entry(VM *vm, uintptr_t addr, const char *sig, char *err, size_t err_cap);
 #endif
+
+static int ffi_trace_mouse_enabled(void)
+{
+    static int initialized = 0;
+    static int enabled = 0;
+    if (!initialized) {
+        const char *env = getenv("DISTURB_FFI_TRACE_MOUSE");
+        enabled = (env && env[0] && !(env[0] == '0' && env[1] == '\0')) ? 1 : 0;
+        initialized = 1;
+    }
+    return enabled;
+}
+
+static int ffi_trace_mouse_slot(const char *name, size_t len)
+{
+    if (!name) return -1;
+    if (len == 17 && memcmp(name, "IsMouseButtonDown", 17) == 0) return 0;
+    if (len == 20 && memcmp(name, "IsMouseButtonPressed", 20) == 0) return 1;
+    if (len == 21 && memcmp(name, "IsMouseButtonReleased", 21) == 0) return 2;
+    if (len == 18 && memcmp(name, "GetTouchPointCount", 18) == 0) return 3;
+    return -1;
+}
+
+static int ffi_trace_mouse_last[4] = { INT_MIN, INT_MIN, INT_MIN, INT_MIN };
 
 static void ffi_dyn_type_node_free(FfiDynTypeNode *node)
 {
@@ -3340,6 +3370,15 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi: missing function data\n");
         return;
     }
+    ObjEntry *self_key = vm_entry_key(self);
+    const char *self_name = NULL;
+    size_t self_name_len = 0;
+    int trace_slot = -1;
+    if (self_key && entry_is_string(self_key)) {
+        self_name = disturb_bytes_data(self_key->obj);
+        self_name_len = disturb_bytes_len(self_key->obj);
+        if (ffi_trace_mouse_enabled()) trace_slot = ffi_trace_mouse_slot(self_name, self_name_len);
+    }
     if ((!fn->has_varargs && (int)argc != fn->argc) ||
         (fn->has_varargs && (int)argc < fn->fixed_argc)) {
         fprintf(stderr, "ffi: argc mismatch\n");
@@ -3507,12 +3546,43 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         }
         if (ffi_arg_is_int(t)) {
             Int iv = 0;
-            if (!arg || !entry_number_scalar(arg, &iv, NULL, NULL)) {
-                values[i].i = 0;
-            } else {
-                values[i].i = (int64_t)iv;
+            int64_t v = 0;
+            if (arg && entry_number_scalar(arg, &iv, NULL, NULL)) v = (int64_t)iv;
+            switch (t->base) {
+            case FFI_BASE_I8:
+                values[i].i8 = (int8_t)v;
+                argv[i] = &values[i].i8;
+                break;
+            case FFI_BASE_U8:
+                values[i].u8 = (uint8_t)v;
+                argv[i] = &values[i].u8;
+                break;
+            case FFI_BASE_I16:
+                values[i].i16 = (int16_t)v;
+                argv[i] = &values[i].i16;
+                break;
+            case FFI_BASE_U16:
+                values[i].u16 = (uint16_t)v;
+                argv[i] = &values[i].u16;
+                break;
+            case FFI_BASE_I32:
+                values[i].i32 = (int32_t)v;
+                argv[i] = &values[i].i32;
+                break;
+            case FFI_BASE_U32:
+                values[i].u32 = (uint32_t)v;
+                argv[i] = &values[i].u32;
+                break;
+            case FFI_BASE_U64:
+                values[i].u = (uint64_t)v;
+                argv[i] = &values[i].u;
+                break;
+            case FFI_BASE_I64:
+            default:
+                values[i].i = (int64_t)v;
+                argv[i] = &values[i].i;
+                break;
             }
-            argv[i] = &values[i].i;
             continue;
         }
         values[i].p = NULL;
@@ -3548,6 +3618,48 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         call_cif = &var_cif;
     }
     ffi_call(call_cif, FFI_FN(fn->fn_ptr), ret_ptr, argv);
+
+    if (trace_slot >= 0) {
+        long long arg0 = 0;
+        if (call_argc > 0) {
+            FfiType *t0 = (fn->argc > 0) ? &fn->args[0] : NULL;
+            if (t0 && ffi_arg_is_int(t0)) {
+                switch (t0->base) {
+                case FFI_BASE_I8: arg0 = (long long)values[0].i8; break;
+                case FFI_BASE_U8: arg0 = (long long)values[0].u8; break;
+                case FFI_BASE_I16: arg0 = (long long)values[0].i16; break;
+                case FFI_BASE_U16: arg0 = (long long)values[0].u16; break;
+                case FFI_BASE_I32: arg0 = (long long)values[0].i32; break;
+                case FFI_BASE_U32: arg0 = (long long)values[0].u32; break;
+                case FFI_BASE_U64: arg0 = (long long)values[0].u; break;
+                case FFI_BASE_I64:
+                default: arg0 = (long long)values[0].i; break;
+                }
+            }
+        }
+        long long out = 0;
+        if (ffi_arg_is_int(&fn->ret)) {
+            switch (fn->ret.base) {
+            case FFI_BASE_I8: out = (long long)ret.i8; break;
+            case FFI_BASE_U8: out = (long long)ret.u8; break;
+            case FFI_BASE_I16: out = (long long)ret.i16; break;
+            case FFI_BASE_U16: out = (long long)ret.u16; break;
+            case FFI_BASE_I32: out = (long long)ret.i32; break;
+            case FFI_BASE_U32: out = (long long)ret.u32; break;
+            case FFI_BASE_U64: out = (long long)ret.u; break;
+            case FFI_BASE_I64:
+            default: out = (long long)ret.i; break;
+            }
+        } else if (ffi_arg_is_float(&fn->ret)) {
+            out = (long long)((fn->ret.base == FFI_BASE_F32) ? ret.f32 : ret.f);
+        }
+        int out_i = (int)out;
+        if (ffi_trace_mouse_last[trace_slot] != out_i) {
+            fprintf(stderr, "ffi-trace: %.*s(arg0=%lld) -> %d\n",
+                    (int)self_name_len, self_name ? self_name : "<?>", arg0, out_i);
+            ffi_trace_mouse_last[trace_slot] = out_i;
+        }
+    }
 
     free(values);
     free(argv);
@@ -3633,7 +3745,21 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         return;
     }
     if (ffi_arg_is_int(&fn->ret)) {
-        ffi_push_entry(vm, vm_make_int_value(vm, (Int)ret.i));
+        Int out = 0;
+        switch (fn->ret.base) {
+        case FFI_BASE_I8: out = (Int)ret.i8; break;
+        case FFI_BASE_U8: out = (Int)ret.u8; break;
+        case FFI_BASE_I16: out = (Int)ret.i16; break;
+        case FFI_BASE_U16: out = (Int)ret.u16; break;
+        case FFI_BASE_I32: out = (Int)ret.i32; break;
+        case FFI_BASE_U32: out = (Int)ret.u32; break;
+        case FFI_BASE_U64: out = (Int)ret.u; break;
+        case FFI_BASE_I64:
+        default:
+            out = (Int)ret.i;
+            break;
+        }
+        ffi_push_entry(vm, vm_make_int_value(vm, out));
         return;
     }
 

@@ -1,0 +1,81 @@
+// raylib [textures] example - background scrolling (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - background scrolling");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+background = rl.LoadTexture("../raylib/examples/textures/resources/cyberpunk_street_background.png");
+midground = rl.LoadTexture("../raylib/examples/textures/resources/cyberpunk_street_midground.png");
+foreground = rl.LoadTexture("../raylib/examples/textures/resources/cyberpunk_street_foreground.png");
+
+if ((background.id == 0) || (midground.id == 0) || (foreground.id == 0)) {
+  println("could not load one or more textures from ../raylib/examples/textures/resources/");
+  if (background.id != 0) { rl.UnloadTexture(background); }
+  if (midground.id != 0) { rl.UnloadTexture(midground); }
+  if (foreground.id != 0) { rl.UnloadTexture(foreground); }
+  rl.CloseWindow();
+  gc.collect();
+  return 0;
+}
+
+scrollingBack = 0.0;
+scrollingMid = 0.0;
+scrollingFore = 0.0;
+bgColor = rl.GetColor(0x052c46ff);
+
+while (!rl.WindowShouldClose()) {
+  scrollingBack = scrollingBack - 0.1;
+  scrollingMid = scrollingMid - 0.5;
+  scrollingFore = scrollingFore - 1.0;
+
+  if (scrollingBack <= -background.width*2.0) { scrollingBack = 0.0; }
+  if (scrollingMid <= -midground.width*2.0) { scrollingMid = 0.0; }
+  if (scrollingFore <= -foreground.width*2.0) { scrollingFore = 0.0; }
+
+  pos1 = rl.newVector2(rl.Vector2, scrollingBack, 20.0);
+  pos2 = rl.newVector2(rl.Vector2, background.width*2.0 + scrollingBack, 20.0);
+  pos3 = rl.newVector2(rl.Vector2, scrollingMid, 20.0);
+  pos4 = rl.newVector2(rl.Vector2, midground.width*2.0 + scrollingMid, 20.0);
+  pos5 = rl.newVector2(rl.Vector2, scrollingFore, 70.0);
+  pos6 = rl.newVector2(rl.Vector2, foreground.width*2.0 + scrollingFore, 70.0);
+
+  rl.BeginDrawing();
+  rl.ClearBackground(bgColor);
+
+  rl.DrawTextureEx(background, pos1.view, 0.0, 2.0, rl.WHITE.view);
+  rl.DrawTextureEx(background, pos2.view, 0.0, 2.0, rl.WHITE.view);
+  rl.DrawTextureEx(midground, pos3.view, 0.0, 2.0, rl.WHITE.view);
+  rl.DrawTextureEx(midground, pos4.view, 0.0, 2.0, rl.WHITE.view);
+  rl.DrawTextureEx(foreground, pos5.view, 0.0, 2.0, rl.WHITE.view);
+  rl.DrawTextureEx(foreground, pos6.view, 0.0, 2.0, rl.WHITE.view);
+
+  rl.DrawText("BACKGROUND SCROLLING & PARALLAX", 10, 10, 20, rl.RED.view);
+  rl.DrawText("(c) Cyberpunk Street Environment by Luis Zuno (@ansimuz)", screenWidth - 330, screenHeight - 20, 10, rl.RAYWHITE.view);
+
+  rl.EndDrawing();
+}
+
+rl.UnloadTexture(background);
+rl.UnloadTexture(midground);
+rl.UnloadTexture(foreground);
+rl.CloseWindow();
+gc.collect();
+return 0;

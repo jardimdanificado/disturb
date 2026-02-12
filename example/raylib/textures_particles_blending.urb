@@ -1,0 +1,85 @@
+// raylib [textures] example - particles blending (Disturb port, VM-safe)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+println("textures_particles_blending fix build: 2026-02-12c");
+
+PARTICLES = 80;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - particles blending");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+smoke = rl.LoadTexture("../raylib/examples/textures/resources/spark_flame.png");
+if (smoke.id == 0) {
+  println("could not load texture: ../raylib/examples/textures/resources/spark_flame.png");
+  rl.CloseWindow();
+  gc.collect();
+  return 0;
+}
+
+blending = rl.BLEND_ALPHA;
+frame = 0;
+pos = rl.newVector2(rl.Vector2, 0.0, 0.0);
+col = rl.newColor(rl.Color, 255, 255, 255, 255);
+
+while (!rl.WindowShouldClose()) {
+  frame = frame + 1;
+  if (rl.IsKeyPressed(rl.KEY_SPACE)) {
+    if (blending == rl.BLEND_ALPHA) { blending = rl.BLEND_ADDITIVE; }
+    else { blending = rl.BLEND_ALPHA; }
+  }
+
+  m = rl.GetMousePosition();
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.DARKGRAY.view);
+  rl.BeginBlendMode(blending);
+
+  i = 0;
+  while (i < PARTICLES) {
+    a = (frame + i*17);
+    xoff = ((a*13) % 120) - 60;
+    yoff = ((a*29) % 120) - 60;
+    scale = 0.25 + ((a % 40)/80.0);
+    rot = (a*7) % 360;
+    alpha = 255 - ((i*3) % 200);
+    rr = (a*3) % 256;
+    gg = (a*7) % 256;
+    bb = (a*11) % 256;
+
+    pos.view.x = m.x + xoff;
+    pos.view.y = m.y + yoff;
+    col.view.r = rr; col.view.g = gg; col.view.b = bb; col.view.a = alpha;
+    rl.DrawTextureEx(smoke, pos.view, rot, scale, col.view);
+    i = i + 1;
+  }
+
+  rl.EndBlendMode();
+
+  rl.DrawText("PRESS SPACE to CHANGE BLENDING MODE", 180, 20, 20, rl.BLACK.view);
+  if (blending == rl.BLEND_ALPHA) { rl.DrawText("ALPHA BLENDING", 290, screenHeight - 40, 20, rl.BLACK.view); }
+  else { rl.DrawText("ADDITIVE BLENDING", 280, screenHeight - 40, 20, rl.RAYWHITE.view); }
+
+  rl.EndDrawing();
+}
+
+rl.UnloadTexture(smoke);
+rl.CloseWindow();
+gc.collect();
+return 0;

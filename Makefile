@@ -46,6 +46,9 @@ all: disturb
 disturb: $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
 
+test-raylib: disturb
+	sh tests/run_raylib_examples.sh
+
 lib/libregexp/%.o: lib/libregexp/%.c
 	$(CC) $(CFLAGS) $(LIBREGEXP_CFLAGS) -c $< -o $@
 
@@ -55,4 +58,4 @@ lib/libregexp/%.o: lib/libregexp/%.c
 clean:
 	rm -f $(OBJ) disturb
 
-.PHONY: all clean
+.PHONY: all clean test-raylib

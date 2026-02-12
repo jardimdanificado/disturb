@@ -1,0 +1,55 @@
+// raylib [core] example - keyboard testbed (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - keyboard testbed");
+rl.SetExitKey(rl.KEY_NULL);
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+lastKey = 0;
+lastChar = 0;
+
+while (!rl.WindowShouldClose()) {
+  key = rl.GetKeyPressed();
+  if (key > 0) { lastKey = key; }
+
+  ch = rl.GetCharPressed();
+  if (ch > 0) { lastChar = ch; }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+rl.DrawText("KEYBOARD TESTBED", 24, 24, 30, rl.DARKGRAY.view);
+  rl.DrawText("Press keys and type text. ESC does not close this window.", 24, 70, 20, rl.GRAY.view);
+  rl.DrawText("Close with window X button.", 24, 96, 20, rl.GRAY.view);
+
+  rl.DrawRectangle(24, 150, 752, 230, rl.Fade(rl.LIGHTGRAY.view, 0.35));
+  rl.DrawRectangleLines(24, 150, 752, 230, rl.GRAY.view);
+  rl.DrawText(rl.TextFormat("Last GetKeyPressed(): %i", lastKey), 44, 190, 30, rl.MAROON.view);
+  rl.DrawText(rl.TextFormat("Last GetCharPressed(): %i", lastChar), 44, 235, 30, rl.DARKBLUE.view);
+  rl.DrawText(rl.TextFormat("Arrows down? LEFT=%i RIGHT=%i UP=%i DOWN=%i", rl.IsKeyDown(rl.KEY_LEFT), rl.IsKeyDown(rl.KEY_RIGHT), rl.IsKeyDown(rl.KEY_UP), rl.IsKeyDown(rl.KEY_DOWN)), 44, 285, 24, rl.BLACK.view);
+  rl.DrawText(rl.TextFormat("Modifiers: LCTRL=%i RCTRL=%i", rl.IsKeyDown(rl.KEY_LEFT_CONTROL), rl.IsKeyDown(rl.KEY_RIGHT_CONTROL)), 44, 320, 24, rl.BLACK.view);
+
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;

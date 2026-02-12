@@ -1,0 +1,68 @@
+// raylib [shapes] example - circle sector drawing (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - circle sector drawing");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+center = rl.newVector2(rl.Vector2, (rl.GetScreenWidth() - 300)/2.0, rl.GetScreenHeight()/2.0);
+outerRadius = 180.0;
+startAngle = 0.0;
+endAngle = 180.0;
+segments = 10;
+
+while (!rl.WindowShouldClose()) {
+  if (rl.IsKeyDown(rl.KEY_Q)) { startAngle = startAngle - 2.0; }
+  if (rl.IsKeyDown(rl.KEY_A)) { startAngle = startAngle + 2.0; }
+  if (rl.IsKeyDown(rl.KEY_W)) { endAngle = endAngle - 2.0; }
+  if (rl.IsKeyDown(rl.KEY_S)) { endAngle = endAngle + 2.0; }
+  if (rl.IsKeyDown(rl.KEY_E)) { outerRadius = outerRadius + 1.0; }
+  if (rl.IsKeyDown(rl.KEY_D)) { outerRadius = outerRadius - 1.0; }
+  if (rl.IsKeyPressed(rl.KEY_R)) { segments = segments + 1; }
+  if (rl.IsKeyPressed(rl.KEY_F)) { segments = segments - 1; }
+
+  if (outerRadius < 4.0) { outerRadius = 4.0; }
+  if (outerRadius > 220.0) { outerRadius = 220.0; }
+  if (segments < 0) { segments = 0; }
+  if (segments > 100) { segments = 100; }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawLine(500, 0, 500, rl.GetScreenHeight(), rl.Fade(rl.LIGHTGRAY.view, 0.6));
+  rl.DrawRectangle(500, 0, rl.GetScreenWidth() - 500, rl.GetScreenHeight(), rl.Fade(rl.LIGHTGRAY.view, 0.3));
+
+  rl.DrawCircleSector(center.view, outerRadius, startAngle, endAngle, segments, rl.Fade(rl.MAROON.view, 0.3));
+  rl.DrawCircleSectorLines(center.view, outerRadius, startAngle, endAngle, segments, rl.Fade(rl.MAROON.view, 0.6));
+
+  rl.DrawText("Q/A: start angle  W/S: end angle", 520, 40, 18, rl.DARKGRAY.view);
+  rl.DrawText("E/D: radius       R/F: segments", 520, 70, 18, rl.DARKGRAY.view);
+  rl.DrawText(rl.TextFormat("Start: %.1f", startAngle), 520, 130, 20, rl.BLACK.view);
+  rl.DrawText(rl.TextFormat("End: %.1f", endAngle), 520, 160, 20, rl.BLACK.view);
+  rl.DrawText(rl.TextFormat("Radius: %.1f", outerRadius), 520, 190, 20, rl.BLACK.view);
+  rl.DrawText(rl.TextFormat("Segments: %i", segments), 520, 220, 20, rl.BLACK.view);
+
+  rl.DrawFPS(10, 10);
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;

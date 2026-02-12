@@ -1,0 +1,87 @@
+// raylib [textures] example - sprite stacking (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - sprite stacking");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+booth = rl.LoadTexture("../raylib/examples/textures/resources/booth.png");
+if (booth.id == 0) {
+  println("could not load texture: ../raylib/examples/textures/resources/booth.png");
+  rl.CloseWindow();
+  gc.collect();
+  return 0;
+}
+
+stackScale = 3.0;
+stackSpacing = 2.0;
+stackCount = 122;
+rotationSpeed = 30.0;
+rotation = 0.0;
+speedAccel = 180.0;
+maxSpeed = 240.0;
+
+while (!rl.WindowShouldClose()) {
+  dt = rl.GetFrameTime();
+  stackSpacing = stackSpacing + rl.GetMouseWheelMove()*0.1;
+  if (stackSpacing < 0.0) { stackSpacing = 0.0; }
+  if (stackSpacing > 5.0) { stackSpacing = 5.0; }
+
+  leftDown = rl.IsKeyDown(rl.KEY_LEFT) || rl.IsKeyDown(rl.KEY_A);
+  rightDown = rl.IsKeyDown(rl.KEY_RIGHT) || rl.IsKeyDown(rl.KEY_D);
+
+  if (leftDown) { rotationSpeed = rotationSpeed - speedAccel*dt; }
+  if (rightDown) { rotationSpeed = rotationSpeed + speedAccel*dt; }
+  if (rotationSpeed > maxSpeed) { rotationSpeed = maxSpeed; }
+  if (rotationSpeed < -maxSpeed) { rotationSpeed = -maxSpeed; }
+
+  rotation = rotation + rotationSpeed*dt;
+
+  frameWidth = booth.width;
+  frameHeight = booth.height/stackCount;
+  scaledWidth = frameWidth*stackScale;
+  scaledHeight = frameHeight*stackScale;
+  origin = rl.newVector2(rl.Vector2, scaledWidth/2.0, scaledHeight/2.0);
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  i = stackCount - 1;
+  while (i >= 0) {
+    source = rl.newRectangle(rl.Rectangle, 0.0, i*frameHeight, frameWidth, frameHeight);
+    dest = rl.newRectangle(rl.Rectangle, screenWidth/2.0, (screenHeight/2.0) + (i*stackSpacing) - (stackSpacing*stackCount/2.0), scaledWidth, scaledHeight);
+    rl.DrawTexturePro(booth, source.view, dest.view, origin.view, rotation, rl.WHITE.view);
+    i = i - 1;
+  }
+
+  rl.DrawText("A/D to spin", 10, 10, 20, rl.DARKGRAY.view);
+  rl.DrawText("mouse wheel to change separation (aka 'angle')", 10, 35, 20, rl.DARKGRAY.view);
+  rl.DrawText(rl.TextFormat("current spacing: %.01f", stackSpacing), 10, 65, 20, rl.DARKGRAY.view);
+  rl.DrawText(rl.TextFormat("current speed: %.02f", rotationSpeed), 10, 90, 20, rl.DARKGRAY.view);
+  rl.DrawText(rl.TextFormat("A/LEFT: %i  D/RIGHT: %i", leftDown, rightDown), 10, 115, 20, rl.DARKGRAY.view);
+  rl.DrawText("redbooth model (c) kluchek under cc 4.0", 10, 420, 20, rl.DARKGRAY.view);
+
+  rl.EndDrawing();
+}
+
+rl.UnloadTexture(booth);
+rl.CloseWindow();
+gc.collect();
+return 0;
