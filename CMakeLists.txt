@@ -4,13 +4,13 @@ project(disturb C)
 
 option(ENABLE_IO "Enable IO natives" ON)
 option(ENABLE_FFI "Enable core FFI module" ON)
-option(ENABLE_FFI_CALLS "Enable dynamic FFI calls (ffi.load/ffi.bind)" ON)
+option(ENABLE_FFI_CALLS "Enable dynamic FFI calls (ffi.open/ffi.sym/ffi.bind)" ON)
 option(ENABLE_EMBEDDED "Enable embeddable profile (no IO, no dynamic FFI calls, no import)" OFF)
 
 if(ENABLE_EMBEDDED)
   set(ENABLE_IO OFF CACHE BOOL "Enable IO natives" FORCE)
   set(ENABLE_FFI ON CACHE BOOL "Enable core FFI module" FORCE)
-  set(ENABLE_FFI_CALLS OFF CACHE BOOL "Enable dynamic FFI calls (ffi.load/ffi.bind)" FORCE)
+  set(ENABLE_FFI_CALLS OFF CACHE BOOL "Enable dynamic FFI calls (ffi.open/ffi.sym/ffi.bind)" FORCE)
 endif()
 
 set(DISTURB_SOURCES

@@ -7,6 +7,9 @@ load = (libPath = null){
   rectangleSchema = { x = "f32", y = "f32", width = "f32", height = "f32" };
   textureSchema = { id = "u32", width = "i32", height = "i32", mipmaps = "i32", format = "i32" };
   renderTextureSchema = { id = "u32", texture = "struct<RaylibTexture>", depth = "struct<RaylibTexture>" };
+  // Flattened Camera2D layout (offset.x, offset.y, target.x, target.y, rotation, zoom)
+  // to avoid nested-struct schema issues in Disturb FFI while keeping C memory layout.
+  camera2DSchema = { offsetX = "f32", offsetY = "f32", targetX = "f32", targetY = "f32", rotation = "f32", zoom = "f32" };
 
   // FFI struct<name> resolution uses VM global scope.
   global.RaylibColor = colorSchema;
@@ -14,519 +17,475 @@ load = (libPath = null){
   global.RaylibRectangle = rectangleSchema;
   global.RaylibTexture = textureSchema;
   global.RaylibRenderTexture = renderTextureSchema;
+  global.RaylibCamera2D = camera2DSchema;
+  RaylibColor = colorSchema;
+  RaylibVector2 = vector2Schema;
+  RaylibRectangle = rectangleSchema;
+  RaylibTexture = textureSchema;
+  RaylibRenderTexture = renderTextureSchema;
+  RaylibCamera2D = camera2DSchema;
+
+  bind_raylib_api = (path, RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibCamera2D){
+    h = ffi.open(path);
+    if (h == null) { return null; }
+    api = { __lib = h };
+    ptr = ffi.sym(h, "InitWindow");
+    if (ptr == null) { return null; }
+    api.InitWindow = ffi.bind(ptr, "void InitWindow(i32, i32, char*)");
+
+    ptr = ffi.sym(h, "IsWindowReady");
+    if (ptr == null) { return null; }
+    api.IsWindowReady = ffi.bind(ptr, "u8 IsWindowReady()");
+
+    ptr = ffi.sym(h, "WindowShouldClose");
+    if (ptr == null) { return null; }
+    api.WindowShouldClose = ffi.bind(ptr, "u8 WindowShouldClose()");
+
+    ptr = ffi.sym(h, "CloseWindow");
+    if (ptr == null) { return null; }
+    api.CloseWindow = ffi.bind(ptr, "void CloseWindow()");
+
+    ptr = ffi.sym(h, "SetTargetFPS");
+    if (ptr == null) { return null; }
+    api.SetTargetFPS = ffi.bind(ptr, "void SetTargetFPS(i32)");
+
+    ptr = ffi.sym(h, "SetExitKey");
+    if (ptr == null) { return null; }
+    api.SetExitKey = ffi.bind(ptr, "void SetExitKey(i32)");
+
+    ptr = ffi.sym(h, "SetConfigFlags");
+    if (ptr == null) { return null; }
+    api.SetConfigFlags = ffi.bind(ptr, "void SetConfigFlags(u32)");
+
+    ptr = ffi.sym(h, "SetWindowMinSize");
+    if (ptr == null) { return null; }
+    api.SetWindowMinSize = ffi.bind(ptr, "void SetWindowMinSize(i32, i32)");
+
+    ptr = ffi.sym(h, "SetWindowSize");
+    if (ptr == null) { return null; }
+    api.SetWindowSize = ffi.bind(ptr, "void SetWindowSize(i32, i32)");
+
+    ptr = ffi.sym(h, "SetRandomSeed");
+    if (ptr == null) { return null; }
+    api.SetRandomSeed = ffi.bind(ptr, "void SetRandomSeed(u32)");
+
+    ptr = ffi.sym(h, "GetFPS");
+    if (ptr == null) { return null; }
+    api.GetFPS = ffi.bind(ptr, "i32 GetFPS()");
+
+    ptr = ffi.sym(h, "GetFrameTime");
+    if (ptr == null) { return null; }
+    api.GetFrameTime = ffi.bind(ptr, "f32 GetFrameTime()");
+
+    ptr = ffi.sym(h, "GetTime");
+    if (ptr == null) { return null; }
+    api.GetTime = ffi.bind(ptr, "f64 GetTime()");
+
+    ptr = ffi.sym(h, "GetRandomValue");
+    if (ptr == null) { return null; }
+    api.GetRandomValue = ffi.bind(ptr, "i32 GetRandomValue(i32, i32)");
+
+    ptr = ffi.sym(h, "GetMouseWheelMove");
+    if (ptr == null) { return null; }
+    api.GetMouseWheelMove = ffi.bind(ptr, "f32 GetMouseWheelMove()");
+
+    ptr = ffi.sym(h, "GetScreenWidth");
+    if (ptr == null) { return null; }
+    api.GetScreenWidth = ffi.bind(ptr, "i32 GetScreenWidth()");
+
+    ptr = ffi.sym(h, "GetScreenHeight");
+    if (ptr == null) { return null; }
+    api.GetScreenHeight = ffi.bind(ptr, "i32 GetScreenHeight()");
+
+    ptr = ffi.sym(h, "GetMouseX");
+    if (ptr == null) { return null; }
+    api.GetMouseX = ffi.bind(ptr, "i32 GetMouseX()");
+
+    ptr = ffi.sym(h, "GetMouseY");
+    if (ptr == null) { return null; }
+    api.GetMouseY = ffi.bind(ptr, "i32 GetMouseY()");
+
+    ptr = ffi.sym(h, "GetTouchPointCount");
+    if (ptr == null) { return null; }
+    api.GetTouchPointCount = ffi.bind(ptr, "i32 GetTouchPointCount()");
+
+    ptr = ffi.sym(h, "GetTouchPosition");
+    if (ptr == null) { return null; }
+    api.GetTouchPosition = ffi.bind(ptr, "struct<RaylibVector2> GetTouchPosition(i32)");
+
+    ptr = ffi.sym(h, "IsKeyDown");
+    if (ptr == null) { return null; }
+    api.IsKeyDown = ffi.bind(ptr, "u8 IsKeyDown(i32)");
+
+    ptr = ffi.sym(h, "IsKeyPressed");
+    if (ptr == null) { return null; }
+    api.IsKeyPressed = ffi.bind(ptr, "u8 IsKeyPressed(i32)");
+
+    ptr = ffi.sym(h, "IsKeyReleased");
+    if (ptr == null) { return null; }
+    api.IsKeyReleased = ffi.bind(ptr, "u8 IsKeyReleased(i32)");
+
+    ptr = ffi.sym(h, "IsGestureDetected");
+    if (ptr == null) { return null; }
+    api.IsGestureDetected = ffi.bind(ptr, "u8 IsGestureDetected(u32)");
+
+    ptr = ffi.sym(h, "GetGestureDetected");
+    if (ptr == null) { return null; }
+    api.GetGestureDetected = ffi.bind(ptr, "i32 GetGestureDetected()");
+
+    ptr = ffi.sym(h, "IsMouseButtonDown");
+    if (ptr == null) { return null; }
+    api.IsMouseButtonDown = ffi.bind(ptr, "u8 IsMouseButtonDown(i32)");
+
+    ptr = ffi.sym(h, "IsMouseButtonPressed");
+    if (ptr == null) { return null; }
+    api.IsMouseButtonPressed = ffi.bind(ptr, "u8 IsMouseButtonPressed(i32)");
+
+    ptr = ffi.sym(h, "IsMouseButtonReleased");
+    if (ptr == null) { return null; }
+    api.IsMouseButtonReleased = ffi.bind(ptr, "u8 IsMouseButtonReleased(i32)");
+
+    ptr = ffi.sym(h, "IsGamepadAvailable");
+    if (ptr == null) { return null; }
+    api.IsGamepadAvailable = ffi.bind(ptr, "u8 IsGamepadAvailable(i32)");
+
+    ptr = ffi.sym(h, "IsGamepadButtonPressed");
+    if (ptr == null) { return null; }
+    api.IsGamepadButtonPressed = ffi.bind(ptr, "u8 IsGamepadButtonPressed(i32, i32)");
+
+    ptr = ffi.sym(h, "IsGamepadButtonReleased");
+    if (ptr == null) { return null; }
+    api.IsGamepadButtonReleased = ffi.bind(ptr, "u8 IsGamepadButtonReleased(i32, i32)");
+
+    ptr = ffi.sym(h, "IsGamepadButtonDown");
+    if (ptr == null) { return null; }
+    api.IsGamepadButtonDown = ffi.bind(ptr, "u8 IsGamepadButtonDown(i32, i32)");
+
+    ptr = ffi.sym(h, "GetGamepadAxisCount");
+    if (ptr == null) { return null; }
+    api.GetGamepadAxisCount = ffi.bind(ptr, "i32 GetGamepadAxisCount(i32)");
+
+    ptr = ffi.sym(h, "GetGamepadAxisMovement");
+    if (ptr == null) { return null; }
+    api.GetGamepadAxisMovement = ffi.bind(ptr, "f32 GetGamepadAxisMovement(i32, i32)");
+
+    ptr = ffi.sym(h, "GetGamepadName");
+    if (ptr == null) { return null; }
+    api.GetGamepadName = ffi.bind(ptr, "char* GetGamepadName(i32)");
+
+    ptr = ffi.sym(h, "IsCursorHidden");
+    if (ptr == null) { return null; }
+    api.IsCursorHidden = ffi.bind(ptr, "u8 IsCursorHidden()");
+
+    ptr = ffi.sym(h, "ShowCursor");
+    if (ptr == null) { return null; }
+    api.ShowCursor = ffi.bind(ptr, "void ShowCursor()");
+
+    ptr = ffi.sym(h, "HideCursor");
+    if (ptr == null) { return null; }
+    api.HideCursor = ffi.bind(ptr, "void HideCursor()");
+
+    ptr = ffi.sym(h, "ToggleFullscreen");
+    if (ptr == null) { return null; }
+    api.ToggleFullscreen = ffi.bind(ptr, "void ToggleFullscreen()");
+
+    ptr = ffi.sym(h, "IsWindowState");
+    if (ptr == null) { return null; }
+    api.IsWindowState = ffi.bind(ptr, "u8 IsWindowState(u32)");
+
+    ptr = ffi.sym(h, "IsWindowResized");
+    if (ptr == null) { return null; }
+    api.IsWindowResized = ffi.bind(ptr, "u8 IsWindowResized()");
+
+    ptr = ffi.sym(h, "SetWindowState");
+    if (ptr == null) { return null; }
+    api.SetWindowState = ffi.bind(ptr, "void SetWindowState(u32)");
+
+    ptr = ffi.sym(h, "ClearWindowState");
+    if (ptr == null) { return null; }
+    api.ClearWindowState = ffi.bind(ptr, "void ClearWindowState(u32)");
+
+    ptr = ffi.sym(h, "MinimizeWindow");
+    if (ptr == null) { return null; }
+    api.MinimizeWindow = ffi.bind(ptr, "void MinimizeWindow()");
+
+    ptr = ffi.sym(h, "RestoreWindow");
+    if (ptr == null) { return null; }
+    api.RestoreWindow = ffi.bind(ptr, "void RestoreWindow()");
+
+    ptr = ffi.sym(h, "MaximizeWindow");
+    if (ptr == null) { return null; }
+    api.MaximizeWindow = ffi.bind(ptr, "void MaximizeWindow()");
+
+    ptr = ffi.sym(h, "ToggleBorderlessWindowed");
+    if (ptr == null) { return null; }
+    api.ToggleBorderlessWindowed = ffi.bind(ptr, "void ToggleBorderlessWindowed()");
+
+    ptr = ffi.sym(h, "GetMousePosition");
+    if (ptr == null) { return null; }
+    api.GetMousePosition = ffi.bind(ptr, "struct<RaylibVector2> GetMousePosition()");
+
+    ptr = ffi.sym(h, "GetWindowPosition");
+    if (ptr == null) { return null; }
+    api.GetWindowPosition = ffi.bind(ptr, "struct<RaylibVector2> GetWindowPosition()");
+
+    ptr = ffi.sym(h, "GetMonitorCount");
+    if (ptr == null) { return null; }
+    api.GetMonitorCount = ffi.bind(ptr, "i32 GetMonitorCount()");
+
+    ptr = ffi.sym(h, "GetCurrentMonitor");
+    if (ptr == null) { return null; }
+    api.GetCurrentMonitor = ffi.bind(ptr, "i32 GetCurrentMonitor()");
+
+    ptr = ffi.sym(h, "GetMonitorPosition");
+    if (ptr == null) { return null; }
+    api.GetMonitorPosition = ffi.bind(ptr, "struct<RaylibVector2> GetMonitorPosition(i32)");
+
+    ptr = ffi.sym(h, "GetMonitorWidth");
+    if (ptr == null) { return null; }
+    api.GetMonitorWidth = ffi.bind(ptr, "i32 GetMonitorWidth(i32)");
+
+    ptr = ffi.sym(h, "GetMonitorHeight");
+    if (ptr == null) { return null; }
+    api.GetMonitorHeight = ffi.bind(ptr, "i32 GetMonitorHeight(i32)");
+
+    ptr = ffi.sym(h, "GetMonitorPhysicalWidth");
+    if (ptr == null) { return null; }
+    api.GetMonitorPhysicalWidth = ffi.bind(ptr, "i32 GetMonitorPhysicalWidth(i32)");
+
+    ptr = ffi.sym(h, "GetMonitorPhysicalHeight");
+    if (ptr == null) { return null; }
+    api.GetMonitorPhysicalHeight = ffi.bind(ptr, "i32 GetMonitorPhysicalHeight(i32)");
+
+    ptr = ffi.sym(h, "GetMonitorRefreshRate");
+    if (ptr == null) { return null; }
+    api.GetMonitorRefreshRate = ffi.bind(ptr, "i32 GetMonitorRefreshRate(i32)");
+
+    ptr = ffi.sym(h, "GetMonitorName");
+    if (ptr == null) { return null; }
+    api.GetMonitorName = ffi.bind(ptr, "char* GetMonitorName(i32)");
+
+    ptr = ffi.sym(h, "SetWindowMonitor");
+    if (ptr == null) { return null; }
+    api.SetWindowMonitor = ffi.bind(ptr, "void SetWindowMonitor(i32)");
+
+    ptr = ffi.sym(h, "GetMouseDelta");
+    if (ptr == null) { return null; }
+    api.GetMouseDelta = ffi.bind(ptr, "struct<RaylibVector2> GetMouseDelta()");
+
+    ptr = ffi.sym(h, "GetScreenToWorld2D");
+    if (ptr == null) { return null; }
+    api.GetScreenToWorld2D = ffi.bind(ptr, "struct<RaylibVector2> GetScreenToWorld2D(struct<RaylibVector2>, struct<RaylibCamera2D>)");
+
+    ptr = ffi.sym(h, "BeginDrawing");
+    if (ptr == null) { return null; }
+    api.BeginDrawing = ffi.bind(ptr, "void BeginDrawing()");
+
+    ptr = ffi.sym(h, "BeginMode2D");
+    if (ptr == null) { return null; }
+    api.BeginMode2D = ffi.bind(ptr, "void BeginMode2D(struct<RaylibCamera2D>)");
+
+    ptr = ffi.sym(h, "BeginTextureMode");
+    if (ptr == null) { return null; }
+    api.BeginTextureMode = ffi.bind(ptr, "void BeginTextureMode(struct<RaylibRenderTexture>)");
+
+    ptr = ffi.sym(h, "BeginScissorMode");
+    if (ptr == null) { return null; }
+    api.BeginScissorMode = ffi.bind(ptr, "void BeginScissorMode(i32, i32, i32, i32)");
+
+    ptr = ffi.sym(h, "EndDrawing");
+    if (ptr == null) { return null; }
+    api.EndDrawing = ffi.bind(ptr, "void EndDrawing()");
+
+    ptr = ffi.sym(h, "EndMode2D");
+    if (ptr == null) { return null; }
+    api.EndMode2D = ffi.bind(ptr, "void EndMode2D()");
+
+    ptr = ffi.sym(h, "EndTextureMode");
+    if (ptr == null) { return null; }
+    api.EndTextureMode = ffi.bind(ptr, "void EndTextureMode()");
+
+    ptr = ffi.sym(h, "EndScissorMode");
+    if (ptr == null) { return null; }
+    api.EndScissorMode = ffi.bind(ptr, "void EndScissorMode()");
+
+    ptr = ffi.sym(h, "ClearBackground");
+    if (ptr == null) { return null; }
+    api.ClearBackground = ffi.bind(ptr, "void ClearBackground(struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawFPS");
+    if (ptr == null) { return null; }
+    api.DrawFPS = ffi.bind(ptr, "void DrawFPS(i32, i32)");
+
+    ptr = ffi.sym(h, "DrawText");
+    if (ptr == null) { return null; }
+    api.DrawText = ffi.bind(ptr, "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "LoadRenderTexture");
+    if (ptr == null) { return null; }
+    api.LoadRenderTexture = ffi.bind(ptr, "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)");
+
+    ptr = ffi.sym(h, "UnloadRenderTexture");
+    if (ptr == null) { return null; }
+    api.UnloadRenderTexture = ffi.bind(ptr, "void UnloadRenderTexture(struct<RaylibRenderTexture>)");
+
+    ptr = ffi.sym(h, "SetTextureFilter");
+    if (ptr == null) { return null; }
+    api.SetTextureFilter = ffi.bind(ptr, "void SetTextureFilter(struct<RaylibTexture>, i32)");
+
+    ptr = ffi.sym(h, "SetTextureWrap");
+    if (ptr == null) { return null; }
+    api.SetTextureWrap = ffi.bind(ptr, "void SetTextureWrap(struct<RaylibTexture>, i32)");
+
+    ptr = ffi.sym(h, "TextFormat");
+    if (ptr == null) { return null; }
+    api.TextFormat = ffi.bind(ptr, "char* TextFormat(char*, ...)");
+
+    ptr = ffi.sym(h, "TextSubtext");
+    if (ptr == null) { return null; }
+    api.TextSubtext = ffi.bind(ptr, "char* TextSubtext(char*, i32, i32)");
+
+    ptr = ffi.sym(h, "MeasureText");
+    if (ptr == null) { return null; }
+    api.MeasureText = ffi.bind(ptr, "i32 MeasureText(char*, i32)");
+
+    ptr = ffi.sym(h, "DrawPixel");
+    if (ptr == null) { return null; }
+    api.DrawPixel = ffi.bind(ptr, "void DrawPixel(i32, i32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawLine");
+    if (ptr == null) { return null; }
+    api.DrawLine = ffi.bind(ptr, "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawLineBezier");
+    if (ptr == null) { return null; }
+    api.DrawLineBezier = ffi.bind(ptr, "void DrawLineBezier(struct<RaylibVector2>, struct<RaylibVector2>, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawLineEx");
+    if (ptr == null) { return null; }
+    api.DrawLineEx = ffi.bind(ptr, "void DrawLineEx(struct<RaylibVector2>, struct<RaylibVector2>, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawLineDashed");
+    if (ptr == null) { return null; }
+    api.DrawLineDashed = ffi.bind(ptr, "void DrawLineDashed(struct<RaylibVector2>, struct<RaylibVector2>, i32, i32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawCircle");
+    if (ptr == null) { return null; }
+    api.DrawCircle = ffi.bind(ptr, "void DrawCircle(i32, i32, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawCircleGradient");
+    if (ptr == null) { return null; }
+    api.DrawCircleGradient = ffi.bind(ptr, "void DrawCircleGradient(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawCircleLines");
+    if (ptr == null) { return null; }
+    api.DrawCircleLines = ffi.bind(ptr, "void DrawCircleLines(i32, i32, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawCircleLinesV");
+    if (ptr == null) { return null; }
+    api.DrawCircleLinesV = ffi.bind(ptr, "void DrawCircleLinesV(struct<RaylibVector2>, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawEllipse");
+    if (ptr == null) { return null; }
+    api.DrawEllipse = ffi.bind(ptr, "void DrawEllipse(i32, i32, f32, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawEllipseLines");
+    if (ptr == null) { return null; }
+    api.DrawEllipseLines = ffi.bind(ptr, "void DrawEllipseLines(i32, i32, f32, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawCircleV");
+    if (ptr == null) { return null; }
+    api.DrawCircleV = ffi.bind(ptr, "void DrawCircleV(struct<RaylibVector2>, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawRectangle");
+    if (ptr == null) { return null; }
+    api.DrawRectangle = ffi.bind(ptr, "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawRectangleV");
+    if (ptr == null) { return null; }
+    api.DrawRectangleV = ffi.bind(ptr, "void DrawRectangleV(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawRectangleRec");
+    if (ptr == null) { return null; }
+    api.DrawRectangleRec = ffi.bind(ptr, "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawRectanglePro");
+    if (ptr == null) { return null; }
+    api.DrawRectanglePro = ffi.bind(ptr, "void DrawRectanglePro(struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawRectangleLines");
+    if (ptr == null) { return null; }
+    api.DrawRectangleLines = ffi.bind(ptr, "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawRectangleLinesEx");
+    if (ptr == null) { return null; }
+    api.DrawRectangleLinesEx = ffi.bind(ptr, "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawTexturePro");
+    if (ptr == null) { return null; }
+    api.DrawTexturePro = ffi.bind(ptr, "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawTextureRec");
+    if (ptr == null) { return null; }
+    api.DrawTextureRec = ffi.bind(ptr, "void DrawTextureRec(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibVector2>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawRectangleGradientH");
+    if (ptr == null) { return null; }
+    api.DrawRectangleGradientH = ffi.bind(ptr, "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawTriangle");
+    if (ptr == null) { return null; }
+    api.DrawTriangle = ffi.bind(ptr, "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawTriangleLines");
+    if (ptr == null) { return null; }
+    api.DrawTriangleLines = ffi.bind(ptr, "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawPoly");
+    if (ptr == null) { return null; }
+    api.DrawPoly = ffi.bind(ptr, "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawPolyLines");
+    if (ptr == null) { return null; }
+    api.DrawPolyLines = ffi.bind(ptr, "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "DrawPolyLinesEx");
+    if (ptr == null) { return null; }
+    api.DrawPolyLinesEx = ffi.bind(ptr, "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "CheckCollisionPointRec");
+    if (ptr == null) { return null; }
+    api.CheckCollisionPointRec = ffi.bind(ptr, "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)");
+
+    ptr = ffi.sym(h, "CheckCollisionPointCircle");
+    if (ptr == null) { return null; }
+    api.CheckCollisionPointCircle = ffi.bind(ptr, "u8 CheckCollisionPointCircle(struct<RaylibVector2>, struct<RaylibVector2>, f32)");
+
+    ptr = ffi.sym(h, "CheckCollisionRecs");
+    if (ptr == null) { return null; }
+    api.CheckCollisionRecs = ffi.bind(ptr, "u8 CheckCollisionRecs(struct<RaylibRectangle>, struct<RaylibRectangle>)");
+
+    ptr = ffi.sym(h, "GetCollisionRec");
+    if (ptr == null) { return null; }
+    api.GetCollisionRec = ffi.bind(ptr, "struct<RaylibRectangle> GetCollisionRec(struct<RaylibRectangle>, struct<RaylibRectangle>)");
+
+    ptr = ffi.sym(h, "Fade");
+    if (ptr == null) { return null; }
+    api.Fade = ffi.bind(ptr, "struct<RaylibColor> Fade(struct<RaylibColor>, f32)");
+
+    return api;
+  };
 
   lib = null;
-
   if (libPath != null && libPath.type == "string") {
-    lib = ffi.load(libPath,
-      "void InitWindow(i32, i32, char*)",
-      "u8 IsWindowReady()",
-      "u8 WindowShouldClose()",
-      "void CloseWindow()",
-      "void SetTargetFPS(i32)",
-      "void SetExitKey(i32)",
-      "void SetConfigFlags(u32)",
-      "void SetWindowMinSize(i32, i32)",
-      "void SetWindowSize(i32, i32)",
-      "void SetRandomSeed(u32)",
-      "i32 GetFPS()",
-      "f32 GetFrameTime()",
-      "f64 GetTime()",
-      "i32 GetRandomValue(i32, i32)",
-      "f32 GetMouseWheelMove()",
-      "i32 GetScreenWidth()",
-      "i32 GetScreenHeight()",
-      "u8 IsKeyDown(i32)",
-      "u8 IsKeyPressed(i32)",
-      "u8 IsKeyReleased(i32)",
-      "u8 IsMouseButtonDown(i32)",
-      "u8 IsMouseButtonPressed(i32)",
-      "u8 IsCursorHidden()",
-      "void ShowCursor()",
-      "void HideCursor()",
-      "void ToggleFullscreen()",
-      "u8 IsWindowState(u32)",
-      "void SetWindowState(u32)",
-      "void ClearWindowState(u32)",
-      "void MinimizeWindow()",
-      "void RestoreWindow()",
-      "void MaximizeWindow()",
-      "void ToggleBorderlessWindowed()",
-      "struct<RaylibVector2> GetMousePosition()",
-      "void BeginDrawing()",
-      "void BeginTextureMode(struct<RaylibRenderTexture>)",
-      "void EndDrawing()",
-      "void EndTextureMode()",
-      "void ClearBackground(struct<RaylibColor>)",
-      "void DrawFPS(i32, i32)",
-      "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
-      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
-      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
-      "void SetTextureFilter(struct<RaylibTexture>, i32)",
-      "char* TextFormat(char*, ...)",
-      "char* TextSubtext(char*, i32, i32)",
-      "i32 MeasureText(char*, i32)",
-      "void DrawPixel(i32, i32, struct<RaylibColor>)",
-      "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawCircleGradient(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawCircleLines(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawEllipse(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawEllipseLines(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawCircleV(struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
-      "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
-      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
-      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
-      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
-    );
+    lib = bind_raylib_api(libPath, RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibCamera2D);
   }
-
-  if (lib == null) {
-    lib = ffi.load("../raylib/build/raylib/libraylib.so",
-      "void InitWindow(i32, i32, char*)",
-      "u8 IsWindowReady()",
-      "u8 WindowShouldClose()",
-      "void CloseWindow()",
-      "void SetTargetFPS(i32)",
-      "void SetExitKey(i32)",
-      "void SetConfigFlags(u32)",
-      "void SetWindowMinSize(i32, i32)",
-      "void SetWindowSize(i32, i32)",
-      "void SetRandomSeed(u32)",
-      "i32 GetFPS()",
-      "f32 GetFrameTime()",
-      "f64 GetTime()",
-      "i32 GetRandomValue(i32, i32)",
-      "f32 GetMouseWheelMove()",
-      "i32 GetScreenWidth()",
-      "i32 GetScreenHeight()",
-      "u8 IsKeyDown(i32)",
-      "u8 IsKeyPressed(i32)",
-      "u8 IsKeyReleased(i32)",
-      "u8 IsMouseButtonDown(i32)",
-      "u8 IsMouseButtonPressed(i32)",
-      "u8 IsCursorHidden()",
-      "void ShowCursor()",
-      "void HideCursor()",
-      "void ToggleFullscreen()",
-      "u8 IsWindowState(u32)",
-      "void SetWindowState(u32)",
-      "void ClearWindowState(u32)",
-      "void MinimizeWindow()",
-      "void RestoreWindow()",
-      "void MaximizeWindow()",
-      "void ToggleBorderlessWindowed()",
-      "struct<RaylibVector2> GetMousePosition()",
-      "void BeginDrawing()",
-      "void BeginTextureMode(struct<RaylibRenderTexture>)",
-      "void EndDrawing()",
-      "void EndTextureMode()",
-      "void ClearBackground(struct<RaylibColor>)",
-      "void DrawFPS(i32, i32)",
-      "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
-      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
-      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
-      "void SetTextureFilter(struct<RaylibTexture>, i32)",
-      "char* TextFormat(char*, ...)",
-      "char* TextSubtext(char*, i32, i32)",
-      "i32 MeasureText(char*, i32)",
-      "void DrawPixel(i32, i32, struct<RaylibColor>)",
-      "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawCircleGradient(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawCircleLines(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawEllipse(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawEllipseLines(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawCircleV(struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
-      "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
-      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
-      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
-      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
-    );
-  }
-
-  if (lib == null) {
-    lib = ffi.load("../raylib/src/libraylib.so",
-      "void InitWindow(i32, i32, char*)",
-      "u8 IsWindowReady()",
-      "u8 WindowShouldClose()",
-      "void CloseWindow()",
-      "void SetTargetFPS(i32)",
-      "void SetExitKey(i32)",
-      "void SetConfigFlags(u32)",
-      "void SetWindowMinSize(i32, i32)",
-      "void SetWindowSize(i32, i32)",
-      "void SetRandomSeed(u32)",
-      "i32 GetFPS()",
-      "f32 GetFrameTime()",
-      "f64 GetTime()",
-      "i32 GetRandomValue(i32, i32)",
-      "f32 GetMouseWheelMove()",
-      "i32 GetScreenWidth()",
-      "i32 GetScreenHeight()",
-      "u8 IsKeyDown(i32)",
-      "u8 IsKeyPressed(i32)",
-      "u8 IsKeyReleased(i32)",
-      "u8 IsMouseButtonDown(i32)",
-      "u8 IsMouseButtonPressed(i32)",
-      "u8 IsCursorHidden()",
-      "void ShowCursor()",
-      "void HideCursor()",
-      "void ToggleFullscreen()",
-      "u8 IsWindowState(u32)",
-      "void SetWindowState(u32)",
-      "void ClearWindowState(u32)",
-      "void MinimizeWindow()",
-      "void RestoreWindow()",
-      "void MaximizeWindow()",
-      "void ToggleBorderlessWindowed()",
-      "struct<RaylibVector2> GetMousePosition()",
-      "void BeginDrawing()",
-      "void BeginTextureMode(struct<RaylibRenderTexture>)",
-      "void EndDrawing()",
-      "void EndTextureMode()",
-      "void ClearBackground(struct<RaylibColor>)",
-      "void DrawFPS(i32, i32)",
-      "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
-      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
-      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
-      "void SetTextureFilter(struct<RaylibTexture>, i32)",
-      "char* TextFormat(char*, ...)",
-      "char* TextSubtext(char*, i32, i32)",
-      "i32 MeasureText(char*, i32)",
-      "void DrawPixel(i32, i32, struct<RaylibColor>)",
-      "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawCircleGradient(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawCircleLines(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawEllipse(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawEllipseLines(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawCircleV(struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
-      "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
-      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
-      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
-      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
-    );
-  }
-
-  if (lib == null) {
-    lib = ffi.load("./raylib/src/libraylib.so",
-      "void InitWindow(i32, i32, char*)",
-      "u8 IsWindowReady()",
-      "u8 WindowShouldClose()",
-      "void CloseWindow()",
-      "void SetTargetFPS(i32)",
-      "void SetExitKey(i32)",
-      "void SetConfigFlags(u32)",
-      "void SetWindowMinSize(i32, i32)",
-      "void SetWindowSize(i32, i32)",
-      "void SetRandomSeed(u32)",
-      "i32 GetFPS()",
-      "f32 GetFrameTime()",
-      "f64 GetTime()",
-      "i32 GetRandomValue(i32, i32)",
-      "f32 GetMouseWheelMove()",
-      "i32 GetScreenWidth()",
-      "i32 GetScreenHeight()",
-      "u8 IsKeyDown(i32)",
-      "u8 IsKeyPressed(i32)",
-      "u8 IsKeyReleased(i32)",
-      "u8 IsMouseButtonDown(i32)",
-      "u8 IsMouseButtonPressed(i32)",
-      "u8 IsCursorHidden()",
-      "void ShowCursor()",
-      "void HideCursor()",
-      "void ToggleFullscreen()",
-      "u8 IsWindowState(u32)",
-      "void SetWindowState(u32)",
-      "void ClearWindowState(u32)",
-      "void MinimizeWindow()",
-      "void RestoreWindow()",
-      "void MaximizeWindow()",
-      "void ToggleBorderlessWindowed()",
-      "struct<RaylibVector2> GetMousePosition()",
-      "void BeginDrawing()",
-      "void BeginTextureMode(struct<RaylibRenderTexture>)",
-      "void EndDrawing()",
-      "void EndTextureMode()",
-      "void ClearBackground(struct<RaylibColor>)",
-      "void DrawFPS(i32, i32)",
-      "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
-      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
-      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
-      "void SetTextureFilter(struct<RaylibTexture>, i32)",
-      "char* TextFormat(char*, ...)",
-      "char* TextSubtext(char*, i32, i32)",
-      "i32 MeasureText(char*, i32)",
-      "void DrawPixel(i32, i32, struct<RaylibColor>)",
-      "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawCircleGradient(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawCircleLines(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawEllipse(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawEllipseLines(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawCircleV(struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
-      "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
-      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
-      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
-      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
-    );
-  }
-
-  if (lib == null) {
-    lib = ffi.load("libraylib.so",
-      "void InitWindow(i32, i32, char*)",
-      "u8 IsWindowReady()",
-      "u8 WindowShouldClose()",
-      "void CloseWindow()",
-      "void SetTargetFPS(i32)",
-      "void SetExitKey(i32)",
-      "void SetConfigFlags(u32)",
-      "void SetWindowMinSize(i32, i32)",
-      "void SetWindowSize(i32, i32)",
-      "void SetRandomSeed(u32)",
-      "i32 GetFPS()",
-      "f32 GetFrameTime()",
-      "f64 GetTime()",
-      "i32 GetRandomValue(i32, i32)",
-      "f32 GetMouseWheelMove()",
-      "i32 GetScreenWidth()",
-      "i32 GetScreenHeight()",
-      "u8 IsKeyDown(i32)",
-      "u8 IsKeyPressed(i32)",
-      "u8 IsKeyReleased(i32)",
-      "u8 IsMouseButtonDown(i32)",
-      "u8 IsMouseButtonPressed(i32)",
-      "u8 IsCursorHidden()",
-      "void ShowCursor()",
-      "void HideCursor()",
-      "void ToggleFullscreen()",
-      "u8 IsWindowState(u32)",
-      "void SetWindowState(u32)",
-      "void ClearWindowState(u32)",
-      "void MinimizeWindow()",
-      "void RestoreWindow()",
-      "void MaximizeWindow()",
-      "void ToggleBorderlessWindowed()",
-      "struct<RaylibVector2> GetMousePosition()",
-      "void BeginDrawing()",
-      "void BeginTextureMode(struct<RaylibRenderTexture>)",
-      "void EndDrawing()",
-      "void EndTextureMode()",
-      "void ClearBackground(struct<RaylibColor>)",
-      "void DrawFPS(i32, i32)",
-      "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
-      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
-      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
-      "void SetTextureFilter(struct<RaylibTexture>, i32)",
-      "char* TextFormat(char*, ...)",
-      "char* TextSubtext(char*, i32, i32)",
-      "i32 MeasureText(char*, i32)",
-      "void DrawPixel(i32, i32, struct<RaylibColor>)",
-      "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawCircleGradient(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawCircleLines(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawEllipse(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawEllipseLines(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawCircleV(struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
-      "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
-      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
-      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
-      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
-    );
-  }
-
-  if (lib == null) {
-    lib = ffi.load("libraylib.dylib",
-      "void InitWindow(i32, i32, char*)",
-      "u8 IsWindowReady()",
-      "u8 WindowShouldClose()",
-      "void CloseWindow()",
-      "void SetTargetFPS(i32)",
-      "void SetExitKey(i32)",
-      "void SetConfigFlags(u32)",
-      "void SetWindowMinSize(i32, i32)",
-      "void SetWindowSize(i32, i32)",
-      "void SetRandomSeed(u32)",
-      "i32 GetFPS()",
-      "f32 GetFrameTime()",
-      "f64 GetTime()",
-      "i32 GetRandomValue(i32, i32)",
-      "f32 GetMouseWheelMove()",
-      "i32 GetScreenWidth()",
-      "i32 GetScreenHeight()",
-      "u8 IsKeyDown(i32)",
-      "u8 IsKeyPressed(i32)",
-      "u8 IsKeyReleased(i32)",
-      "u8 IsMouseButtonDown(i32)",
-      "u8 IsMouseButtonPressed(i32)",
-      "u8 IsCursorHidden()",
-      "void ShowCursor()",
-      "void HideCursor()",
-      "void ToggleFullscreen()",
-      "u8 IsWindowState(u32)",
-      "void SetWindowState(u32)",
-      "void ClearWindowState(u32)",
-      "void MinimizeWindow()",
-      "void RestoreWindow()",
-      "void MaximizeWindow()",
-      "void ToggleBorderlessWindowed()",
-      "struct<RaylibVector2> GetMousePosition()",
-      "void BeginDrawing()",
-      "void BeginTextureMode(struct<RaylibRenderTexture>)",
-      "void EndDrawing()",
-      "void EndTextureMode()",
-      "void ClearBackground(struct<RaylibColor>)",
-      "void DrawFPS(i32, i32)",
-      "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
-      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
-      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
-      "void SetTextureFilter(struct<RaylibTexture>, i32)",
-      "char* TextFormat(char*, ...)",
-      "char* TextSubtext(char*, i32, i32)",
-      "i32 MeasureText(char*, i32)",
-      "void DrawPixel(i32, i32, struct<RaylibColor>)",
-      "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawCircleGradient(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawCircleLines(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawEllipse(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawEllipseLines(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawCircleV(struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
-      "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
-      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
-      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
-      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
-    );
-  }
-
-  if (lib == null) {
-    lib = ffi.load("raylib.dll",
-      "void InitWindow(i32, i32, char*)",
-      "u8 IsWindowReady()",
-      "u8 WindowShouldClose()",
-      "void CloseWindow()",
-      "void SetTargetFPS(i32)",
-      "void SetExitKey(i32)",
-      "void SetConfigFlags(u32)",
-      "void SetWindowMinSize(i32, i32)",
-      "void SetWindowSize(i32, i32)",
-      "void SetRandomSeed(u32)",
-      "i32 GetFPS()",
-      "f32 GetFrameTime()",
-      "f64 GetTime()",
-      "i32 GetRandomValue(i32, i32)",
-      "f32 GetMouseWheelMove()",
-      "i32 GetScreenWidth()",
-      "i32 GetScreenHeight()",
-      "u8 IsKeyDown(i32)",
-      "u8 IsKeyPressed(i32)",
-      "u8 IsKeyReleased(i32)",
-      "u8 IsMouseButtonDown(i32)",
-      "u8 IsMouseButtonPressed(i32)",
-      "u8 IsCursorHidden()",
-      "void ShowCursor()",
-      "void HideCursor()",
-      "void ToggleFullscreen()",
-      "u8 IsWindowState(u32)",
-      "void SetWindowState(u32)",
-      "void ClearWindowState(u32)",
-      "void MinimizeWindow()",
-      "void RestoreWindow()",
-      "void MaximizeWindow()",
-      "void ToggleBorderlessWindowed()",
-      "struct<RaylibVector2> GetMousePosition()",
-      "void BeginDrawing()",
-      "void BeginTextureMode(struct<RaylibRenderTexture>)",
-      "void EndDrawing()",
-      "void EndTextureMode()",
-      "void ClearBackground(struct<RaylibColor>)",
-      "void DrawFPS(i32, i32)",
-      "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)",
-      "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)",
-      "void UnloadRenderTexture(struct<RaylibRenderTexture>)",
-      "void SetTextureFilter(struct<RaylibTexture>, i32)",
-      "char* TextFormat(char*, ...)",
-      "char* TextSubtext(char*, i32, i32)",
-      "i32 MeasureText(char*, i32)",
-      "void DrawPixel(i32, i32, struct<RaylibColor>)",
-      "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawCircle(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawCircleGradient(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawCircleLines(i32, i32, f32, struct<RaylibColor>)",
-      "void DrawEllipse(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawEllipseLines(i32, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawCircleV(struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)",
-      "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)",
-      "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)",
-      "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)",
-      "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)",
-      "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)",
-      "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)",
-      "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)",
-      "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)",
-      "struct<RaylibColor> Fade(struct<RaylibColor>, f32)"
-    );
-  }
+  if (lib == null) { lib = bind_raylib_api("../raylib/build/raylib/libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("../raylib/src/libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("./raylib/src/libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("libraylib.dylib", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("raylib.dll", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibCamera2D); }
 
   if (lib == null) { return null; }
 
@@ -572,6 +531,7 @@ load = (libPath = null){
     Rectangle = rectangleSchema,
     Texture = textureSchema,
     RenderTexture = renderTextureSchema,
+    Camera2D = camera2DSchema,
 
     MOUSE_BUTTON_LEFT = 0,
     MOUSE_BUTTON_RIGHT = 1,
@@ -580,9 +540,47 @@ load = (libPath = null){
     MOUSE_BUTTON_EXTRA = 4,
     MOUSE_BUTTON_FORWARD = 5,
     MOUSE_BUTTON_BACK = 6,
+    GAMEPAD_BUTTON_UNKNOWN = 0,
+    GAMEPAD_BUTTON_LEFT_FACE_UP = 1,
+    GAMEPAD_BUTTON_LEFT_FACE_RIGHT = 2,
+    GAMEPAD_BUTTON_LEFT_FACE_DOWN = 3,
+    GAMEPAD_BUTTON_LEFT_FACE_LEFT = 4,
+    GAMEPAD_BUTTON_RIGHT_FACE_UP = 5,
+    GAMEPAD_BUTTON_RIGHT_FACE_RIGHT = 6,
+    GAMEPAD_BUTTON_RIGHT_FACE_DOWN = 7,
+    GAMEPAD_BUTTON_RIGHT_FACE_LEFT = 8,
+    GAMEPAD_BUTTON_LEFT_TRIGGER_1 = 9,
+    GAMEPAD_BUTTON_LEFT_TRIGGER_2 = 10,
+    GAMEPAD_BUTTON_RIGHT_TRIGGER_1 = 11,
+    GAMEPAD_BUTTON_RIGHT_TRIGGER_2 = 12,
+    GAMEPAD_BUTTON_MIDDLE_LEFT = 13,
+    GAMEPAD_BUTTON_MIDDLE = 14,
+    GAMEPAD_BUTTON_MIDDLE_RIGHT = 15,
+    GAMEPAD_BUTTON_LEFT_THUMB = 16,
+    GAMEPAD_BUTTON_RIGHT_THUMB = 17,
+    GAMEPAD_AXIS_LEFT_X = 0,
+    GAMEPAD_AXIS_LEFT_Y = 1,
+    GAMEPAD_AXIS_RIGHT_X = 2,
+    GAMEPAD_AXIS_RIGHT_Y = 3,
+    GAMEPAD_AXIS_LEFT_TRIGGER = 4,
+    GAMEPAD_AXIS_RIGHT_TRIGGER = 5,
+    GESTURE_NONE = 0,
+    GESTURE_TAP = 1,
+    GESTURE_DOUBLETAP = 2,
+    GESTURE_HOLD = 4,
+    GESTURE_DRAG = 8,
+    GESTURE_SWIPE_RIGHT = 16,
+    GESTURE_SWIPE_LEFT = 32,
+    GESTURE_SWIPE_UP = 64,
+    GESTURE_SWIPE_DOWN = 128,
+    GESTURE_PINCH_IN = 256,
+    GESTURE_PINCH_OUT = 512,
 
     KEY_SPACE = 32,
+    KEY_ONE = 49,
+    KEY_TWO = 50,
     KEY_B = 66,
+    KEY_C = 67,
     KEY_F = 70,
     KEY_G = 71,
     KEY_H = 72,
@@ -595,6 +593,10 @@ load = (libPath = null){
     TEXTURE_FILTER_POINT = 0,
     TEXTURE_FILTER_BILINEAR = 1,
     TEXTURE_FILTER_TRILINEAR = 2,
+    TEXTURE_WRAP_REPEAT = 0,
+    TEXTURE_WRAP_CLAMP = 1,
+    TEXTURE_WRAP_MIRROR_REPEAT = 2,
+    TEXTURE_WRAP_MIRROR_CLAMP = 3,
 
     FLAG_VSYNC_HINT = 0x00000040,
     FLAG_FULLSCREEN_MODE = 0x00000002,
@@ -666,6 +668,14 @@ load = (libPath = null){
       view.x = x; view.y = y; view.width = width; view.height = height;
       return { ptr = ptr, view = view };
     },
+    newCamera2D = (schema, offsetX, offsetY, targetX, targetY, rotation, zoom){
+      ptr = ffi.new(schema);
+      view = ffi.view(ptr, schema);
+      view.offsetX = offsetX; view.offsetY = offsetY;
+      view.targetX = targetX; view.targetY = targetY;
+      view.rotation = rotation; view.zoom = zoom;
+      return { ptr = ptr, view = view };
+    },
 
     InitWindow = lib.InitWindow,
     IsWindowReady = lib.IsWindowReady,
@@ -684,16 +694,31 @@ load = (libPath = null){
     GetMouseWheelMove = lib.GetMouseWheelMove,
     GetScreenWidth = lib.GetScreenWidth,
     GetScreenHeight = lib.GetScreenHeight,
+    GetMouseX = lib.GetMouseX,
+    GetMouseY = lib.GetMouseY,
+    GetTouchPointCount = lib.GetTouchPointCount,
+    GetTouchPosition = lib.GetTouchPosition,
     IsKeyDown = lib.IsKeyDown,
     IsKeyPressed = lib.IsKeyPressed,
     IsKeyReleased = lib.IsKeyReleased,
+    IsGestureDetected = lib.IsGestureDetected,
+    GetGestureDetected = lib.GetGestureDetected,
     IsMouseButtonDown = lib.IsMouseButtonDown,
     IsMouseButtonPressed = lib.IsMouseButtonPressed,
+    IsMouseButtonReleased = lib.IsMouseButtonReleased,
+    IsGamepadAvailable = lib.IsGamepadAvailable,
+    IsGamepadButtonPressed = lib.IsGamepadButtonPressed,
+    IsGamepadButtonReleased = lib.IsGamepadButtonReleased,
+    IsGamepadButtonDown = lib.IsGamepadButtonDown,
+    GetGamepadAxisCount = lib.GetGamepadAxisCount,
+    GetGamepadAxisMovement = lib.GetGamepadAxisMovement,
+    GetGamepadName = lib.GetGamepadName,
     IsCursorHidden = lib.IsCursorHidden,
     ShowCursor = lib.ShowCursor,
     HideCursor = lib.HideCursor,
     ToggleFullscreen = lib.ToggleFullscreen,
     IsWindowState = lib.IsWindowState,
+    IsWindowResized = lib.IsWindowResized,
     SetWindowState = lib.SetWindowState,
     ClearWindowState = lib.ClearWindowState,
     MinimizeWindow = lib.MinimizeWindow,
@@ -701,32 +726,57 @@ load = (libPath = null){
     MaximizeWindow = lib.MaximizeWindow,
     ToggleBorderlessWindowed = lib.ToggleBorderlessWindowed,
     GetMousePosition = lib.GetMousePosition,
+    GetMouseDelta = lib.GetMouseDelta,
+    GetWindowPosition = lib.GetWindowPosition,
+    GetMonitorCount = lib.GetMonitorCount,
+    GetCurrentMonitor = lib.GetCurrentMonitor,
+    GetMonitorPosition = lib.GetMonitorPosition,
+    GetMonitorWidth = lib.GetMonitorWidth,
+    GetMonitorHeight = lib.GetMonitorHeight,
+    GetMonitorPhysicalWidth = lib.GetMonitorPhysicalWidth,
+    GetMonitorPhysicalHeight = lib.GetMonitorPhysicalHeight,
+    GetMonitorRefreshRate = lib.GetMonitorRefreshRate,
+    GetMonitorName = lib.GetMonitorName,
+    SetWindowMonitor = lib.SetWindowMonitor,
+    GetScreenToWorld2D = lib.GetScreenToWorld2D,
     BeginDrawing = lib.BeginDrawing,
+    BeginMode2D = lib.BeginMode2D,
     BeginTextureMode = lib.BeginTextureMode,
+    BeginScissorMode = lib.BeginScissorMode,
     EndDrawing = lib.EndDrawing,
+    EndMode2D = lib.EndMode2D,
     EndTextureMode = lib.EndTextureMode,
+    EndScissorMode = lib.EndScissorMode,
     DrawFPS = lib.DrawFPS,
     ClearBackground = lib.ClearBackground,
     DrawText = lib.DrawText,
     LoadRenderTexture = lib.LoadRenderTexture,
     UnloadRenderTexture = lib.UnloadRenderTexture,
     SetTextureFilter = lib.SetTextureFilter,
+    SetTextureWrap = lib.SetTextureWrap,
     TextFormat = lib.TextFormat,
     TextSubtext = lib.TextSubtext,
     MeasureText = lib.MeasureText,
     DrawPixel = lib.DrawPixel,
     DrawLine = lib.DrawLine,
+    DrawLineBezier = lib.DrawLineBezier,
+    DrawLineDashed = lib.DrawLineDashed,
+    DrawLineEx = lib.DrawLineEx,
     DrawCircle = lib.DrawCircle,
     DrawCircleGradient = lib.DrawCircleGradient,
     DrawCircleLines = lib.DrawCircleLines,
+    DrawCircleLinesV = lib.DrawCircleLinesV,
     DrawEllipse = lib.DrawEllipse,
     DrawEllipseLines = lib.DrawEllipseLines,
     DrawCircleV = lib.DrawCircleV,
     DrawRectangle = lib.DrawRectangle,
+    DrawRectangleV = lib.DrawRectangleV,
     DrawRectangleRec = lib.DrawRectangleRec,
+    DrawRectanglePro = lib.DrawRectanglePro,
     DrawRectangleLines = lib.DrawRectangleLines,
     DrawRectangleLinesEx = lib.DrawRectangleLinesEx,
     DrawTexturePro = lib.DrawTexturePro,
+    DrawTextureRec = lib.DrawTextureRec,
     DrawRectangleGradientH = lib.DrawRectangleGradientH,
     DrawTriangle = lib.DrawTriangle,
     DrawTriangleLines = lib.DrawTriangleLines,
@@ -734,6 +784,9 @@ load = (libPath = null){
     DrawPolyLines = lib.DrawPolyLines,
     DrawPolyLinesEx = lib.DrawPolyLinesEx,
     CheckCollisionPointRec = lib.CheckCollisionPointRec,
+    CheckCollisionPointCircle = lib.CheckCollisionPointCircle,
+    CheckCollisionRecs = lib.CheckCollisionRecs,
+    GetCollisionRec = lib.GetCollisionRec,
     Fade = lib.Fade
   };
 };

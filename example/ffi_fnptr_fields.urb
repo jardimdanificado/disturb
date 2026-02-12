@@ -1,3 +1,18 @@
+ffi_bind_all = (path, ...sigs){
+  h = ffi.open(path);
+  if (h == null) { return null; }
+  api = { __lib = h };
+  each(sig in sigs) {
+    head = sig.split("(")[0].trim();
+    parts = head.split(" ");
+    name = (parts[parts.size - 1].split("!")[0] + "");
+    ptr = ffi.sym(h, name);
+    if (ptr == null) { return null; }
+    api[name] = ffi.bind(ptr, sig);
+  }
+  return api;
+};
+
 // ffi_fnptr_fields.urb
 // Function pointer fields in schemas via function<signature>.
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
@@ -7,7 +22,7 @@ holder = {
 };
 
 load_fixture = (path){
-  return ffi.load(path,
+  return ffi_bind_all(path,
     "void fn_holder_set_add(pointer<holder>)",
     "i32 fn_holder_call(pointer<holder>, i32, i32)",
     "void* get_add_i32_ptr()"

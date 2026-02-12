@@ -160,6 +160,7 @@ else
       run_ffi_case ffi_auto_compile
       run_ffi_case ffi_fnptr_fields
       run_ffi_case ffi_varargs
+      run_ffi_case ffi_open_sym_bind
       run_ffi_case ffi_buffers_strings
       run_ffi_case ffi_callbacks
       run_ffi_case ffi_const_views

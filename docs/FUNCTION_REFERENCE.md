@@ -312,7 +312,9 @@ If these are intended to be public, they need to be registered in VM initializat
 FFI appears under global `ffi` only when built with `ENABLE_FFI=1`.
 
 Primary APIs used by examples/tests:
-- `ffi.load(libPath, sig, ...)`
+- `ffi.open(libPath)`
+- `ffi.sym(libHandle, symbolName)`
+- `ffi.close(libHandle)`
 - `ffi.bind(ptr, sig)`
 - `ffi.callback(sig, lambda)` (builds C callback pointer from lambda)
 - `ffi.compile(schema)`
@@ -335,7 +337,7 @@ Primary APIs used by examples/tests:
 - view write behavior on `const` fields/elements:
   - non-strict: warns and ignores write
   - strict: aborts runtime (`PANIC`)
-- variadic signatures are supported with `...` (for `ffi.load`/`ffi.bind`)
+- variadic signatures are supported with `...` (for `ffi.bind`)
 
 See:
 - `example/guide/11_ffi_system.urb`

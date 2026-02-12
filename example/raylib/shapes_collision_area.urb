@@ -1,0 +1,87 @@
+// raylib [shapes] example - collision area (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - collision area");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+boxA = rl.newRectangle(rl.Rectangle, 10.0, rl.GetScreenHeight()/2.0 - 50.0, 200.0, 100.0);
+boxASpeedX = 4;
+boxB = rl.newRectangle(rl.Rectangle, rl.GetScreenWidth()/2.0 - 30.0, rl.GetScreenHeight()/2.0 - 30.0, 60.0, 60.0);
+boxCollision = rl.newRectangle(rl.Rectangle, 0.0, 0.0, 0.0, 0.0);
+screenUpperLimit = 40;
+pause = 0;
+collision = 0;
+
+while (!rl.WindowShouldClose()) {
+  if (!pause) { boxA.view.x = boxA.view.x + boxASpeedX; }
+
+  if (((boxA.view.x + boxA.view.width) >= rl.GetScreenWidth()) || (boxA.view.x <= 0)) {
+    boxASpeedX = boxASpeedX*-1;
+  }
+
+  boxB.view.x = rl.GetMouseX() - boxB.view.width/2;
+  boxB.view.y = rl.GetMouseY() - boxB.view.height/2;
+
+  if ((boxB.view.x + boxB.view.width) >= rl.GetScreenWidth()) { boxB.view.x = rl.GetScreenWidth() - boxB.view.width; }
+  else if (boxB.view.x <= 0) { boxB.view.x = 0; }
+
+  if ((boxB.view.y + boxB.view.height) >= rl.GetScreenHeight()) { boxB.view.y = rl.GetScreenHeight() - boxB.view.height; }
+  else if (boxB.view.y <= screenUpperLimit) { boxB.view.y = screenUpperLimit; }
+
+  collision = rl.CheckCollisionRecs(boxA.view, boxB.view);
+
+  if (collision) {
+    cr = rl.GetCollisionRec(boxA.view, boxB.view);
+    boxCollision.view.x = cr.x;
+    boxCollision.view.y = cr.y;
+    boxCollision.view.width = cr.width;
+    boxCollision.view.height = cr.height;
+  }
+
+  if (rl.IsKeyPressed(rl.KEY_SPACE)) {
+    if (pause) { pause = 0; }
+    else { pause = 1; }
+  }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  if (collision) { rl.DrawRectangle(0, 0, screenWidth, screenUpperLimit, rl.RED.view); }
+  else { rl.DrawRectangle(0, 0, screenWidth, screenUpperLimit, rl.BLACK.view); }
+
+  rl.DrawRectangleRec(boxA.view, rl.GOLD.view);
+  rl.DrawRectangleRec(boxB.view, rl.BLUE.view);
+
+  if (collision) {
+    rl.DrawRectangleRec(boxCollision.view, rl.LIME.view);
+    rl.DrawText("COLLISION!", rl.GetScreenWidth()/2 - rl.MeasureText("COLLISION!", 20)/2, screenUpperLimit/2 - 10, 20, rl.BLACK.view);
+    area = boxCollision.view.width*boxCollision.view.height;
+    rl.DrawText(rl.TextFormat("Collision Area: %i", area), rl.GetScreenWidth()/2 - 100, screenUpperLimit + 10, 20, rl.BLACK.view);
+  }
+
+  rl.DrawText("Press SPACE to PAUSE/RESUME", 20, screenHeight - 35, 20, rl.LIGHTGRAY.view);
+  rl.DrawFPS(10, 10);
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;

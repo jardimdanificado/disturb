@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.2
+- remove `ffi.load` from the public/runtime FFI API and from native alias resolution (`ffiLoad`), keeping dynamic calls on the explicit two-step flow.
+- standardize dynamic loading on `ffi.open(path)` + `ffi.sym(lib, name)` + `ffi.bind(ptr, sig)` + `ffi.close(lib)`.
+- fix `ffi.sym` symbol-name handling for derived strings (e.g. `split`/`trim` results) by passing a null-terminated copy to the platform loader.
+- migrate all FFI-facing scripts from `ffi.load(...)` to the new flow:
+  - libraries: `lib/raylib.urb`, `lib/tcc.urb`
+  - tests: `tests/cases/ffi_*` loaders
+  - examples and guide examples: `example/ffi*.urb`, `example/guide/11_ffi_system.urb`, `example/guide/14_ffi_struct_views_bind.urb`, `example/guide/15_ffi_callbacks_varargs_buffers.urb`, `example/guide/16_ffi_unions.urb`
+- update FFI documentation to remove `ffi.load` references and describe the new call flow in `README.md`, `docs/FUNCTION_REFERENCE.md`, and `docs/REF_SHEET.md`.
+- update build option descriptions to reflect new dynamic-call API wording (`ffi.open`/`ffi.sym`/`ffi.bind`) in `CMakeLists.txt`.
+
 ## 1.2.1
 - add function pointer fields in schemas via `function<signature>` (example: `cb = "function<i32 cb(i32, i32)>"`; `fn<...>` kept as alias), including read-as-bound-callable in `ffi.view` and assignment from C pointers or `ffi.callback(...)`.
 - make schema compilation automatic in FFI call sites that accept schema/layout (`ffi.view`, `ffi.new`, `ffi.sizeof`, `ffi.alignof`, `ffi.offsetof`); `ffi.compile` remains available as optional explicit step.

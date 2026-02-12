@@ -1,0 +1,40 @@
+// ffi_load_compat_lambda.urb
+// Compat helper: lambda que emula o antigo ffi.load(path, ...assinaturas)
+// usando ffi.open + ffi.sym + ffi.bind.
+
+ffi_load_compat = (path, ...sigs){
+  h = ffi.open(path);
+  if (h == null) { return null; }
+
+  api = { __lib = h };
+  each(sig in sigs) {
+    head = sig.split("(")[0].trim();
+    parts = head.split(" ");
+    name = (parts[parts.size - 1].split("!")[0] + "");
+    ptr = ffi.sym(h, name);
+    if (ptr == null) {
+      ffi.close(h);
+      return null;
+    }
+    api[name] = ffi.bind(ptr, sig);
+  }
+
+  // Conveniencia para liberar handle manualmente.
+  api.close = (){ ffi.close(this.__lib); };
+  return api;
+};
+
+lib = ffi_load_compat("libc.so.6",
+  "i32 puts(char*)",
+  "char* getenv(char*)"
+);
+if (lib == null) { lib = ffi_load_compat("libSystem.B.dylib", "i32 puts(char*)", "char* getenv(char*)"); }
+if (lib == null) { lib = ffi_load_compat("msvcrt.dll", "i32 puts(char*)", "char* getenv(char*)"); }
+if (lib == null) {
+  println("libc not found");
+  return 0;
+}
+
+lib.puts("hello from ffi_load_compat lambda");
+println(lib.getenv("HOME"));
+lib.close();

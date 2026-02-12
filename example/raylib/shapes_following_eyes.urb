@@ -1,0 +1,100 @@
+// raylib [shapes] example - following eyes (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - following eyes");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+scleraLeftPosition = rl.newVector2(rl.Vector2, rl.GetScreenWidth()/2.0 - 100.0, rl.GetScreenHeight()/2.0);
+scleraRightPosition = rl.newVector2(rl.Vector2, rl.GetScreenWidth()/2.0 + 100.0, rl.GetScreenHeight()/2.0);
+scleraRadius = 80.0;
+irisRadius = 24.0;
+limit = scleraRadius - irisRadius;
+
+irisLeftPosition = rl.newVector2(rl.Vector2, scleraLeftPosition.view.x, scleraLeftPosition.view.y);
+irisRightPosition = rl.newVector2(rl.Vector2, scleraRightPosition.view.x, scleraRightPosition.view.y);
+targetLeftX = irisLeftPosition.view.x;
+targetLeftY = irisLeftPosition.view.y;
+targetRightX = irisRightPosition.view.x;
+targetRightY = irisRightPosition.view.y;
+smooth = 0.22;
+
+sqrtApprox = (v){
+  if (v <= 0.0) { return 0.0; }
+  x = v;
+  for (k = 0; k < 8; k++) {
+    x = 0.5*(x + v/x);
+  }
+  return x;
+};
+
+while (!rl.WindowShouldClose()) {
+  mouse = rl.GetMousePosition();
+
+  // Left eye (circular clamp toward mouse)
+  dx = mouse.x - scleraLeftPosition.view.x;
+  dy = mouse.y - scleraLeftPosition.view.y;
+  d2 = dx*dx + dy*dy;
+  dist = sqrtApprox(d2);
+  if (dist > limit && dist > 0.0) {
+    targetLeftX = scleraLeftPosition.view.x + dx*limit/dist;
+    targetLeftY = scleraLeftPosition.view.y + dy*limit/dist;
+  } else {
+    targetLeftX = mouse.x;
+    targetLeftY = mouse.y;
+  }
+
+  // Right eye (circular clamp toward mouse)
+  dx = mouse.x - scleraRightPosition.view.x;
+  dy = mouse.y - scleraRightPosition.view.y;
+  d2 = dx*dx + dy*dy;
+  dist = sqrtApprox(d2);
+  if (dist > limit && dist > 0.0) {
+    targetRightX = scleraRightPosition.view.x + dx*limit/dist;
+    targetRightY = scleraRightPosition.view.y + dy*limit/dist;
+  } else {
+    targetRightX = mouse.x;
+    targetRightY = mouse.y;
+  }
+
+  // Smooth eye movement to avoid flicker when mouse moves quickly.
+  irisLeftPosition.view.x = irisLeftPosition.view.x + (targetLeftX - irisLeftPosition.view.x)*smooth;
+  irisLeftPosition.view.y = irisLeftPosition.view.y + (targetLeftY - irisLeftPosition.view.y)*smooth;
+  irisRightPosition.view.x = irisRightPosition.view.x + (targetRightX - irisRightPosition.view.x)*smooth;
+  irisRightPosition.view.y = irisRightPosition.view.y + (targetRightY - irisRightPosition.view.y)*smooth;
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawCircleV(scleraLeftPosition.view, scleraRadius, rl.LIGHTGRAY.view);
+  rl.DrawCircleV(irisLeftPosition.view, irisRadius, rl.BROWN.view);
+  rl.DrawCircleV(irisLeftPosition.view, 10.0, rl.BLACK.view);
+
+  rl.DrawCircleV(scleraRightPosition.view, scleraRadius, rl.LIGHTGRAY.view);
+  rl.DrawCircleV(irisRightPosition.view, irisRadius, rl.DARKGREEN.view);
+  rl.DrawCircleV(irisRightPosition.view, 10.0, rl.BLACK.view);
+
+  rl.DrawFPS(10, 10);
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;

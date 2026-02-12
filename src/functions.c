@@ -9,7 +9,7 @@
 #include <string.h>
 
 #ifdef DISTURB_ENABLE_FFI
-void native_ffi_load(VM *vm, List *stack, List *global);
+void native_ffi_open(VM *vm, List *stack, List *global);
 #endif
 
 static int entry_is_string(ObjEntry *entry)
@@ -3304,8 +3304,8 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "import") == 0) return native_import;
     #endif
     #ifdef DISTURB_ENABLE_FFI
-    if (strcmp(name, "ffiLoad") == 0) return native_ffi_load;
-    #endif
+    if (strcmp(name, "ffiOpen") == 0) return native_ffi_open;
+#endif
     if (strcmp(name, "eval") == 0) return native_eval;
     if (strcmp(name, "parse") == 0) return native_parse;
     if (strcmp(name, "emit") == 0) return native_emit;

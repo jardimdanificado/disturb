@@ -1,0 +1,81 @@
+// raylib [shapes] example - rectangle scaling (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+MOUSE_SCALE_MARK_SIZE = 12;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - rectangle scaling");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+rec = rl.newRectangle(rl.Rectangle, 100.0, 100.0, 200.0, 80.0);
+mouseScaleReady = 0;
+mouseScaleMode = 0;
+
+while (!rl.WindowShouldClose()) {
+  mousePosition = rl.GetMousePosition();
+
+  markX = rec.view.x + rec.view.width - MOUSE_SCALE_MARK_SIZE;
+  markY = rec.view.y + rec.view.height - MOUSE_SCALE_MARK_SIZE;
+  inMark = (mousePosition.x >= markX) && (mousePosition.x <= markX + MOUSE_SCALE_MARK_SIZE) &&
+           (mousePosition.y >= markY) && (mousePosition.y <= markY + MOUSE_SCALE_MARK_SIZE);
+
+  if (inMark) {
+    mouseScaleReady = 1;
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { mouseScaleMode = 1; }
+  } else {
+    mouseScaleReady = 0;
+  }
+
+  if (mouseScaleMode) {
+    mouseScaleReady = 1;
+
+    rec.view.width = mousePosition.x - rec.view.x;
+    rec.view.height = mousePosition.y - rec.view.y;
+
+    if (rec.view.width < MOUSE_SCALE_MARK_SIZE) { rec.view.width = MOUSE_SCALE_MARK_SIZE; }
+    if (rec.view.height < MOUSE_SCALE_MARK_SIZE) { rec.view.height = MOUSE_SCALE_MARK_SIZE; }
+
+    if (rec.view.width > (rl.GetScreenWidth() - rec.view.x)) { rec.view.width = rl.GetScreenWidth() - rec.view.x; }
+    if (rec.view.height > (rl.GetScreenHeight() - rec.view.y)) { rec.view.height = rl.GetScreenHeight() - rec.view.y; }
+
+    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT)) { mouseScaleMode = 0; }
+  }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawText("Scale rectangle dragging from bottom-right corner!", 10, 10, 20, rl.GRAY.view);
+  rl.DrawRectangleRec(rec.view, rl.Fade(rl.GREEN.view, 0.5));
+
+  if (mouseScaleReady) {
+    rl.DrawRectangleLinesEx(rec.view, 1.0, rl.RED.view);
+
+    t1 = rl.newVector2(rl.Vector2, rec.view.x + rec.view.width - MOUSE_SCALE_MARK_SIZE, rec.view.y + rec.view.height);
+    t2 = rl.newVector2(rl.Vector2, rec.view.x + rec.view.width, rec.view.y + rec.view.height);
+    t3 = rl.newVector2(rl.Vector2, rec.view.x + rec.view.width, rec.view.y + rec.view.height - MOUSE_SCALE_MARK_SIZE);
+    rl.DrawTriangle(t1.view, t2.view, t3.view, rl.RED.view);
+  }
+
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;

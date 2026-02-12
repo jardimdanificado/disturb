@@ -1,0 +1,37 @@
+fail = 0;
+
+open_fixture = (path){
+  return ffi.open(path);
+};
+
+lib = open_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib == null) { lib = open_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib == null) { lib = open_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib == null) {
+  println(1);
+  return 0;
+}
+
+ptr = ffi.sym(lib, "sum_variadic_i32");
+if (ptr == null) {
+  fail++;
+} else {
+  sum = ffi.bind(ptr, "i32 sum_variadic_i32(i32, ...)");
+  if (sum(4, 10, 20, 30, 40) != 100) { fail++; }
+}
+
+ffi.close(lib);
+
+lib2 = open_fixture("./tests/ffi/libffi_view_struct.so");
+if (lib2 == null) { lib2 = open_fixture("./tests/ffi/libffi_view_struct.dylib"); }
+if (lib2 == null) { lib2 = open_fixture("./tests/ffi/libffi_view_struct.dll"); }
+if (lib2 == null) {
+  fail++;
+} else {
+  ptr2 = ffi.sym(lib2, "sum_variadic_i32");
+  sum2 = ffi.bind(ptr2, "i32 sum_variadic_i32(i32, ...)");
+  if (sum2(3, 1, 2, 3) != 6) { fail++; }
+  ffi.close(lib2);
+}
+
+println(fail);

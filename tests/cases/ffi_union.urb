@@ -1,3 +1,18 @@
+ffi_bind_all = (path, ...sigs){
+  h = ffi.open(path);
+  if (h == null) { return null; }
+  api = { __lib = h };
+  each(sig in sigs) {
+    head = sig.split("(")[0].trim();
+    parts = head.split(" ");
+    name = (parts[parts.size - 1].split("!")[0] + "");
+    ptr = ffi.sym(h, name);
+    if (ptr == null) { return null; }
+    api[name] = ffi.bind(ptr, sig);
+  }
+  return api;
+};
+
 fail = 0;
 
 half = {
@@ -24,7 +39,7 @@ holder_ptr = {
 };
 
 load_fixture = (path){
-  return ffi.load(path,
+  return ffi_bind_all(path,
     "i32 bits_sizeof()",
     "i32 bits_off_i()",
     "i32 bits_off_f()",

@@ -1,0 +1,70 @@
+// raylib [core] example - render texture (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - render texture");
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+renderTextureWidth = 300;
+renderTextureHeight = 300;
+target = rl.LoadRenderTexture(renderTextureWidth, renderTextureHeight);
+
+ballPosition = rl.newVector2(rl.Vector2, renderTextureWidth/2.0, renderTextureHeight/2.0);
+ballSpeed = rl.newVector2(rl.Vector2, 5.0, 4.0);
+ballRadius = 20;
+rotation = 0.0;
+
+rl.SetTargetFPS(60);
+
+src = rl.newRectangle(rl.Rectangle, 0.0, 0.0, target.texture.width, -target.texture.height);
+dst = rl.newRectangle(rl.Rectangle, screenWidth/2.0, screenHeight/2.0, target.texture.width, target.texture.height);
+origin = rl.newVector2(rl.Vector2, target.texture.width/2.0, target.texture.height/2.0);
+
+while (!rl.WindowShouldClose()) {
+  ballPosition.view.x = ballPosition.view.x + ballSpeed.view.x;
+  ballPosition.view.y = ballPosition.view.y + ballSpeed.view.y;
+
+  if ((ballPosition.view.x >= (renderTextureWidth - ballRadius)) || (ballPosition.view.x <= ballRadius)) {
+    ballSpeed.view.x = ballSpeed.view.x*-1.0;
+  }
+
+  if ((ballPosition.view.y >= (renderTextureHeight - ballRadius)) || (ballPosition.view.y <= ballRadius)) {
+    ballSpeed.view.y = ballSpeed.view.y*-1.0;
+  }
+
+  rotation = rotation + 0.5;
+
+  rl.BeginTextureMode(target);
+  rl.ClearBackground(rl.SKYBLUE.view);
+  rl.DrawRectangle(0, 0, 20, 20, rl.RED.view);
+  rl.DrawCircleV(ballPosition.view, ballRadius, rl.MAROON.view);
+  rl.EndTextureMode();
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.DrawTexturePro(target.texture, src.view, dst.view, origin.view, rotation, rl.WHITE.view);
+  rl.DrawText("DRAWING BOUNCING BALL INSIDE RENDER TEXTURE!", 10, screenHeight - 40, 20, rl.BLACK.view);
+  rl.DrawFPS(10, 10);
+  rl.EndDrawing();
+}
+
+rl.UnloadRenderTexture(target);
+rl.CloseWindow();
+gc.collect();
+return 0;

@@ -1,0 +1,76 @@
+// raylib [core] example - basic screen manager (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+LOGO = 0;
+TITLE = 1;
+GAMEPLAY = 2;
+ENDING = 3;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - basic screen manager");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+currentScreen = LOGO;
+framesCounter = 0;
+
+while (!rl.WindowShouldClose()) {
+  if (currentScreen == LOGO) {
+    framesCounter++;
+    if (framesCounter > 120) { currentScreen = TITLE; }
+  } else if (currentScreen == TITLE) {
+    if (rl.IsKeyPressed(rl.KEY_ENTER) || rl.IsGestureDetected(rl.GESTURE_TAP)) {
+      currentScreen = GAMEPLAY;
+    }
+  } else if (currentScreen == GAMEPLAY) {
+    if (rl.IsKeyPressed(rl.KEY_ENTER) || rl.IsGestureDetected(rl.GESTURE_TAP)) {
+      currentScreen = ENDING;
+    }
+  } else if (currentScreen == ENDING) {
+    if (rl.IsKeyPressed(rl.KEY_ENTER) || rl.IsGestureDetected(rl.GESTURE_TAP)) {
+      currentScreen = TITLE;
+    }
+  }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  if (currentScreen == LOGO) {
+    rl.DrawText("LOGO SCREEN", 20, 20, 40, rl.LIGHTGRAY.view);
+    rl.DrawText("WAIT for 2 SECONDS...", 290, 220, 20, rl.GRAY.view);
+  } else if (currentScreen == TITLE) {
+    rl.DrawRectangle(0, 0, screenWidth, screenHeight, rl.GREEN.view);
+    rl.DrawText("TITLE SCREEN", 20, 20, 40, rl.DARKGREEN.view);
+    rl.DrawText("PRESS ENTER or TAP to JUMP to GAMEPLAY SCREEN", 120, 220, 20, rl.DARKGREEN.view);
+  } else if (currentScreen == GAMEPLAY) {
+    rl.DrawRectangle(0, 0, screenWidth, screenHeight, rl.PURPLE.view);
+    rl.DrawText("GAMEPLAY SCREEN", 20, 20, 40, rl.MAROON.view);
+    rl.DrawText("PRESS ENTER or TAP to JUMP to ENDING SCREEN", 130, 220, 20, rl.MAROON.view);
+  } else if (currentScreen == ENDING) {
+    rl.DrawRectangle(0, 0, screenWidth, screenHeight, rl.BLUE.view);
+    rl.DrawText("ENDING SCREEN", 20, 20, 40, rl.DARKBLUE.view);
+    rl.DrawText("PRESS ENTER or TAP to RETURN to TITLE SCREEN", 120, 220, 20, rl.DARKBLUE.view);
+  }
+
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;

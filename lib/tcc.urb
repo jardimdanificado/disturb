@@ -5,7 +5,22 @@ return {
   _api = null,
 
   _load_api = (lib_path){
-    return ffi.load(lib_path,
+    ffi_bind_all = (path, ...sigs){
+      h = ffi.open(path);
+      if (h == null) { return null; }
+      api = { __lib = h };
+      each(sig in sigs) {
+        head = sig.split("(")[0].trim();
+        parts = head.split(" ");
+        name = (parts[parts.size - 1].split("!")[0] + "");
+        ptr = ffi.sym(h, name);
+        if (ptr == null) { return null; }
+        api[name] = ffi.bind(ptr, sig);
+      }
+      return api;
+    };
+
+    return ffi_bind_all(lib_path,
       "void* tcc_new()",
       "void tcc_delete(void*)",
       "void tcc_set_lib_path(void*, char*)",

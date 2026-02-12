@@ -1,0 +1,102 @@
+// raylib [core] example - monitor detector (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - monitor detector");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+currentMonitorIndex = rl.GetCurrentMonitor();
+
+while (!rl.WindowShouldClose()) {
+  maxWidth = 1;
+  maxHeight = 1;
+  monitorOffsetX = 0;
+  monitorCount = rl.GetMonitorCount();
+
+  for (i = 0; i < monitorCount; i++) {
+    pos = rl.GetMonitorPosition(i);
+    if (pos.x < monitorOffsetX) { monitorOffsetX = -pos.x; }
+
+    w = rl.GetMonitorWidth(i);
+    h = rl.GetMonitorHeight(i);
+    pxW = pos.x + w;
+    pxH = pos.y + h;
+
+    if (maxWidth < pxW) { maxWidth = pxW; }
+    if (maxHeight < pxH) { maxHeight = pxH; }
+  }
+
+  if (rl.IsKeyPressed(rl.KEY_ENTER) && (monitorCount > 1)) {
+    currentMonitorIndex++;
+    if (currentMonitorIndex == monitorCount) { currentMonitorIndex = 0; }
+    rl.SetWindowMonitor(currentMonitorIndex);
+  } else {
+    currentMonitorIndex = rl.GetCurrentMonitor();
+  }
+
+  monitorScale = 0.6;
+  if (maxHeight > (maxWidth + monitorOffsetX)) { monitorScale = monitorScale*((1.0*screenHeight)/maxHeight); }
+  else { monitorScale = monitorScale*((1.0*screenWidth)/(maxWidth + monitorOffsetX)); }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawText("Press [Enter] to move window to next monitor available", 20, 20, 20, rl.DARKGRAY.view);
+  rl.DrawRectangleLines(20, 60, screenWidth - 40, screenHeight - 100, rl.DARKGRAY.view);
+
+  for (i = 0; i < monitorCount; i++) {
+    pos = rl.GetMonitorPosition(i);
+    w = rl.GetMonitorWidth(i);
+    h = rl.GetMonitorHeight(i);
+    pw = rl.GetMonitorPhysicalWidth(i);
+    ph = rl.GetMonitorPhysicalHeight(i);
+    rr = rl.GetMonitorRefreshRate(i);
+    name = rl.GetMonitorName(i);
+
+    rec = rl.newRectangle(rl.Rectangle,
+      (pos.x + monitorOffsetX)*monitorScale + 140,
+      pos.y*monitorScale + 80,
+      w*monitorScale,
+      h*monitorScale
+    );
+
+    rl.DrawText(rl.TextFormat("[%i] %s", i, name), rec.view.x + 10, rec.view.y + (100*monitorScale), 120*monitorScale, rl.BLUE.view);
+    rl.DrawText(
+      rl.TextFormat("Resolution: [%ipx x %ipx]\nRefreshRate: [%ihz]\nPhysical Size: [%imm x %imm]\nPosition: %3.0f x %3.0f", w, h, rr, pw, ph, pos.x, pos.y),
+      rec.view.x + 10, rec.view.y + (200*monitorScale), 120*monitorScale, rl.DARKGRAY.view
+    );
+
+    if (i == currentMonitorIndex) {
+      rl.DrawRectangleLinesEx(rec.view, 5.0, rl.RED.view);
+      wp = rl.GetWindowPosition();
+      winX = (wp.x + monitorOffsetX)*monitorScale + 140;
+      winY = wp.y*monitorScale + 80;
+      rl.DrawRectangle(winX, winY, screenWidth*monitorScale, screenHeight*monitorScale, rl.Fade(rl.GREEN.view, 0.5));
+    } else {
+      rl.DrawRectangleLinesEx(rec.view, 5.0, rl.GRAY.view);
+    }
+  }
+
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;

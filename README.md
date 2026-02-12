@@ -29,7 +29,7 @@ make ENABLE_FFI=0
 make ENABLE_EMBEDDED=1
 ```
 
-`ENABLE_EMBEDDED=1` forces an embeddable profile by disabling IO natives, dynamic FFI calls (`ffi.load`/`ffi.bind`), and `import` while keeping FFI core layout/view/memory APIs.
+`ENABLE_EMBEDDED=1` forces an embeddable profile by disabling IO natives, dynamic FFI calls (`ffi.open`/`ffi.sym`/`ffi.bind`), and `import` while keeping FFI core layout/view/memory APIs.
 
 MSVC build (Windows):
 
@@ -41,7 +41,7 @@ cmake --build build-msvc --config Release
 
 Notes:
 - The MSVC CI profile currently validates with `ENABLE_FFI_CALLS=OFF` (FFI core remains enabled).
-- To enable dynamic calls (`ffi.load`/`ffi.bind`) under MSVC, provide a `libffi` build (headers + `.lib`/`.dll`) and configure CMake paths accordingly.
+- To enable dynamic calls (`ffi.open`/`ffi.sym`/`ffi.bind`) under MSVC, provide a `libffi` build (headers + `.lib`/`.dll`) and configure CMake paths accordingly.
 
 ## CLI
 
@@ -455,10 +455,12 @@ Compatibility alias:
 
 ## FFI
 
-Dynamic foreign calls (`ffi.load`, `ffi.bind`) require `ENABLE_FFI_CALLS=1` (default in desktop builds; disabled by `ENABLE_EMBEDDED=1`).
+Dynamic foreign calls (`ffi.open`, `ffi.sym`, `ffi.bind`) require `ENABLE_FFI_CALLS=1` (default in desktop builds; disabled by `ENABLE_EMBEDDED=1`).
 
 Main API:
-- `ffi.load(libPath, "signature", ...)`
+- `ffi.open(libPath)`
+- `ffi.sym(libHandle, symbolName)`
+- `ffi.close(libHandle)`
 - `ffi.bind(ptr, "signature")`
 - `ffi.callback("signature", lambda)`
 - `ffi.compile(schema)`
@@ -473,6 +475,7 @@ Main API:
 - `ffi.viewArray(ptr, elemSpec, len)`
 
 Notes:
+- Two-step loading is supported via `ffi.open` + `ffi.sym` + `ffi.bind`.
 - `ffi.compile(schema)` is optional for normal use.
 - `ffi.view/sizeof/alignof/offsetof/new` accept either a schema table or a compiled layout handle; schema tables are auto-compiled and cached internally.
 
@@ -489,7 +492,7 @@ Schema composition:
 - unions: `__meta = { union = 1 }`
 - bitfields: use `"type:bits"` (example: `"uint8:3"`, `"uint32:5"`)
 - qualifiers accepted in schema/signatures: `const`, `volatile`, `restrict`
-- variadic signatures accepted via `...` in `ffi.load`/`ffi.bind`
+- variadic signatures accepted via `...` in `ffi.bind`
 
 Const behavior in views:
 - non-strict mode: warns and ignores write
@@ -523,11 +526,29 @@ Raylib wrapper:
   - `example/raylib/core_input_mouse.urb`
   - `example/raylib/core_input_mouse_wheel.urb`
   - `example/raylib/core_random_values.urb`
+  - `example/raylib/core_basic_screen_manager.urb`
+  - `example/raylib/core_input_actions.urb`
+  - `example/raylib/core_scissor_test.urb`
+  - `example/raylib/core_render_texture.urb`
+  - `example/raylib/core_input_multitouch.urb`
+  - `example/raylib/core_2d_camera.urb`
+  - `example/raylib/core_2d_camera_mouse_zoom.urb`
+  - `example/raylib/core_input_gestures.urb`
+  - `example/raylib/core_monitor_detector.urb`
+  - `example/raylib/core_viewport_scaling.urb`
   - `example/raylib/core_delta_time.urb`
   - `example/raylib/core_window_should_close.urb`
   - `example/raylib/core_window_flags.urb`
   - `example/raylib/core_window_letterbox.urb`
   - `example/raylib/shapes_basic_shapes.urb`
+  - `example/raylib/shapes_bouncing_ball.urb`
+  - `example/raylib/shapes_collision_area.urb`
+  - `example/raylib/shapes_rectangle_scaling.urb`
+  - `example/raylib/shapes_lines_bezier.urb`
+  - `example/raylib/shapes_lines_drawing.urb`
+  - `example/raylib/shapes_dashed_line.urb`
+  - `example/raylib/shapes_following_eyes.urb`
+  - `example/raylib/shapes_mouse_trail.urb`
   - `example/raylib/shapes_logo_raylib.urb`
   - `example/raylib/shapes_logo_raylib_anim.urb`
   - `example/raylib/shapes_colors_palette.urb`

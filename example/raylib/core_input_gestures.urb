@@ -1,0 +1,108 @@
+// raylib [core] example - input gestures (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - input gestures");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+touchArea = rl.newRectangle(rl.Rectangle, 220.0, 10.0, screenWidth - 230.0, screenHeight - 20.0);
+
+g0="";g1="";g2="";g3="";g4="";g5="";g6="";g7="";g8="";g9="";
+g10="";g11="";g12="";g13="";g14="";g15="";g16="";g17="";g18="";g19="";
+gesturesCount = 0;
+
+currentGesture = rl.GESTURE_NONE;
+lastGesture = rl.GESTURE_NONE;
+
+gestureName = (g){
+  if (g == rl.GESTURE_TAP) { return "GESTURE TAP"; }
+  if (g == rl.GESTURE_DOUBLETAP) { return "GESTURE DOUBLETAP"; }
+  if (g == rl.GESTURE_HOLD) { return "GESTURE HOLD"; }
+  if (g == rl.GESTURE_DRAG) { return "GESTURE DRAG"; }
+  if (g == rl.GESTURE_SWIPE_RIGHT) { return "GESTURE SWIPE RIGHT"; }
+  if (g == rl.GESTURE_SWIPE_LEFT) { return "GESTURE SWIPE LEFT"; }
+  if (g == rl.GESTURE_SWIPE_UP) { return "GESTURE SWIPE UP"; }
+  if (g == rl.GESTURE_SWIPE_DOWN) { return "GESTURE SWIPE DOWN"; }
+  if (g == rl.GESTURE_PINCH_IN) { return "GESTURE PINCH IN"; }
+  if (g == rl.GESTURE_PINCH_OUT) { return "GESTURE PINCH OUT"; }
+  return "";
+};
+
+pushGesture = (txt){
+  g0=g1; g1=g2; g2=g3; g3=g4; g4=g5; g5=g6; g6=g7; g7=g8; g8=g9; g9=g10;
+  g10=g11; g11=g12; g12=g13; g13=g14; g14=g15; g15=g16; g16=g17; g17=g18; g18=g19; g19=txt;
+  if (gesturesCount < 20) { gesturesCount++; }
+};
+
+while (!rl.WindowShouldClose()) {
+  lastGesture = currentGesture;
+  currentGesture = rl.GetGestureDetected();
+  touchPosition = rl.GetTouchPosition(0);
+
+  if (rl.CheckCollisionPointRec(touchPosition, touchArea.view) && (currentGesture != rl.GESTURE_NONE)) {
+    if (currentGesture != lastGesture) {
+      n = gestureName(currentGesture);
+      if (n != "") { pushGesture(n); }
+    }
+  }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawRectangleRec(touchArea.view, rl.GRAY.view);
+  rl.DrawRectangle(225, 15, screenWidth - 240, screenHeight - 30, rl.RAYWHITE.view);
+  rl.DrawText("GESTURES TEST AREA", screenWidth - 270, screenHeight - 40, 20, rl.Fade(rl.GRAY.view, 0.5));
+
+  start = 20 - gesturesCount;
+  if (start < 0) { start = 0; }
+
+  row = 0;
+  if (start <= 0) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g0, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <= 1) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g1, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <= 2) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g2, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <= 3) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g3, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <= 4) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g4, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <= 5) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g5, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <= 6) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g6, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <= 7) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g7, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <= 8) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g8, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <= 9) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g9, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=10) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g10, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=11) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g11, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=12) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g12, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=13) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g13, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=14) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g14, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=15) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g15, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=16) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g16, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=17) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g17, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=18) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.5)); rl.DrawText(g18, 35, 36 + 20*row, 10, rl.DARKGRAY.view); row++; }
+  if (start <=19) { rl.DrawRectangle(10, 30 + 20*row, 200, 20, rl.Fade(rl.LIGHTGRAY.view, 0.3)); rl.DrawText(g19, 35, 36 + 20*row, 10, rl.MAROON.view); row++; }
+
+  rl.DrawRectangleLines(10, 29, 200, screenHeight - 50, rl.GRAY.view);
+  rl.DrawText("DETECTED GESTURES", 50, 15, 10, rl.GRAY.view);
+
+  if (currentGesture != rl.GESTURE_NONE) { rl.DrawCircleV(touchPosition, 30.0, rl.MAROON.view); }
+
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;

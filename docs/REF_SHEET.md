@@ -179,7 +179,9 @@ Flags:
 Requires `ENABLE_FFI=1`.
 
 Main API:
-- `ffi.load(...)`
+- `ffi.open(path)`
+- `ffi.sym(lib, name)`
+- `ffi.close(lib)`
 - `ffi.bind(ptr, sig)`
 - `ffi.callback(sig, lambda)`
 - `ffi.compile(schema)`
@@ -199,7 +201,7 @@ Main API:
 - bitfield declaration: `"uint8:3"`, `"uint32:5"` (inside struct)
 - union declaration: `__meta = { union = 1 }`
 - qualifiers accepted: `const`, `volatile`, `restrict`
-- variadic signatures: `...` (in `ffi.load`/`ffi.bind`)
+- variadic signatures: `...` (in `ffi.bind`)
 - `const` writes in views:
   - strict off: warning + ignored write
   - strict on: panic/abort

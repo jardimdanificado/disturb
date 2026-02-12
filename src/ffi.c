@@ -189,8 +189,17 @@ enum {
     FFI_LAYOUT_HANDLE_MAGIC = 0x4646494cU, /* FFIL */
     FFI_VIEW_HANDLE_MAGIC = 0x46464956U,   /* FFIV */
     FFI_ARRAY_VIEW_HANDLE_MAGIC = 0x46464941U, /* FFIA */
-    FFI_PTR_HANDLE_MAGIC = 0x46464950U /* FFIP */
+    FFI_PTR_HANDLE_MAGIC = 0x46464950U, /* FFIP */
+    FFI_LIB_HANDLE_MAGIC = 0x46464944U /* FFID */
 };
+
+#ifdef DISTURB_ENABLE_FFI_CALLS
+typedef struct {
+    uint32_t magic;
+    int refcount;
+    void *handle;
+} FfiLibHandle;
+#endif
 
 #ifdef DISTURB_ENABLE_FFI_CALLS
 enum {
@@ -295,7 +304,7 @@ static void *ffi_dlopen(const char *path)
     SetLastError(0);
     HMODULE h = LoadLibraryA(path);
     if (!h) {
-        ffi_dl_set_error_last("ffi.load failed");
+        ffi_dl_set_error_last("ffi.open failed");
     }
     return (void*)h;
 }
@@ -311,6 +320,17 @@ static void *ffi_dlsym(void *handle, const char *name)
     return (void*)p;
 }
 
+static int ffi_dlclose(void *handle)
+{
+    if (!handle) return 1;
+    SetLastError(0);
+    if (!FreeLibrary((HMODULE)handle)) {
+        ffi_dl_set_error_last("ffi.close failed");
+        return 0;
+    }
+    return 1;
+}
+
 static const char *ffi_dlerror_msg(void)
 {
     return g_ffi_dl_error[0] ? g_ffi_dl_error : "ffi dynamic loading error";
@@ -324,6 +344,12 @@ static void *ffi_dlopen(const char *path)
 static void *ffi_dlsym(void *handle, const char *name)
 {
     return dlsym(handle, name);
+}
+
+static int ffi_dlclose(void *handle)
+{
+    if (!handle) return 1;
+    return dlclose(handle) == 0;
 }
 
 static const char *ffi_dlerror_msg(void)
@@ -1921,6 +1947,49 @@ static ObjEntry *ffi_make_ptr_handle_entry(VM *vm, uintptr_t ptr, int owned)
     }
     return entry;
 }
+
+#ifdef DISTURB_ENABLE_FFI_CALLS
+static FfiLibHandle *ffi_lib_handle_new(void *handle)
+{
+    FfiLibHandle *h = (FfiLibHandle*)calloc(1, sizeof(FfiLibHandle));
+    if (!h) return NULL;
+    h->magic = FFI_LIB_HANDLE_MAGIC;
+    h->refcount = 1;
+    h->handle = handle;
+    return h;
+}
+
+static void ffi_lib_handle_clone(void *data)
+{
+    FfiLibHandle *h = (FfiLibHandle*)data;
+    if (!h || h->magic != FFI_LIB_HANDLE_MAGIC) return;
+    h->refcount++;
+}
+
+static void ffi_lib_handle_free(void *data)
+{
+    FfiLibHandle *h = (FfiLibHandle*)data;
+    if (!h || h->magic != FFI_LIB_HANDLE_MAGIC) return;
+    h->refcount--;
+    if (h->refcount > 0) return;
+    if (h->handle) {
+        ffi_dlclose(h->handle);
+        h->handle = NULL;
+    }
+    h->magic = 0;
+    free(h);
+}
+
+static FfiLibHandle *ffi_lib_handle_from_entry(ObjEntry *entry)
+{
+    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    NativeBox *box = (NativeBox*)entry->obj->data[2].p;
+    if (!box || !box->data) return NULL;
+    FfiLibHandle *h = (FfiLibHandle*)box->data;
+    if (!h || h->magic != FFI_LIB_HANDLE_MAGIC) return NULL;
+    return h;
+}
+#endif
 
 static void ffi_array_view_handle_clone(void *data)
 {
@@ -3571,54 +3640,6 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, vm->null_entry);
 }
 
-static int ffi_prepare(VM *vm, FfiFunction *fn, const char *name, void *handle, char *err, size_t err_cap)
-{
-    fn->handle = handle;
-    fn->fn_ptr = ffi_dlsym(handle, name);
-    if (!fn->fn_ptr) {
-        snprintf(err, err_cap, "ffi: missing symbol '%s'", name);
-        return 0;
-    }
-
-    if (!ffi_resolve_schema_type(vm, &fn->ret, err, err_cap)) return 0;
-    for (int i = 0; i < fn->argc; i++) {
-        if (!ffi_resolve_schema_type(vm, &fn->args[i], err, err_cap)) return 0;
-    }
-
-    fn->arg_types = (ffi_type**)calloc((size_t)fn->argc, sizeof(ffi_type*));
-    if (!fn->arg_types) {
-        snprintf(err, err_cap, "ffi: out of memory");
-        return 0;
-    }
-    for (int i = 0; i < fn->argc; i++) {
-        FfiType *t = &fn->args[i];
-        if (t->schema_name) {
-            fn->arg_types[i] = t->schema_is_pointer ? &ffi_type_pointer : t->schema_ffi_type;
-            continue;
-        }
-        if (t->is_ptr || t->is_array || t->base == FFI_BASE_CSTR || t->base == FFI_BASE_PTR) {
-            fn->arg_types[i] = &ffi_type_pointer;
-        } else {
-            fn->arg_types[i] = ffi_type_for_base(t->base);
-        }
-    }
-    if (fn->ret.schema_name) {
-        fn->ret_type = fn->ret.schema_is_pointer ? &ffi_type_pointer : fn->ret.schema_ffi_type;
-    } else if (fn->ret.is_ptr || fn->ret.is_array || fn->ret.base == FFI_BASE_CSTR || fn->ret.base == FFI_BASE_PTR) {
-        fn->ret_type = &ffi_type_pointer;
-    } else {
-        fn->ret_type = ffi_type_for_base(fn->ret.base);
-    }
-
-    if (!fn->has_varargs) {
-        if (ffi_prep_cif(&fn->cif, FFI_DEFAULT_ABI, (unsigned)fn->argc, fn->ret_type, fn->arg_types) != FFI_OK) {
-            snprintf(err, err_cap, "ffi: failed to prepare call");
-            return 0;
-        }
-    }
-    return 1;
-}
-
 static int ffi_prepare_ptr(VM *vm, FfiFunction *fn, void *fn_ptr, char *err, size_t err_cap)
 {
     fn->handle = NULL;
@@ -3820,14 +3841,11 @@ void native_ffi_bind(VM *vm, List *stack, List *global)
     ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
     ObjEntry *sig_entry = ffi_native_arg(stack, argc, 1);
 
-    Int iv = 0;
-    Float fv = 0;
-    int is_float = 0;
-    if (!entry_number_scalar(ptr_entry, &iv, &fv, &is_float)) {
-        fprintf(stderr, "ffi.bind expects numeric ptr\n");
+    uintptr_t addr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &addr)) {
+        fprintf(stderr, "ffi.bind expects ptr\n");
         return;
     }
-    uintptr_t addr = (uintptr_t)(UInt)(is_float ? (Int)fv : iv);
     if (addr == 0) {
         fprintf(stderr, "ffi.bind expects non-null ptr\n");
         return;
@@ -3848,28 +3866,18 @@ void native_ffi_bind(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, entry);
 }
 
-void native_ffi_load(VM *vm, List *stack, List *global)
+void native_ffi_open(VM *vm, List *stack, List *global)
 {
     (void)global;
-    uint32_t argc = 0;
-    if (vm && vm->argc_entry) {
-        Int iv = 0;
-        if (entry_number_scalar(vm->argc_entry, &iv, NULL, NULL)) {
-            argc = (uint32_t)iv;
-        }
-    }
+    uint32_t argc = ffi_native_argc(vm);
     if (argc < 1) {
-        fprintf(stderr, "ffi.load expects library path and signatures\n");
+        fprintf(stderr, "ffi.open expects library path\n");
         return;
     }
-    ObjEntry *path_entry = NULL;
-    if (stack && stack->size >= (Int)argc + 2) {
-        Int base = stack->size - (Int)argc;
-        path_entry = (ObjEntry*)stack->data[base].p;
-    }
+    ObjEntry *path_entry = ffi_native_arg(stack, argc, 0);
     const char *path = NULL;
     if (!path_entry || !entry_as_cstr(path_entry, &path)) {
-        fprintf(stderr, "ffi.load expects string path\n");
+        fprintf(stderr, "ffi.open expects string path\n");
         return;
     }
     void *handle = ffi_dlopen(path);
@@ -3877,45 +3885,86 @@ void native_ffi_load(VM *vm, List *stack, List *global)
         fprintf(stderr, "%s\n", ffi_dlerror_msg());
         return;
     }
-
-    ObjEntry *table = vm_make_table_value(vm, (Int)(argc - 1));
-    if (!table) return;
-    for (uint32_t i = 1; i < argc; i++) {
-        ObjEntry *sig_entry = NULL;
-        Int base = stack->size - (Int)argc;
-        Int pos = base + (Int)i;
-        if (pos >= 2 && pos < stack->size) {
-            sig_entry = (ObjEntry*)stack->data[pos].p;
-        }
-        const char *sig = NULL;
-        if (!sig_entry || !entry_as_cstr(sig_entry, &sig)) {
-            fprintf(stderr, "ffi.load expects string signatures\n");
-            continue;
-        }
-        char err[128] = {0};
-        const char *name = NULL;
-        FfiFunction *fn = ffi_parse_signature(sig, err, sizeof(err), &name);
-        if (!fn) {
-            fprintf(stderr, "%s\n", err[0] ? err : "ffi: invalid signature");
-            continue;
-        }
-        if (!ffi_prepare(vm, fn, name, handle, err, sizeof(err))) {
-            fprintf(stderr, "%s\n", err[0] ? err : "ffi: prepare failed");
-            free((void*)name);
-            ffi_function_release(fn);
-            continue;
-        }
-        ObjEntry *entry = vm_make_native_entry_data(vm, name, native_ffi_call, fn,
-                                                    ffi_function_release, ffi_function_retain);
-        free((void*)name);
-        if (!entry) {
-            ffi_function_release(fn);
-            continue;
-        }
-        table->obj = vm_update_shared_obj(vm, table->obj, disturb_table_add(table->obj, entry));
+    FfiLibHandle *h = ffi_lib_handle_new(handle);
+    if (!h) {
+        ffi_dlclose(handle);
+        fprintf(stderr, "ffi: out of memory\n");
+        return;
     }
-    ffi_push_entry(vm, table);
+    ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
+                                                ffi_lib_handle_free, ffi_lib_handle_clone);
+    if (!entry) {
+        ffi_lib_handle_free(h);
+        fprintf(stderr, "ffi: out of memory\n");
+        return;
+    }
+    ffi_push_entry(vm, entry);
 }
+
+void native_ffi_close(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.close expects library handle\n");
+        return;
+    }
+    ObjEntry *lib_entry = ffi_native_arg(stack, argc, 0);
+    FfiLibHandle *h = ffi_lib_handle_from_entry(lib_entry);
+    if (!h) {
+        fprintf(stderr, "ffi.close expects library handle\n");
+        return;
+    }
+    if (h->handle && !ffi_dlclose(h->handle)) {
+        fprintf(stderr, "%s\n", ffi_dlerror_msg());
+        return;
+    }
+    h->handle = NULL;
+    ffi_push_entry(vm, vm->null_entry);
+}
+
+void native_ffi_sym(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "ffi.sym expects library handle and symbol name\n");
+        return;
+    }
+    ObjEntry *lib_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *name_entry = ffi_native_arg(stack, argc, 1);
+    FfiLibHandle *h = ffi_lib_handle_from_entry(lib_entry);
+    if (!h || !h->handle) {
+        fprintf(stderr, "ffi.sym expects open library handle\n");
+        return;
+    }
+    if (!name_entry || !entry_is_string(name_entry)) {
+        fprintf(stderr, "ffi.sym expects string symbol name\n");
+        return;
+    }
+    size_t name_len = disturb_bytes_len(name_entry->obj);
+    const char *name_src = disturb_bytes_data(name_entry->obj);
+    char *name = (char*)calloc(1, name_len + 1);
+    if (!name) {
+        fprintf(stderr, "ffi: out of memory\n");
+        return;
+    }
+    memcpy(name, name_src, name_len);
+    name[name_len] = 0;
+    void *ptr = ffi_dlsym(h->handle, name);
+    free(name);
+    if (!ptr) {
+        fprintf(stderr, "%s\n", ffi_dlerror_msg());
+        return;
+    }
+    ObjEntry *out = ffi_make_ptr_handle_entry(vm, (uintptr_t)ptr, 0);
+    if (!out) {
+        ffi_push_entry(vm, vm_make_int_value(vm, (Int)(uintptr_t)ptr));
+        return;
+    }
+    ffi_push_entry(vm, out);
+}
+
 #else
 void native_ffi_callback(VM *vm, List *stack, List *global)
 {
@@ -3929,10 +3978,22 @@ void native_ffi_bind(VM *vm, List *stack, List *global)
     fprintf(stderr, "ffi.bind unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
 }
 
-void native_ffi_load(VM *vm, List *stack, List *global)
+void native_ffi_open(VM *vm, List *stack, List *global)
 {
     (void)vm; (void)stack; (void)global;
-    fprintf(stderr, "ffi.load unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+    fprintf(stderr, "ffi.open unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+}
+
+void native_ffi_close(VM *vm, List *stack, List *global)
+{
+    (void)vm; (void)stack; (void)global;
+    fprintf(stderr, "ffi.close unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+}
+
+void native_ffi_sym(VM *vm, List *stack, List *global)
+{
+    (void)vm; (void)stack; (void)global;
+    fprintf(stderr, "ffi.sym unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
 }
 #endif
 
@@ -4274,7 +4335,9 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
 {
     if (!vm || !ffi_entry) return;
 #ifdef DISTURB_ENABLE_FFI_CALLS
-    ffi_add_module_fn(vm, ffi_entry, "load", native_ffi_load);
+    ffi_add_module_fn(vm, ffi_entry, "open", native_ffi_open);
+    ffi_add_module_fn(vm, ffi_entry, "close", native_ffi_close);
+    ffi_add_module_fn(vm, ffi_entry, "sym", native_ffi_sym);
     ffi_add_module_fn(vm, ffi_entry, "bind", native_ffi_bind);
     ffi_add_module_fn(vm, ffi_entry, "callback", native_ffi_callback);
 #endif
