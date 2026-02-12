@@ -1,0 +1,102 @@
+// raylib [text] example - sprite fonts (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+MAX_FONTS = 8;
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - sprite fonts");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+fonts = {};
+messages = {};
+spacings = {};
+positions = {};
+colors = {};
+
+fonts.push(rl.LoadFont("../raylib/examples/text/resources/sprite_fonts/alagard.png"));
+fonts.push(rl.LoadFont("../raylib/examples/text/resources/sprite_fonts/pixelplay.png"));
+fonts.push(rl.LoadFont("../raylib/examples/text/resources/sprite_fonts/mecha.png"));
+fonts.push(rl.LoadFont("../raylib/examples/text/resources/sprite_fonts/setback.png"));
+fonts.push(rl.LoadFont("../raylib/examples/text/resources/sprite_fonts/romulus.png"));
+fonts.push(rl.LoadFont("../raylib/examples/text/resources/sprite_fonts/pixantiqua.png"));
+fonts.push(rl.LoadFont("../raylib/examples/text/resources/sprite_fonts/alpha_beta.png"));
+fonts.push(rl.LoadFont("../raylib/examples/text/resources/sprite_fonts/jupiter_crash.png"));
+
+messages.push("ALAGARD FONT designed by Hewett Tsoi");
+messages.push("PIXELPLAY FONT designed by Aleksander Shevchuk");
+messages.push("MECHA FONT designed by Captain Falcon");
+messages.push("SETBACK FONT designed by Brian Kent (AEnigma)");
+messages.push("ROMULUS FONT designed by Hewett Tsoi");
+messages.push("PIXANTIQUA FONT designed by Gerhard Grossmann");
+messages.push("ALPHA_BETA FONT designed by Brian Kent (AEnigma)");
+messages.push("JUPITER_CRASH FONT designed by Brian Kent (AEnigma)");
+
+spacings.push(2); spacings.push(4); spacings.push(8); spacings.push(4);
+spacings.push(3); spacings.push(4); spacings.push(4); spacings.push(1);
+
+colors.push(rl.MAROON); colors.push(rl.ORANGE); colors.push(rl.DARKGREEN); colors.push(rl.DARKBLUE);
+colors.push(rl.DARKPURPLE); colors.push(rl.LIME); colors.push(rl.GOLD); colors.push(rl.RED);
+
+i = 0;
+while (i < MAX_FONTS) {
+  font = fonts[i];
+  msg = messages[i];
+  spacing = spacings[i];
+  measured = rl.MeasureTextEx(font, msg, font.baseSize*2.0, spacing);
+  x = screenWidth/2.0 - measured.x/2.0;
+  y = 60.0 + font.baseSize + 45.0*i;
+  positions.push(rl.newVector2(rl.Vector2, x, y));
+  i = i + 1;
+}
+
+positions[3].view.y = positions[3].view.y + 8.0;
+positions[4].view.y = positions[4].view.y + 2.0;
+positions[7].view.y = positions[7].view.y - 8.0;
+
+while (!rl.WindowShouldClose()) {
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawText("free sprite fonts included with raylib", 220, 20, 20, rl.DARKGRAY.view);
+  rl.DrawLine(220, 50, 600, 50, rl.DARKGRAY.view);
+
+  i = 0;
+  while (i < MAX_FONTS) {
+    font = fonts[i];
+    msg = messages[i];
+    spacing = spacings[i];
+    pos = positions[i];
+    color = colors[i];
+    rl.DrawTextEx(font, msg, pos.view, font.baseSize*2.0, spacing, color.view);
+    i = i + 1;
+  }
+
+  rl.EndDrawing();
+}
+
+i = 0;
+while (i < MAX_FONTS) {
+  rl.UnloadFont(fonts[i]);
+  i = i + 1;
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;
+

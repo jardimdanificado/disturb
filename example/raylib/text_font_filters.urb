@@ -1,0 +1,80 @@
+// raylib [text] example - font filters (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - font filters");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+msg = "Loaded Font";
+font = rl.LoadFontEx("../raylib/examples/text/resources/KAISG.ttf", 96, null, 0);
+fontSize = font.baseSize;
+fontPosition = rl.newVector2(rl.Vector2, 40.0, screenHeight/2.0 - 80.0);
+textSize = rl.newVector2(rl.Vector2, 0.0, 0.0);
+
+rl.SetTextureFilter(font.texture, rl.TEXTURE_FILTER_POINT);
+currentFontFilter = 0;
+
+while (!rl.WindowShouldClose()) {
+  fontSize = fontSize + rl.GetMouseWheelMove()*4.0;
+
+  if (rl.IsKeyPressed(rl.KEY_ONE)) {
+    rl.SetTextureFilter(font.texture, rl.TEXTURE_FILTER_POINT);
+    currentFontFilter = 0;
+  } else if (rl.IsKeyPressed(rl.KEY_TWO)) {
+    rl.SetTextureFilter(font.texture, rl.TEXTURE_FILTER_BILINEAR);
+    currentFontFilter = 1;
+  } else if (rl.IsKeyPressed(rl.KEY_THREE)) {
+    rl.SetTextureFilter(font.texture, rl.TEXTURE_FILTER_TRILINEAR);
+    currentFontFilter = 2;
+  }
+
+  measured = rl.MeasureTextEx(font, msg, fontSize, 0.0);
+  textSize.view.x = measured.x;
+  textSize.view.y = measured.y;
+
+  if (rl.IsKeyDown(rl.KEY_LEFT)) { fontPosition.view.x = fontPosition.view.x - 10.0; }
+  else if (rl.IsKeyDown(rl.KEY_RIGHT)) { fontPosition.view.x = fontPosition.view.x + 10.0; }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawText("Use mouse wheel to change font size", 20, 20, 10, rl.GRAY.view);
+  rl.DrawText("Use KEY_RIGHT and KEY_LEFT to move text", 20, 40, 10, rl.GRAY.view);
+  rl.DrawText("Use 1, 2, 3 to change texture filter", 20, 60, 10, rl.GRAY.view);
+
+  rl.DrawTextEx(font, msg, fontPosition.view, fontSize, 0.0, rl.BLACK.view);
+
+  rl.DrawRectangle(0, screenHeight - 80, screenWidth, 80, rl.LIGHTGRAY.view);
+  rl.DrawText(rl.TextFormat("Font size: %02.02f", fontSize), 20, screenHeight - 50, 10, rl.DARKGRAY.view);
+  rl.DrawText(rl.TextFormat("Text size: [%02.02f, %02.02f]", textSize.view.x, textSize.view.y), 20, screenHeight - 30, 10, rl.DARKGRAY.view);
+  rl.DrawText("CURRENT TEXTURE FILTER:", 250, 400, 20, rl.GRAY.view);
+
+  if (currentFontFilter == 0) { rl.DrawText("POINT", 570, 400, 20, rl.BLACK.view); }
+  else if (currentFontFilter == 1) { rl.DrawText("BILINEAR", 570, 400, 20, rl.BLACK.view); }
+  else if (currentFontFilter == 2) { rl.DrawText("TRILINEAR", 570, 400, 20, rl.BLACK.view); }
+
+  rl.EndDrawing();
+}
+
+rl.UnloadFont(font);
+rl.CloseWindow();
+gc.collect();
+return 0;
+

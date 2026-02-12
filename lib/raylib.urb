@@ -1,11 +1,14 @@
 // raylib.urb
 // Raylib wrapper for Disturb FFI with official core examples coverage.
+// Work in progress
 
 load = (libPath = null){
   colorSchema = { r = "u8", g = "u8", b = "u8", a = "u8" };
   vector2Schema = { x = "f32", y = "f32" };
   rectangleSchema = { x = "f32", y = "f32", width = "f32", height = "f32" };
   textureSchema = { id = "u32", width = "i32", height = "i32", mipmaps = "i32", format = "i32" };
+  imageSchema = { data = "ptr", width = "i32", height = "i32", mipmaps = "i32", format = "i32" };
+  fontSchema = { baseSize = "i32", glyphCount = "i32", glyphPadding = "i32", texture = "struct<RaylibTexture>", recs = "ptr", glyphs = "ptr" };
   renderTextureSchema = { id = "u32", texture = "struct<RaylibTexture>", depth = "struct<RaylibTexture>" };
   // Flattened NPatchInfo layout: Rectangle source + 5 ints.
   npatchInfoSchema = { sourceX = "f32", sourceY = "f32", sourceWidth = "f32", sourceHeight = "f32", left = "i32", top = "i32", right = "i32", bottom = "i32", layout = "i32" };
@@ -21,6 +24,8 @@ load = (libPath = null){
   global.RaylibVector2 = vector2Schema;
   global.RaylibRectangle = rectangleSchema;
   global.RaylibTexture = textureSchema;
+  global.RaylibImage = imageSchema;
+  global.RaylibFont = fontSchema;
   global.RaylibRenderTexture = renderTextureSchema;
   global.RaylibNPatchInfo = npatchInfoSchema;
   global.RaylibAudioStream = audioStreamSchema;
@@ -31,6 +36,8 @@ load = (libPath = null){
   RaylibVector2 = vector2Schema;
   RaylibRectangle = rectangleSchema;
   RaylibTexture = textureSchema;
+  RaylibImage = imageSchema;
+  RaylibFont = fontSchema;
   RaylibRenderTexture = renderTextureSchema;
   RaylibNPatchInfo = npatchInfoSchema;
   RaylibAudioStream = audioStreamSchema;
@@ -38,7 +45,7 @@ load = (libPath = null){
   RaylibMusic = musicSchema;
   RaylibCamera2D = camera2DSchema;
 
-  bind_raylib_api = (path, RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D){
+  bind_raylib_api = (path, RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibImage, RaylibFont, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D){
     h = ffi.open(path);
     if (h == null) { return null; }
     api = { __lib = h };
@@ -98,6 +105,14 @@ load = (libPath = null){
     if (ptr == null) { return null; }
     api.GetRandomValue = ffi.bind(ptr, "i32 GetRandomValue(i32, i32)");
 
+    ptr = ffi.sym(h, "SaveStorageValue");
+    if (ptr == null) { api.SaveStorageValue = null; }
+    else { api.SaveStorageValue = ffi.bind(ptr, "void SaveStorageValue(u32, i32)"); }
+
+    ptr = ffi.sym(h, "LoadStorageValue");
+    if (ptr == null) { api.LoadStorageValue = null; }
+    else { api.LoadStorageValue = ffi.bind(ptr, "i32 LoadStorageValue(u32)"); }
+
     ptr = ffi.sym(h, "GetMouseWheelMove");
     if (ptr == null) { return null; }
     api.GetMouseWheelMove = ffi.bind(ptr, "f32 GetMouseWheelMove()");
@@ -110,6 +125,18 @@ load = (libPath = null){
     if (ptr == null) { return null; }
     api.GetScreenHeight = ffi.bind(ptr, "i32 GetScreenHeight()");
 
+    ptr = ffi.sym(h, "GetRenderWidth");
+    if (ptr == null) { return null; }
+    api.GetRenderWidth = ffi.bind(ptr, "i32 GetRenderWidth()");
+
+    ptr = ffi.sym(h, "GetRenderHeight");
+    if (ptr == null) { return null; }
+    api.GetRenderHeight = ffi.bind(ptr, "i32 GetRenderHeight()");
+
+    ptr = ffi.sym(h, "GetWindowScaleDPI");
+    if (ptr == null) { return null; }
+    api.GetWindowScaleDPI = ffi.bind(ptr, "struct<RaylibVector2> GetWindowScaleDPI()");
+
     ptr = ffi.sym(h, "SetClipboardText");
     if (ptr == null) { return null; }
     api.SetClipboardText = ffi.bind(ptr, "void SetClipboardText(char*)");
@@ -117,6 +144,14 @@ load = (libPath = null){
     ptr = ffi.sym(h, "GetClipboardText");
     if (ptr == null) { return null; }
     api.GetClipboardText = ffi.bind(ptr, "char* GetClipboardText()");
+
+    ptr = ffi.sym(h, "LoadFileText");
+    if (ptr == null) { api.LoadFileText = null; }
+    else { api.LoadFileText = ffi.bind(ptr, "char* LoadFileText(char*)"); }
+
+    ptr = ffi.sym(h, "UnloadFileText");
+    if (ptr == null) { api.UnloadFileText = null; }
+    else { api.UnloadFileText = ffi.bind(ptr, "void UnloadFileText(char*)"); }
 
     ptr = ffi.sym(h, "GetMouseX");
     if (ptr == null) { return null; }
@@ -158,9 +193,21 @@ load = (libPath = null){
     if (ptr == null) { return null; }
     api.IsGestureDetected = ffi.bind(ptr, "u8 IsGestureDetected(u32)");
 
+    ptr = ffi.sym(h, "SetGesturesEnabled");
+    if (ptr == null) { api.SetGesturesEnabled = null; }
+    else { api.SetGesturesEnabled = ffi.bind(ptr, "void SetGesturesEnabled(u32)"); }
+
     ptr = ffi.sym(h, "GetGestureDetected");
     if (ptr == null) { return null; }
     api.GetGestureDetected = ffi.bind(ptr, "i32 GetGestureDetected()");
+
+    ptr = ffi.sym(h, "GetGestureDragAngle");
+    if (ptr == null) { api.GetGestureDragAngle = null; }
+    else { api.GetGestureDragAngle = ffi.bind(ptr, "f32 GetGestureDragAngle()"); }
+
+    ptr = ffi.sym(h, "GetGesturePinchAngle");
+    if (ptr == null) { api.GetGesturePinchAngle = null; }
+    else { api.GetGesturePinchAngle = ffi.bind(ptr, "f32 GetGesturePinchAngle()"); }
 
     ptr = ffi.sym(h, "IsMouseButtonDown");
     if (ptr == null) { return null; }
@@ -217,6 +264,10 @@ load = (libPath = null){
     ptr = ffi.sym(h, "HideCursor");
     if (ptr == null) { return null; }
     api.HideCursor = ffi.bind(ptr, "void HideCursor()");
+
+    ptr = ffi.sym(h, "SetMouseCursor");
+    if (ptr == null) { return null; }
+    api.SetMouseCursor = ffi.bind(ptr, "void SetMouseCursor(i32)");
 
     ptr = ffi.sym(h, "ToggleFullscreen");
     if (ptr == null) { return null; }
@@ -362,6 +413,34 @@ load = (libPath = null){
     if (ptr == null) { return null; }
     api.DrawText = ffi.bind(ptr, "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)");
 
+    ptr = ffi.sym(h, "GetFontDefault");
+    if (ptr == null) { return null; }
+    api.GetFontDefault = ffi.bind(ptr, "struct<RaylibFont> GetFontDefault()");
+
+    ptr = ffi.sym(h, "LoadFont");
+    if (ptr == null) { return null; }
+    api.LoadFont = ffi.bind(ptr, "struct<RaylibFont> LoadFont(char*)");
+
+    ptr = ffi.sym(h, "LoadFontEx");
+    if (ptr == null) { return null; }
+    api.LoadFontEx = ffi.bind(ptr, "struct<RaylibFont> LoadFontEx(char*, i32, i32*, i32)");
+
+    ptr = ffi.sym(h, "UnloadFont");
+    if (ptr == null) { return null; }
+    api.UnloadFont = ffi.bind(ptr, "void UnloadFont(struct<RaylibFont>)");
+
+    ptr = ffi.sym(h, "SetTextLineSpacing");
+    if (ptr == null) { return null; }
+    api.SetTextLineSpacing = ffi.bind(ptr, "void SetTextLineSpacing(i32)");
+
+    ptr = ffi.sym(h, "DrawTextEx");
+    if (ptr == null) { return null; }
+    api.DrawTextEx = ffi.bind(ptr, "void DrawTextEx(struct<RaylibFont>, char*, struct<RaylibVector2>, f32, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "MeasureTextEx");
+    if (ptr == null) { return null; }
+    api.MeasureTextEx = ffi.bind(ptr, "struct<RaylibVector2> MeasureTextEx(struct<RaylibFont>, char*, f32, f32)");
+
     ptr = ffi.sym(h, "LoadRenderTexture");
     if (ptr == null) { return null; }
     api.LoadRenderTexture = ffi.bind(ptr, "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)");
@@ -374,6 +453,150 @@ load = (libPath = null){
     if (ptr == null) { return null; }
     api.SetTextureFilter = ffi.bind(ptr, "void SetTextureFilter(struct<RaylibTexture>, i32)");
 
+    ptr = ffi.sym(h, "LoadImage");
+    if (ptr == null) { return null; }
+    api.LoadImage = ffi.bind(ptr, "struct<RaylibImage> LoadImage(char*)");
+
+    ptr = ffi.sym(h, "UnloadImage");
+    if (ptr == null) { return null; }
+    api.UnloadImage = ffi.bind(ptr, "void UnloadImage(struct<RaylibImage>)");
+
+    ptr = ffi.sym(h, "LoadTextureFromImage");
+    if (ptr == null) { return null; }
+    api.LoadTextureFromImage = ffi.bind(ptr, "struct<RaylibTexture> LoadTextureFromImage(struct<RaylibImage>)");
+
+    ptr = ffi.sym(h, "LoadImageFromTexture");
+    if (ptr == null) { return null; }
+    api.LoadImageFromTexture = ffi.bind(ptr, "struct<RaylibImage> LoadImageFromTexture(struct<RaylibTexture>)");
+
+    ptr = ffi.sym(h, "GenImageGradientLinear");
+    if (ptr == null) { return null; }
+    api.GenImageGradientLinear = ffi.bind(ptr, "struct<RaylibImage> GenImageGradientLinear(i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "GenImageGradientRadial");
+    if (ptr == null) { return null; }
+    api.GenImageGradientRadial = ffi.bind(ptr, "struct<RaylibImage> GenImageGradientRadial(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "GenImageGradientSquare");
+    if (ptr == null) { return null; }
+    api.GenImageGradientSquare = ffi.bind(ptr, "struct<RaylibImage> GenImageGradientSquare(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "GenImageChecked");
+    if (ptr == null) { return null; }
+    api.GenImageChecked = ffi.bind(ptr, "struct<RaylibImage> GenImageChecked(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "GenImageWhiteNoise");
+    if (ptr == null) { return null; }
+    api.GenImageWhiteNoise = ffi.bind(ptr, "struct<RaylibImage> GenImageWhiteNoise(i32, i32, f32)");
+
+    ptr = ffi.sym(h, "GenImagePerlinNoise");
+    if (ptr == null) { return null; }
+    api.GenImagePerlinNoise = ffi.bind(ptr, "struct<RaylibImage> GenImagePerlinNoise(i32, i32, i32, i32, f32)");
+
+    ptr = ffi.sym(h, "GenImageCellular");
+    if (ptr == null) { return null; }
+    api.GenImageCellular = ffi.bind(ptr, "struct<RaylibImage> GenImageCellular(i32, i32, i32)");
+
+    ptr = ffi.sym(h, "ImageRotate");
+    if (ptr == null) { return null; }
+    api.ImageRotate = ffi.bind(ptr, "void ImageRotate(u8*, i32)");
+
+    ptr = ffi.sym(h, "ImageCrop");
+    if (ptr == null) { return null; }
+    api.ImageCrop = ffi.bind(ptr, "void ImageCrop(u8*, struct<RaylibRectangle>)");
+
+    ptr = ffi.sym(h, "ImageFlipHorizontal");
+    if (ptr == null) { return null; }
+    api.ImageFlipHorizontal = ffi.bind(ptr, "void ImageFlipHorizontal(u8*)");
+
+    ptr = ffi.sym(h, "ImageResize");
+    if (ptr == null) { return null; }
+    api.ImageResize = ffi.bind(ptr, "void ImageResize(u8*, i32, i32)");
+
+    ptr = ffi.sym(h, "ImageDraw");
+    if (ptr == null) { return null; }
+    api.ImageDraw = ffi.bind(ptr, "void ImageDraw(u8*, struct<RaylibImage>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "ImageDrawPixel");
+    if (ptr == null) { return null; }
+    api.ImageDrawPixel = ffi.bind(ptr, "void ImageDrawPixel(u8*, i32, i32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "ImageDrawCircleLines");
+    if (ptr == null) { return null; }
+    api.ImageDrawCircleLines = ffi.bind(ptr, "void ImageDrawCircleLines(u8*, i32, i32, i32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "ImageDrawRectangle");
+    if (ptr == null) { return null; }
+    api.ImageDrawRectangle = ffi.bind(ptr, "void ImageDrawRectangle(u8*, i32, i32, i32, i32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "ImageDrawTextEx");
+    if (ptr == null) { return null; }
+    api.ImageDrawTextEx = ffi.bind(ptr, "void ImageDrawTextEx(u8*, struct<RaylibFont>, char*, struct<RaylibVector2>, f32, f32, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "ImageFromChannel");
+    if (ptr == null) { return null; }
+    api.ImageFromChannel = ffi.bind(ptr, "struct<RaylibImage> ImageFromChannel(struct<RaylibImage>, i32)");
+
+    ptr = ffi.sym(h, "ImageAlphaMask");
+    if (ptr == null) { return null; }
+    api.ImageAlphaMask = ffi.bind(ptr, "void ImageAlphaMask(u8*, struct<RaylibImage>)");
+
+    ptr = ffi.sym(h, "LoadImageRaw");
+    if (ptr == null) { return null; }
+    api.LoadImageRaw = ffi.bind(ptr, "struct<RaylibImage> LoadImageRaw(char*, i32, i32, i32, i32)");
+
+    ptr = ffi.sym(h, "ImageCopy");
+    if (ptr == null) { return null; }
+    api.ImageCopy = ffi.bind(ptr, "struct<RaylibImage> ImageCopy(struct<RaylibImage>)");
+
+    ptr = ffi.sym(h, "ImageFormat");
+    if (ptr == null) { return null; }
+    api.ImageFormat = ffi.bind(ptr, "void ImageFormat(u8*, i32)");
+
+    ptr = ffi.sym(h, "ImageColorGrayscale");
+    if (ptr == null) { return null; }
+    api.ImageColorGrayscale = ffi.bind(ptr, "void ImageColorGrayscale(u8*)");
+
+    ptr = ffi.sym(h, "ImageColorTint");
+    if (ptr == null) { return null; }
+    api.ImageColorTint = ffi.bind(ptr, "void ImageColorTint(u8*, struct<RaylibColor>)");
+
+    ptr = ffi.sym(h, "ImageColorInvert");
+    if (ptr == null) { return null; }
+    api.ImageColorInvert = ffi.bind(ptr, "void ImageColorInvert(u8*)");
+
+    ptr = ffi.sym(h, "ImageColorContrast");
+    if (ptr == null) { return null; }
+    api.ImageColorContrast = ffi.bind(ptr, "void ImageColorContrast(u8*, f32)");
+
+    ptr = ffi.sym(h, "ImageColorBrightness");
+    if (ptr == null) { return null; }
+    api.ImageColorBrightness = ffi.bind(ptr, "void ImageColorBrightness(u8*, i32)");
+
+    ptr = ffi.sym(h, "ImageBlurGaussian");
+    if (ptr == null) { return null; }
+    api.ImageBlurGaussian = ffi.bind(ptr, "void ImageBlurGaussian(u8*, i32)");
+
+    ptr = ffi.sym(h, "ImageFlipVertical");
+    if (ptr == null) { return null; }
+    api.ImageFlipVertical = ffi.bind(ptr, "void ImageFlipVertical(u8*)");
+
+    ptr = ffi.sym(h, "LoadImageColors");
+    if (ptr == null) { return null; }
+    api.LoadImageColors = ffi.bind(ptr, "u8* LoadImageColors(struct<RaylibImage>)");
+
+    ptr = ffi.sym(h, "UnloadImageColors");
+    if (ptr == null) { return null; }
+    api.UnloadImageColors = ffi.bind(ptr, "void UnloadImageColors(u8*)");
+
+    ptr = ffi.sym(h, "UpdateTexture");
+    if (ptr == null) { return null; }
+    api.UpdateTexture = ffi.bind(ptr, "void UpdateTexture(struct<RaylibTexture>, u8*)");
+
+    ptr = ffi.sym(h, "ExportImage");
+    if (ptr == null) { return null; }
+    api.ExportImage = ffi.bind(ptr, "u8 ExportImage(struct<RaylibImage>, char*)");
+
     ptr = ffi.sym(h, "LoadTexture");
     if (ptr == null) { return null; }
     api.LoadTexture = ffi.bind(ptr, "struct<RaylibTexture> LoadTexture(char*)");
@@ -385,6 +608,10 @@ load = (libPath = null){
     ptr = ffi.sym(h, "GetColor");
     if (ptr == null) { return null; }
     api.GetColor = ffi.bind(ptr, "struct<RaylibColor> GetColor(u32)");
+
+    ptr = ffi.sym(h, "ColorFromHSV");
+    if (ptr == null) { return null; }
+    api.ColorFromHSV = ffi.bind(ptr, "struct<RaylibColor> ColorFromHSV(f32, f32, f32)");
 
     ptr = ffi.sym(h, "SetTextureWrap");
     if (ptr == null) { return null; }
@@ -578,6 +805,10 @@ load = (libPath = null){
     if (ptr == null) { return null; }
     api.DrawTexture = ffi.bind(ptr, "void DrawTexture(struct<RaylibTexture>, i32, i32, struct<RaylibColor>)");
 
+    ptr = ffi.sym(h, "DrawTextureV");
+    if (ptr == null) { return null; }
+    api.DrawTextureV = ffi.bind(ptr, "void DrawTextureV(struct<RaylibTexture>, struct<RaylibVector2>, struct<RaylibColor>)");
+
     ptr = ffi.sym(h, "DrawTextureEx");
     if (ptr == null) { return null; }
     api.DrawTextureEx = ffi.bind(ptr, "void DrawTextureEx(struct<RaylibTexture>, struct<RaylibVector2>, f32, f32, struct<RaylibColor>)");
@@ -647,14 +878,14 @@ load = (libPath = null){
 
   lib = null;
   if (libPath != null && libPath.type == "string") {
-    lib = bind_raylib_api(libPath, RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D);
+    lib = bind_raylib_api(libPath, RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibImage, RaylibFont, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D);
   }
-  if (lib == null) { lib = bind_raylib_api("../raylib/build/raylib/libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
-  if (lib == null) { lib = bind_raylib_api("../raylib/src/libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
-  if (lib == null) { lib = bind_raylib_api("./raylib/src/libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
-  if (lib == null) { lib = bind_raylib_api("libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
-  if (lib == null) { lib = bind_raylib_api("libraylib.dylib", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
-  if (lib == null) { lib = bind_raylib_api("raylib.dll", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("../raylib/build/raylib/libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibImage, RaylibFont, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("../raylib/src/libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibImage, RaylibFont, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("./raylib/src/libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibImage, RaylibFont, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("libraylib.so", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibImage, RaylibFont, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("libraylib.dylib", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibImage, RaylibFont, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
+  if (lib == null) { lib = bind_raylib_api("raylib.dll", RaylibColor, RaylibVector2, RaylibRectangle, RaylibTexture, RaylibImage, RaylibFont, RaylibRenderTexture, RaylibNPatchInfo, RaylibAudioStream, RaylibSound, RaylibMusic, RaylibCamera2D); }
 
   if (lib == null) { return null; }
 
@@ -699,6 +930,8 @@ load = (libPath = null){
     Vector2 = vector2Schema,
     Rectangle = rectangleSchema,
     Texture = textureSchema,
+    Image = imageSchema,
+    Font = fontSchema,
     RenderTexture = renderTextureSchema,
     NPatchInfo = npatchInfoSchema,
     AudioStream = audioStreamSchema,
@@ -713,6 +946,17 @@ load = (libPath = null){
     MOUSE_BUTTON_EXTRA = 4,
     MOUSE_BUTTON_FORWARD = 5,
     MOUSE_BUTTON_BACK = 6,
+    MOUSE_CURSOR_DEFAULT = 0,
+    MOUSE_CURSOR_ARROW = 1,
+    MOUSE_CURSOR_IBEAM = 2,
+    MOUSE_CURSOR_CROSSHAIR = 3,
+    MOUSE_CURSOR_POINTING_HAND = 4,
+    MOUSE_CURSOR_RESIZE_EW = 5,
+    MOUSE_CURSOR_RESIZE_NS = 6,
+    MOUSE_CURSOR_RESIZE_NWSE = 7,
+    MOUSE_CURSOR_RESIZE_NESW = 8,
+    MOUSE_CURSOR_RESIZE_ALL = 9,
+    MOUSE_CURSOR_NOT_ALLOWED = 10,
     GAMEPAD_BUTTON_UNKNOWN = 0,
     GAMEPAD_BUTTON_LEFT_FACE_UP = 1,
     GAMEPAD_BUTTON_LEFT_FACE_RIGHT = 2,
@@ -755,6 +999,10 @@ load = (libPath = null){
     KEY_THREE = 51,
     KEY_FOUR = 52,
     KEY_FIVE = 53,
+    KEY_SIX = 54,
+    KEY_SEVEN = 55,
+    KEY_EIGHT = 56,
+    KEY_NINE = 57,
     KEY_B = 66,
     KEY_C = 67,
     KEY_E = 69,
@@ -787,6 +1035,13 @@ load = (libPath = null){
     BLEND_ALPHA_PREMULTIPLY = 5,
     BLEND_CUSTOM = 6,
     BLEND_CUSTOM_SEPARATE = 7,
+    PIXELFORMAT_UNCOMPRESSED_GRAYSCALE = 1,
+    PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA = 2,
+    PIXELFORMAT_UNCOMPRESSED_R5G6B5 = 3,
+    PIXELFORMAT_UNCOMPRESSED_R8G8B8 = 4,
+    PIXELFORMAT_UNCOMPRESSED_R5G5B5A1 = 5,
+    PIXELFORMAT_UNCOMPRESSED_R4G4B4A4 = 6,
+    PIXELFORMAT_UNCOMPRESSED_R8G8B8A8 = 7,
 
     FLAG_VSYNC_HINT = 0x00000040,
     FLAG_FULLSCREEN_MODE = 0x00000002,
@@ -877,6 +1132,16 @@ load = (libPath = null){
       view.rotation = rotation; view.zoom = zoom;
       return { ptr = ptr, view = view };
     },
+    newImageRef = (schema, image){
+      ptr = ffi.new(schema);
+      view = ffi.view(ptr, schema);
+      view.data = image.data;
+      view.width = image.width;
+      view.height = image.height;
+      view.mipmaps = image.mipmaps;
+      view.format = image.format;
+      return { ptr = ptr, view = view };
+    },
 
     InitWindow = lib.InitWindow,
     IsWindowReady = lib.IsWindowReady,
@@ -892,11 +1157,18 @@ load = (libPath = null){
     GetFrameTime = lib.GetFrameTime,
     GetTime = lib.GetTime,
     GetRandomValue = lib.GetRandomValue,
+    SaveStorageValue = lib.SaveStorageValue,
+    LoadStorageValue = lib.LoadStorageValue,
     GetMouseWheelMove = lib.GetMouseWheelMove,
     GetScreenWidth = lib.GetScreenWidth,
     GetScreenHeight = lib.GetScreenHeight,
+    GetRenderWidth = lib.GetRenderWidth,
+    GetRenderHeight = lib.GetRenderHeight,
+    GetWindowScaleDPI = lib.GetWindowScaleDPI,
     SetClipboardText = lib.SetClipboardText,
     GetClipboardText = lib.GetClipboardText,
+    LoadFileText = lib.LoadFileText,
+    UnloadFileText = lib.UnloadFileText,
     GetMouseX = lib.GetMouseX,
     GetKeyPressed = lib.GetKeyPressed,
     GetCharPressed = lib.GetCharPressed,
@@ -907,7 +1179,10 @@ load = (libPath = null){
     IsKeyPressed = lib.IsKeyPressed,
     IsKeyReleased = lib.IsKeyReleased,
     IsGestureDetected = lib.IsGestureDetected,
+    SetGesturesEnabled = lib.SetGesturesEnabled,
     GetGestureDetected = lib.GetGestureDetected,
+    GetGestureDragAngle = lib.GetGestureDragAngle,
+    GetGesturePinchAngle = lib.GetGesturePinchAngle,
     IsMouseButtonDown = lib.IsMouseButtonDown,
     IsMouseButtonPressed = lib.IsMouseButtonPressed,
     IsMouseButtonReleased = lib.IsMouseButtonReleased,
@@ -922,6 +1197,7 @@ load = (libPath = null){
     IsCursorHidden = lib.IsCursorHidden,
     ShowCursor = lib.ShowCursor,
     HideCursor = lib.HideCursor,
+    SetMouseCursor = lib.SetMouseCursor,
     ToggleFullscreen = lib.ToggleFullscreen,
     IsWindowState = lib.IsWindowState,
     IsWindowResized = lib.IsWindowResized,
@@ -958,10 +1234,53 @@ load = (libPath = null){
     DrawFPS = lib.DrawFPS,
     ClearBackground = lib.ClearBackground,
     DrawText = lib.DrawText,
+    GetFontDefault = lib.GetFontDefault,
+    LoadFont = lib.LoadFont,
+    LoadFontEx = lib.LoadFontEx,
+    UnloadFont = lib.UnloadFont,
+    SetTextLineSpacing = lib.SetTextLineSpacing,
+    DrawTextEx = lib.DrawTextEx,
+    MeasureTextEx = lib.MeasureTextEx,
     LoadRenderTexture = lib.LoadRenderTexture,
     UnloadRenderTexture = lib.UnloadRenderTexture,
     SetTextureFilter = lib.SetTextureFilter,
     SetTextureWrap = lib.SetTextureWrap,
+    LoadImage = lib.LoadImage,
+    UnloadImage = lib.UnloadImage,
+    LoadTextureFromImage = lib.LoadTextureFromImage,
+    LoadImageFromTexture = lib.LoadImageFromTexture,
+    GenImageGradientLinear = lib.GenImageGradientLinear,
+    GenImageGradientRadial = lib.GenImageGradientRadial,
+    GenImageGradientSquare = lib.GenImageGradientSquare,
+    GenImageChecked = lib.GenImageChecked,
+    GenImageWhiteNoise = lib.GenImageWhiteNoise,
+    GenImagePerlinNoise = lib.GenImagePerlinNoise,
+    GenImageCellular = lib.GenImageCellular,
+    ImageRotate = lib.ImageRotate,
+    ImageCrop = lib.ImageCrop,
+    ImageFlipHorizontal = lib.ImageFlipHorizontal,
+    ImageResize = lib.ImageResize,
+    ImageDraw = lib.ImageDraw,
+    ImageDrawPixel = lib.ImageDrawPixel,
+    ImageDrawCircleLines = lib.ImageDrawCircleLines,
+    ImageDrawRectangle = lib.ImageDrawRectangle,
+    ImageDrawTextEx = lib.ImageDrawTextEx,
+    ImageFromChannel = lib.ImageFromChannel,
+    ImageAlphaMask = lib.ImageAlphaMask,
+    LoadImageRaw = lib.LoadImageRaw,
+    ImageCopy = lib.ImageCopy,
+    ImageFormat = lib.ImageFormat,
+    ImageColorGrayscale = lib.ImageColorGrayscale,
+    ImageColorTint = lib.ImageColorTint,
+    ImageColorInvert = lib.ImageColorInvert,
+    ImageColorContrast = lib.ImageColorContrast,
+    ImageColorBrightness = lib.ImageColorBrightness,
+    ImageBlurGaussian = lib.ImageBlurGaussian,
+    ImageFlipVertical = lib.ImageFlipVertical,
+    LoadImageColors = lib.LoadImageColors,
+    UnloadImageColors = lib.UnloadImageColors,
+    UpdateTexture = lib.UpdateTexture,
+    ExportImage = lib.ExportImage,
     InitAudioDevice = lib.InitAudioDevice,
     CloseAudioDevice = lib.CloseAudioDevice,
     IsAudioDeviceReady = lib.IsAudioDeviceReady,
@@ -985,6 +1304,7 @@ load = (libPath = null){
     LoadTexture = lib.LoadTexture,
     UnloadTexture = lib.UnloadTexture,
     GetColor = lib.GetColor,
+    ColorFromHSV = lib.ColorFromHSV,
     TextFormat = lib.TextFormat,
     TextSubtext = lib.TextSubtext,
     MeasureText = lib.MeasureText,
@@ -1012,6 +1332,7 @@ load = (libPath = null){
     DrawRectangleLinesEx = lib.DrawRectangleLinesEx,
     DrawTexturePro = lib.DrawTexturePro,
     DrawTexture = lib.DrawTexture,
+    DrawTextureV = lib.DrawTextureV,
     DrawTextureEx = lib.DrawTextureEx,
     DrawTextureRec = lib.DrawTextureRec,
     DrawTextureNPatch = lib.DrawTextureNPatch,

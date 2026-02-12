@@ -1,0 +1,215 @@
+// raylib [textures] example - mouse painting (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+MAX_COLORS_COUNT = 23;
+
+colorForIndex = (idx){
+  if (idx == 0) { return rl.RAYWHITE.view; }
+  if (idx == 1) { return rl.YELLOW.view; }
+  if (idx == 2) { return rl.GOLD.view; }
+  if (idx == 3) { return rl.ORANGE.view; }
+  if (idx == 4) { return rl.PINK.view; }
+  if (idx == 5) { return rl.RED.view; }
+  if (idx == 6) { return rl.MAROON.view; }
+  if (idx == 7) { return rl.GREEN.view; }
+  if (idx == 8) { return rl.LIME.view; }
+  if (idx == 9) { return rl.DARKGREEN.view; }
+  if (idx == 10) { return rl.SKYBLUE.view; }
+  if (idx == 11) { return rl.BLUE.view; }
+  if (idx == 12) { return rl.DARKBLUE.view; }
+  if (idx == 13) { return rl.PURPLE.view; }
+  if (idx == 14) { return rl.VIOLET.view; }
+  if (idx == 15) { return rl.DARKPURPLE.view; }
+  if (idx == 16) { return rl.BEIGE.view; }
+  if (idx == 17) { return rl.BROWN.view; }
+  if (idx == 18) { return rl.DARKBROWN.view; }
+  if (idx == 19) { return rl.LIGHTGRAY.view; }
+  if (idx == 20) { return rl.GRAY.view; }
+  if (idx == 21) { return rl.DARKGRAY.view; }
+  return rl.BLACK.view;
+};
+
+pointInRect = (px, py, x, y, w, h){
+  return (px >= x) && (px <= (x + w)) && (py >= y) && (py <= (y + h));
+};
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - mouse painting");
+rl.SetTargetFPS(120);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+colorSelected = 0;
+colorSelectedPrev = 0;
+colorMouseHover = -1;
+brushSize = 20.0;
+mouseWasPressed = false;
+
+btnSaveX = 750;
+btnSaveY = 10;
+btnSaveW = 40;
+btnSaveH = 30;
+btnSaveMouseHover = false;
+showSaveMessage = false;
+saveMessageCounter = 0;
+
+target = rl.LoadRenderTexture(screenWidth, screenHeight);
+
+canvasSrc = rl.newRectangle(rl.Rectangle, 0.0, 0.0, target.texture.width, -target.texture.height);
+canvasDst = rl.newRectangle(rl.Rectangle, 0.0, 0.0, screenWidth, screenHeight);
+canvasOrigin = rl.newVector2(rl.Vector2, 0.0, 0.0);
+
+rl.BeginTextureMode(target);
+rl.ClearBackground(colorForIndex(0));
+rl.EndTextureMode();
+
+while (!rl.WindowShouldClose()) {
+  mousePos = rl.GetMousePosition();
+
+  if (rl.IsKeyPressed(rl.KEY_RIGHT)) { colorSelected = colorSelected + 1; }
+  if (rl.IsKeyPressed(rl.KEY_LEFT)) { colorSelected = colorSelected - 1; }
+
+  if (colorSelected >= MAX_COLORS_COUNT) { colorSelected = MAX_COLORS_COUNT - 1; }
+  if (colorSelected < 0) { colorSelected = 0; }
+
+  colorMouseHover = -1;
+  i = 0;
+  while (i < MAX_COLORS_COUNT) {
+    colorX = 10 + 30*i + 2*i;
+    if (pointInRect(mousePos.x, mousePos.y, colorX, 10, 30, 30)) {
+      colorMouseHover = i;
+      i = MAX_COLORS_COUNT;
+    } else {
+      i = i + 1;
+    }
+  }
+
+  if (colorMouseHover >= 0 && rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
+    colorSelected = colorMouseHover;
+    colorSelectedPrev = colorSelected;
+  }
+
+  brushSize = brushSize + rl.GetMouseWheelMove()*5;
+  if (brushSize < 2.0) { brushSize = 2.0; }
+  if (brushSize > 50.0) { brushSize = 50.0; }
+
+  if (rl.IsKeyPressed(rl.KEY_C)) {
+    rl.BeginTextureMode(target);
+    rl.ClearBackground(colorForIndex(0));
+    rl.EndTextureMode();
+  }
+
+  if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT) || (rl.GetGestureDetected() == rl.GESTURE_DRAG)) {
+    rl.BeginTextureMode(target);
+    if (mousePos.y > 50) {
+      rl.DrawCircle(mousePos.x, mousePos.y, brushSize, colorForIndex(colorSelected));
+    }
+    rl.EndTextureMode();
+  }
+
+  if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_RIGHT)) {
+    if (!mouseWasPressed) {
+      colorSelectedPrev = colorSelected;
+      colorSelected = 0;
+    }
+
+    mouseWasPressed = true;
+
+    rl.BeginTextureMode(target);
+    if (mousePos.y > 50) {
+      rl.DrawCircle(mousePos.x, mousePos.y, brushSize, colorForIndex(0));
+    }
+    rl.EndTextureMode();
+  } else if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_RIGHT) && mouseWasPressed) {
+    colorSelected = colorSelectedPrev;
+    mouseWasPressed = false;
+  }
+
+  btnSaveMouseHover = pointInRect(mousePos.x, mousePos.y, btnSaveX, btnSaveY, btnSaveW, btnSaveH);
+
+  if ((btnSaveMouseHover && rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT)) || rl.IsKeyPressed(rl.KEY_S)) {
+    image = rl.LoadImageFromTexture(target.texture);
+    imageRef = rl.newImageRef(rl.Image, image);
+    rl.ImageFlipVertical(imageRef.ptr);
+    rl.ExportImage(imageRef.view, "my_amazing_texture_painting.png");
+    rl.UnloadImage(imageRef.view);
+    showSaveMessage = true;
+  }
+
+  if (showSaveMessage) {
+    saveMessageCounter = saveMessageCounter + 1;
+    if (saveMessageCounter > 240) {
+      showSaveMessage = false;
+      saveMessageCounter = 0;
+    }
+  }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  rl.DrawTexturePro(target.texture, canvasSrc.view, canvasDst.view, canvasOrigin.view, 0.0, rl.WHITE.view);
+
+  if (mousePos.y > 50) {
+    if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_RIGHT)) {
+      rl.DrawCircleLines(mousePos.x, mousePos.y, brushSize, rl.GRAY.view);
+    } else {
+      rl.DrawCircle(mousePos.x, mousePos.y, brushSize, colorForIndex(colorSelected));
+    }
+  }
+
+  rl.DrawRectangle(0, 0, rl.GetScreenWidth(), 50, rl.RAYWHITE.view);
+  rl.DrawLine(0, 50, rl.GetScreenWidth(), 50, rl.LIGHTGRAY.view);
+
+  i = 0;
+  while (i < MAX_COLORS_COUNT) {
+    colorX = 10 + 30*i + 2*i;
+    rl.DrawRectangle(colorX, 10, 30, 30, colorForIndex(i));
+    i = i + 1;
+  }
+
+  rl.DrawRectangleLines(10, 10, 30, 30, rl.LIGHTGRAY.view);
+
+  if (colorMouseHover >= 0) {
+    hoverX = 10 + 30*colorMouseHover + 2*colorMouseHover;
+    rl.DrawRectangle(hoverX, 10, 30, 30, rl.Fade(rl.WHITE.view, 0.6));
+  }
+
+  selectedX = 10 + 30*colorSelected + 2*colorSelected;
+  rl.DrawRectangleLines(selectedX - 2, 8, 34, 34, rl.BLACK.view);
+
+  if (btnSaveMouseHover) {
+    rl.DrawRectangleLines(btnSaveX, btnSaveY, btnSaveW, btnSaveH, rl.RED.view);
+    rl.DrawText("SAVE!", 755, 20, 10, rl.RED.view);
+  } else {
+    rl.DrawRectangleLines(btnSaveX, btnSaveY, btnSaveW, btnSaveH, rl.BLACK.view);
+    rl.DrawText("SAVE!", 755, 20, 10, rl.BLACK.view);
+  }
+
+  if (showSaveMessage) {
+    rl.DrawRectangle(0, 0, rl.GetScreenWidth(), rl.GetScreenHeight(), rl.Fade(rl.RAYWHITE.view, 0.8));
+    rl.DrawRectangle(0, 150, rl.GetScreenWidth(), 80, rl.BLACK.view);
+    rl.DrawText("IMAGE SAVED!", 150, 180, 20, rl.RAYWHITE.view);
+  }
+
+  rl.EndDrawing();
+}
+
+rl.UnloadRenderTexture(target);
+rl.CloseWindow();
+gc.collect();
+return 0;

@@ -1,0 +1,102 @@
+// raylib [text] example - words alignment (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+TEXT_ALIGN_LEFT = 0;
+TEXT_ALIGN_TOP = 0;
+TEXT_ALIGN_CENTRE = 1;
+TEXT_ALIGN_MIDDLE = 1;
+TEXT_ALIGN_RIGHT = 2;
+TEXT_ALIGN_BOTTOM = 2;
+
+lerp = (a, b, t){ return a + (b - a)*t; };
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - words alignment");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+textContainerRect = rl.newRectangle(
+  rl.Rectangle,
+  screenWidth/2.0 - screenWidth/4.0,
+  screenHeight/2.0 - screenHeight/3.0,
+  screenWidth/2.0,
+  screenHeight*2.0/3.0
+);
+
+textAlignNameH = { "Left", "Centre", "Right" };
+textAlignNameV = { "Top", "Middle", "Bottom" };
+
+words = { "raylib", "is", "a", "simple", "and", "easy-to-use", "library", "to", "enjoy", "videogames", "programming" };
+wordCount = words.size;
+wordIndex = 0;
+
+fontSize = 40.0;
+font = rl.GetFontDefault();
+hAlign = TEXT_ALIGN_CENTRE;
+vAlign = TEXT_ALIGN_MIDDLE;
+
+while (!rl.WindowShouldClose()) {
+  if (rl.IsKeyPressed(rl.KEY_LEFT)) {
+    if (hAlign > 0) { hAlign = hAlign - 1; }
+  }
+
+  if (rl.IsKeyPressed(rl.KEY_RIGHT)) {
+    hAlign = hAlign + 1;
+    if (hAlign > 2) { hAlign = 2; }
+  }
+
+  if (rl.IsKeyPressed(rl.KEY_UP)) {
+    if (vAlign > 0) { vAlign = vAlign - 1; }
+  }
+
+  if (rl.IsKeyPressed(rl.KEY_DOWN)) {
+    vAlign = vAlign + 1;
+    if (vAlign > 2) { vAlign = 2; }
+  }
+
+  if (wordCount > 0) { wordIndex = rl.GetTime()%wordCount; }
+  else { wordIndex = 0; }
+
+  word = words[wordIndex];
+  textSize = rl.MeasureTextEx(font, word, fontSize, fontSize*0.1);
+  textPos = rl.newVector2(
+    rl.Vector2,
+    textContainerRect.view.x + lerp(0.0, textContainerRect.view.width - textSize.x, hAlign*0.5),
+    textContainerRect.view.y + lerp(0.0, textContainerRect.view.height - textSize.y, vAlign*0.5)
+  );
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.DARKBLUE.view);
+
+  rl.DrawText("Use Arrow Keys to change the text alignment", 20, 20, 20, rl.LIGHTGRAY.view);
+  rl.DrawText(
+    rl.TextFormat("Alignment: Horizontal = %s, Vertical = %s", textAlignNameH[hAlign], textAlignNameV[vAlign]),
+    20, 40, 20, rl.LIGHTGRAY.view
+  );
+
+  rl.DrawRectangleRec(textContainerRect.view, rl.BLUE.view);
+  rl.DrawTextEx(font, word, textPos.view, fontSize, fontSize*0.1, rl.RAYWHITE.view);
+
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;
+

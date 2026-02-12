@@ -1,0 +1,78 @@
+// raylib [textures] example - image drawing (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+screenWidth = 800;
+screenHeight = 450;
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - image drawing");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+cat = rl.LoadImage("../raylib/examples/textures/resources/cat.png");
+parrots = rl.LoadImage("../raylib/examples/textures/resources/parrots.png");
+if (cat.data == null || parrots.data == null) {
+  println("could not load source images for image drawing");
+  if (cat.data != null) { rl.UnloadImage(cat); }
+  if (parrots.data != null) { rl.UnloadImage(parrots); }
+  rl.CloseWindow();
+  gc.collect();
+  return 0;
+}
+
+catRef = rl.newImageRef(rl.Image, cat);
+parrotsRef = rl.newImageRef(rl.Image, parrots);
+
+cropCat = rl.newRectangle(rl.Rectangle, 100.0, 10.0, 280.0, 380.0);
+rl.ImageCrop(catRef.ptr, cropCat.view);
+rl.ImageFlipHorizontal(catRef.ptr);
+rl.ImageResize(catRef.ptr, 150, 200);
+
+srcCat = rl.newRectangle(rl.Rectangle, 0.0, 0.0, catRef.view.width, catRef.view.height);
+dstCat = rl.newRectangle(rl.Rectangle, 30.0, 40.0, catRef.view.width*1.5, catRef.view.height*1.5);
+rl.ImageDraw(parrotsRef.ptr, catRef.view, srcCat.view, dstCat.view, rl.WHITE.view);
+
+cropParrots = rl.newRectangle(rl.Rectangle, 0.0, 50.0, parrotsRef.view.width, parrotsRef.view.height - 100.0);
+rl.ImageCrop(parrotsRef.ptr, cropParrots.view);
+
+rl.ImageDrawPixel(parrotsRef.ptr, 10, 10, rl.RAYWHITE.view);
+rl.ImageDrawCircleLines(parrotsRef.ptr, 10, 10, 5, rl.RAYWHITE.view);
+rl.ImageDrawRectangle(parrotsRef.ptr, 5, 20, 10, 10, rl.RAYWHITE.view);
+rl.UnloadImage(catRef.view);
+
+font = rl.LoadFont("../raylib/examples/textures/resources/custom_jupiter_crash.png");
+textPos = rl.newVector2(rl.Vector2, 300.0, 230.0);
+rl.ImageDrawTextEx(parrotsRef.ptr, font, "PARROTS & CAT", textPos.view, font.baseSize, -2.0, rl.WHITE.view);
+rl.UnloadFont(font);
+
+texture = rl.LoadTextureFromImage(parrotsRef.view);
+rl.UnloadImage(parrotsRef.view);
+
+while (!rl.WindowShouldClose()) {
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+  tx = screenWidth/2 - texture.width/2;
+  ty = screenHeight/2 - texture.height/2 - 40;
+  rl.DrawTexture(texture, tx, ty, rl.WHITE.view);
+  rl.DrawRectangleLines(tx, ty, texture.width, texture.height, rl.DARKGRAY.view);
+  rl.DrawText("We are drawing only one texture from various images composed!", 240, 350, 10, rl.DARKGRAY.view);
+  rl.DrawText("Source images have been cropped, scaled, flipped and copied one over the other.", 190, 370, 10, rl.DARKGRAY.view);
+  rl.EndDrawing();
+}
+
+rl.UnloadTexture(texture);
+rl.CloseWindow();
+gc.collect();
+return 0;

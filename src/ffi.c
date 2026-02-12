@@ -223,6 +223,7 @@ static int ffi_entry_to_ptr(ObjEntry *entry, uintptr_t *out_ptr);
 static int ffi_view_decode(ObjEntry *entry, uintptr_t *base_ptr, size_t *base_offset, FfiLayout **layout, int *readonly);
 static void native_ffi_handle_noop(VM *vm, List *stack, List *global);
 static int parse_base_type(const char *name, FfiBase *out);
+static int entry_is_string(ObjEntry *entry);
 static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_len);
 #ifdef DISTURB_ENABLE_FFI_CALLS
 static FfiCallback *ffi_callback_from_entry(ObjEntry *entry);
@@ -252,6 +253,17 @@ static int ffi_trace_mouse_slot(const char *name, size_t len)
 }
 
 static int ffi_trace_mouse_last[4] = { INT_MIN, INT_MIN, INT_MIN, INT_MIN };
+
+static char *ffi_dup_entry_cstr(ObjEntry *entry)
+{
+    if (!entry || !entry_is_string(entry)) return NULL;
+    size_t len = disturb_bytes_len(entry->obj);
+    char *s = (char*)malloc(len + 1);
+    if (!s) return NULL;
+    if (len) memcpy(s, disturb_bytes_data(entry->obj), len);
+    s[len] = '\0';
+    return s;
+}
 
 static void ffi_dyn_type_node_free(FfiDynTypeNode *node)
 {
@@ -3389,10 +3401,12 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     FfiValue *values = (FfiValue*)calloc((size_t)call_argc, sizeof(FfiValue));
     void **argv = (void**)calloc((size_t)call_argc, sizeof(void*));
     ffi_type **call_types = (ffi_type**)calloc((size_t)call_argc, sizeof(ffi_type*));
-    if (!values || !argv || !call_types) {
+    char **owned_cstr = (char**)calloc((size_t)call_argc, sizeof(char*));
+    if (!values || !argv || !call_types || !owned_cstr) {
         free(values);
         free(argv);
         free(call_types);
+        free(owned_cstr);
         fprintf(stderr, "ffi: out of memory\n");
         return;
     }
@@ -3431,9 +3445,18 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                 if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
                     values[i].p = NULL;
                 } else if (entry_is_string(arg)) {
-                    const char *s = NULL;
-                    if (entry_as_cstr(arg, &s)) values[i].p = (void*)s;
-                    else values[i].p = NULL;
+                    char *dup = ffi_dup_entry_cstr(arg);
+                    if (!dup) {
+                        for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                        free(owned_cstr);
+                        free(values);
+                        free(argv);
+                        free(call_types);
+                        fprintf(stderr, "ffi: out of memory\n");
+                        return;
+                    }
+                    owned_cstr[i] = dup;
+                    values[i].p = (void*)dup;
                 } else {
                     uintptr_t ptr = 0;
                     if (ffi_entry_to_ptr(arg, &ptr)) values[i].p = (void*)ptr;
@@ -3473,6 +3496,8 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                 }
             }
                 if (!src_addr) {
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr);
                     free(values);
                     free(argv);
                     free(call_types);
@@ -3484,9 +3509,19 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             continue;
         }
         if (t->base == FFI_BASE_CSTR) {
-            const char *s = NULL;
-            if (arg && entry_as_cstr(arg, &s)) {
-                values[i].p = (void*)s;
+            if (arg && entry_is_string(arg)) {
+                char *dup = ffi_dup_entry_cstr(arg);
+                if (!dup) {
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr);
+                    free(values);
+                    free(argv);
+                    free(call_types);
+                    fprintf(stderr, "ffi: out of memory\n");
+                    return;
+                }
+                owned_cstr[i] = dup;
+                values[i].p = (void*)dup;
             } else if (arg) {
                 uintptr_t ptr = 0;
                 if (ffi_entry_to_ptr(arg, &ptr)) {
@@ -3595,6 +3630,8 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     if (fn->ret.schema_name && !fn->ret.schema_is_pointer) {
         ret_buf = calloc(1, fn->ret.schema_layout ? fn->ret.schema_layout->size : 0);
         if (!ret_buf) {
+            for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+            free(owned_cstr);
             free(values);
             free(argv);
             free(call_types);
@@ -3608,6 +3645,8 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     if (fn->has_varargs) {
         if (ffi_prep_cif_var(&var_cif, FFI_DEFAULT_ABI, (unsigned)fn->fixed_argc, (unsigned)call_argc,
                              fn->ret_type, call_types) != FFI_OK) {
+            for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+            free(owned_cstr);
             free(values);
             free(argv);
             free(call_types);
@@ -3619,6 +3658,8 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     }
     ffi_call(call_cif, FFI_FN(fn->fn_ptr), ret_ptr, argv);
 
+    for (int i = 0; i < call_argc; i++) free(owned_cstr[i]);
+    free(owned_cstr);
     if (trace_slot >= 0) {
         long long arg0 = 0;
         if (call_argc > 0) {

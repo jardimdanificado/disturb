@@ -1,0 +1,128 @@
+// raylib [shapes] example - vector angle (Disturb port)
+
+raylib = import("lib/raylib");
+rl = raylib.load();
+if (rl == null) {
+  println("raylib library not found");
+  gc.collect();
+  return 0;
+}
+
+gc.rate = 100;
+
+RAD2DEG = 57.29577951308232;
+
+screenWidth = 800;
+screenHeight = 450;
+
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - vector angle");
+rl.SetTargetFPS(60);
+
+if (!rl.IsWindowReady()) {
+  println("raylib backend not available (DISPLAY missing?)");
+  gc.collect();
+  return 0;
+}
+
+v0 = rl.newVector2(rl.Vector2, screenWidth/2.0, screenHeight/2.0);
+v1 = rl.newVector2(rl.Vector2, v0.view.x + 100.0, v0.view.y + 80.0);
+
+v2x = v0.view.x;
+v2y = v0.view.y;
+
+angle = 0.0;
+angleMode = 0;
+
+while (!rl.WindowShouldClose()) {
+  mousePos = rl.GetMousePosition();
+  v2x = mousePos.x;
+  v2y = mousePos.y;
+
+  if (rl.IsKeyPressed(rl.KEY_SPACE)) {
+    if (angleMode == 0) { angleMode = 1; }
+    else { angleMode = 0; }
+  }
+
+  if (angleMode == 0 && rl.IsMouseButtonDown(rl.MOUSE_BUTTON_RIGHT)) {
+    v1.view.x = v2x;
+    v1.view.y = v2y;
+  }
+
+  startangle = 0.0;
+
+  if (angleMode == 0) {
+    dx1 = v1.view.x - v0.view.x;
+    dy1 = v1.view.y - v0.view.y;
+    len1 = sqrt(dx1*dx1 + dy1*dy1);
+    if (len1 <= 0.000001) { len1 = 1.0; }
+
+    dx2 = v2x - v0.view.x;
+    dy2 = v2y - v0.view.y;
+    len2 = sqrt(dx2*dx2 + dy2*dy2);
+    if (len2 <= 0.000001) { len2 = 1.0; }
+
+    dot = (dx1/len1)*(dx2/len2) + (dy1/len1)*(dy2/len2);
+    if (dot < -1.0) { dot = -1.0; }
+    if (dot > 1.0) { dot = 1.0; }
+
+    angle = acos(dot)*RAD2DEG;
+
+    c = dx1/len1;
+    if (c < -1.0) { c = -1.0; }
+    if (c > 1.0) { c = 1.0; }
+    lineA = acos(c);
+    if (dy1 < 0.0) { lineA = -lineA; }
+    startangle = -lineA*RAD2DEG;
+  } else {
+    dx = v2x - v0.view.x;
+    dy = v2y - v0.view.y;
+    len = sqrt(dx*dx + dy*dy);
+    if (len <= 0.000001) {
+      angle = 0.0;
+    } else {
+      c2 = dx/len;
+      if (c2 < -1.0) { c2 = -1.0; }
+      if (c2 > 1.0) { c2 = 1.0; }
+      a2 = acos(c2);
+      if (dy < 0.0) { a2 = -a2; }
+      angle = a2*RAD2DEG;
+    }
+  }
+
+  rl.BeginDrawing();
+  rl.ClearBackground(rl.RAYWHITE.view);
+
+  if (angleMode == 0) {
+    rl.DrawText("MODE 0: Angle between V1 and V2", 10, 10, 20, rl.BLACK.view);
+    rl.DrawText("Right Click to Move V1", 10, 30, 20, rl.DARKGRAY.view);
+
+    rl.DrawLine(v0.view.x, v0.view.y, v1.view.x, v1.view.y, rl.BLACK.view);
+    rl.DrawLine(v0.view.x, v0.view.y, v2x, v2y, rl.RED.view);
+    rl.DrawCircleSector(v0.view, 40.0, startangle, startangle + angle, 32, rl.Fade(rl.GREEN.view, 0.6));
+  } else {
+    rl.DrawText("MODE 1: Angle formed by line V1 to V2", 10, 10, 20, rl.BLACK.view);
+
+    rl.DrawLine(0, screenHeight/2, screenWidth, screenHeight/2, rl.LIGHTGRAY.view);
+    rl.DrawLine(v0.view.x, v0.view.y, v2x, v2y, rl.RED.view);
+    rl.DrawCircleSector(v0.view, 40.0, startangle, startangle - angle, 32, rl.Fade(rl.GREEN.view, 0.6));
+  }
+
+  rl.DrawText("v0", v0.view.x, v0.view.y, 10, rl.DARKGRAY.view);
+
+  if (angleMode == 0) {
+    if ((v0.view.y - v1.view.y) > 0.0) { rl.DrawText("v1", v1.view.x, v1.view.y - 10, 10, rl.DARKGRAY.view); }
+    else { rl.DrawText("v1", v1.view.x, v1.view.y, 10, rl.DARKGRAY.view); }
+  } else {
+    rl.DrawText("v1", v0.view.x + 40, v0.view.y, 10, rl.DARKGRAY.view);
+  }
+
+  rl.DrawText("v2", v2x - 10, v2y - 10, 10, rl.DARKGRAY.view);
+  rl.DrawText("Press SPACE to change MODE", 460, 10, 20, rl.DARKGRAY.view);
+  rl.DrawText(rl.TextFormat("ANGLE: %2.2f", angle), 10, 70, 20, rl.LIME.view);
+
+  rl.EndDrawing();
+}
+
+rl.CloseWindow();
+gc.collect();
+return 0;
