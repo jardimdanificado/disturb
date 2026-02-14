@@ -1,6 +1,6 @@
 // raylib [shapes] example - math angle rotation (Disturb port)
 
-raylib = import("lib/raylib");
+raylib = import("lib/raylib.urb");
 rl = raylib.load();
 if (rl == null) {
   println("raylib library not found");
@@ -29,6 +29,7 @@ angle0 = 0;
 angle1 = 30;
 angle2 = 60;
 angle3 = 90;
+ANGLE_OFFSET = 90;
 totalAngle = 0.0;
 
 while (!rl.WindowShouldClose()) {
@@ -39,39 +40,39 @@ while (!rl.WindowShouldClose()) {
   rl.ClearBackground(rl.WHITE.view);
   rl.DrawText("Fixed angles + rotating line", 10, 10, 20, rl.LIGHTGRAY.view);
 
-  animRad = totalAngle*DEG2RAD;
+  animRad = (totalAngle + ANGLE_OFFSET)*DEG2RAD;
   animEnd = rl.newVector2(rl.Vector2, center.view.x + cos(animRad)*lineLength, center.view.y + sin(animRad)*lineLength);
   animCol = rl.ColorFromHSV(totalAngle, 0.8, 0.9);
   rl.DrawLineEx(center.view, animEnd.view, 3.0, animCol);
 
-  rad0 = angle0*DEG2RAD;
+  rad0 = (angle0 + ANGLE_OFFSET)*DEG2RAD;
   e0 = rl.newVector2(rl.Vector2, center.view.x + cos(rad0)*lineLength, center.view.y + sin(rad0)*lineLength);
   rl.DrawLineEx(center.view, e0.view, 5.0, rl.GREEN.view);
   rl.DrawCircleV(e0.view, 5.0, rl.GREEN.view);
   t0 = rl.newVector2(rl.Vector2, center.view.x + cos(rad0)*(lineLength + 20), center.view.y + sin(rad0)*(lineLength + 20));
-  rl.DrawText(rl.TextFormat("%d°", angle0), t0.view.x, t0.view.y, 20, rl.GREEN.view);
+  rl.DrawText(rl.TextFormat("%d°", angle0 + ANGLE_OFFSET), t0.view.x, t0.view.y, 20, rl.GREEN.view);
 
-  rad1 = angle1*DEG2RAD;
+  rad1 = (angle1 + ANGLE_OFFSET)*DEG2RAD;
   e1 = rl.newVector2(rl.Vector2, center.view.x + cos(rad1)*lineLength, center.view.y + sin(rad1)*lineLength);
   rl.DrawLineEx(center.view, e1.view, 5.0, rl.ORANGE.view);
   rl.DrawCircleV(e1.view, 5.0, rl.ORANGE.view);
   t1 = rl.newVector2(rl.Vector2, center.view.x + cos(rad1)*(lineLength + 20), center.view.y + sin(rad1)*(lineLength + 20));
-  rl.DrawText(rl.TextFormat("%d°", angle1), t1.view.x, t1.view.y, 20, rl.ORANGE.view);
+  rl.DrawText(rl.TextFormat("%d°", angle1 + ANGLE_OFFSET), t1.view.x, t1.view.y, 20, rl.ORANGE.view);
 
-  rad2 = angle2*DEG2RAD;
+  rad2 = (angle2 + ANGLE_OFFSET)*DEG2RAD;
   e2 = rl.newVector2(rl.Vector2, center.view.x + cos(rad2)*lineLength, center.view.y + sin(rad2)*lineLength);
   rl.DrawLineEx(center.view, e2.view, 5.0, rl.BLUE.view);
   rl.DrawCircleV(e2.view, 5.0, rl.BLUE.view);
   t2 = rl.newVector2(rl.Vector2, center.view.x + cos(rad2)*(lineLength + 20), center.view.y + sin(rad2)*(lineLength + 20));
-  rl.DrawText(rl.TextFormat("%d°", angle2), t2.view.x, t2.view.y, 20, rl.BLUE.view);
+  rl.DrawText(rl.TextFormat("%d°", angle2 + ANGLE_OFFSET), t2.view.x, t2.view.y, 20, rl.BLUE.view);
 
-  rad3 = angle3*DEG2RAD;
+  rad3 = (angle3 + ANGLE_OFFSET)*DEG2RAD;
   e3 = rl.newVector2(rl.Vector2, center.view.x + cos(rad3)*lineLength, center.view.y + sin(rad3)*lineLength);
   rl.DrawLineEx(center.view, e3.view, 5.0, rl.MAGENTA.view);
   rl.DrawCircleV(e3.view, 5.0, rl.MAGENTA.view);
   t3 = rl.newVector2(rl.Vector2, center.view.x + cos(rad3)*(lineLength + 20), center.view.y + sin(rad3)*(lineLength + 20));
-  rl.DrawText(rl.TextFormat("%d°", angle3), t3.view.x, t3.view.y, 20, rl.MAGENTA.view);
-  rl.DrawText("fixed: 0 30 60 90", 10, 36, 16, rl.DARKGRAY.view);
+  rl.DrawText(rl.TextFormat("%d°", angle3 + ANGLE_OFFSET), t3.view.x, t3.view.y, 20, rl.MAGENTA.view);
+  rl.DrawText("fixed (+90): 90 120 150 180", 10, 36, 16, rl.DARKGRAY.view);
 
   rl.EndDrawing();
 }

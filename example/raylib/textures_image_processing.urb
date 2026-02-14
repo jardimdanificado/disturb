@@ -1,7 +1,7 @@
 // raylib [textures] example - image processing (Disturb port)
 // Linear version to avoid function-bytecode edge cases in some runtime builds.
 
-raylib = import("lib/raylib");
+raylib = import("lib/raylib.urb");
 rl = raylib.load();
 if (rl == null) {
   println("raylib library not found");

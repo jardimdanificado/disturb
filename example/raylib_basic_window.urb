@@ -2,7 +2,7 @@
 // Basic usage of lib/raylib wrapper.
 // Requires ENABLE_FFI=1 and raylib shared library available.
 
-raylib = import("lib/raylib");
+raylib = import("lib/raylib.urb");
 rl = raylib.load();
 
 if (rl == null) {

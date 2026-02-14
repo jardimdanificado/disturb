@@ -1,6 +1,6 @@
 // raylib [core] example - monitor detector (Disturb port)
 
-raylib = import("lib/raylib");
+raylib = import("lib/raylib.urb");
 rl = raylib.load();
 if (rl == null) {
   println("raylib library not found");

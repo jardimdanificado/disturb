@@ -1,6 +1,6 @@
 // raylib [core] example - input virtual controls (Disturb port, desktop behavior)
 
-raylib = import("lib/raylib");
+raylib = import("lib/raylib.urb");
 rl = raylib.load();
 if (rl == null) {
   println("raylib library not found");
