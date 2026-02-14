@@ -195,13 +195,18 @@ Main API:
 - `ffi.view(ptr, schemaOrLayout)`
 - `ffi.viewArray(ptr, elemSpec, len)`
 - `ffi.compile(schema)` is optional: schema tables are auto-compiled/cached when accepted.
-- signatures: `struct<schema>`, `union<schema>`, `pointer<schema>`, `void*` (raw)
-- schema fields support composition with strings: `"struct<name>"`, `"union<name>"`, `"pointer<name>"`
+- signatures: `struct(schema)`, `union<schema>`, `pointer<schema>`, `void*` (raw), nested pointer depth via `pointer<pointer<...>>`
+- `string` vs `cstring`/`cstr`:
+  - `string`: marshals to/from Disturb string values
+  - `cstring`/`cstr`: raw C pointer behavior
+- optional ABI prefix in signature: `abi(name)` or bare ABI (`cdecl`, `stdcall`, `fastcall`, `thiscall`, `win64`, `unix64`, `sysv`)
+- schema fields support composition with strings: `"struct(name)"`, `"union<name>"`, `"pointer<name>"`
 - function pointer fields: `"function<signature>"` (example: `"function<i32 cb(i32, i32)>"`; `"fn<...>"` alias accepted)
 - bitfield declaration: `"uint8:3"`, `"uint32:5"` (inside struct)
 - union declaration: `__meta = { union = 1 }`
 - qualifiers accepted: `const`, `volatile`, `restrict`
 - variadic signatures: `...` (in `ffi.bind`)
+- callbacks support scalars and by-value struct/union signatures (callback variadics remain unsupported)
 - `const` writes in views:
   - strict off: warning + ignored write
   - strict on: panic/abort

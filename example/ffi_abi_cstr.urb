@@ -36,23 +36,15 @@ ffi_bind_all = (path, ...sigs){
   return api;
 };
 
-// ffi_auto_compile_optional.urb
-// ffi.compile is optional: passing a schema table auto-compiles/caches layout.
+// Example: ABI prefix + explicit cstr.
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
-
-inner = { a = "int8", b = "int16" };
-outer = {
-  a = "int32",
-  b = "float64",
-  d = "struct(inner)"
-};
 
 load_fixture = (path){
   return ffi_bind_all(path,
-    "pointer<outer> make_outer()",
-    "void free_outer(pointer<outer>)",
-    "i32 outer_get_a(pointer<outer>)",
-    "i32 inner_get_b(pointer<outer>)"
+    "void* get_add_i32_ptr()",
+    "void* get_add_stdcall_i32_ptr()",
+    "i32 cstr_len(string)",
+    "string ffi_test_name()"
   );
 };
 
@@ -60,21 +52,27 @@ lib = load_fixture("./tests/ffi/libffi_view_struct.so");
 if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
 if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
 if (lib == null) {
-  println("ffi test library not available");
+  println("ffi fixture not found");
   return 0;
 }
 
-ptr = lib.make_outer();
+add_ptr = lib.get_add_i32_ptr();
+add_default = ffi.bind(add_ptr, "abi(default) i32 add_default(i32, i32)");
+add_cdecl = ffi.bind(add_ptr, "cdecl i32 add_cdecl(i32, i32)");
 
-v = ffi.view(ptr, outer); // schema path (auto compile)
-v.a = 45;
-v.d.b = 11;
-println(lib.outer_get_a(ptr));
-println(lib.inner_get_b(ptr));
+println("abi(default):", add_default(20, 22));
+println("cdecl:", add_cdecl(20, 22));
 
-layout = ffi.compile(outer); // still available when you want explicit handle
-v2 = ffi.view(ptr, layout);
-println(v2.a);
-println(v2.d.b);
+std_ptr = lib.get_add_stdcall_i32_ptr();
+std_default = ffi.bind(std_ptr, "abi(default) i32 std_default(i32, i32)");
+println("stdcall pointer via default abi:", std_default(20, 22));
 
-lib.free_outer(ptr);
+println("cstr_len(string):", lib.cstr_len("disturb"));
+println("ffi_test_name() as string:", lib.ffi_test_name());
+
+name_ptr = ffi.sym(lib.__lib, "ffi_test_name");
+if (name_ptr != null) {
+  name_c = ffi.bind(name_ptr, "cstring ffi_test_name()");
+  raw = name_c();
+  println("ffi_test_name() as cstring ptr -> ffi.string:", ffi.string(raw));
+}

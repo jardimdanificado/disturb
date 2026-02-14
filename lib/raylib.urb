@@ -8,18 +8,18 @@ load = (libPath = null){
   rectangleSchema = { x = "f32", y = "f32", width = "f32", height = "f32" };
   textureSchema = { id = "u32", width = "i32", height = "i32", mipmaps = "i32", format = "i32" };
   imageSchema = { data = "ptr", width = "i32", height = "i32", mipmaps = "i32", format = "i32" };
-  fontSchema = { baseSize = "i32", glyphCount = "i32", glyphPadding = "i32", texture = "struct<RaylibTexture>", recs = "ptr", glyphs = "ptr" };
-  renderTextureSchema = { id = "u32", texture = "struct<RaylibTexture>", depth = "struct<RaylibTexture>" };
+  fontSchema = { baseSize = "i32", glyphCount = "i32", glyphPadding = "i32", texture = "struct(RaylibTexture)", recs = "ptr", glyphs = "ptr" };
+  renderTextureSchema = { id = "u32", texture = "struct(RaylibTexture)", depth = "struct(RaylibTexture)" };
   // Flattened NPatchInfo layout: Rectangle source + 5 ints.
   npatchInfoSchema = { sourceX = "f32", sourceY = "f32", sourceWidth = "f32", sourceHeight = "f32", left = "i32", top = "i32", right = "i32", bottom = "i32", layout = "i32" };
   audioStreamSchema = { buffer = "ptr", processor = "ptr", sampleRate = "u32", sampleSize = "u32", channels = "u32" };
-  soundSchema = { stream = "struct<RaylibAudioStream>", frameCount = "u32" };
-  musicSchema = { stream = "struct<RaylibAudioStream>", frameCount = "u32", looping = "u8", ctxType = "i32", ctxData = "ptr" };
+  soundSchema = { stream = "struct(RaylibAudioStream)", frameCount = "u32" };
+  musicSchema = { stream = "struct(RaylibAudioStream)", frameCount = "u32", looping = "u8", ctxType = "i32", ctxData = "ptr" };
   // Flattened Camera2D layout (offset.x, offset.y, target.x, target.y, rotation, zoom)
   // to avoid nested-struct schema issues in Disturb FFI while keeping C memory layout.
   camera2DSchema = { offsetX = "f32", offsetY = "f32", targetX = "f32", targetY = "f32", rotation = "f32", zoom = "f32" };
 
-  // FFI struct<name> resolution uses VM global scope.
+  // FFI struct(name) resolution uses VM global scope.
   global.RaylibColor = colorSchema;
   global.RaylibVector2 = vector2Schema;
   global.RaylibRectangle = rectangleSchema;
@@ -135,7 +135,7 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "GetWindowScaleDPI");
     if (ptr == null) { return null; }
-    api.GetWindowScaleDPI = ffi.bind(ptr, "struct<RaylibVector2> GetWindowScaleDPI()");
+    api.GetWindowScaleDPI = ffi.bind(ptr, "struct(RaylibVector2) GetWindowScaleDPI()");
 
     ptr = ffi.sym(h, "SetClipboardText");
     if (ptr == null) { return null; }
@@ -175,7 +175,7 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "GetTouchPosition");
     if (ptr == null) { return null; }
-    api.GetTouchPosition = ffi.bind(ptr, "struct<RaylibVector2> GetTouchPosition(i32)");
+    api.GetTouchPosition = ffi.bind(ptr, "struct(RaylibVector2) GetTouchPosition(i32)");
 
     ptr = ffi.sym(h, "IsKeyDown");
     if (ptr == null) { return null; }
@@ -307,11 +307,11 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "GetMousePosition");
     if (ptr == null) { return null; }
-    api.GetMousePosition = ffi.bind(ptr, "struct<RaylibVector2> GetMousePosition()");
+    api.GetMousePosition = ffi.bind(ptr, "struct(RaylibVector2) GetMousePosition()");
 
     ptr = ffi.sym(h, "GetWindowPosition");
     if (ptr == null) { return null; }
-    api.GetWindowPosition = ffi.bind(ptr, "struct<RaylibVector2> GetWindowPosition()");
+    api.GetWindowPosition = ffi.bind(ptr, "struct(RaylibVector2) GetWindowPosition()");
 
     ptr = ffi.sym(h, "GetMonitorCount");
     if (ptr == null) { return null; }
@@ -323,7 +323,7 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "GetMonitorPosition");
     if (ptr == null) { return null; }
-    api.GetMonitorPosition = ffi.bind(ptr, "struct<RaylibVector2> GetMonitorPosition(i32)");
+    api.GetMonitorPosition = ffi.bind(ptr, "struct(RaylibVector2) GetMonitorPosition(i32)");
 
     ptr = ffi.sym(h, "GetMonitorWidth");
     if (ptr == null) { return null; }
@@ -355,11 +355,11 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "GetMouseDelta");
     if (ptr == null) { return null; }
-    api.GetMouseDelta = ffi.bind(ptr, "struct<RaylibVector2> GetMouseDelta()");
+    api.GetMouseDelta = ffi.bind(ptr, "struct(RaylibVector2) GetMouseDelta()");
 
     ptr = ffi.sym(h, "GetScreenToWorld2D");
     if (ptr == null) { return null; }
-    api.GetScreenToWorld2D = ffi.bind(ptr, "struct<RaylibVector2> GetScreenToWorld2D(struct<RaylibVector2>, struct<RaylibCamera2D>)");
+    api.GetScreenToWorld2D = ffi.bind(ptr, "struct(RaylibVector2) GetScreenToWorld2D(struct(RaylibVector2), struct(RaylibCamera2D))");
 
     ptr = ffi.sym(h, "BeginDrawing");
     if (ptr == null) { return null; }
@@ -371,11 +371,11 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "BeginMode2D");
     if (ptr == null) { return null; }
-    api.BeginMode2D = ffi.bind(ptr, "void BeginMode2D(struct<RaylibCamera2D>)");
+    api.BeginMode2D = ffi.bind(ptr, "void BeginMode2D(struct(RaylibCamera2D))");
 
     ptr = ffi.sym(h, "BeginTextureMode");
     if (ptr == null) { return null; }
-    api.BeginTextureMode = ffi.bind(ptr, "void BeginTextureMode(struct<RaylibRenderTexture>)");
+    api.BeginTextureMode = ffi.bind(ptr, "void BeginTextureMode(struct(RaylibRenderTexture))");
 
     ptr = ffi.sym(h, "BeginScissorMode");
     if (ptr == null) { return null; }
@@ -403,7 +403,7 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "ClearBackground");
     if (ptr == null) { return null; }
-    api.ClearBackground = ffi.bind(ptr, "void ClearBackground(struct<RaylibColor>)");
+    api.ClearBackground = ffi.bind(ptr, "void ClearBackground(struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawFPS");
     if (ptr == null) { return null; }
@@ -411,23 +411,23 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "DrawText");
     if (ptr == null) { return null; }
-    api.DrawText = ffi.bind(ptr, "void DrawText(char*, i32, i32, i32, struct<RaylibColor>)");
+    api.DrawText = ffi.bind(ptr, "void DrawText(char*, i32, i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "GetFontDefault");
     if (ptr == null) { return null; }
-    api.GetFontDefault = ffi.bind(ptr, "struct<RaylibFont> GetFontDefault()");
+    api.GetFontDefault = ffi.bind(ptr, "struct(RaylibFont) GetFontDefault()");
 
     ptr = ffi.sym(h, "LoadFont");
     if (ptr == null) { return null; }
-    api.LoadFont = ffi.bind(ptr, "struct<RaylibFont> LoadFont(char*)");
+    api.LoadFont = ffi.bind(ptr, "struct(RaylibFont) LoadFont(char*)");
 
     ptr = ffi.sym(h, "LoadFontEx");
     if (ptr == null) { return null; }
-    api.LoadFontEx = ffi.bind(ptr, "struct<RaylibFont> LoadFontEx(char*, i32, i32*, i32)");
+    api.LoadFontEx = ffi.bind(ptr, "struct(RaylibFont) LoadFontEx(char*, i32, i32*, i32)");
 
     ptr = ffi.sym(h, "UnloadFont");
     if (ptr == null) { return null; }
-    api.UnloadFont = ffi.bind(ptr, "void UnloadFont(struct<RaylibFont>)");
+    api.UnloadFont = ffi.bind(ptr, "void UnloadFont(struct(RaylibFont))");
 
     ptr = ffi.sym(h, "SetTextLineSpacing");
     if (ptr == null) { return null; }
@@ -435,67 +435,67 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "DrawTextEx");
     if (ptr == null) { return null; }
-    api.DrawTextEx = ffi.bind(ptr, "void DrawTextEx(struct<RaylibFont>, char*, struct<RaylibVector2>, f32, f32, struct<RaylibColor>)");
+    api.DrawTextEx = ffi.bind(ptr, "void DrawTextEx(struct(RaylibFont), char*, struct(RaylibVector2), f32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "MeasureTextEx");
     if (ptr == null) { return null; }
-    api.MeasureTextEx = ffi.bind(ptr, "struct<RaylibVector2> MeasureTextEx(struct<RaylibFont>, char*, f32, f32)");
+    api.MeasureTextEx = ffi.bind(ptr, "struct(RaylibVector2) MeasureTextEx(struct(RaylibFont), char*, f32, f32)");
 
     ptr = ffi.sym(h, "LoadRenderTexture");
     if (ptr == null) { return null; }
-    api.LoadRenderTexture = ffi.bind(ptr, "struct<RaylibRenderTexture> LoadRenderTexture(i32, i32)");
+    api.LoadRenderTexture = ffi.bind(ptr, "struct(RaylibRenderTexture) LoadRenderTexture(i32, i32)");
 
     ptr = ffi.sym(h, "UnloadRenderTexture");
     if (ptr == null) { return null; }
-    api.UnloadRenderTexture = ffi.bind(ptr, "void UnloadRenderTexture(struct<RaylibRenderTexture>)");
+    api.UnloadRenderTexture = ffi.bind(ptr, "void UnloadRenderTexture(struct(RaylibRenderTexture))");
 
     ptr = ffi.sym(h, "SetTextureFilter");
     if (ptr == null) { return null; }
-    api.SetTextureFilter = ffi.bind(ptr, "void SetTextureFilter(struct<RaylibTexture>, i32)");
+    api.SetTextureFilter = ffi.bind(ptr, "void SetTextureFilter(struct(RaylibTexture), i32)");
 
     ptr = ffi.sym(h, "LoadImage");
     if (ptr == null) { return null; }
-    api.LoadImage = ffi.bind(ptr, "struct<RaylibImage> LoadImage(char*)");
+    api.LoadImage = ffi.bind(ptr, "struct(RaylibImage) LoadImage(char*)");
 
     ptr = ffi.sym(h, "UnloadImage");
     if (ptr == null) { return null; }
-    api.UnloadImage = ffi.bind(ptr, "void UnloadImage(struct<RaylibImage>)");
+    api.UnloadImage = ffi.bind(ptr, "void UnloadImage(struct(RaylibImage))");
 
     ptr = ffi.sym(h, "LoadTextureFromImage");
     if (ptr == null) { return null; }
-    api.LoadTextureFromImage = ffi.bind(ptr, "struct<RaylibTexture> LoadTextureFromImage(struct<RaylibImage>)");
+    api.LoadTextureFromImage = ffi.bind(ptr, "struct(RaylibTexture) LoadTextureFromImage(struct(RaylibImage))");
 
     ptr = ffi.sym(h, "LoadImageFromTexture");
     if (ptr == null) { return null; }
-    api.LoadImageFromTexture = ffi.bind(ptr, "struct<RaylibImage> LoadImageFromTexture(struct<RaylibTexture>)");
+    api.LoadImageFromTexture = ffi.bind(ptr, "struct(RaylibImage) LoadImageFromTexture(struct(RaylibTexture))");
 
     ptr = ffi.sym(h, "GenImageGradientLinear");
     if (ptr == null) { return null; }
-    api.GenImageGradientLinear = ffi.bind(ptr, "struct<RaylibImage> GenImageGradientLinear(i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)");
+    api.GenImageGradientLinear = ffi.bind(ptr, "struct(RaylibImage) GenImageGradientLinear(i32, i32, i32, struct(RaylibColor), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "GenImageGradientRadial");
     if (ptr == null) { return null; }
-    api.GenImageGradientRadial = ffi.bind(ptr, "struct<RaylibImage> GenImageGradientRadial(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)");
+    api.GenImageGradientRadial = ffi.bind(ptr, "struct(RaylibImage) GenImageGradientRadial(i32, i32, f32, struct(RaylibColor), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "GenImageGradientSquare");
     if (ptr == null) { return null; }
-    api.GenImageGradientSquare = ffi.bind(ptr, "struct<RaylibImage> GenImageGradientSquare(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)");
+    api.GenImageGradientSquare = ffi.bind(ptr, "struct(RaylibImage) GenImageGradientSquare(i32, i32, f32, struct(RaylibColor), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "GenImageChecked");
     if (ptr == null) { return null; }
-    api.GenImageChecked = ffi.bind(ptr, "struct<RaylibImage> GenImageChecked(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)");
+    api.GenImageChecked = ffi.bind(ptr, "struct(RaylibImage) GenImageChecked(i32, i32, i32, i32, struct(RaylibColor), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "GenImageWhiteNoise");
     if (ptr == null) { return null; }
-    api.GenImageWhiteNoise = ffi.bind(ptr, "struct<RaylibImage> GenImageWhiteNoise(i32, i32, f32)");
+    api.GenImageWhiteNoise = ffi.bind(ptr, "struct(RaylibImage) GenImageWhiteNoise(i32, i32, f32)");
 
     ptr = ffi.sym(h, "GenImagePerlinNoise");
     if (ptr == null) { return null; }
-    api.GenImagePerlinNoise = ffi.bind(ptr, "struct<RaylibImage> GenImagePerlinNoise(i32, i32, i32, i32, f32)");
+    api.GenImagePerlinNoise = ffi.bind(ptr, "struct(RaylibImage) GenImagePerlinNoise(i32, i32, i32, i32, f32)");
 
     ptr = ffi.sym(h, "GenImageCellular");
     if (ptr == null) { return null; }
-    api.GenImageCellular = ffi.bind(ptr, "struct<RaylibImage> GenImageCellular(i32, i32, i32)");
+    api.GenImageCellular = ffi.bind(ptr, "struct(RaylibImage) GenImageCellular(i32, i32, i32)");
 
     ptr = ffi.sym(h, "ImageRotate");
     if (ptr == null) { return null; }
@@ -503,7 +503,7 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "ImageCrop");
     if (ptr == null) { return null; }
-    api.ImageCrop = ffi.bind(ptr, "void ImageCrop(u8*, struct<RaylibRectangle>)");
+    api.ImageCrop = ffi.bind(ptr, "void ImageCrop(u8*, struct(RaylibRectangle))");
 
     ptr = ffi.sym(h, "ImageFlipHorizontal");
     if (ptr == null) { return null; }
@@ -515,39 +515,39 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "ImageDraw");
     if (ptr == null) { return null; }
-    api.ImageDraw = ffi.bind(ptr, "void ImageDraw(u8*, struct<RaylibImage>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibColor>)");
+    api.ImageDraw = ffi.bind(ptr, "void ImageDraw(u8*, struct(RaylibImage), struct(RaylibRectangle), struct(RaylibRectangle), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "ImageDrawPixel");
     if (ptr == null) { return null; }
-    api.ImageDrawPixel = ffi.bind(ptr, "void ImageDrawPixel(u8*, i32, i32, struct<RaylibColor>)");
+    api.ImageDrawPixel = ffi.bind(ptr, "void ImageDrawPixel(u8*, i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "ImageDrawCircleLines");
     if (ptr == null) { return null; }
-    api.ImageDrawCircleLines = ffi.bind(ptr, "void ImageDrawCircleLines(u8*, i32, i32, i32, struct<RaylibColor>)");
+    api.ImageDrawCircleLines = ffi.bind(ptr, "void ImageDrawCircleLines(u8*, i32, i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "ImageDrawRectangle");
     if (ptr == null) { return null; }
-    api.ImageDrawRectangle = ffi.bind(ptr, "void ImageDrawRectangle(u8*, i32, i32, i32, i32, struct<RaylibColor>)");
+    api.ImageDrawRectangle = ffi.bind(ptr, "void ImageDrawRectangle(u8*, i32, i32, i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "ImageDrawTextEx");
     if (ptr == null) { return null; }
-    api.ImageDrawTextEx = ffi.bind(ptr, "void ImageDrawTextEx(u8*, struct<RaylibFont>, char*, struct<RaylibVector2>, f32, f32, struct<RaylibColor>)");
+    api.ImageDrawTextEx = ffi.bind(ptr, "void ImageDrawTextEx(u8*, struct(RaylibFont), char*, struct(RaylibVector2), f32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "ImageFromChannel");
     if (ptr == null) { return null; }
-    api.ImageFromChannel = ffi.bind(ptr, "struct<RaylibImage> ImageFromChannel(struct<RaylibImage>, i32)");
+    api.ImageFromChannel = ffi.bind(ptr, "struct(RaylibImage) ImageFromChannel(struct(RaylibImage), i32)");
 
     ptr = ffi.sym(h, "ImageAlphaMask");
     if (ptr == null) { return null; }
-    api.ImageAlphaMask = ffi.bind(ptr, "void ImageAlphaMask(u8*, struct<RaylibImage>)");
+    api.ImageAlphaMask = ffi.bind(ptr, "void ImageAlphaMask(u8*, struct(RaylibImage))");
 
     ptr = ffi.sym(h, "LoadImageRaw");
     if (ptr == null) { return null; }
-    api.LoadImageRaw = ffi.bind(ptr, "struct<RaylibImage> LoadImageRaw(char*, i32, i32, i32, i32)");
+    api.LoadImageRaw = ffi.bind(ptr, "struct(RaylibImage) LoadImageRaw(char*, i32, i32, i32, i32)");
 
     ptr = ffi.sym(h, "ImageCopy");
     if (ptr == null) { return null; }
-    api.ImageCopy = ffi.bind(ptr, "struct<RaylibImage> ImageCopy(struct<RaylibImage>)");
+    api.ImageCopy = ffi.bind(ptr, "struct(RaylibImage) ImageCopy(struct(RaylibImage))");
 
     ptr = ffi.sym(h, "ImageFormat");
     if (ptr == null) { return null; }
@@ -559,7 +559,7 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "ImageColorTint");
     if (ptr == null) { return null; }
-    api.ImageColorTint = ffi.bind(ptr, "void ImageColorTint(u8*, struct<RaylibColor>)");
+    api.ImageColorTint = ffi.bind(ptr, "void ImageColorTint(u8*, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "ImageColorInvert");
     if (ptr == null) { return null; }
@@ -583,7 +583,7 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "LoadImageColors");
     if (ptr == null) { return null; }
-    api.LoadImageColors = ffi.bind(ptr, "u8* LoadImageColors(struct<RaylibImage>)");
+    api.LoadImageColors = ffi.bind(ptr, "u8* LoadImageColors(struct(RaylibImage))");
 
     ptr = ffi.sym(h, "UnloadImageColors");
     if (ptr == null) { return null; }
@@ -591,31 +591,31 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "UpdateTexture");
     if (ptr == null) { return null; }
-    api.UpdateTexture = ffi.bind(ptr, "void UpdateTexture(struct<RaylibTexture>, u8*)");
+    api.UpdateTexture = ffi.bind(ptr, "void UpdateTexture(struct(RaylibTexture), u8*)");
 
     ptr = ffi.sym(h, "ExportImage");
     if (ptr == null) { return null; }
-    api.ExportImage = ffi.bind(ptr, "u8 ExportImage(struct<RaylibImage>, char*)");
+    api.ExportImage = ffi.bind(ptr, "u8 ExportImage(struct(RaylibImage), char*)");
 
     ptr = ffi.sym(h, "LoadTexture");
     if (ptr == null) { return null; }
-    api.LoadTexture = ffi.bind(ptr, "struct<RaylibTexture> LoadTexture(char*)");
+    api.LoadTexture = ffi.bind(ptr, "struct(RaylibTexture) LoadTexture(char*)");
 
     ptr = ffi.sym(h, "UnloadTexture");
     if (ptr == null) { return null; }
-    api.UnloadTexture = ffi.bind(ptr, "void UnloadTexture(struct<RaylibTexture>)");
+    api.UnloadTexture = ffi.bind(ptr, "void UnloadTexture(struct(RaylibTexture))");
 
     ptr = ffi.sym(h, "GetColor");
     if (ptr == null) { return null; }
-    api.GetColor = ffi.bind(ptr, "struct<RaylibColor> GetColor(u32)");
+    api.GetColor = ffi.bind(ptr, "struct(RaylibColor) GetColor(u32)");
 
     ptr = ffi.sym(h, "ColorFromHSV");
     if (ptr == null) { return null; }
-    api.ColorFromHSV = ffi.bind(ptr, "struct<RaylibColor> ColorFromHSV(f32, f32, f32)");
+    api.ColorFromHSV = ffi.bind(ptr, "struct(RaylibColor) ColorFromHSV(f32, f32, f32)");
 
     ptr = ffi.sym(h, "SetTextureWrap");
     if (ptr == null) { return null; }
-    api.SetTextureWrap = ffi.bind(ptr, "void SetTextureWrap(struct<RaylibTexture>, i32)");
+    api.SetTextureWrap = ffi.bind(ptr, "void SetTextureWrap(struct(RaylibTexture), i32)");
 
     ptr = ffi.sym(h, "InitAudioDevice");
     if (ptr == null) { return null; }
@@ -631,71 +631,71 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "LoadSound");
     if (ptr == null) { return null; }
-    api.LoadSound = ffi.bind(ptr, "struct<RaylibSound> LoadSound(char*)");
+    api.LoadSound = ffi.bind(ptr, "struct(RaylibSound) LoadSound(char*)");
 
     ptr = ffi.sym(h, "LoadSoundAlias");
     if (ptr == null) { return null; }
-    api.LoadSoundAlias = ffi.bind(ptr, "struct<RaylibSound> LoadSoundAlias(struct<RaylibSound>)");
+    api.LoadSoundAlias = ffi.bind(ptr, "struct(RaylibSound) LoadSoundAlias(struct(RaylibSound))");
 
     ptr = ffi.sym(h, "UnloadSound");
     if (ptr == null) { return null; }
-    api.UnloadSound = ffi.bind(ptr, "void UnloadSound(struct<RaylibSound>)");
+    api.UnloadSound = ffi.bind(ptr, "void UnloadSound(struct(RaylibSound))");
 
     ptr = ffi.sym(h, "UnloadSoundAlias");
     if (ptr == null) { return null; }
-    api.UnloadSoundAlias = ffi.bind(ptr, "void UnloadSoundAlias(struct<RaylibSound>)");
+    api.UnloadSoundAlias = ffi.bind(ptr, "void UnloadSoundAlias(struct(RaylibSound))");
 
     ptr = ffi.sym(h, "PlaySound");
     if (ptr == null) { return null; }
-    api.PlaySound = ffi.bind(ptr, "void PlaySound(struct<RaylibSound>)");
+    api.PlaySound = ffi.bind(ptr, "void PlaySound(struct(RaylibSound))");
 
     ptr = ffi.sym(h, "LoadMusicStream");
     if (ptr == null) { return null; }
-    api.LoadMusicStream = ffi.bind(ptr, "struct<RaylibMusic> LoadMusicStream(char*)");
+    api.LoadMusicStream = ffi.bind(ptr, "struct(RaylibMusic) LoadMusicStream(char*)");
 
     ptr = ffi.sym(h, "UnloadMusicStream");
     if (ptr == null) { return null; }
-    api.UnloadMusicStream = ffi.bind(ptr, "void UnloadMusicStream(struct<RaylibMusic>)");
+    api.UnloadMusicStream = ffi.bind(ptr, "void UnloadMusicStream(struct(RaylibMusic))");
 
     ptr = ffi.sym(h, "PlayMusicStream");
     if (ptr == null) { return null; }
-    api.PlayMusicStream = ffi.bind(ptr, "void PlayMusicStream(struct<RaylibMusic>)");
+    api.PlayMusicStream = ffi.bind(ptr, "void PlayMusicStream(struct(RaylibMusic))");
 
     ptr = ffi.sym(h, "UpdateMusicStream");
     if (ptr == null) { return null; }
-    api.UpdateMusicStream = ffi.bind(ptr, "void UpdateMusicStream(struct<RaylibMusic>)");
+    api.UpdateMusicStream = ffi.bind(ptr, "void UpdateMusicStream(struct(RaylibMusic))");
 
     ptr = ffi.sym(h, "StopMusicStream");
     if (ptr == null) { return null; }
-    api.StopMusicStream = ffi.bind(ptr, "void StopMusicStream(struct<RaylibMusic>)");
+    api.StopMusicStream = ffi.bind(ptr, "void StopMusicStream(struct(RaylibMusic))");
 
     ptr = ffi.sym(h, "PauseMusicStream");
     if (ptr == null) { return null; }
-    api.PauseMusicStream = ffi.bind(ptr, "void PauseMusicStream(struct<RaylibMusic>)");
+    api.PauseMusicStream = ffi.bind(ptr, "void PauseMusicStream(struct(RaylibMusic))");
 
     ptr = ffi.sym(h, "ResumeMusicStream");
     if (ptr == null) { return null; }
-    api.ResumeMusicStream = ffi.bind(ptr, "void ResumeMusicStream(struct<RaylibMusic>)");
+    api.ResumeMusicStream = ffi.bind(ptr, "void ResumeMusicStream(struct(RaylibMusic))");
 
     ptr = ffi.sym(h, "SetMusicPitch");
     if (ptr == null) { return null; }
-    api.SetMusicPitch = ffi.bind(ptr, "void SetMusicPitch(struct<RaylibMusic>, f32)");
+    api.SetMusicPitch = ffi.bind(ptr, "void SetMusicPitch(struct(RaylibMusic), f32)");
 
     ptr = ffi.sym(h, "SetMusicPan");
     if (ptr == null) { return null; }
-    api.SetMusicPan = ffi.bind(ptr, "void SetMusicPan(struct<RaylibMusic>, f32)");
+    api.SetMusicPan = ffi.bind(ptr, "void SetMusicPan(struct(RaylibMusic), f32)");
 
     ptr = ffi.sym(h, "SetMusicVolume");
     if (ptr == null) { return null; }
-    api.SetMusicVolume = ffi.bind(ptr, "void SetMusicVolume(struct<RaylibMusic>, f32)");
+    api.SetMusicVolume = ffi.bind(ptr, "void SetMusicVolume(struct(RaylibMusic), f32)");
 
     ptr = ffi.sym(h, "GetMusicTimePlayed");
     if (ptr == null) { return null; }
-    api.GetMusicTimePlayed = ffi.bind(ptr, "f32 GetMusicTimePlayed(struct<RaylibMusic>)");
+    api.GetMusicTimePlayed = ffi.bind(ptr, "f32 GetMusicTimePlayed(struct(RaylibMusic))");
 
     ptr = ffi.sym(h, "GetMusicTimeLength");
     if (ptr == null) { return null; }
-    api.GetMusicTimeLength = ffi.bind(ptr, "f32 GetMusicTimeLength(struct<RaylibMusic>)");
+    api.GetMusicTimeLength = ffi.bind(ptr, "f32 GetMusicTimeLength(struct(RaylibMusic))");
 
     ptr = ffi.sym(h, "TextFormat");
     if (ptr == null) { return null; }
@@ -711,167 +711,167 @@ load = (libPath = null){
 
     ptr = ffi.sym(h, "DrawPixel");
     if (ptr == null) { return null; }
-    api.DrawPixel = ffi.bind(ptr, "void DrawPixel(i32, i32, struct<RaylibColor>)");
+    api.DrawPixel = ffi.bind(ptr, "void DrawPixel(i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawLine");
     if (ptr == null) { return null; }
-    api.DrawLine = ffi.bind(ptr, "void DrawLine(i32, i32, i32, i32, struct<RaylibColor>)");
+    api.DrawLine = ffi.bind(ptr, "void DrawLine(i32, i32, i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawLineBezier");
     if (ptr == null) { return null; }
-    api.DrawLineBezier = ffi.bind(ptr, "void DrawLineBezier(struct<RaylibVector2>, struct<RaylibVector2>, f32, struct<RaylibColor>)");
+    api.DrawLineBezier = ffi.bind(ptr, "void DrawLineBezier(struct(RaylibVector2), struct(RaylibVector2), f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawLineEx");
     if (ptr == null) { return null; }
-    api.DrawLineEx = ffi.bind(ptr, "void DrawLineEx(struct<RaylibVector2>, struct<RaylibVector2>, f32, struct<RaylibColor>)");
+    api.DrawLineEx = ffi.bind(ptr, "void DrawLineEx(struct(RaylibVector2), struct(RaylibVector2), f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawLineDashed");
     if (ptr == null) { return null; }
-    api.DrawLineDashed = ffi.bind(ptr, "void DrawLineDashed(struct<RaylibVector2>, struct<RaylibVector2>, i32, i32, struct<RaylibColor>)");
+    api.DrawLineDashed = ffi.bind(ptr, "void DrawLineDashed(struct(RaylibVector2), struct(RaylibVector2), i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawCircle");
     if (ptr == null) { return null; }
-    api.DrawCircle = ffi.bind(ptr, "void DrawCircle(i32, i32, f32, struct<RaylibColor>)");
+    api.DrawCircle = ffi.bind(ptr, "void DrawCircle(i32, i32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawCircleGradient");
     if (ptr == null) { return null; }
-    api.DrawCircleGradient = ffi.bind(ptr, "void DrawCircleGradient(i32, i32, f32, struct<RaylibColor>, struct<RaylibColor>)");
+    api.DrawCircleGradient = ffi.bind(ptr, "void DrawCircleGradient(i32, i32, f32, struct(RaylibColor), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawCircleSector");
     if (ptr == null) { return null; }
-    api.DrawCircleSector = ffi.bind(ptr, "void DrawCircleSector(struct<RaylibVector2>, f32, f32, f32, i32, struct<RaylibColor>)");
+    api.DrawCircleSector = ffi.bind(ptr, "void DrawCircleSector(struct(RaylibVector2), f32, f32, f32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawCircleSectorLines");
     if (ptr == null) { return null; }
-    api.DrawCircleSectorLines = ffi.bind(ptr, "void DrawCircleSectorLines(struct<RaylibVector2>, f32, f32, f32, i32, struct<RaylibColor>)");
+    api.DrawCircleSectorLines = ffi.bind(ptr, "void DrawCircleSectorLines(struct(RaylibVector2), f32, f32, f32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawCircleLines");
     if (ptr == null) { return null; }
-    api.DrawCircleLines = ffi.bind(ptr, "void DrawCircleLines(i32, i32, f32, struct<RaylibColor>)");
+    api.DrawCircleLines = ffi.bind(ptr, "void DrawCircleLines(i32, i32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawCircleLinesV");
     if (ptr == null) { return null; }
-    api.DrawCircleLinesV = ffi.bind(ptr, "void DrawCircleLinesV(struct<RaylibVector2>, f32, struct<RaylibColor>)");
+    api.DrawCircleLinesV = ffi.bind(ptr, "void DrawCircleLinesV(struct(RaylibVector2), f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawEllipse");
     if (ptr == null) { return null; }
-    api.DrawEllipse = ffi.bind(ptr, "void DrawEllipse(i32, i32, f32, f32, struct<RaylibColor>)");
+    api.DrawEllipse = ffi.bind(ptr, "void DrawEllipse(i32, i32, f32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawEllipseLines");
     if (ptr == null) { return null; }
-    api.DrawEllipseLines = ffi.bind(ptr, "void DrawEllipseLines(i32, i32, f32, f32, struct<RaylibColor>)");
+    api.DrawEllipseLines = ffi.bind(ptr, "void DrawEllipseLines(i32, i32, f32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawCircleV");
     if (ptr == null) { return null; }
-    api.DrawCircleV = ffi.bind(ptr, "void DrawCircleV(struct<RaylibVector2>, f32, struct<RaylibColor>)");
+    api.DrawCircleV = ffi.bind(ptr, "void DrawCircleV(struct(RaylibVector2), f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRectangle");
     if (ptr == null) { return null; }
-    api.DrawRectangle = ffi.bind(ptr, "void DrawRectangle(i32, i32, i32, i32, struct<RaylibColor>)");
+    api.DrawRectangle = ffi.bind(ptr, "void DrawRectangle(i32, i32, i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRectangleV");
     if (ptr == null) { return null; }
-    api.DrawRectangleV = ffi.bind(ptr, "void DrawRectangleV(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)");
+    api.DrawRectangleV = ffi.bind(ptr, "void DrawRectangleV(struct(RaylibVector2), struct(RaylibVector2), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRectangleRec");
     if (ptr == null) { return null; }
-    api.DrawRectangleRec = ffi.bind(ptr, "void DrawRectangleRec(struct<RaylibRectangle>, struct<RaylibColor>)");
+    api.DrawRectangleRec = ffi.bind(ptr, "void DrawRectangleRec(struct(RaylibRectangle), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRectangleRounded");
     if (ptr == null) { return null; }
-    api.DrawRectangleRounded = ffi.bind(ptr, "void DrawRectangleRounded(struct<RaylibRectangle>, f32, i32, struct<RaylibColor>)");
+    api.DrawRectangleRounded = ffi.bind(ptr, "void DrawRectangleRounded(struct(RaylibRectangle), f32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRectangleRoundedLinesEx");
     if (ptr == null) { return null; }
-    api.DrawRectangleRoundedLinesEx = ffi.bind(ptr, "void DrawRectangleRoundedLinesEx(struct<RaylibRectangle>, f32, i32, f32, struct<RaylibColor>)");
+    api.DrawRectangleRoundedLinesEx = ffi.bind(ptr, "void DrawRectangleRoundedLinesEx(struct(RaylibRectangle), f32, i32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRectanglePro");
     if (ptr == null) { return null; }
-    api.DrawRectanglePro = ffi.bind(ptr, "void DrawRectanglePro(struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)");
+    api.DrawRectanglePro = ffi.bind(ptr, "void DrawRectanglePro(struct(RaylibRectangle), struct(RaylibVector2), f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRectangleLines");
     if (ptr == null) { return null; }
-    api.DrawRectangleLines = ffi.bind(ptr, "void DrawRectangleLines(i32, i32, i32, i32, struct<RaylibColor>)");
+    api.DrawRectangleLines = ffi.bind(ptr, "void DrawRectangleLines(i32, i32, i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRectangleLinesEx");
     if (ptr == null) { return null; }
-    api.DrawRectangleLinesEx = ffi.bind(ptr, "void DrawRectangleLinesEx(struct<RaylibRectangle>, f32, struct<RaylibColor>)");
+    api.DrawRectangleLinesEx = ffi.bind(ptr, "void DrawRectangleLinesEx(struct(RaylibRectangle), f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawTexturePro");
     if (ptr == null) { return null; }
-    api.DrawTexturePro = ffi.bind(ptr, "void DrawTexturePro(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)");
+    api.DrawTexturePro = ffi.bind(ptr, "void DrawTexturePro(struct(RaylibTexture), struct(RaylibRectangle), struct(RaylibRectangle), struct(RaylibVector2), f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawTexture");
     if (ptr == null) { return null; }
-    api.DrawTexture = ffi.bind(ptr, "void DrawTexture(struct<RaylibTexture>, i32, i32, struct<RaylibColor>)");
+    api.DrawTexture = ffi.bind(ptr, "void DrawTexture(struct(RaylibTexture), i32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawTextureV");
     if (ptr == null) { return null; }
-    api.DrawTextureV = ffi.bind(ptr, "void DrawTextureV(struct<RaylibTexture>, struct<RaylibVector2>, struct<RaylibColor>)");
+    api.DrawTextureV = ffi.bind(ptr, "void DrawTextureV(struct(RaylibTexture), struct(RaylibVector2), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawTextureEx");
     if (ptr == null) { return null; }
-    api.DrawTextureEx = ffi.bind(ptr, "void DrawTextureEx(struct<RaylibTexture>, struct<RaylibVector2>, f32, f32, struct<RaylibColor>)");
+    api.DrawTextureEx = ffi.bind(ptr, "void DrawTextureEx(struct(RaylibTexture), struct(RaylibVector2), f32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawTextureRec");
     if (ptr == null) { return null; }
-    api.DrawTextureRec = ffi.bind(ptr, "void DrawTextureRec(struct<RaylibTexture>, struct<RaylibRectangle>, struct<RaylibVector2>, struct<RaylibColor>)");
+    api.DrawTextureRec = ffi.bind(ptr, "void DrawTextureRec(struct(RaylibTexture), struct(RaylibRectangle), struct(RaylibVector2), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawTextureNPatch");
     if (ptr == null) { return null; }
-    api.DrawTextureNPatch = ffi.bind(ptr, "void DrawTextureNPatch(struct<RaylibTexture>, struct<RaylibNPatchInfo>, struct<RaylibRectangle>, struct<RaylibVector2>, f32, struct<RaylibColor>)");
+    api.DrawTextureNPatch = ffi.bind(ptr, "void DrawTextureNPatch(struct(RaylibTexture), struct(RaylibNPatchInfo), struct(RaylibRectangle), struct(RaylibVector2), f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRectangleGradientH");
     if (ptr == null) { return null; }
-    api.DrawRectangleGradientH = ffi.bind(ptr, "void DrawRectangleGradientH(i32, i32, i32, i32, struct<RaylibColor>, struct<RaylibColor>)");
+    api.DrawRectangleGradientH = ffi.bind(ptr, "void DrawRectangleGradientH(i32, i32, i32, i32, struct(RaylibColor), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawTriangle");
     if (ptr == null) { return null; }
-    api.DrawTriangle = ffi.bind(ptr, "void DrawTriangle(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)");
+    api.DrawTriangle = ffi.bind(ptr, "void DrawTriangle(struct(RaylibVector2), struct(RaylibVector2), struct(RaylibVector2), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawTriangleLines");
     if (ptr == null) { return null; }
-    api.DrawTriangleLines = ffi.bind(ptr, "void DrawTriangleLines(struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibVector2>, struct<RaylibColor>)");
+    api.DrawTriangleLines = ffi.bind(ptr, "void DrawTriangleLines(struct(RaylibVector2), struct(RaylibVector2), struct(RaylibVector2), struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawPoly");
     if (ptr == null) { return null; }
-    api.DrawPoly = ffi.bind(ptr, "void DrawPoly(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)");
+    api.DrawPoly = ffi.bind(ptr, "void DrawPoly(struct(RaylibVector2), i32, f32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawPolyLines");
     if (ptr == null) { return null; }
-    api.DrawPolyLines = ffi.bind(ptr, "void DrawPolyLines(struct<RaylibVector2>, i32, f32, f32, struct<RaylibColor>)");
+    api.DrawPolyLines = ffi.bind(ptr, "void DrawPolyLines(struct(RaylibVector2), i32, f32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawPolyLinesEx");
     if (ptr == null) { return null; }
-    api.DrawPolyLinesEx = ffi.bind(ptr, "void DrawPolyLinesEx(struct<RaylibVector2>, i32, f32, f32, f32, struct<RaylibColor>)");
+    api.DrawPolyLinesEx = ffi.bind(ptr, "void DrawPolyLinesEx(struct(RaylibVector2), i32, f32, f32, f32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRing");
     if (ptr == null) { return null; }
-    api.DrawRing = ffi.bind(ptr, "void DrawRing(struct<RaylibVector2>, f32, f32, f32, f32, i32, struct<RaylibColor>)");
+    api.DrawRing = ffi.bind(ptr, "void DrawRing(struct(RaylibVector2), f32, f32, f32, f32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "DrawRingLines");
     if (ptr == null) { return null; }
-    api.DrawRingLines = ffi.bind(ptr, "void DrawRingLines(struct<RaylibVector2>, f32, f32, f32, f32, i32, struct<RaylibColor>)");
+    api.DrawRingLines = ffi.bind(ptr, "void DrawRingLines(struct(RaylibVector2), f32, f32, f32, f32, i32, struct(RaylibColor))");
 
     ptr = ffi.sym(h, "CheckCollisionPointRec");
     if (ptr == null) { return null; }
-    api.CheckCollisionPointRec = ffi.bind(ptr, "u8 CheckCollisionPointRec(struct<RaylibVector2>, struct<RaylibRectangle>)");
+    api.CheckCollisionPointRec = ffi.bind(ptr, "u8 CheckCollisionPointRec(struct(RaylibVector2), struct(RaylibRectangle))");
 
     ptr = ffi.sym(h, "CheckCollisionPointCircle");
     if (ptr == null) { return null; }
-    api.CheckCollisionPointCircle = ffi.bind(ptr, "u8 CheckCollisionPointCircle(struct<RaylibVector2>, struct<RaylibVector2>, f32)");
+    api.CheckCollisionPointCircle = ffi.bind(ptr, "u8 CheckCollisionPointCircle(struct(RaylibVector2), struct(RaylibVector2), f32)");
 
     ptr = ffi.sym(h, "CheckCollisionRecs");
     if (ptr == null) { return null; }
-    api.CheckCollisionRecs = ffi.bind(ptr, "u8 CheckCollisionRecs(struct<RaylibRectangle>, struct<RaylibRectangle>)");
+    api.CheckCollisionRecs = ffi.bind(ptr, "u8 CheckCollisionRecs(struct(RaylibRectangle), struct(RaylibRectangle))");
 
     ptr = ffi.sym(h, "GetCollisionRec");
     if (ptr == null) { return null; }
-    api.GetCollisionRec = ffi.bind(ptr, "struct<RaylibRectangle> GetCollisionRec(struct<RaylibRectangle>, struct<RaylibRectangle>)");
+    api.GetCollisionRec = ffi.bind(ptr, "struct(RaylibRectangle) GetCollisionRec(struct(RaylibRectangle), struct(RaylibRectangle))");
 
     ptr = ffi.sym(h, "Fade");
     if (ptr == null) { return null; }
-    api.Fade = ffi.bind(ptr, "struct<RaylibColor> Fade(struct<RaylibColor>, f32)");
+    api.Fade = ffi.bind(ptr, "struct(RaylibColor) Fade(struct(RaylibColor), f32)");
 
     return api;
   };

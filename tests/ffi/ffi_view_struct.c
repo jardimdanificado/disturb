@@ -124,6 +124,11 @@ int add_i32(int a, int b)
     return a + b;
 }
 
+const char *ffi_test_name(void)
+{
+    return "ffi-test";
+}
+
 void* get_add_i32_ptr(void)
 {
     return (void*)&add_i32;
@@ -158,6 +163,11 @@ int sum_variadic_i32(int count, ...)
 
 typedef int (*cb_i32_i32)(int, int);
 typedef double (*cb_f64_f64)(double, double);
+typedef struct Pair {
+    int32_t a;
+    int32_t b;
+} Pair;
+typedef Pair (*cb_pair_pair)(Pair);
 
 int call_cb_i32(cb_i32_i32 cb, int a, int b)
 {
@@ -181,6 +191,26 @@ double call_cb_f64(cb_f64_f64 cb, double a, double b)
     return cb(a, b);
 }
 
+int pair_sizeof(void) { return (int)sizeof(Pair); }
+int pair_off_a(void) { return (int)offsetof(Pair, a); }
+int pair_off_b(void) { return (int)offsetof(Pair, b); }
+
+int call_cb_pair_sum(cb_pair_pair cb, int a, int b)
+{
+    if (!cb) return 0;
+    Pair in = { a, b };
+    Pair out = cb(in);
+    return out.a + out.b;
+}
+
+Pair map_pair_add(Pair in)
+{
+    Pair out;
+    out.a = in.a + 1;
+    out.b = in.b + 2;
+    return out;
+}
+
 double sum_variadic_f64(int count, ...)
 {
     va_list ap;
@@ -196,6 +226,54 @@ double sum_variadic_f64(int count, ...)
 void* get_sum_variadic_i32_ptr(void)
 {
     return (void*)&sum_variadic_i32;
+}
+
+#if defined(_WIN32) && (defined(__i386__) || defined(_M_IX86))
+#define FFI_TEST_STDCALL __stdcall
+#else
+#define FFI_TEST_STDCALL
+#endif
+
+int FFI_TEST_STDCALL add_stdcall_i32(int a, int b)
+{
+    return a + b;
+}
+
+void* get_add_stdcall_i32_ptr(void)
+{
+    return (void*)&add_stdcall_i32;
+}
+
+#if defined(_MSC_VER)
+#pragma pack(push, 1)
+#endif
+struct PackedPair {
+    uint8_t tag;
+    uint32_t value;
+}
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((packed))
+#endif
+;
+#if defined(_MSC_VER)
+#pragma pack(pop)
+#endif
+
+int packed_pair_sizeof(void) { return (int)sizeof(struct PackedPair); }
+int packed_pair_off_tag(void) { return (int)offsetof(struct PackedPair, tag); }
+int packed_pair_off_value(void) { return (int)offsetof(struct PackedPair, value); }
+
+int packed_pair_sum(struct PackedPair p)
+{
+    return (int)p.tag + (int)p.value;
+}
+
+struct PackedPair packed_pair_make(uint8_t tag, uint32_t value)
+{
+    struct PackedPair p;
+    p.tag = tag;
+    p.value = value;
+    return p;
 }
 
 int cstr_len(const char *s)
@@ -219,4 +297,32 @@ int read_u8(uint8_t *buf, int idx)
 {
     if (!buf || idx < 0) return 0;
     return (int)buf[idx];
+}
+
+void* make_i32_ptrptr(int v)
+{
+    int *p = (int*)malloc(sizeof(int));
+    int **pp = (int**)malloc(sizeof(int*));
+    if (!p || !pp) {
+        free(p);
+        free(pp);
+        return NULL;
+    }
+    *p = v;
+    *pp = p;
+    return (void*)pp;
+}
+
+void free_i32_ptrptr(void *pp_raw)
+{
+    int **pp = (int**)pp_raw;
+    if (!pp) return;
+    free(*pp);
+    free(pp);
+}
+
+int read_i32_ptrptr(int **pp)
+{
+    if (!pp || !*pp) return 0;
+    return **pp;
 }

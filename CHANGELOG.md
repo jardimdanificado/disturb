@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.0
+- replace FFI by-value struct syntax `struct<schema>` with `struct(schema)` in signatures and schema composition strings.
+- add distinct string-pointer semantics in signatures:
+  - `string`: marshals as Disturb string values
+  - `cstring`/`cstr`: raw C pointer behavior
+
 ## 1.3.0
 - add automatic papagaio source preprocessing at compile-time for declarations outside strings/comments (`$pattern{...}{...}`, `$regex ... {...}`, `$eval{...}`).
 - keep papagaio behavior inside string literals as runtime processing, preserving existing `papagaio(text)` and string-literal flows.
@@ -34,7 +40,7 @@
 - fix lambda callback resolution in calls: when calling `a()` inside a lambda, call target lookup now checks local scope before global scope, so callback args work without `local.a()`.
 - add `ffi.new(schemaOrLayout)` to allocate zeroed struct memory and return a numeric pointer for use with `ffi.view(...)`.
 - add `ffi.free(ptr)` to release memory allocated with `ffi.new`.
-- change FFI struct signature syntax to `struct<schema>` (by-value) and `pointer<schema>` (typed pointer); remove legacy `@schema`.
+- change FFI struct signature syntax to `struct(schema)` (by-value) and `pointer<schema>` (typed pointer); remove legacy `@schema`.
 - keep `void*` for raw/generic pointers in signatures.
 - require schema field declarations to be type strings; nested inline schema tables in field values are rejected.
 - add schema unions (`__meta = { union = 1 }`) and bitfields (`"type:bits"`).

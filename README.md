@@ -490,14 +490,19 @@ Notes:
 - `ffi.view/sizeof/alignof/offsetof/new` accept either a schema table or a compiled layout handle; schema tables are auto-compiled and cached internally.
 
 Signature struct typing:
-- by-value struct: `struct<schema>` (example: `i32 sum(struct<outer>)`)
+- by-value struct: `struct(schema)` (example: `i32 sum(struct(outer))`)
 - by-value union: `union<schema>` (example: `i32 inspect(union<bits>)`)
 - typed pointer: `pointer<schema>` (example: `void free_outer(pointer<outer>)`)
 - raw/generic pointer stays `void*`
+- pointer depth in signatures must use nested `pointer<...>` (example: `pointer<pointer<i32>>`)
+- string-ish types:
+  - `string`: marshals to/from Disturb strings
+  - `cstring`/`cstr`: raw C pointer semantics (use `ffi.string(ptr)` when needed)
+- optional ABI prefix in signatures: `abi(name)` or bare ABI name (`cdecl`, `stdcall`, `fastcall`, `thiscall`, `win64`, `unix64`, `sysv`)
 
 Schema composition:
 - schema fields must be type strings
-- use `struct<otherSchema>`, `union<otherSchema>`, or `pointer<otherSchema>` inside field declarations
+- use `struct(otherSchema)`, `union<otherSchema>`, or `pointer<otherSchema>` inside field declarations
 - function pointer fields: `function<signature>` (example: `cb = "function<i32 cb(i32, i32)>"`; `fn<...>` also accepted as alias)
 - unions: `__meta = { union = 1 }`
 - bitfields: use `"type:bits"` (example: `"uint8:3"`, `"uint32:5"`)
@@ -515,9 +520,11 @@ Ownership:
 Supported workflow:
 - call C functions
 - map pointers to callable functions
+- build callbacks with scalar and by-value struct/union signatures
 - compile C-like struct schemas
 - create live pointer-backed struct views
 - handle nested structs and fixed arrays in layouts
+- by-value packed/forced-align schemas are still rejected (ABI-sensitive edge case)
 
 Examples:
 - `example/guide/11_ffi_system.urb`

@@ -9,7 +9,7 @@ schema = {
   a = "const int32",
   b = "volatile int32",
   c = "restrict int32",
-  d = "const struct<inner>",
+  d = "const struct(inner)",
   e = "int32[3]",
   f = "const int32[2]"
 };

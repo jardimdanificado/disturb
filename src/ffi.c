@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <wchar.h>
 #include <stdarg.h>
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -39,18 +40,33 @@ typedef enum {
     FFI_BASE_PTR
 } FfiBase;
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
+typedef enum {
+    FFI_CALL_ABI_DEFAULT = 0,
+    FFI_CALL_ABI_CDECL,
+    FFI_CALL_ABI_STDCALL,
+    FFI_CALL_ABI_FASTCALL,
+    FFI_CALL_ABI_THISCALL,
+    FFI_CALL_ABI_WIN64,
+    FFI_CALL_ABI_UNIX64,
+    FFI_CALL_ABI_SYSV
+} FfiCallAbi;
+#endif
+
 typedef struct FfiLayout FfiLayout;
 
 typedef struct {
     FfiBase base;
     int is_ptr;
+    int ptr_depth;
     int is_array;
     int array_len;
-    char *schema_name; /* struct<schema>, union<schema>, or pointer<schema> */
+    int is_explicit_cstr;
+    char *schema_name; /* struct(schema), union<schema>, or pointer<schema> */
     int schema_is_pointer; /* 0 => by-value schema, 1 => pointer<schema> */
-    int schema_is_union;   /* 1 => union<schema>, 0 => struct<schema> */
+    int schema_is_union;   /* 1 => union<schema>, 0 => struct(schema) */
     FfiLayout *schema_layout; /* resolved struct layout for schema */
-    void *schema_ffi_type; /* resolved ffi type for struct<schema>/union<schema> */
+    void *schema_ffi_type; /* resolved ffi type for struct(schema)/union<schema> */
     void *schema_ffi_owner; /* owned dynamic ffi type graph */
 } FfiType;
 
@@ -60,6 +76,8 @@ typedef struct {
     int refcount;
     void *handle;
     void *fn_ptr;
+    FfiCallAbi abi;
+    ffi_abi libffi_abi;
     FfiType ret;
     FfiType *args;
     int argc;
@@ -79,6 +97,8 @@ typedef struct {
     ffi_cif cif;
     ffi_type **arg_types;
     ffi_type *ret_type;
+    FfiCallAbi abi;
+    ffi_abi libffi_abi;
     FfiType ret;
     FfiType *args;
     int argc;
@@ -218,8 +238,12 @@ static FfiLayoutCacheNode *g_ffi_layout_cache = NULL;
 static FfiArrayViewHandle *ffi_array_view_handle_from_entry(ObjEntry *entry);
 static FfiPtrHandle *ffi_ptr_handle_from_entry(ObjEntry *entry);
 static ObjEntry *ffi_make_ptr_handle_entry(VM *vm, uintptr_t ptr, int owned);
+static ObjEntry *ffi_make_struct_view(VM *vm, uintptr_t base_ptr, FfiLayout *layout, size_t base_offset, int readonly);
+static ObjEntry *ffi_make_struct_view_owned(VM *vm, void *owned_mem, FfiLayout *layout);
+static int ffi_layout_equal(const FfiLayout *a, const FfiLayout *b);
 static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *out_is_float);
 static int ffi_entry_to_ptr(ObjEntry *entry, uintptr_t *out_ptr);
+static int ffi_entry_to_schema_addr(ObjEntry *entry, FfiLayout *layout, uintptr_t *out_addr);
 static int ffi_view_decode(ObjEntry *entry, uintptr_t *base_ptr, size_t *base_offset, FfiLayout **layout, int *readonly);
 static void native_ffi_handle_noop(VM *vm, List *stack, List *global);
 static int parse_base_type(const char *name, FfiBase *out);
@@ -228,6 +252,7 @@ static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_l
 #ifdef DISTURB_ENABLE_FFI_CALLS
 static FfiCallback *ffi_callback_from_entry(ObjEntry *entry);
 static ObjEntry *ffi_bind_ptr_sig_entry(VM *vm, uintptr_t addr, const char *sig, char *err, size_t err_cap);
+static int ffi_call_abi_resolve(FfiCallAbi abi, ffi_abi *out_abi, char *err, size_t err_cap);
 #endif
 
 static int ffi_trace_mouse_enabled(void)
@@ -464,10 +489,27 @@ static void ffi_callback_release(void *data)
 static ObjEntry *ffi_callback_arg_to_entry(VM *vm, const FfiType *t, void *argp)
 {
     if (!vm || !t) return vm ? vm->null_entry : NULL;
+    if (t->schema_name) {
+        if (t->schema_is_pointer) {
+            void *p = NULL;
+            memcpy(&p, argp, sizeof(p));
+            return ffi_make_ptr_handle_entry(vm, (uintptr_t)p, 0);
+        }
+        if (!t->schema_layout || !argp || t->schema_layout->size == 0) return vm->null_entry;
+        void *copy = calloc(1, t->schema_layout->size);
+        if (!copy) return vm->null_entry;
+        memcpy(copy, argp, t->schema_layout->size);
+        ObjEntry *view = ffi_make_struct_view_owned(vm, copy, t->schema_layout);
+        if (!view) {
+            free(copy);
+            return vm->null_entry;
+        }
+        return view;
+    }
     if (t->is_ptr || t->is_array || t->base == FFI_BASE_PTR || t->base == FFI_BASE_CSTR || (t->schema_name && t->schema_is_pointer)) {
         void *p = NULL;
         memcpy(&p, argp, sizeof(p));
-        if (t->base == FFI_BASE_CSTR && p) {
+        if (t->base == FFI_BASE_CSTR && !t->is_explicit_cstr && p) {
             return vm_make_bytes_value(vm, (const char*)p, strlen((const char*)p));
         }
         return ffi_make_ptr_handle_entry(vm, (uintptr_t)p, 0);
@@ -532,7 +574,23 @@ static void ffi_callback_write_ret(VM *vm, const FfiType *t, ObjEntry *ret_entry
     if (!t || !ret_out) return;
     if (t->base == FFI_BASE_VOID && !t->schema_name) return;
     if (!ret_entry) ret_entry = vm ? vm->null_entry : NULL;
-    if (t->is_ptr || t->is_array || t->base == FFI_BASE_PTR || t->base == FFI_BASE_CSTR || (t->schema_name && t->schema_is_pointer)) {
+    if (t->schema_name) {
+        if (t->schema_is_pointer) {
+            uintptr_t ptr = 0;
+            if (ret_entry) ffi_entry_to_ptr(ret_entry, &ptr);
+            void *p = (void*)ptr;
+            memcpy(ret_out, &p, sizeof(p));
+            return;
+        }
+        if (!t->schema_layout || t->schema_layout->size == 0) return;
+        memset(ret_out, 0, t->schema_layout->size);
+        uintptr_t src_addr = 0;
+        if (ret_entry && ffi_entry_to_schema_addr(ret_entry, t->schema_layout, &src_addr) && src_addr) {
+            memcpy(ret_out, (void*)src_addr, t->schema_layout->size);
+        }
+        return;
+    }
+    if (t->is_ptr || t->is_array || t->base == FFI_BASE_PTR || t->base == FFI_BASE_CSTR) {
         uintptr_t ptr = 0;
         if (ret_entry) ffi_entry_to_ptr(ret_entry, &ptr);
         void *p = (void*)ptr;
@@ -697,7 +755,89 @@ static int ffi_entry_to_ptr(ObjEntry *entry, uintptr_t *out_ptr)
     return 0;
 }
 
+static int ffi_entry_to_schema_addr(ObjEntry *entry, FfiLayout *layout, uintptr_t *out_addr)
+{
+    if (!out_addr) return 0;
+    *out_addr = 0;
+    if (!entry || !layout) return 0;
+
+    uintptr_t base_ptr = 0;
+    size_t base_offset = 0;
+    FfiLayout *view_layout = NULL;
+    if (ffi_view_decode(entry, &base_ptr, &base_offset, &view_layout, NULL) &&
+        ffi_layout_equal(view_layout, layout)) {
+        *out_addr = base_ptr + base_offset;
+        return 1;
+    }
+
+    uintptr_t ptr = 0;
+    if (ffi_entry_to_ptr(entry, &ptr) && ptr) {
+        *out_addr = ptr;
+        return 1;
+    }
+    return 0;
+}
+
 #ifdef DISTURB_ENABLE_FFI_CALLS
+static int ffi_call_abi_resolve(FfiCallAbi abi, ffi_abi *out_abi, char *err, size_t err_cap)
+{
+    if (!out_abi) return 0;
+    switch (abi) {
+    case FFI_CALL_ABI_DEFAULT:
+    case FFI_CALL_ABI_CDECL:
+        *out_abi = FFI_DEFAULT_ABI;
+        return 1;
+    case FFI_CALL_ABI_STDCALL:
+#ifdef FFI_STDCALL
+        *out_abi = FFI_STDCALL;
+        return 1;
+#else
+        break;
+#endif
+    case FFI_CALL_ABI_FASTCALL:
+#ifdef FFI_FASTCALL
+        *out_abi = FFI_FASTCALL;
+        return 1;
+#else
+        break;
+#endif
+    case FFI_CALL_ABI_THISCALL:
+#ifdef FFI_THISCALL
+        *out_abi = FFI_THISCALL;
+        return 1;
+#else
+        break;
+#endif
+    case FFI_CALL_ABI_WIN64:
+#ifdef FFI_WIN64
+        *out_abi = FFI_WIN64;
+        return 1;
+#else
+        break;
+#endif
+    case FFI_CALL_ABI_UNIX64:
+#ifdef FFI_UNIX64
+        *out_abi = FFI_UNIX64;
+        return 1;
+#else
+        break;
+#endif
+    case FFI_CALL_ABI_SYSV:
+#ifdef FFI_SYSV
+        *out_abi = FFI_SYSV;
+        return 1;
+#else
+        break;
+#endif
+    default:
+        break;
+    }
+    if (err && err_cap > 0) {
+        snprintf(err, err_cap, "ffi: abi not supported by current libffi/platform");
+    }
+    return 0;
+}
+
 static ffi_type *ffi_type_for_base(FfiBase base)
 {
     switch (base) {
@@ -1233,7 +1373,7 @@ static int ffi_parse_schema_ref_string(const char *name, size_t len,
     size_t prefix_len = 0;
     int is_pointer = 0;
     int is_union = 0;
-    if (len > 8 && memcmp(name, "struct<", 7) == 0 && name[len - 1] == '>') {
+    if (len > 8 && memcmp(name, "struct(", 7) == 0 && name[len - 1] == ')') {
         prefix = name + 7;
         prefix_len = len - 8;
         is_pointer = 0;
@@ -1626,7 +1766,7 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
             }
             if (!schema_is_union && resolved->is_union) {
                 ffi_layout_free(resolved);
-                snprintf(err, err_cap, "ffi: struct<%s> cannot reference union schema; use union<%s>",
+                snprintf(err, err_cap, "ffi: struct(%s) cannot reference union schema; use union<%s>",
                          schema_name, schema_name);
                 return NULL;
             }
@@ -2166,9 +2306,100 @@ static int sig_match_ellipsis(SigParser *p)
     return 0;
 }
 
+static int sig_read_template_content(SigParser *p, char *out, size_t cap, char *err, size_t err_cap)
+{
+    if (!p || !out || cap == 0) return 0;
+    size_t start = p->pos;
+    int depth = 1;
+    while (p->src[p->pos]) {
+        char c = p->src[p->pos++];
+        if (c == '<') depth++;
+        else if (c == '>') {
+            depth--;
+            if (depth == 0) break;
+        }
+    }
+    if (depth != 0) {
+        snprintf(err, err_cap, "expected matching '>'");
+        return 0;
+    }
+    size_t end = p->pos - 1;
+    while (start < end && (p->src[start] == ' ' || p->src[start] == '\t' || p->src[start] == '\n' || p->src[start] == '\r')) start++;
+    while (end > start && (p->src[end - 1] == ' ' || p->src[end - 1] == '\t' || p->src[end - 1] == '\n' || p->src[end - 1] == '\r')) end--;
+    size_t len = end > start ? (end - start) : 0;
+    if (len == 0) {
+        snprintf(err, err_cap, "expected type inside template");
+        return 0;
+    }
+    if (len >= cap) len = cap - 1;
+    memcpy(out, p->src + start, len);
+    out[len] = 0;
+    return 1;
+}
+
+static int ffi_parse_call_abi_name(const char *name, FfiCallAbi *out)
+{
+    if (!name || !out) return 0;
+    if (strcmp(name, "default") == 0) { *out = FFI_CALL_ABI_DEFAULT; return 1; }
+    if (strcmp(name, "cdecl") == 0) { *out = FFI_CALL_ABI_CDECL; return 1; }
+    if (strcmp(name, "stdcall") == 0) { *out = FFI_CALL_ABI_STDCALL; return 1; }
+    if (strcmp(name, "fastcall") == 0) { *out = FFI_CALL_ABI_FASTCALL; return 1; }
+    if (strcmp(name, "thiscall") == 0) { *out = FFI_CALL_ABI_THISCALL; return 1; }
+    if (strcmp(name, "win64") == 0) { *out = FFI_CALL_ABI_WIN64; return 1; }
+    if (strcmp(name, "unix64") == 0) { *out = FFI_CALL_ABI_UNIX64; return 1; }
+    if (strcmp(name, "sysv") == 0) { *out = FFI_CALL_ABI_SYSV; return 1; }
+    return 0;
+}
+
+static int sig_parse_abi_prefix(SigParser *p, FfiCallAbi *out_abi, char *err, size_t err_cap)
+{
+    if (!p || !out_abi) return 0;
+    *out_abi = FFI_CALL_ABI_DEFAULT;
+
+    size_t start = p->pos;
+    sig_skip_ws(p);
+    char ident[64];
+    if (!sig_read_ident(p, ident, sizeof(ident))) {
+        p->pos = start;
+        return 1;
+    }
+
+    if (strcmp(ident, "abi") == 0) {
+        if (!sig_match_char(p, '(')) {
+            snprintf(err, err_cap, "expected '(' after abi");
+            return 0;
+        }
+        char abi_name[64];
+        if (!sig_read_ident(p, abi_name, sizeof(abi_name))) {
+            snprintf(err, err_cap, "expected abi name inside abi(...)");
+            return 0;
+        }
+        if (!sig_match_char(p, ')')) {
+            snprintf(err, err_cap, "expected ')' after abi name");
+            return 0;
+        }
+        if (!ffi_parse_call_abi_name(abi_name, out_abi)) {
+            snprintf(err, err_cap, "unsupported abi '%s'", abi_name);
+            return 0;
+        }
+        return 1;
+    }
+
+    if (ffi_parse_call_abi_name(ident, out_abi)) {
+        return 1;
+    }
+
+    p->pos = start;
+    *out_abi = FFI_CALL_ABI_DEFAULT;
+    return 1;
+}
+
 static int parse_base_type(const char *name, FfiBase *out)
 {
     if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
+    if (strcmp(name, "string") == 0) { *out = FFI_BASE_CSTR; return 1; }
+    if (strcmp(name, "cstr") == 0 || strcmp(name, "cstring") == 0) { *out = FFI_BASE_CSTR; return 1; }
+    if (strcmp(name, "_Bool") == 0 || strcmp(name, "bool") == 0) { *out = FFI_BASE_U8; return 1; }
     if (strcmp(name, "char") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "schar") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "uchar") == 0 || strcmp(name, "u8") == 0) { *out = FFI_BASE_U8; return 1; }
@@ -2183,12 +2414,36 @@ static int parse_base_type(const char *name, FfiBase *out)
     if (strcmp(name, "u32") == 0 || strcmp(name, "uint") == 0) { *out = FFI_BASE_U32; return 1; }
     if (strcmp(name, "int32_t") == 0) { *out = FFI_BASE_I32; return 1; }
     if (strcmp(name, "uint32_t") == 0) { *out = FFI_BASE_U32; return 1; }
-    if (strcmp(name, "i64") == 0 || strcmp(name, "long") == 0 || strcmp(name, "longlong") == 0) { *out = FFI_BASE_I64; return 1; }
-    if (strcmp(name, "u64") == 0 || strcmp(name, "ulong") == 0 || strcmp(name, "ulonglong") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "i64") == 0 || strcmp(name, "longlong") == 0) { *out = FFI_BASE_I64; return 1; }
+    if (strcmp(name, "u64") == 0 || strcmp(name, "ulonglong") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "long") == 0) {
+#if LONG_MAX == INT64_MAX
+        *out = FFI_BASE_I64;
+#else
+        *out = FFI_BASE_I32;
+#endif
+        return 1;
+    }
+    if (strcmp(name, "ulong") == 0) {
+#if ULONG_MAX == UINT64_MAX
+        *out = FFI_BASE_U64;
+#else
+        *out = FFI_BASE_U32;
+#endif
+        return 1;
+    }
     if (strcmp(name, "int64_t") == 0) { *out = FFI_BASE_I64; return 1; }
     if (strcmp(name, "uint64_t") == 0) { *out = FFI_BASE_U64; return 1; }
     if (strcmp(name, "f32") == 0 || strcmp(name, "float") == 0) { *out = FFI_BASE_F32; return 1; }
     if (strcmp(name, "f64") == 0 || strcmp(name, "double") == 0) { *out = FFI_BASE_F64; return 1; }
+    if (strcmp(name, "wchar_t") == 0) {
+#if WCHAR_MAX > 0xFFFFu
+        *out = FFI_BASE_I32;
+#else
+        *out = FFI_BASE_I16;
+#endif
+        return 1;
+    }
     if (strcmp(name, "size_t") == 0 || strcmp(name, "uintptr_t") == 0) {
 #if SIZE_MAX == UINT64_MAX
         *out = FFI_BASE_U64;
@@ -2221,20 +2476,57 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
     }
 
     if (strcmp(ident, "struct") == 0 || strcmp(ident, "union") == 0 || strcmp(ident, "pointer") == 0) {
-        int is_ptr_schema = (strcmp(ident, "pointer") == 0);
+        int is_pointer_template = (strcmp(ident, "pointer") == 0);
+        int is_ptr_schema = is_pointer_template;
         int is_union_schema = (strcmp(ident, "union") == 0);
-        if (!sig_match_char(p, '<')) {
-            snprintf(err, err_cap, "expected '<' after %s", ident);
-            return 0;
+        char schema[96];
+        if (strcmp(ident, "struct") == 0) {
+            if (!sig_match_char(p, '(')) {
+                snprintf(err, err_cap, "expected '(' after struct");
+                return 0;
+            }
+            if (!sig_read_ident(p, schema, sizeof(schema))) {
+                snprintf(err, err_cap, "expected schema name in struct(...)");
+                return 0;
+            }
+            if (!sig_match_char(p, ')')) {
+                snprintf(err, err_cap, "expected ')' after schema name");
+                return 0;
+            }
+        } else if (is_pointer_template) {
+            if (!sig_match_char(p, '<')) {
+                snprintf(err, err_cap, "expected '<' after pointer");
+                return 0;
+            }
+            if (!sig_read_template_content(p, schema, sizeof(schema), err, err_cap)) {
+                return 0;
+            }
+        } else {
+            if (!sig_match_char(p, '<')) {
+                snprintf(err, err_cap, "expected '<' after %s", ident);
+                return 0;
+            }
+            if (!sig_read_ident(p, schema, sizeof(schema))) {
+                snprintf(err, err_cap, "expected schema name in %s<...>", ident);
+                return 0;
+            }
+            if (!sig_match_char(p, '>')) {
+                snprintf(err, err_cap, "expected '>' after schema name");
+                return 0;
+            }
         }
-        char schema[64];
-        if (!sig_read_ident(p, schema, sizeof(schema))) {
-            snprintf(err, err_cap, "expected schema name in %s<...>", ident);
-            return 0;
-        }
-        if (!sig_match_char(p, '>')) {
-            snprintf(err, err_cap, "expected '>' after schema name");
-            return 0;
+        if (is_pointer_template) {
+            FfiBase inner_base = FFI_BASE_VOID;
+            if (strncmp(schema, "pointer<", 8) == 0 ||
+                parse_base_type(schema, &inner_base)) {
+                out->base = FFI_BASE_PTR;
+                out->is_ptr = 1;
+                out->ptr_depth = 1;
+                out->is_array = 0;
+                out->array_len = -1;
+                out->is_explicit_cstr = 0;
+                return 1;
+            }
         }
         out->schema_name = ffi_strdup(schema);
         if (!out->schema_name) {
@@ -2245,8 +2537,10 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
         out->schema_is_union = is_union_schema;
         out->base = FFI_BASE_VOID;
         out->is_ptr = 0;
+        out->ptr_depth = 0;
         out->is_array = 0;
         out->array_len = -1;
+        out->is_explicit_cstr = 0;
         sig_skip_ws(p);
         if (p->src[p->pos] == '*' || p->src[p->pos] == '[') {
             snprintf(err, err_cap, "%s<%s> does not support '*' or '[]' suffix",
@@ -2255,6 +2549,8 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
             out->schema_name = NULL;
             out->schema_is_pointer = 0;
             out->schema_is_union = 0;
+            out->ptr_depth = 0;
+            out->is_explicit_cstr = 0;
             return 0;
         }
         return 1;
@@ -2322,13 +2618,21 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
     }
 
     int is_ptr = 0;
+    int ptr_depth = 0;
     int is_array = 0;
     int array_len = -1;
+    int is_explicit_cstr = (strcmp(combined, "cstr") == 0 || strcmp(combined, "cstring") == 0);
+    int legacy_char_cstr = (strcmp(combined, "char") == 0 || strcmp(combined, "schar") == 0);
 
     sig_skip_ws(p);
     if (sig_match_char(p, '*')) {
-        is_ptr = 1;
+        ptr_depth = 1;
         sig_skip_qualifiers(p);
+        sig_skip_ws(p);
+        if (p->src[p->pos] == '*') {
+            snprintf(err, err_cap, "pointer depth with '*' is not supported; use pointer<pointer<...>>");
+            return 0;
+        }
     }
 
     sig_skip_ws(p);
@@ -2344,23 +2648,32 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
             return 0;
         }
         is_array = 1;
-        is_ptr = 1;
+        if (ptr_depth <= 0) ptr_depth = 1;
     }
 
-    if (base == FFI_BASE_I8 || base == FFI_BASE_U8) {
-        if (is_ptr) {
-            base = FFI_BASE_CSTR;
-        }
+    if (base == FFI_BASE_CSTR && ptr_depth <= 0) {
+        ptr_depth = 1;
     }
 
-    if (base == FFI_BASE_VOID && is_ptr) {
+    if (base != FFI_BASE_CSTR && !is_explicit_cstr && legacy_char_cstr && ptr_depth == 1) {
+        base = FFI_BASE_CSTR;
+        is_explicit_cstr = 1; /* char* defaults to raw C pointer semantics */
+    } else if (base == FFI_BASE_CSTR && ptr_depth > 1) {
         base = FFI_BASE_PTR;
     }
 
+    if (base == FFI_BASE_VOID && ptr_depth > 0) {
+        base = FFI_BASE_PTR;
+    }
+
+    is_ptr = (ptr_depth > 0) ? 1 : 0;
+
     out->base = base;
     out->is_ptr = is_ptr;
+    out->ptr_depth = ptr_depth;
     out->is_array = is_array;
     out->array_len = array_len;
+    out->is_explicit_cstr = is_explicit_cstr;
     return 1;
 }
 
@@ -2383,15 +2696,20 @@ static char *ffi_strdup(const char *s)
 static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_cap, const char **out_name)
 {
     SigParser p = { sig, 0 };
+    FfiCallAbi abi = FFI_CALL_ABI_DEFAULT;
+    if (!sig_parse_abi_prefix(&p, &abi, err, err_cap)) return NULL;
+
     FfiType ret = {0};
     if (!sig_parse_type(&p, &ret, err, err_cap)) return NULL;
     char name[128];
     if (!sig_read_ident(&p, name, sizeof(name))) {
         snprintf(err, err_cap, "expected function name");
+        ffi_type_release_runtime(&ret);
         return NULL;
     }
     if (!sig_match_char(&p, '(')) {
         snprintf(err, err_cap, "expected '('");
+        ffi_type_release_runtime(&ret);
         return NULL;
     }
 
@@ -2420,6 +2738,21 @@ static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_c
             }
             FfiType arg = {0};
             if (!sig_parse_type(&p, &arg, err, err_cap)) {
+                ffi_types_release_array(args, argc);
+                free(args);
+                ffi_type_release_runtime(&ret);
+                return NULL;
+            }
+            if (!arg.schema_name && !arg.is_ptr && !arg.is_array && arg.base == FFI_BASE_VOID) {
+                size_t old_pos = p.pos;
+                sig_skip_ws(&p);
+                if (sig_match_char(&p, ')')) {
+                    ffi_type_release_runtime(&arg);
+                    break;
+                }
+                p.pos = old_pos;
+                snprintf(err, err_cap, "void argument must be the only argument");
+                ffi_type_release_runtime(&arg);
                 ffi_types_release_array(args, argc);
                 free(args);
                 ffi_type_release_runtime(&ret);
@@ -2460,6 +2793,7 @@ static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_c
         return NULL;
     }
     fn->refcount = 1;
+    fn->abi = abi;
     fn->ret = ret;
     fn->args = args;
     fn->argc = argc;
@@ -2481,6 +2815,9 @@ static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_c
 static int parse_base_type(const char *name, FfiBase *out)
 {
     if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
+    if (strcmp(name, "string") == 0) { *out = FFI_BASE_CSTR; return 1; }
+    if (strcmp(name, "cstr") == 0 || strcmp(name, "cstring") == 0) { *out = FFI_BASE_CSTR; return 1; }
+    if (strcmp(name, "_Bool") == 0 || strcmp(name, "bool") == 0) { *out = FFI_BASE_U8; return 1; }
     if (strcmp(name, "char") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "schar") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "uchar") == 0 || strcmp(name, "u8") == 0) { *out = FFI_BASE_U8; return 1; }
@@ -2495,12 +2832,36 @@ static int parse_base_type(const char *name, FfiBase *out)
     if (strcmp(name, "u32") == 0 || strcmp(name, "uint") == 0) { *out = FFI_BASE_U32; return 1; }
     if (strcmp(name, "int32_t") == 0) { *out = FFI_BASE_I32; return 1; }
     if (strcmp(name, "uint32_t") == 0) { *out = FFI_BASE_U32; return 1; }
-    if (strcmp(name, "i64") == 0 || strcmp(name, "long") == 0 || strcmp(name, "longlong") == 0) { *out = FFI_BASE_I64; return 1; }
-    if (strcmp(name, "u64") == 0 || strcmp(name, "ulong") == 0 || strcmp(name, "ulonglong") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "i64") == 0 || strcmp(name, "longlong") == 0) { *out = FFI_BASE_I64; return 1; }
+    if (strcmp(name, "u64") == 0 || strcmp(name, "ulonglong") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "long") == 0) {
+#if LONG_MAX == INT64_MAX
+        *out = FFI_BASE_I64;
+#else
+        *out = FFI_BASE_I32;
+#endif
+        return 1;
+    }
+    if (strcmp(name, "ulong") == 0) {
+#if ULONG_MAX == UINT64_MAX
+        *out = FFI_BASE_U64;
+#else
+        *out = FFI_BASE_U32;
+#endif
+        return 1;
+    }
     if (strcmp(name, "int64_t") == 0) { *out = FFI_BASE_I64; return 1; }
     if (strcmp(name, "uint64_t") == 0) { *out = FFI_BASE_U64; return 1; }
     if (strcmp(name, "f32") == 0 || strcmp(name, "float") == 0) { *out = FFI_BASE_F32; return 1; }
     if (strcmp(name, "f64") == 0 || strcmp(name, "double") == 0) { *out = FFI_BASE_F64; return 1; }
+    if (strcmp(name, "wchar_t") == 0) {
+#if WCHAR_MAX > 0xFFFFu
+        *out = FFI_BASE_I32;
+#else
+        *out = FFI_BASE_I16;
+#endif
+        return 1;
+    }
     if (strcmp(name, "size_t") == 0 || strcmp(name, "uintptr_t") == 0) {
 #if SIZE_MAX == UINT64_MAX
         *out = FFI_BASE_U64;
@@ -3340,7 +3701,7 @@ static int ffi_resolve_schema_type(VM *vm, FfiType *t, char *err, size_t err_cap
         return 0;
     }
     if (!t->schema_is_union && !t->schema_is_pointer && layout->is_union) {
-        snprintf(err, err_cap, "ffi: struct<%s> cannot reference union schema; use union<%s>",
+        snprintf(err, err_cap, "ffi: struct(%s) cannot reference union schema; use union<%s>",
                  t->schema_name, t->schema_name);
         return 0;
     }
@@ -3481,56 +3842,58 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                 continue;
             }
             uintptr_t src_addr = 0;
-            uintptr_t base_ptr = 0;
-            size_t base_offset = 0;
-            FfiLayout *layout = NULL;
-            if (arg && ffi_view_decode(arg, &base_ptr, &base_offset, &layout, NULL) &&
-                ffi_layout_equal(layout, t->schema_layout)) {
-                src_addr = base_ptr + base_offset;
-            } else if (arg) {
-                Int iv = 0;
-                Float fv = 0;
-                int is_float = 0;
-                if (entry_number_scalar(arg, &iv, &fv, &is_float)) {
-                    src_addr = (uintptr_t)(UInt)(is_float ? (Int)fv : iv);
-                }
+            if (arg && ffi_entry_to_schema_addr(arg, t->schema_layout, &src_addr)) {
+                argv[i] = (void*)src_addr;
+                continue;
             }
-                if (!src_addr) {
-                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
-                    free(owned_cstr);
-                    free(values);
-                    free(argv);
-                    free(call_types);
-                    fprintf(stderr, "ffi: invalid value for by-value schema arg %d (%s<%s>)\n",
-                            i, t->schema_is_union ? "union" : "struct", t->schema_name);
-                    return;
-            }
-            argv[i] = (void*)src_addr;
-            continue;
+            for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+            free(owned_cstr);
+            free(values);
+            free(argv);
+            free(call_types);
+            fprintf(stderr, "ffi: invalid value for by-value schema arg %d (%s<%s>)\n",
+                    i, t->schema_is_union ? "union" : "struct", t->schema_name);
+            return;
         }
         if (t->base == FFI_BASE_CSTR) {
-            if (arg && entry_is_string(arg)) {
-                char *dup = ffi_dup_entry_cstr(arg);
-                if (!dup) {
-                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
-                    free(owned_cstr);
-                    free(values);
-                    free(argv);
-                    free(call_types);
-                    fprintf(stderr, "ffi: out of memory\n");
-                    return;
-                }
-                owned_cstr[i] = dup;
-                values[i].p = (void*)dup;
-            } else if (arg) {
-                uintptr_t ptr = 0;
-                if (ffi_entry_to_ptr(arg, &ptr)) {
-                    values[i].p = (void*)ptr;
+            if (!t->is_explicit_cstr) {
+                if (arg && entry_is_string(arg)) {
+                    char *dup = ffi_dup_entry_cstr(arg);
+                    if (!dup) {
+                        for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                        free(owned_cstr);
+                        free(values);
+                        free(argv);
+                        free(call_types);
+                        fprintf(stderr, "ffi: out of memory\n");
+                        return;
+                    }
+                    owned_cstr[i] = dup;
+                    values[i].p = (void*)dup;
                 } else {
                     values[i].p = NULL;
                 }
             } else {
-                values[i].p = NULL;
+                if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+                    values[i].p = NULL;
+                } else if (entry_is_string(arg)) {
+                    char *dup = ffi_dup_entry_cstr(arg);
+                    if (!dup) {
+                        for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                        free(owned_cstr);
+                        free(values);
+                        free(argv);
+                        free(call_types);
+                        fprintf(stderr, "ffi: out of memory\n");
+                        return;
+                    }
+                    owned_cstr[i] = dup;
+                    values[i].p = (void*)dup;
+                } else {
+                    uintptr_t ptr = 0;
+                    if (ffi_entry_to_ptr(arg, &ptr)) values[i].p = (void*)ptr;
+                    else values[i].p = NULL;
+                }
             }
             argv[i] = &values[i].p;
             continue;
@@ -3542,8 +3905,6 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                 uintptr_t ptr = 0;
                 if (ffi_entry_to_ptr(arg, &ptr)) {
                     values[i].p = (void*)ptr;
-                } else if (disturb_obj_type(arg->obj) == DISTURB_T_INT || disturb_obj_type(arg->obj) == DISTURB_T_FLOAT) {
-                    values[i].p = disturb_bytes_data(arg->obj);
                 } else {
                     values[i].p = NULL;
                 }
@@ -3554,10 +3915,13 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         if (t->is_ptr || t->is_array) {
             if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
                 values[i].p = NULL;
-            } else if (disturb_obj_type(arg->obj) == DISTURB_T_INT || disturb_obj_type(arg->obj) == DISTURB_T_FLOAT) {
-                values[i].p = disturb_bytes_data(arg->obj);
             } else {
-                values[i].p = NULL;
+                uintptr_t ptr = 0;
+                if (ffi_entry_to_ptr(arg, &ptr)) {
+                    values[i].p = (void*)ptr;
+                } else {
+                    values[i].p = NULL;
+                }
             }
             argv[i] = &values[i].p;
             continue;
@@ -3643,7 +4007,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     ffi_cif *call_cif = &fn->cif;
     ffi_cif var_cif;
     if (fn->has_varargs) {
-        if (ffi_prep_cif_var(&var_cif, FFI_DEFAULT_ABI, (unsigned)fn->fixed_argc, (unsigned)call_argc,
+        if (ffi_prep_cif_var(&var_cif, fn->libffi_abi, (unsigned)fn->fixed_argc, (unsigned)call_argc,
                              fn->ret_type, call_types) != FFI_OK) {
             for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
             free(owned_cstr);
@@ -3733,6 +4097,15 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     }
 
     if (fn->ret.base == FFI_BASE_CSTR) {
+        if (fn->ret.is_explicit_cstr) {
+            ObjEntry *ptr_entry = ffi_make_ptr_handle_entry(vm, (uintptr_t)ret.p, 0);
+            if (!ptr_entry) {
+                ffi_push_entry(vm, vm_make_int_value(vm, (Int)(uintptr_t)ret.p));
+            } else {
+                ffi_push_entry(vm, ptr_entry);
+            }
+            return;
+        }
         const char *s = (const char*)ret.p;
         if (!s) {
             ffi_push_entry(vm, vm->null_entry);
@@ -3816,6 +4189,10 @@ static int ffi_prepare_ptr(VM *vm, FfiFunction *fn, void *fn_ptr, char *err, siz
         return 0;
     }
 
+    if (!ffi_call_abi_resolve(fn->abi, &fn->libffi_abi, err, err_cap)) {
+        return 0;
+    }
+
     if (!ffi_resolve_schema_type(vm, &fn->ret, err, err_cap)) return 0;
     for (int i = 0; i < fn->argc; i++) {
         if (!ffi_resolve_schema_type(vm, &fn->args[i], err, err_cap)) return 0;
@@ -3847,7 +4224,7 @@ static int ffi_prepare_ptr(VM *vm, FfiFunction *fn, void *fn_ptr, char *err, siz
     }
 
     if (!fn->has_varargs) {
-        if (ffi_prep_cif(&fn->cif, FFI_DEFAULT_ABI, (unsigned)fn->argc, fn->ret_type, fn->arg_types) != FFI_OK) {
+        if (ffi_prep_cif(&fn->cif, fn->libffi_abi, (unsigned)fn->argc, fn->ret_type, fn->arg_types) != FFI_OK) {
             snprintf(err, err_cap, "ffi: failed to prepare call");
             return 0;
         }
@@ -3912,15 +4289,21 @@ void native_ffi_callback(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi.callback does not support variadic signatures yet\n");
         return;
     }
-    if (fn->ret.schema_name) {
+
+    if (!ffi_call_abi_resolve(fn->abi, &fn->libffi_abi, err, sizeof(err))) {
         ffi_function_release(fn);
-        fprintf(stderr, "ffi.callback does not support struct schema return yet\n");
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi: unsupported abi");
+        return;
+    }
+    if (!ffi_resolve_schema_type(vm, &fn->ret, err, sizeof(err))) {
+        ffi_function_release(fn);
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi: failed to resolve callback return type");
         return;
     }
     for (int i = 0; i < fn->argc; i++) {
-        if (fn->args[i].schema_name && !fn->args[i].schema_is_pointer) {
+        if (!ffi_resolve_schema_type(vm, &fn->args[i], err, sizeof(err))) {
             ffi_function_release(fn);
-            fprintf(stderr, "ffi.callback does not support by-value struct args yet\n");
+            fprintf(stderr, "%s\n", err[0] ? err : "ffi: failed to resolve callback argument type");
             return;
         }
     }
@@ -3934,6 +4317,8 @@ void native_ffi_callback(VM *vm, List *stack, List *global)
     cb->magic = FFI_CALLBACK_MAGIC;
     cb->refcount = 1;
     cb->vm = vm;
+    cb->abi = fn->abi;
+    cb->libffi_abi = fn->libffi_abi;
     cb->argc = fn->argc;
     cb->ret = fn->ret;
     memset(&fn->ret, 0, sizeof(fn->ret));
@@ -3953,20 +4338,22 @@ void native_ffi_callback(VM *vm, List *stack, List *global)
     for (int i = 0; i < cb->argc; i++) {
         FfiType *t = &cb->args[i];
         if (t->schema_name) {
-            cb->arg_types[i] = &ffi_type_pointer;
+            cb->arg_types[i] = t->schema_is_pointer ? &ffi_type_pointer : (ffi_type*)t->schema_ffi_type;
         } else if (t->is_ptr || t->is_array || t->base == FFI_BASE_CSTR || t->base == FFI_BASE_PTR) {
             cb->arg_types[i] = &ffi_type_pointer;
         } else {
             cb->arg_types[i] = ffi_type_for_base(t->base);
         }
     }
-    if (cb->ret.is_ptr || cb->ret.is_array || cb->ret.base == FFI_BASE_CSTR || cb->ret.base == FFI_BASE_PTR) {
+    if (cb->ret.schema_name) {
+        cb->ret_type = cb->ret.schema_is_pointer ? &ffi_type_pointer : (ffi_type*)cb->ret.schema_ffi_type;
+    } else if (cb->ret.is_ptr || cb->ret.is_array || cb->ret.base == FFI_BASE_CSTR || cb->ret.base == FFI_BASE_PTR) {
         cb->ret_type = &ffi_type_pointer;
     } else {
         cb->ret_type = ffi_type_for_base(cb->ret.base);
     }
 
-    if (ffi_prep_cif(&cb->cif, FFI_DEFAULT_ABI, (unsigned)cb->argc, cb->ret_type, cb->arg_types) != FFI_OK) {
+    if (ffi_prep_cif(&cb->cif, cb->libffi_abi, (unsigned)cb->argc, cb->ret_type, cb->arg_types) != FFI_OK) {
         ffi_callback_release(cb);
         ffi_function_release(fn);
         fprintf(stderr, "ffi: failed to prepare callback\n");
