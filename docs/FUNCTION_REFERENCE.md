@@ -46,7 +46,7 @@ Return conventions:
 - Strings are converted byte-by-byte to float values.
 - Errors if target is not int-based list.
 
-## IO (requires `ENABLE_IO=1`)
+## IO (requires `DISABLE_IO=0`)
 
 ### `read(path)`
 - `path` must be string.
@@ -309,7 +309,7 @@ If these are intended to be public, they need to be registered in VM initializat
 
 ## FFI
 
-FFI appears under global `ffi` only when built with `ENABLE_FFI=1`.
+FFI appears under global `ffi` in all builds.
 
 Primary APIs used by examples/tests:
 - `ffi.open(libPath)`

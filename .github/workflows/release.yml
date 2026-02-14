@@ -106,8 +106,7 @@ jobs:
           & $vcpkg install libffi:x64-windows
           cmake -S . -B build-msvc -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DENABLE_FFI_CALLS=ON
+            -DVCPKG_TARGET_TRIPLET=x64-windows
           cmake --build build-msvc --config Release -j2
 
       - name: Package artifact (Linux)

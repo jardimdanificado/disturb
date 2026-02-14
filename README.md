@@ -12,7 +12,7 @@ Disturb is a stack-based VM and language with C-like syntax that compiles to com
 Requirements:
 - `gcc` (or compatible C compiler)
 - `make`
-- `libffi` headers/libs only if FFI is enabled (`ENABLE_FFI=1`, default)
+- `libffi` headers/libs for desktop/default builds (`DISABLE_IO=0`, default)
 
 Build:
 
@@ -24,23 +24,21 @@ make
 Optional flags:
 
 ```bash
-make ENABLE_IO=0
-make ENABLE_FFI=0
-make ENABLE_EMBEDDED=1
+make DISABLE_IO=1
 ```
 
-`ENABLE_EMBEDDED=1` forces an embeddable profile by disabling IO natives, dynamic FFI calls (`ffi.open`/`ffi.sym`/`ffi.bind`), and `import` while keeping FFI core layout/view/memory APIs.
+`DISABLE_IO=1` enables embedded profile behavior by disabling IO natives, dynamic FFI calls (`ffi.open`/`ffi.sym`/`ffi.bind`), and `import` while keeping FFI core layout/view/memory APIs.
 
 MSVC build (Windows):
 
 ```powershell
-cmake -S . -B build-msvc -A x64 -DENABLE_FFI_CALLS=OFF
+cmake -S . -B build-msvc -A x64 -DDISABLE_IO=1
 cmake --build build-msvc --config Release
 .\build-msvc\Release\disturb.exe --help
 ```
 
 Notes:
-- The MSVC CI profile currently validates with `ENABLE_FFI_CALLS=OFF` (FFI core remains enabled).
+- The MSVC embedded profile can be validated with `DISABLE_IO=1` (FFI core remains enabled).
 - To enable dynamic calls (`ffi.open`/`ffi.sym`/`ffi.bind`) under MSVC, provide a `libffi` build (headers + `.lib`/`.dll`) and configure CMake paths accordingly.
 
 ## CLI
@@ -329,7 +327,7 @@ Disturb installs common functions in `global.common`, so they are callable as me
 - `toFloat`
 - `gc`
 
-### IO (when `ENABLE_IO=1`)
+### IO (when `DISABLE_IO=0`)
 - `read(path)`
 - `write(path, data)`
 
@@ -465,7 +463,7 @@ Compatibility alias:
 
 ## FFI
 
-Dynamic foreign calls (`ffi.open`, `ffi.sym`, `ffi.bind`) require `ENABLE_FFI_CALLS=1` (default in desktop builds; disabled by `ENABLE_EMBEDDED=1`).
+Dynamic foreign calls (`ffi.open`, `ffi.sym`, `ffi.bind`) require `DISABLE_IO=0` (default in desktop builds; disabled by `DISABLE_IO=1`).
 
 Main API:
 - `ffi.open(libPath)`

@@ -5,6 +5,10 @@
 - add distinct string-pointer semantics in signatures:
   - `string`: marshals as Disturb string values
   - `cstring`/`cstr`: raw C pointer behavior
+- unify build profile flags into `DISABLE_IO`:
+  - `DISABLE_IO=0` (default): IO natives + dynamic FFI calls enabled
+  - `DISABLE_IO=1`: embedded profile (`DISTURB_EMBEDDED`), IO off, dynamic FFI calls off
+- make core FFI always enabled in build systems (no `ENABLE_FFI` toggle).
 
 ## 1.3.0
 - add automatic papagaio source preprocessing at compile-time for declarations outside strings/comments (`$pattern{...}{...}`, `$regex ... {...}`, `$eval{...}`).

@@ -176,7 +176,7 @@ Flags:
 
 ## FFI (optional build)
 
-Requires `ENABLE_FFI=1`.
+Always available (core FFI is always enabled).
 
 Main API:
 - `ffi.open(path)`

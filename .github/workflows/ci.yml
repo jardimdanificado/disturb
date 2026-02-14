@@ -38,16 +38,16 @@ jobs:
           tests/run.sh
           tests/run_examples.sh
 
-      - name: Build + tests (ENABLE_FFI=0)
+      - name: Build + tests (DISABLE_IO=1)
         run: |
           make clean
-          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" ENABLE_FFI=0
+          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" DISABLE_IO=1
           BIN=./disturb SKIP_FFI=1 tests/run.sh
 
-      - name: Build + tests (ENABLE_EMBEDDED=1)
+      - name: Build + tests (DISABLE_IO=1 + embedded mode)
         run: |
           make clean
-          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" ENABLE_EMBEDDED=1
+          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" DISABLE_IO=1
           BIN=./disturb SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
 
   windows:
@@ -77,18 +77,18 @@ jobs:
           BIN=./disturb.exe tests/run.sh
           BIN=./disturb.exe tests/run_examples.sh
 
-      - name: Build + tests (ENABLE_FFI=0)
+      - name: Build + tests (DISABLE_IO=1)
         shell: msys2 {0}
         run: |
           make clean
-          make -j2 ENABLE_FFI=0
+          make -j2 DISABLE_IO=1
           BIN=./disturb.exe SKIP_FFI=1 tests/run.sh
 
-      - name: Build + tests (ENABLE_EMBEDDED=1)
+      - name: Build + tests (DISABLE_IO=1 + embedded mode)
         shell: msys2 {0}
         run: |
           make clean
-          make -j2 ENABLE_EMBEDDED=1
+          make -j2 DISABLE_IO=1
           BIN=./disturb.exe SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
 
   windows-msvc:
@@ -111,8 +111,7 @@ jobs:
         run: |
           cmake -S . -B build-msvc -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DENABLE_FFI_CALLS=ON
+            -DVCPKG_TARGET_TRIPLET=x64-windows
 
       - name: Build (Release)
         run: |

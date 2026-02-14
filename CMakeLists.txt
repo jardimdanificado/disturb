@@ -2,16 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 project(disturb C)
 
-option(ENABLE_IO "Enable IO natives" ON)
-option(ENABLE_FFI "Enable core FFI module" ON)
-option(ENABLE_FFI_CALLS "Enable dynamic FFI calls (ffi.open/ffi.sym/ffi.bind)" ON)
-option(ENABLE_EMBEDDED "Enable embeddable profile (no IO, no dynamic FFI calls, no import)" OFF)
-
-if(ENABLE_EMBEDDED)
-  set(ENABLE_IO OFF CACHE BOOL "Enable IO natives" FORCE)
-  set(ENABLE_FFI ON CACHE BOOL "Enable core FFI module" FORCE)
-  set(ENABLE_FFI_CALLS OFF CACHE BOOL "Enable dynamic FFI calls (ffi.open/ffi.sym/ffi.bind)" FORCE)
-endif()
+option(DISABLE_IO "Disable IO natives and dynamic FFI calls (embedded profile)" OFF)
 
 set(DISTURB_SOURCES
   lib/libregexp/cutils.c
@@ -23,11 +14,8 @@ set(DISTURB_SOURCES
   src/functions.c
   src/papagaio.c
   src/cli.c
+  src/ffi.c
 )
-
-if(ENABLE_FFI)
-  list(APPEND DISTURB_SOURCES src/ffi.c)
-endif()
 
 add_executable(disturb ${DISTURB_SOURCES})
 
@@ -55,19 +43,17 @@ else()
   )
 endif()
 
-if(ENABLE_IO)
+if(NOT DISABLE_IO)
   target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_IO)
 endif()
 
-if(ENABLE_FFI)
-  target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_FFI)
-endif()
+target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_FFI)
 
-if(ENABLE_EMBEDDED)
+if(DISABLE_IO)
   target_compile_definitions(disturb PRIVATE DISTURB_EMBEDDED)
 endif()
 
-if(ENABLE_FFI AND ENABLE_FFI_CALLS)
+if(NOT DISABLE_IO)
   target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_FFI_CALLS)
 
   if(WIN32)
@@ -77,7 +63,7 @@ if(ENABLE_FFI AND ENABLE_FFI_CALLS)
     find_library(FFI_LIBRARY_RELEASE NAMES ffi libffi PATH_SUFFIXES lib)
     find_library(FFI_LIBRARY_DEBUG NAMES ffi libffi PATH_SUFFIXES debug/lib)
     if(NOT FFI_INCLUDE_DIR OR (NOT FFI_LIBRARY_RELEASE AND NOT FFI_LIBRARY_DEBUG))
-      message(FATAL_ERROR "ENABLE_FFI_CALLS=ON requires libffi (ffi.h + ffi/libffi library).")
+      message(FATAL_ERROR "DISABLE_IO=OFF requires libffi (ffi.h + ffi/libffi library) for dynamic FFI calls.")
     endif()
     target_include_directories(disturb PRIVATE ${FFI_INCLUDE_DIR})
     if(FFI_LIBRARY_RELEASE AND FFI_LIBRARY_DEBUG)
@@ -102,7 +88,7 @@ if(ENABLE_FFI AND ENABLE_FFI_CALLS)
       find_path(FFI_INCLUDE_DIR ffi.h)
       find_library(FFI_LIBRARY NAMES ffi libffi)
       if(NOT FFI_INCLUDE_DIR OR NOT FFI_LIBRARY)
-        message(FATAL_ERROR "ENABLE_FFI_CALLS=ON requires libffi (ffi.h + ffi/libffi library).")
+        message(FATAL_ERROR "DISABLE_IO=OFF requires libffi (ffi.h + ffi/libffi library) for dynamic FFI calls.")
       endif()
       target_include_directories(disturb PRIVATE ${FFI_INCLUDE_DIR})
       target_link_libraries(disturb PRIVATE ${FFI_LIBRARY})
@@ -111,7 +97,7 @@ if(ENABLE_FFI AND ENABLE_FFI_CALLS)
 endif()
 
 if(UNIX AND NOT APPLE)
-  if(ENABLE_FFI AND ENABLE_FFI_CALLS)
+  if(NOT DISABLE_IO)
     target_link_libraries(disturb PRIVATE dl)
   endif()
 endif()
