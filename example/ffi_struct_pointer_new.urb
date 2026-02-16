@@ -39,7 +39,7 @@ ffi_bind_all = (path, ...sigs){
 // ffi_struct_pointer_new.urb
 // Demonstrates:
 // - struct(schema) (by-value)
-// - pointer<schema> (typed pointer)
+// - pointer(schema) (typed pointer)
 // - ffi.new / ffi.free
 // - ffi.view on allocated memory
 
@@ -56,10 +56,10 @@ outer = {
 
 load_fixture = (path){
   return ffi_bind_all(path,
-    "pointer<outer> make_outer()",
-    "void free_outer(pointer<outer>)",
-    "i32 outer_get_a(pointer<outer>)",
-    "i32 inner_get_b(pointer<outer>)",
+    "pointer(outer) make_outer()",
+    "void free_outer(pointer(outer))",
+    "i32 outer_get_a(pointer(outer))",
+    "i32 inner_get_b(pointer(outer))",
     "i32 sum_outer_value(struct(outer))",
     "struct(outer) make_outer_value(i32, f64, i8, i16)"
   );
@@ -75,7 +75,7 @@ if (lib == null) {
 
 layout = ffi.compile(outer);
 
-// pointer<outer> from C
+// pointer(outer) from C
 ptr_c = lib.make_outer();
 v_c = ffi.view(ptr_c, layout);
 v_c.a = 11;

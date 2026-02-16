@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.4.1
+- unify FFI signature syntax: replace `pointer<schema>`, `union<schema>`, `function<signature>`, and `fn<...>` with parentheses-based syntax `pointer(schema)`, `union(schema)`, `function(signature)`, and `fn(...)`.
+- update all signatures in tests, examples, and documentation to use new parentheses-based syntax consistently.
+
 ## 1.4.0
 - replace FFI by-value struct syntax `struct<schema>` with `struct(schema)` in signatures and schema composition strings.
 - add distinct string-pointer semantics in signatures:
@@ -25,7 +29,7 @@
 - update build option descriptions to reflect new dynamic-call API wording (`ffi.open`/`ffi.sym`/`ffi.bind`) in `CMakeLists.txt`.
 
 ## 1.2.1
-- add function pointer fields in schemas via `function<signature>` (example: `cb = "function<i32 cb(i32, i32)>"`; `fn<...>` kept as alias), including read-as-bound-callable in `ffi.view` and assignment from C pointers or `ffi.callback(...)`.
+- add function pointer fields in schemas via `function(signature)` (example: `cb = "function(i32 cb(i32, i32))"`; `fn(...)` kept as alias), including read-as-bound-callable in `ffi.view` and assignment from C pointers or `ffi.callback(...)`.
 - make schema compilation automatic in FFI call sites that accept schema/layout (`ffi.view`, `ffi.new`, `ffi.sizeof`, `ffi.alignof`, `ffi.offsetof`); `ffi.compile` remains available as optional explicit step.
 - add dedicated FFI function-pointer-field test coverage: `ffi_fnptr_fields`.
 - add dedicated FFI auto-compile coverage: `ffi_auto_compile`.
@@ -36,19 +40,19 @@
 - include `docs/` and `example/` directories in all release artifacts.
 - add function-pointer-field example: `example/ffi_fnptr_fields.urb`.
 - add optional compile example: `example/ffi_auto_compile_optional.urb`.
-- update docs to make `ffi.compile` optional in common flows and document `function<...>` (`fn<...>` alias accepted).
+- update docs to make `ffi.compile` optional in common flows and document `function(...)` (`fn(...)` alias accepted).
 
 ## 1.2.0
 - change lambda vararg syntax from `name...` to `...name`; old trailing form now errors with guidance (`invalid vararg syntax: use '...name'`).
 - fix lambda callback resolution in calls: when calling `a()` inside a lambda, call target lookup now checks local scope before global scope, so callback args work without `local.a()`.
 - add `ffi.new(schemaOrLayout)` to allocate zeroed struct memory and return a numeric pointer for use with `ffi.view(...)`.
 - add `ffi.free(ptr)` to release memory allocated with `ffi.new`.
-- change FFI struct signature syntax to `struct(schema)` (by-value) and `pointer<schema>` (typed pointer); remove legacy `@schema`.
+- change FFI struct signature syntax to `struct(schema)` (by-value) and `pointer(schema)` (typed pointer); remove legacy `@schema`.
 - keep `void*` for raw/generic pointers in signatures.
 - require schema field declarations to be type strings; nested inline schema tables in field values are rejected.
 - add schema unions (`__meta = { union = 1 }`) and bitfields (`"type:bits"`).
 - add `ffi.viewArray(ptr, elemSpec, len)` for array views over raw/typed pointers.
-- make pointer-submember access in views return nested views when field type is `pointer<schema>`.
+- make pointer-submember access in views return nested views when field type is `pointer(schema)`.
 - make `ffi.new` allocations owned by GC (via pointer handles), with optional manual release via `ffi.free`.
 - add `ENABLE_EMBEDDED=1` build profile to disable features not suitable for Arduino-like targets (IO natives, dynamic FFI calls `ffi.load`/`ffi.bind`, and `import`) while keeping FFI core APIs.
 - add CMake build support and a Windows MSVC CI job (`windows-msvc`) validating build/tests with `ENABLE_FFI_CALLS=OFF`.

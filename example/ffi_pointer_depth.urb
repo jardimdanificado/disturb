@@ -36,14 +36,14 @@ ffi_bind_all = (path, ...sigs){
   return api;
 };
 
-// Example: pointer depth in signatures via pointer<pointer<...>>.
+// Example: pointer depth in signatures via pointer(pointer(...)).
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
 
 load_fixture = (path){
   return ffi_bind_all(path,
     "void* make_i32_ptrptr(i32)",
     "void free_i32_ptrptr(void*)",
-    "i32 read_i32_ptrptr(pointer<pointer<i32>>)"
+    "i32 read_i32_ptrptr(pointer(pointer(i32)))"
   );
 };
 

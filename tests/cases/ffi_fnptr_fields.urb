@@ -39,15 +39,15 @@ ffi_bind_all = (path, ...sigs){
 fail = 0;
 
 holder = {
-  cb = "function<i32 call(i32, i32)>"
+  cb = "function(i32 call(i32, i32))"
 };
 
 load_fixture = (path){
   return ffi_bind_all(path,
     "i32 fn_holder_sizeof()",
     "i32 fn_holder_off_cb()",
-    "void fn_holder_set_add(pointer<holder>)",
-    "i32 fn_holder_call(pointer<holder>, i32, i32)",
+    "void fn_holder_set_add(pointer(holder))",
+    "i32 fn_holder_call(pointer(holder), i32, i32)",
     "void* get_add_i32_ptr()"
   );
 };

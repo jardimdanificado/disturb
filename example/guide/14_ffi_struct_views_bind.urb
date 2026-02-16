@@ -42,10 +42,10 @@ ffi_bind_all = (path, ...sigs){
 
 load_fixture = (path){
   return ffi_bind_all(path,
-    "pointer<outer> make_outer()",
-    "void free_outer(pointer<outer>)",
-    "i32 outer_get_a(pointer<outer>)",
-    "i32 inner_get_b(pointer<outer>)",
+    "pointer(outer) make_outer()",
+    "void free_outer(pointer(outer))",
+    "i32 outer_get_a(pointer(outer))",
+    "i32 inner_get_b(pointer(outer))",
     "void* get_add_i32_ptr()",
     "i32 sum_outer_value(struct(outer))",
     "struct(outer) make_outer_value(i32, f64, i8, i16)"

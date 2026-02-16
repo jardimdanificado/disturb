@@ -37,17 +37,17 @@ ffi_bind_all = (path, ...sigs){
 };
 
 // ffi_fnptr_fields.urb
-// Function pointer fields in schemas via function<signature>.
+// Function pointer fields in schemas via function(signature).
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
 
 holder = {
-  cb = "function<i32 cb(i32, i32)>"
+  cb = "function(i32 cb(i32, i32))"
 };
 
 load_fixture = (path){
   return ffi_bind_all(path,
-    "void fn_holder_set_add(pointer<holder>)",
-    "i32 fn_holder_call(pointer<holder>, i32, i32)",
+    "void fn_holder_set_add(pointer(holder))",
+    "i32 fn_holder_call(pointer(holder), i32, i32)",
     "void* get_add_i32_ptr()"
   );
 };

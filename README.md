@@ -489,10 +489,10 @@ Notes:
 
 Signature struct typing:
 - by-value struct: `struct(schema)` (example: `i32 sum(struct(outer))`)
-- by-value union: `union<schema>` (example: `i32 inspect(union<bits>)`)
-- typed pointer: `pointer<schema>` (example: `void free_outer(pointer<outer>)`)
+- by-value union: `union(schema)` (example: `i32 inspect(union(bits))`)
+- typed pointer: `pointer(schema)` (example: `void free_outer(pointer(outer))`)
 - raw/generic pointer stays `void*`
-- pointer depth in signatures must use nested `pointer<...>` (example: `pointer<pointer<i32>>`)
+- pointer depth in signatures must use nested `pointer(...)` (example: `pointer(pointer(i32))`)
 - string-ish types:
   - `string`: marshals to/from Disturb strings
   - `cstring`/`cstr`: raw C pointer semantics (use `ffi.string(ptr)` when needed)
@@ -500,8 +500,8 @@ Signature struct typing:
 
 Schema composition:
 - schema fields must be type strings
-- use `struct(otherSchema)`, `union<otherSchema>`, or `pointer<otherSchema>` inside field declarations
-- function pointer fields: `function<signature>` (example: `cb = "function<i32 cb(i32, i32)>"`; `fn<...>` also accepted as alias)
+- use `struct(otherSchema)`, `union(otherSchema)`, or `pointer(otherSchema)` inside field declarations
+- function pointer fields: `function(signature)` (example: `cb = "function(i32 cb(i32, i32))"`; `fn(...)` also accepted as alias)
 - unions: `__meta = { union = 1 }`
 - bitfields: use `"type:bits"` (example: `"uint8:3"`, `"uint32:5"`)
 - qualifiers accepted in schema/signatures: `const`, `volatile`, `restrict`

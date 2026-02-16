@@ -49,10 +49,10 @@ outer = {
 
 load_fixture = (path){
   return ffi_bind_all(path,
-    "pointer<outer> make_outer()",
-    "void free_outer(pointer<outer>)",
-    "i32 outer_get_a(pointer<outer>)",
-    "i32 inner_get_b(pointer<outer>)"
+    "pointer(outer) make_outer()",
+    "void free_outer(pointer(outer))",
+    "i32 outer_get_a(pointer(outer))",
+    "i32 inner_get_b(pointer(outer))"
   );
 };
 

@@ -39,8 +39,8 @@ ffi_bind_all = (path, ...sigs){
 // ffi_union.urb
 // Demonstrates union schemas with:
 // - __meta = { union = 1 }
-// - union<schema> by-value args/returns
-// - pointer<schema> to union memory
+// - union(schema) by-value args/returns
+// - pointer(schema) to union memory
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll)
 
 half = {
@@ -57,20 +57,20 @@ bits = {
 
 holder = {
   tag = "int32",
-  payload = "union<bits>"
+  payload = "union(bits)"
 };
 
 holder_ptr = {
   tag = "int32",
-  payload = "union<bits>",
-  ref = "pointer<bits>"
+  payload = "union(bits)",
+  ref = "pointer(bits)"
 };
 
 load_fixture = (path){
   return ffi_bind_all(path,
-    "i32 bits_take_value_i(union<bits>)",
-    "union<bits> make_bits_value_i(i32)",
-    "void bits_write_i(pointer<bits>, i32)",
+    "i32 bits_take_value_i(union(bits))",
+    "union(bits) make_bits_value_i(i32)",
+    "void bits_write_i(pointer(bits), i32)",
     "i32 holder_take_payload_i(struct(holder))"
   );
 };

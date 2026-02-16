@@ -62,11 +62,11 @@ typedef struct {
     int is_array;
     int array_len;
     int is_explicit_cstr;
-    char *schema_name; /* struct(schema), union<schema>, or pointer<schema> */
-    int schema_is_pointer; /* 0 => by-value schema, 1 => pointer<schema> */
-    int schema_is_union;   /* 1 => union<schema>, 0 => struct(schema) */
+    char *schema_name; /* struct(schema), union(schema), or pointer(schema) */
+    int schema_is_pointer; /* 0 => by-value schema, 1 => pointer(schema) */
+    int schema_is_union;   /* 1 => union(schema), 0 => struct(schema) */
     FfiLayout *schema_layout; /* resolved struct layout for schema */
-    void *schema_ffi_type; /* resolved ffi type for struct(schema)/union<schema> */
+    void *schema_ffi_type; /* resolved ffi type for struct(schema)/union(schema) */
     void *schema_ffi_owner; /* owned dynamic ffi type graph */
 } FfiType;
 
@@ -132,7 +132,7 @@ typedef struct {
     size_t name_len;
     size_t offset;
     FfiLayout *layout;
-    char *fn_sig; /* non-NULL => function pointer field (function<signature>, fn<...> alias) */
+    char *fn_sig; /* non-NULL => function pointer field (function(signature), fn(...) alias) */
     int is_const;
     int bit_width;   /* 0 => normal field, >0 => bitfield width */
     int bit_shift;   /* bit offset inside storage unit */
@@ -1311,14 +1311,14 @@ static int ffi_parse_schema_fnptr_string(const char *name, size_t len, int *out_
         len--;
     }
     size_t head_len = 0;
-    if (len >= 10 && memcmp(name, "function<", 9) == 0 && name[len - 1] == '>') {
+    if (len >= 10 && memcmp(name, "function(", 9) == 0 && name[len - 1] == ')') {
         head_len = 9;
-    } else if (len >= 5 && memcmp(name, "fn<", 3) == 0 && name[len - 1] == '>') {
+    } else if (len >= 5 && memcmp(name, "fn(", 3) == 0 && name[len - 1] == ')') {
         head_len = 3; /* compatibility alias */
     } else {
         return 0;
     }
-    size_t sig_len = len - (head_len + 1); /* function<...> or fn<...> */
+    size_t sig_len = len - (head_len + 1); /* function(...) or fn(...) */
     if (sig_len == 0 || sig_len + 1 > out_sig_cap) return 0;
     memcpy(out_sig, name + head_len, sig_len);
     out_sig[sig_len] = 0;
@@ -1378,12 +1378,12 @@ static int ffi_parse_schema_ref_string(const char *name, size_t len,
         prefix_len = len - 8;
         is_pointer = 0;
         is_union = 0;
-    } else if (len > 7 && memcmp(name, "union<", 6) == 0 && name[len - 1] == '>') {
+    } else if (len > 7 && memcmp(name, "union(", 6) == 0 && name[len - 1] == ')') {
         prefix = name + 6;
         prefix_len = len - 7;
         is_pointer = 0;
         is_union = 1;
-    } else if (len > 9 && memcmp(name, "pointer<", 8) == 0 && name[len - 1] == '>') {
+    } else if (len > 9 && memcmp(name, "pointer(", 8) == 0 && name[len - 1] == ')') {
         prefix = name + 8;
         prefix_len = len - 9;
         is_pointer = 1;
@@ -1746,7 +1746,7 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
                 if (!pointee || pointee->kind != FFI_LAYOUT_STRUCT) {
                     if (pointee) ffi_layout_free(pointee);
                     ffi_layout_free(layout);
-                    if (!err[0]) snprintf(err, err_cap, "ffi: pointer<%s> requires struct schema", schema_name);
+                    if (!err[0]) snprintf(err, err_cap, "ffi: pointer(%s) requires struct schema", schema_name);
                     return NULL;
                 }
                 layout->pointee = pointee;
@@ -1761,12 +1761,12 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
             if (!resolved) return NULL;
             if (schema_is_union && !resolved->is_union) {
                 ffi_layout_free(resolved);
-                snprintf(err, err_cap, "ffi: union<%s> requires union schema", schema_name);
+                snprintf(err, err_cap, "ffi: union(%s) requires union schema", schema_name);
                 return NULL;
             }
             if (!schema_is_union && resolved->is_union) {
                 ffi_layout_free(resolved);
-                snprintf(err, err_cap, "ffi: struct(%s) cannot reference union schema; use union<%s>",
+                snprintf(err, err_cap, "ffi: struct(%s) cannot reference union schema; use union(%s)",
                          schema_name, schema_name);
                 return NULL;
             }
@@ -2313,14 +2313,14 @@ static int sig_read_template_content(SigParser *p, char *out, size_t cap, char *
     int depth = 1;
     while (p->src[p->pos]) {
         char c = p->src[p->pos++];
-        if (c == '<') depth++;
-        else if (c == '>') {
+        if (c == '(') depth++;
+        else if (c == ')') {
             depth--;
             if (depth == 0) break;
         }
     }
     if (depth != 0) {
-        snprintf(err, err_cap, "expected matching '>'");
+        snprintf(err, err_cap, "expected matching ')'");
         return 0;
     }
     size_t end = p->pos - 1;
@@ -2494,30 +2494,30 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
                 return 0;
             }
         } else if (is_pointer_template) {
-            if (!sig_match_char(p, '<')) {
-                snprintf(err, err_cap, "expected '<' after pointer");
+            if (!sig_match_char(p, '(')) {
+                snprintf(err, err_cap, "expected '(' after pointer");
                 return 0;
             }
             if (!sig_read_template_content(p, schema, sizeof(schema), err, err_cap)) {
                 return 0;
             }
         } else {
-            if (!sig_match_char(p, '<')) {
-                snprintf(err, err_cap, "expected '<' after %s", ident);
+            if (!sig_match_char(p, '(')) {
+                snprintf(err, err_cap, "expected '(' after %s", ident);
                 return 0;
             }
             if (!sig_read_ident(p, schema, sizeof(schema))) {
-                snprintf(err, err_cap, "expected schema name in %s<...>", ident);
+                snprintf(err, err_cap, "expected schema name in %s(...)", ident);
                 return 0;
             }
-            if (!sig_match_char(p, '>')) {
-                snprintf(err, err_cap, "expected '>' after schema name");
+            if (!sig_match_char(p, ')')) {
+                snprintf(err, err_cap, "expected ')' after schema name");
                 return 0;
             }
         }
         if (is_pointer_template) {
             FfiBase inner_base = FFI_BASE_VOID;
-            if (strncmp(schema, "pointer<", 8) == 0 ||
+            if (strncmp(schema, "pointer(", 8) == 0 ||
                 parse_base_type(schema, &inner_base)) {
                 out->base = FFI_BASE_PTR;
                 out->is_ptr = 1;
@@ -2543,7 +2543,7 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
         out->is_explicit_cstr = 0;
         sig_skip_ws(p);
         if (p->src[p->pos] == '*' || p->src[p->pos] == '[') {
-            snprintf(err, err_cap, "%s<%s> does not support '*' or '[]' suffix",
+            snprintf(err, err_cap, "%s(%s) does not support '*' or '[]' suffix",
                      ident, schema);
             free(out->schema_name);
             out->schema_name = NULL;
@@ -2630,7 +2630,7 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
         sig_skip_qualifiers(p);
         sig_skip_ws(p);
         if (p->src[p->pos] == '*') {
-            snprintf(err, err_cap, "pointer depth with '*' is not supported; use pointer<pointer<...>>");
+            snprintf(err, err_cap, "pointer depth with '*' is not supported; use pointer(pointer(...))");
             return 0;
         }
     }
@@ -3697,11 +3697,11 @@ static int ffi_resolve_schema_type(VM *vm, FfiType *t, char *err, size_t err_cap
         return 0;
     }
     if (t->schema_is_union && !layout->is_union) {
-        snprintf(err, err_cap, "ffi: union<%s> requires union schema", t->schema_name);
+        snprintf(err, err_cap, "ffi: union(%s) requires union schema", t->schema_name);
         return 0;
     }
     if (!t->schema_is_union && !t->schema_is_pointer && layout->is_union) {
-        snprintf(err, err_cap, "ffi: struct(%s) cannot reference union schema; use union<%s>",
+        snprintf(err, err_cap, "ffi: struct(%s) cannot reference union schema; use union(%s)",
                  t->schema_name, t->schema_name);
         return 0;
     }

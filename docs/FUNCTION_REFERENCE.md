@@ -328,13 +328,13 @@ Primary APIs used by examples/tests:
 - `ffi.view(ptr, schemaOrLayout)`
 - `ffi.viewArray(ptr, elemSpec, len)`
 - `ffi.compile(schema)` is optional in common flows; schema tables are auto-compiled/cached when passed to `ffi.view`, `ffi.sizeof`, `ffi.alignof`, `ffi.offsetof`, and `ffi.new`.
-- signatures support: `struct(schema)` (by-value struct), `union<schema>` (by-value union), `pointer<schema>` (typed pointer), `void*` (raw pointer), pointer depth via `pointer<pointer<...>>`
+- signatures support: `struct(schema)` (by-value struct), `union(schema)` (by-value union), `pointer(schema)` (typed pointer), `void*` (raw pointer), pointer depth via `pointer(pointer(...))`
 - string-like types in signatures:
   - `string`: marshaled as Disturb string
   - `cstring`/`cstr`: raw C pointer value
 - optional ABI prefix in signature: `abi(name)` or bare ABI keyword (`cdecl`, `stdcall`, `fastcall`, `thiscall`, `win64`, `unix64`, `sysv`)
-- schema field declarations are strings only; compose with `"struct(name)"`, `"union<name>"`, and `"pointer<name>"`
-- function pointer fields: `"function<signature>"` (example: `"function<i32 cb(i32, i32)>"`; `"fn<...>"` alias accepted)
+- schema field declarations are strings only; compose with `"struct(name)"`, `"union(name)"`, and `"pointer(name)"`
+- function pointer fields: `"function(signature)"` (example: `"function(i32 cb(i32, i32))"`; `"fn(...)"` alias accepted)
 - bitfields are declared as `"type:bits"` (e.g., `"uint8:3"`)
 - unions are declared via `__meta = { union = 1 }`
 - qualifiers accepted in signatures/schema strings: `const`, `volatile`, `restrict`

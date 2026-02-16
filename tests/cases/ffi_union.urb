@@ -52,13 +52,13 @@ bits = {
 
 holder = {
   tag = "int32",
-  payload = "union<bits>"
+  payload = "union(bits)"
 };
 
 holder_ptr = {
   tag = "int32",
-  payload = "union<bits>",
-  ref = "pointer<bits>"
+  payload = "union(bits)",
+  ref = "pointer(bits)"
 };
 
 load_fixture = (path){
@@ -67,10 +67,10 @@ load_fixture = (path){
     "i32 bits_off_i()",
     "i32 bits_off_f()",
     "i32 bits_off_p()",
-    "i32 bits_take_value_i(union<bits>)",
-    "union<bits> make_bits_value_i(i32)",
-    "void bits_write_i(pointer<bits>, i32)",
-    "i32 bits_read_hi(union<bits>)",
+    "i32 bits_take_value_i(union(bits))",
+    "union(bits) make_bits_value_i(i32)",
+    "void bits_write_i(pointer(bits), i32)",
+    "i32 bits_read_hi(union(bits))",
     "i32 holder_sizeof()",
     "i32 holder_off_tag()",
     "i32 holder_off_payload()",
