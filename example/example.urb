@@ -11,4 +11,4 @@ println(global.e.a),
 
 // Indexing into int/float lists is numeric (0-based).
 x = global.e.b[1],
-println(x),
+println(x)

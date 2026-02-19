@@ -59,7 +59,7 @@ Notes:
 
 ```disturb
 msg = "hello",
-println(msg),
+println(msg)
 ```
 
 Run:
@@ -90,7 +90,7 @@ Type names used by `.type`:
 
 ## Syntax Basics
 
-Statements end with `,` (commas now act as terminators).
+Statements are separated by commas; the final comma in a sequence is optional (you can drop the trailing comma before a closing brace or end-of-file).
 
 Comments:
 

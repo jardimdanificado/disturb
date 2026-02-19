@@ -96,6 +96,7 @@ run_negative() {
 }
 
 run_negative assign_invalid
+run_negative missing_comma
 run_negative char_len
 run_negative key_on_non_object
 run_negative oob_index

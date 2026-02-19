@@ -2703,7 +2703,16 @@ static int parse_simple_statement(Parser *p, Bytecode *bc, int require_sep)
 {
     Expr *expr = parse_expr(p);
     if (!expr) return 0;
-    if (require_sep && !expect(p, TOK_COMMA, "expected ',' after statement")) return 0;
+    if (require_sep) {
+        /* comma normally terminates a statement; but if we're at the end of a
+           block or end-of-file, the final comma is optional. */
+        if (p->current.kind == TOK_COMMA) {
+            advance(p);
+        } else if (p->current.kind != TOK_RBRACE && p->current.kind != TOK_EOF) {
+            parser_error(p, "expected ',' after statement");
+            return 0;
+        }
+    }
     if (!emit_expr(bc, p, expr)) return 0;
     if (!bc_emit_u8(bc, BC_POP)) {
         parser_error(p, "failed to emit POP");

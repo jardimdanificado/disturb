@@ -14,6 +14,7 @@ make
 ## Core Rules
 
 - `x = 1,` writes to `global.x`.
+- Statements are separated by commas; the final comma in a sequence is optional.
 - Missing global/key returns `null`.
 - `global` is a real table.
 - Method call binds `this`: `obj.fn()`.
