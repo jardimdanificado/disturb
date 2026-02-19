@@ -312,8 +312,6 @@ Disturb installs common functions in `global.common`, so they are callable as me
 - `parse`
 - `emit`
 - `evalBytecode`
-- `bytecodeToAst`
-- `astToSource`
 
 ### Math
 - `append`

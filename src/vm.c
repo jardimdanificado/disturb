@@ -2668,10 +2668,6 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "evalBytecode", "evalBytecode");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
-    entry = vm_define_native(vm, "bytecodeToAst", "bytecodeToAst");
-    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
-    entry = vm_define_native(vm, "astToSource", "astToSource");
-    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "append", "append");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "add", "add");

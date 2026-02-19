@@ -89,12 +89,6 @@ Return conventions:
 - Executes bytecode bytes.
 - Returns `null`.
 
-### `bytecodeToAst(x)`
-- Currently returns `null` (stub).
-
-### `astToSource(x)`
-- Currently returns `null` (stub).
-
 ## GC
 
 ### `gc.collect()`
@@ -292,15 +286,6 @@ All below support global and method form when applicable.
   - integer index removes positional entry and returns value
 - String/list:
   - removes at numeric index and returns removed element
-
-## Not Exposed in Current Build
-
-The following native implementations exist internally but are not currently attached to `global.common` by default:
-- `find`
-- `rfind`
-- `contains`
-
-If these are intended to be public, they need to be registered in VM initialization.
 
 ## FFI
 

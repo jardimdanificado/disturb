@@ -1579,18 +1579,6 @@ static void native_emit(VM *vm, List *stack, List *global)
     fprintf(stderr, "emit expects bytecode bytes\n");
 }
 
-static void native_bytecode_to_ast(VM *vm, List *stack, List *global)
-{
-    (void)global;
-    stack = push_entry(vm, stack, vm->null_entry);
-}
-
-static void native_ast_to_source(VM *vm, List *stack, List *global)
-{
-    (void)global;
-    stack = push_entry(vm, stack, vm->null_entry);
-}
-
 static void native_eval_bytecode(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -1697,15 +1685,6 @@ static void native_gc_new(VM *vm, List *stack, List *global)
     ObjEntry *entry = vm_make_table_value(vm, size);
     if (!entry) return;
     stack = push_entry(vm, stack, entry);
-}
-
-static void native_gc_flush(VM *vm, List *stack, List *global)
-{
-    (void)global;
-    if (vm) vm_flush_reuse(vm);
-    if (vm) {
-        stack = push_entry(vm, stack, vm->null_entry);
-    }
 }
 
 static void native_gc_debug(VM *vm, List *stack, List *global)
@@ -2547,173 +2526,6 @@ static void native_papagaio(VM *vm, List *stack, List *global)
     free(out);
 }
 
-static Int clamp_index(Int i, Int len)
-{
-    if (i < 0) i = len + i;      // suporta negativos tipo slice
-    if (i < 0) i = 0;
-    if (i > len) i = len;
-    return i;
-}
-
-static void native_find(VM *vm, List *stack, List *global)
-{
-    uint32_t argc = native_argc(vm, global);
-    ObjEntry *target = native_string_target(vm, stack, argc);
-    if (!target) {
-        fprintf(stderr, "find expects a string target\n");
-        return;
-    }
-
-    ObjEntry *arg0 = native_arg(stack, argc, 0);
-    const char *needle = NULL;
-    size_t nlen = 0;
-    if (!entry_as_string(arg0, &needle, &nlen)) {
-        fprintf(stderr, "find expects a string needle\n");
-        return;
-    }
-
-    Int start = 0;
-    if (argc >= 2) {
-        ObjEntry *arg1 = native_arg(stack, argc, 1);
-        if (!number_to_int(arg1, &start)) {
-            fprintf(stderr, "find expects integer start\n");
-            return;
-        }
-    }
-
-    const char *hay = disturb_bytes_data(target->obj);
-    size_t hlen_sz = disturb_bytes_len(target->obj);
-    Int hlen = (Int)hlen_sz;
-
-    start = clamp_index(start, hlen);
-
-    if (nlen == 0) { // convenção: string vazia "casa" no start
-        push_number(vm, stack, (Float)start);
-        return;
-    }
-
-    if ((size_t)start > hlen_sz || nlen > hlen_sz) {
-        push_number(vm, stack, -1.0f);
-        return;
-    }
-
-    size_t last = hlen_sz - nlen;
-    for (size_t i = (size_t)start; i <= last; i++) {
-        if (memcmp(hay + i, needle, nlen) == 0) {
-            push_number(vm, stack, (Float)(Int)i);
-            return;
-        }
-    }
-
-    push_number(vm, stack, -1.0f);
-}
-
-static void native_rfind(VM *vm, List *stack, List *global)
-{
-    uint32_t argc = native_argc(vm, global);
-    ObjEntry *target = native_string_target(vm, stack, argc);
-    if (!target) {
-        fprintf(stderr, "rfind expects a string target\n");
-        return;
-    }
-
-    ObjEntry *arg0 = native_arg(stack, argc, 0);
-    const char *needle = NULL;
-    size_t nlen = 0;
-    if (!entry_as_string(arg0, &needle, &nlen)) {
-        fprintf(stderr, "rfind expects a string needle\n");
-        return;
-    }
-
-    const char *hay = disturb_bytes_data(target->obj);
-    size_t hlen_sz = disturb_bytes_len(target->obj);
-    Int hlen = (Int)hlen_sz;
-
-    // start aqui é o "limite superior" (posição onde a busca reversa pode começar).
-    // default: final da string
-    Int start = hlen;
-    if (argc >= 2) {
-        ObjEntry *arg1 = native_arg(stack, argc, 1);
-        if (!number_to_int(arg1, &start)) {
-            fprintf(stderr, "rfind expects integer start\n");
-            return;
-        }
-    }
-    start = clamp_index(start, hlen);
-
-    if (nlen == 0) { // string vazia: casa no start (igual find)
-        push_number(vm, stack, (Float)start);
-        return;
-    }
-
-    if (nlen > hlen_sz) {
-        push_number(vm, stack, -1.0f);
-        return;
-    }
-
-    // último índice possível de início é (hlen - nlen)
-    Int max_i = (Int)(hlen_sz - nlen);
-    if (start > max_i) start = max_i;
-    if (start < 0) {
-        push_number(vm, stack, -1.0f);
-        return;
-    }
-
-    for (Int i = start; i >= 0; i--) {
-        if (memcmp(hay + (size_t)i, needle, nlen) == 0) {
-            push_number(vm, stack, (Float)i);
-            return;
-        }
-    }
-
-    push_number(vm, stack, -1.0f);
-}
-
-static void native_contains(VM *vm, List *stack, List *global)
-{
-    // contains(needle, start?) -> 1/0
-    uint32_t argc = native_argc(vm, global);
-    ObjEntry *target = native_string_target(vm, stack, argc);
-    if (!target) {
-        fprintf(stderr, "contains expects a string target\n");
-        return;
-    }
-
-    ObjEntry *arg0 = native_arg(stack, argc, 0);
-    const char *needle = NULL;
-    size_t nlen = 0;
-    if (!entry_as_string(arg0, &needle, &nlen)) {
-        fprintf(stderr, "contains expects a string needle\n");
-        return;
-    }
-
-    Int start = 0;
-    if (argc >= 2) {
-        ObjEntry *arg1 = native_arg(stack, argc, 1);
-        if (!number_to_int(arg1, &start)) {
-            fprintf(stderr, "contains expects integer start\n");
-            return;
-        }
-    }
-
-    const char *hay = disturb_bytes_data(target->obj);
-    size_t hlen = disturb_bytes_len(target->obj);
-    Int hlen_i = (Int)hlen;
-    start = clamp_index(start, hlen_i);
-
-    if (nlen == 0) { push_number(vm, stack, 1.0f); return; }
-    if (nlen > hlen || (size_t)start > hlen - nlen) { push_number(vm, stack, 0.0f); return; }
-
-    size_t last = hlen - nlen;
-    for (size_t i = (size_t)start; i <= last; i++) {
-        if (memcmp(hay + i, needle, nlen) == 0) {
-            push_number(vm, stack, 1.0f);
-            return;
-        }
-    }
-    push_number(vm, stack, 0.0f);
-}
-
 static ObjEntry *native_object_target(VM *vm, List *stack, uint32_t argc)
 {
     ObjEntry *target = native_target(vm, stack, argc);
@@ -3289,14 +3101,11 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "eval") == 0) return native_eval;
     if (strcmp(name, "parse") == 0) return native_parse;
     if (strcmp(name, "emit") == 0) return native_emit;
-    if (strcmp(name, "bytecodeToAst") == 0) return native_bytecode_to_ast;
-    if (strcmp(name, "astToSource") == 0) return native_ast_to_source;
     if (strcmp(name, "evalBytecode") == 0) return native_eval_bytecode;
     if (strcmp(name, "gcCollect") == 0) return native_gc_collect;
     if (strcmp(name, "gcFree") == 0) return native_gc_free;
     if (strcmp(name, "gcSweep") == 0) return native_gc_sweep;
     if (strcmp(name, "gcNew") == 0) return native_gc_new;
-    if (strcmp(name, "gcFlush") == 0) return native_gc_flush;
     if (strcmp(name, "gcDebug") == 0) return native_gc_debug;
     if (strcmp(name, "gcStats") == 0) return native_gc_stats;
     if (strcmp(name, "append") == 0) return native_append;
@@ -3330,9 +3139,6 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "trim") == 0) return native_trim;
     if (strcmp(name, "startsWith") == 0) return native_starts_with;
     if (strcmp(name, "endsWith") == 0) return native_ends_with;
-    if (strcmp(name, "find") == 0) return native_find;
-    if (strcmp(name, "rfind") == 0) return native_rfind;
-    if (strcmp(name, "contains") == 0) return native_contains;
     if (strcmp(name, "replace") == 0) return native_replace;
     if (strcmp(name, "replaceAll") == 0) return native_replace_all;
     if (strcmp(name, "papagaio") == 0) return native_papagaio;
