@@ -1,9 +1,9 @@
 // papagaio_preprocess_macro.urb
 // Simple macro-like expansion for repetitive source.
 
-$pattern{PRINT_A}{println("A");}
-$pattern{PRINT_B}{println("B");}
-$pattern{PRINT_C}{println("C");}
+$pattern{PRINT_A}{println("A"),}
+$pattern{PRINT_B}{println("B"),}
+$pattern{PRINT_C}{println("C"),}
 
 PRINT_A
 PRINT_B

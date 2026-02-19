@@ -1,95 +1,95 @@
 // raylib [textures] example - image channel (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
-rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - image channel");
-rl.SetTargetFPS(60);
+screenWidth = 800,
+screenHeight = 450,
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - image channel"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-fudesumiImage = rl.LoadImage("../raylib/examples/textures/resources/fudesumi.png");
+fudesumiImage = rl.LoadImage("../raylib/examples/textures/resources/fudesumi.png"),
 if (fudesumiImage.data == null) {
-  println("could not load image: ../raylib/examples/textures/resources/fudesumi.png");
-  rl.CloseWindow();
-  gc.collect();
-  return 0;
+  println("could not load image: ../raylib/examples/textures/resources/fudesumi.png"),
+  rl.CloseWindow(),
+  gc.collect(),
+  return 0,
 }
-fudesumiRef = rl.newImageRef(rl.Image, fudesumiImage);
-srcW = fudesumiRef.view.width;
-srcH = fudesumiRef.view.height;
+fudesumiRef = rl.newImageRef(rl.Image, fudesumiImage),
+srcW = fudesumiRef.view.width,
+srcH = fudesumiRef.view.height,
 
-imageAlpha = rl.ImageFromChannel(fudesumiRef.view, 3);
-imageAlphaRef = rl.newImageRef(rl.Image, imageAlpha);
-rl.ImageAlphaMask(imageAlphaRef.ptr, imageAlphaRef.view);
+imageAlpha = rl.ImageFromChannel(fudesumiRef.view, 3),
+imageAlphaRef = rl.newImageRef(rl.Image, imageAlpha),
+rl.ImageAlphaMask(imageAlphaRef.ptr, imageAlphaRef.view),
 
-imageRed = rl.ImageFromChannel(fudesumiRef.view, 0);
-imageRedRef = rl.newImageRef(rl.Image, imageRed);
-rl.ImageAlphaMask(imageRedRef.ptr, imageAlphaRef.view);
+imageRed = rl.ImageFromChannel(fudesumiRef.view, 0),
+imageRedRef = rl.newImageRef(rl.Image, imageRed),
+rl.ImageAlphaMask(imageRedRef.ptr, imageAlphaRef.view),
 
-imageGreen = rl.ImageFromChannel(fudesumiRef.view, 1);
-imageGreenRef = rl.newImageRef(rl.Image, imageGreen);
-rl.ImageAlphaMask(imageGreenRef.ptr, imageAlphaRef.view);
+imageGreen = rl.ImageFromChannel(fudesumiRef.view, 1),
+imageGreenRef = rl.newImageRef(rl.Image, imageGreen),
+rl.ImageAlphaMask(imageGreenRef.ptr, imageAlphaRef.view),
 
-imageBlue = rl.ImageFromChannel(fudesumiRef.view, 2);
-imageBlueRef = rl.newImageRef(rl.Image, imageBlue);
-rl.ImageAlphaMask(imageBlueRef.ptr, imageAlphaRef.view);
+imageBlue = rl.ImageFromChannel(fudesumiRef.view, 2),
+imageBlueRef = rl.newImageRef(rl.Image, imageBlue),
+rl.ImageAlphaMask(imageBlueRef.ptr, imageAlphaRef.view),
 
-backgroundImage = rl.GenImageChecked(screenWidth, screenHeight, screenWidth/20, screenHeight/20, rl.ORANGE.view, rl.YELLOW.view);
-backgroundRef = rl.newImageRef(rl.Image, backgroundImage);
+backgroundImage = rl.GenImageChecked(screenWidth, screenHeight, screenWidth/20, screenHeight/20, rl.ORANGE.view, rl.YELLOW.view),
+backgroundRef = rl.newImageRef(rl.Image, backgroundImage),
 
-fudesumiTexture = rl.LoadTextureFromImage(fudesumiRef.view);
-textureAlpha = rl.LoadTextureFromImage(imageAlphaRef.view);
-textureRed = rl.LoadTextureFromImage(imageRedRef.view);
-textureGreen = rl.LoadTextureFromImage(imageGreenRef.view);
-textureBlue = rl.LoadTextureFromImage(imageBlueRef.view);
-backgroundTexture = rl.LoadTextureFromImage(backgroundRef.view);
+fudesumiTexture = rl.LoadTextureFromImage(fudesumiRef.view),
+textureAlpha = rl.LoadTextureFromImage(imageAlphaRef.view),
+textureRed = rl.LoadTextureFromImage(imageRedRef.view),
+textureGreen = rl.LoadTextureFromImage(imageGreenRef.view),
+textureBlue = rl.LoadTextureFromImage(imageBlueRef.view),
+backgroundTexture = rl.LoadTextureFromImage(backgroundRef.view),
 
-rl.UnloadImage(fudesumiRef.view);
-rl.UnloadImage(imageAlphaRef.view);
-rl.UnloadImage(imageRedRef.view);
-rl.UnloadImage(imageGreenRef.view);
-rl.UnloadImage(imageBlueRef.view);
-rl.UnloadImage(backgroundRef.view);
+rl.UnloadImage(fudesumiRef.view),
+rl.UnloadImage(imageAlphaRef.view),
+rl.UnloadImage(imageRedRef.view),
+rl.UnloadImage(imageGreenRef.view),
+rl.UnloadImage(imageBlueRef.view),
+rl.UnloadImage(backgroundRef.view),
 
-fudesumiRec = rl.newRectangle(rl.Rectangle, 0.0, 0.0, srcW, srcH);
-fudesumiPos = rl.newRectangle(rl.Rectangle, 50.0, 10.0, srcW*0.8, srcH*0.8);
-redPos = rl.newRectangle(rl.Rectangle, 410.0, 10.0, fudesumiPos.view.width/2.0, fudesumiPos.view.height/2.0);
-greenPos = rl.newRectangle(rl.Rectangle, 600.0, 10.0, fudesumiPos.view.width/2.0, fudesumiPos.view.height/2.0);
-bluePos = rl.newRectangle(rl.Rectangle, 410.0, 230.0, fudesumiPos.view.width/2.0, fudesumiPos.view.height/2.0);
-alphaPos = rl.newRectangle(rl.Rectangle, 600.0, 230.0, fudesumiPos.view.width/2.0, fudesumiPos.view.height/2.0);
-zero = rl.newVector2(rl.Vector2, 0.0, 0.0);
+fudesumiRec = rl.newRectangle(rl.Rectangle, 0.0, 0.0, srcW, srcH),
+fudesumiPos = rl.newRectangle(rl.Rectangle, 50.0, 10.0, srcW*0.8, srcH*0.8),
+redPos = rl.newRectangle(rl.Rectangle, 410.0, 10.0, fudesumiPos.view.width/2.0, fudesumiPos.view.height/2.0),
+greenPos = rl.newRectangle(rl.Rectangle, 600.0, 10.0, fudesumiPos.view.width/2.0, fudesumiPos.view.height/2.0),
+bluePos = rl.newRectangle(rl.Rectangle, 410.0, 230.0, fudesumiPos.view.width/2.0, fudesumiPos.view.height/2.0),
+alphaPos = rl.newRectangle(rl.Rectangle, 600.0, 230.0, fudesumiPos.view.width/2.0, fudesumiPos.view.height/2.0),
+zero = rl.newVector2(rl.Vector2, 0.0, 0.0),
 
 while (!rl.WindowShouldClose()) {
-  rl.BeginDrawing();
-  rl.DrawTexture(backgroundTexture, 0, 0, rl.WHITE.view);
-  rl.DrawTexturePro(fudesumiTexture, fudesumiRec.view, fudesumiPos.view, zero.view, 0.0, rl.WHITE.view);
-  rl.DrawTexturePro(textureRed, fudesumiRec.view, redPos.view, zero.view, 0.0, rl.RED.view);
-  rl.DrawTexturePro(textureGreen, fudesumiRec.view, greenPos.view, zero.view, 0.0, rl.GREEN.view);
-  rl.DrawTexturePro(textureBlue, fudesumiRec.view, bluePos.view, zero.view, 0.0, rl.BLUE.view);
-  rl.DrawTexturePro(textureAlpha, fudesumiRec.view, alphaPos.view, zero.view, 0.0, rl.WHITE.view);
-  rl.EndDrawing();
+  rl.BeginDrawing(),
+  rl.DrawTexture(backgroundTexture, 0, 0, rl.WHITE.view),
+  rl.DrawTexturePro(fudesumiTexture, fudesumiRec.view, fudesumiPos.view, zero.view, 0.0, rl.WHITE.view),
+  rl.DrawTexturePro(textureRed, fudesumiRec.view, redPos.view, zero.view, 0.0, rl.RED.view),
+  rl.DrawTexturePro(textureGreen, fudesumiRec.view, greenPos.view, zero.view, 0.0, rl.GREEN.view),
+  rl.DrawTexturePro(textureBlue, fudesumiRec.view, bluePos.view, zero.view, 0.0, rl.BLUE.view),
+  rl.DrawTexturePro(textureAlpha, fudesumiRec.view, alphaPos.view, zero.view, 0.0, rl.WHITE.view),
+  rl.EndDrawing(),
 }
 
-rl.UnloadTexture(backgroundTexture);
-rl.UnloadTexture(fudesumiTexture);
-rl.UnloadTexture(textureRed);
-rl.UnloadTexture(textureGreen);
-rl.UnloadTexture(textureBlue);
-rl.UnloadTexture(textureAlpha);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadTexture(backgroundTexture),
+rl.UnloadTexture(fudesumiTexture),
+rl.UnloadTexture(textureRed),
+rl.UnloadTexture(textureGreen),
+rl.UnloadTexture(textureBlue),
+rl.UnloadTexture(textureAlpha),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

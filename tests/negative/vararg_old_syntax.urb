@@ -1,1 +1,1 @@
-fn = (a, rest...){ println(a); };
+fn = (a, rest...){ println(a), },

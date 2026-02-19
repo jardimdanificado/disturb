@@ -2,35 +2,35 @@
 // if/else, while, for, each, break, continue.
 
 // if / else if / else
-value = 2;
-if (value == 1) { println("one"); }
-else if (value == 2) { println("two"); }
-else { println("other"); }
+value = 2,
+if (value == 1) { println("one"), }
+else if (value == 2) { println("two"), }
+else { println("other"), }
 
 // while loop
-i = 0;
-acc = 0;
-while (i < 3) { acc = acc + i; i = i + 1; }
-println(acc);
+i = 0,
+acc = 0,
+while (i < 3) { acc = acc + i, i = i + 1, }
+println(acc),
 
 // for loop
-sum = 0;
-for (i = 0; i < 4; i = i + 1) { sum = sum + i; }
-println(sum);
+sum = 0,
+for (i = 0, i < 4, i = i + 1) { sum = sum + i, }
+println(sum),
 
 // each loop over list/table order
-items = [1, 2, 3];
-total = 0;
-each(v in items) { total = total + v; }
-println(total);
+items = [1, 2, 3],
+total = 0,
+each(v in items) { total = total + v, }
+println(total),
 
 // break and continue
-i = 0;
-acc2 = 0;
+i = 0,
+acc2 = 0,
 while (1) {
-  i = i + 1;
-  if (i == 2) { continue; }
-  if (i == 4) { break; }
-  acc2 = acc2 + i;
+  i = i + 1,
+  if (i == 2) { continue, }
+  if (i == 4) { break, }
+  acc2 = acc2 + i,
 }
-println(acc2);
+println(acc2),

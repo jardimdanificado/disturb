@@ -1,93 +1,93 @@
 // raylib [textures] example - sprite explosion (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-NUM_FRAMES_PER_LINE = 5;
-NUM_LINES = 5;
+NUM_FRAMES_PER_LINE = 5,
+NUM_LINES = 5,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - sprite explosion");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - sprite explosion"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-audioEnabled = 0;
-fxBoom = null;
-rl.InitAudioDevice();
+audioEnabled = 0,
+fxBoom = null,
+rl.InitAudioDevice(),
 if (rl.IsAudioDeviceReady()) {
-  audioEnabled = 1;
-  fxBoom = rl.LoadSound("../raylib/examples/textures/resources/boom.wav");
+  audioEnabled = 1,
+  fxBoom = rl.LoadSound("../raylib/examples/textures/resources/boom.wav"),
 }
 
-explosion = rl.LoadTexture("../raylib/examples/textures/resources/explosion.png");
+explosion = rl.LoadTexture("../raylib/examples/textures/resources/explosion.png"),
 if (explosion.id == 0) {
-  println("could not load texture: ../raylib/examples/textures/resources/explosion.png");
-  if (audioEnabled) { rl.UnloadSound(fxBoom); rl.CloseAudioDevice(); }
-  rl.CloseWindow();
-  gc.collect();
-  return 0;
+  println("could not load texture: ../raylib/examples/textures/resources/explosion.png"),
+  if (audioEnabled) { rl.UnloadSound(fxBoom), rl.CloseAudioDevice(), }
+  rl.CloseWindow(),
+  gc.collect(),
+  return 0,
 }
 
-frameWidth = explosion.width/NUM_FRAMES_PER_LINE;
-frameHeight = explosion.height/NUM_LINES;
-currentFrame = 0;
-currentLine = 0;
-frameRec = rl.newRectangle(rl.Rectangle, 0.0, 0.0, frameWidth, frameHeight);
-position = rl.newVector2(rl.Vector2, 0.0, 0.0);
-active = 0;
-framesCounter = 0;
+frameWidth = explosion.width/NUM_FRAMES_PER_LINE,
+frameHeight = explosion.height/NUM_LINES,
+currentFrame = 0,
+currentLine = 0,
+frameRec = rl.newRectangle(rl.Rectangle, 0.0, 0.0, frameWidth, frameHeight),
+position = rl.newVector2(rl.Vector2, 0.0, 0.0),
+active = 0,
+framesCounter = 0,
 
 while (!rl.WindowShouldClose()) {
   if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && !active) {
-    mp = rl.GetMousePosition();
-    active = 1;
-    position.view.x = mp.x - frameWidth/2.0;
-    position.view.y = mp.y - frameHeight/2.0;
-    if (audioEnabled) { rl.PlaySound(fxBoom); }
+    mp = rl.GetMousePosition(),
+    active = 1,
+    position.view.x = mp.x - frameWidth/2.0,
+    position.view.y = mp.y - frameHeight/2.0,
+    if (audioEnabled) { rl.PlaySound(fxBoom), }
   }
 
   if (active) {
-    framesCounter = framesCounter + 1;
+    framesCounter = framesCounter + 1,
     if (framesCounter > 2) {
-      currentFrame = currentFrame + 1;
+      currentFrame = currentFrame + 1,
       if (currentFrame >= NUM_FRAMES_PER_LINE) {
-        currentFrame = 0;
-        currentLine = currentLine + 1;
+        currentFrame = 0,
+        currentLine = currentLine + 1,
         if (currentLine >= NUM_LINES) {
-          currentLine = 0;
-          active = 0;
+          currentLine = 0,
+          active = 0,
         }
       }
-      framesCounter = 0;
+      framesCounter = 0,
     }
   }
 
-  frameRec.view.x = frameWidth*currentFrame;
-  frameRec.view.y = frameHeight*currentLine;
+  frameRec.view.x = frameWidth*currentFrame,
+  frameRec.view.y = frameHeight*currentLine,
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
-  if (active) { rl.DrawTextureRec(explosion, frameRec.view, position.view, rl.WHITE.view); }
-  rl.DrawText("Left click to trigger explosion", 20, 20, 20, rl.DARKGRAY.view);
-  rl.EndDrawing();
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
+  if (active) { rl.DrawTextureRec(explosion, frameRec.view, position.view, rl.WHITE.view), }
+  rl.DrawText("Left click to trigger explosion", 20, 20, 20, rl.DARKGRAY.view),
+  rl.EndDrawing(),
 }
 
-rl.UnloadTexture(explosion);
-if (audioEnabled) { rl.UnloadSound(fxBoom); rl.CloseAudioDevice(); }
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadTexture(explosion),
+if (audioEnabled) { rl.UnloadSound(fxBoom), rl.CloseAudioDevice(), }
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -1,89 +1,89 @@
 // raylib [core] example - smooth pixelperfect (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
 truncCompat = (v){
-  if (v < 0.0) { return ceil(v); }
-  return floor(v);
-};
+  if (v < 0.0) { return ceil(v), }
+  return floor(v),
+},
 
-screenWidth = 800;
-screenHeight = 450;
-virtualScreenWidth = 160;
-virtualScreenHeight = 90;
-virtualRatio = screenWidth/virtualScreenWidth;
+screenWidth = 800,
+screenHeight = 450,
+virtualScreenWidth = 160,
+virtualScreenHeight = 90,
+virtualRatio = screenWidth/virtualScreenWidth,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - smooth pixelperfect");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - smooth pixelperfect"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-worldSpaceCamera = rl.newCamera2D(rl.Camera2D, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
-screenSpaceCamera = rl.newCamera2D(rl.Camera2D, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+worldSpaceCamera = rl.newCamera2D(rl.Camera2D, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+screenSpaceCamera = rl.newCamera2D(rl.Camera2D, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
 
-target = rl.LoadRenderTexture(virtualScreenWidth, virtualScreenHeight);
+target = rl.LoadRenderTexture(virtualScreenWidth, virtualScreenHeight),
 
-rec01 = rl.newRectangle(rl.Rectangle, 70.0, 35.0, 20.0, 20.0);
-rec02 = rl.newRectangle(rl.Rectangle, 90.0, 55.0, 30.0, 10.0);
-rec03 = rl.newRectangle(rl.Rectangle, 80.0, 65.0, 15.0, 25.0);
-sourceRec = rl.newRectangle(rl.Rectangle, 0.0, 0.0, target.texture.width, -target.texture.height);
-destRec = rl.newRectangle(rl.Rectangle, -virtualRatio, -virtualRatio, screenWidth + (virtualRatio*2), screenHeight + (virtualRatio*2));
-origin = rl.newVector2(rl.Vector2, 0.0, 0.0);
+rec01 = rl.newRectangle(rl.Rectangle, 70.0, 35.0, 20.0, 20.0),
+rec02 = rl.newRectangle(rl.Rectangle, 90.0, 55.0, 30.0, 10.0),
+rec03 = rl.newRectangle(rl.Rectangle, 80.0, 65.0, 15.0, 25.0),
+sourceRec = rl.newRectangle(rl.Rectangle, 0.0, 0.0, target.texture.width, -target.texture.height),
+destRec = rl.newRectangle(rl.Rectangle, -virtualRatio, -virtualRatio, screenWidth + (virtualRatio*2), screenHeight + (virtualRatio*2)),
+origin = rl.newVector2(rl.Vector2, 0.0, 0.0),
 
-rotation = 0.0;
-cameraX = 0.0;
-cameraY = 0.0;
+rotation = 0.0,
+cameraX = 0.0,
+cameraY = 0.0,
 
 while (!rl.WindowShouldClose()) {
-  rotation = rotation + 60.0*rl.GetFrameTime();
-  t = rl.GetTime();
-  cameraX = (sin(t)*50.0) - 10.0;
-  cameraY = cos(t)*30.0;
+  rotation = rotation + 60.0*rl.GetFrameTime(),
+  t = rl.GetTime(),
+  cameraX = (sin(t)*50.0) - 10.0,
+  cameraY = cos(t)*30.0,
 
-  screenSpaceCamera.view.targetX = cameraX;
-  screenSpaceCamera.view.targetY = cameraY;
+  screenSpaceCamera.view.targetX = cameraX,
+  screenSpaceCamera.view.targetY = cameraY,
 
-  worldSpaceCamera.view.targetX = truncCompat(screenSpaceCamera.view.targetX);
-  screenSpaceCamera.view.targetX = screenSpaceCamera.view.targetX - worldSpaceCamera.view.targetX;
-  screenSpaceCamera.view.targetX = screenSpaceCamera.view.targetX*virtualRatio;
+  worldSpaceCamera.view.targetX = truncCompat(screenSpaceCamera.view.targetX),
+  screenSpaceCamera.view.targetX = screenSpaceCamera.view.targetX - worldSpaceCamera.view.targetX,
+  screenSpaceCamera.view.targetX = screenSpaceCamera.view.targetX*virtualRatio,
 
-  worldSpaceCamera.view.targetY = truncCompat(screenSpaceCamera.view.targetY);
-  screenSpaceCamera.view.targetY = screenSpaceCamera.view.targetY - worldSpaceCamera.view.targetY;
-  screenSpaceCamera.view.targetY = screenSpaceCamera.view.targetY*virtualRatio;
+  worldSpaceCamera.view.targetY = truncCompat(screenSpaceCamera.view.targetY),
+  screenSpaceCamera.view.targetY = screenSpaceCamera.view.targetY - worldSpaceCamera.view.targetY,
+  screenSpaceCamera.view.targetY = screenSpaceCamera.view.targetY*virtualRatio,
 
-  rl.BeginTextureMode(target);
-  rl.ClearBackground(rl.RAYWHITE.view);
-  rl.BeginMode2D(worldSpaceCamera.view);
-  rl.DrawRectanglePro(rec01.view, origin.view, rotation, rl.BLACK.view);
-  rl.DrawRectanglePro(rec02.view, origin.view, -rotation, rl.RED.view);
-  rl.DrawRectanglePro(rec03.view, origin.view, rotation + 45.0, rl.BLUE.view);
-  rl.EndMode2D();
-  rl.EndTextureMode();
+  rl.BeginTextureMode(target),
+  rl.ClearBackground(rl.RAYWHITE.view),
+  rl.BeginMode2D(worldSpaceCamera.view),
+  rl.DrawRectanglePro(rec01.view, origin.view, rotation, rl.BLACK.view),
+  rl.DrawRectanglePro(rec02.view, origin.view, -rotation, rl.RED.view),
+  rl.DrawRectanglePro(rec03.view, origin.view, rotation + 45.0, rl.BLUE.view),
+  rl.EndMode2D(),
+  rl.EndTextureMode(),
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RED.view);
-  rl.BeginMode2D(screenSpaceCamera.view);
-  rl.DrawTexturePro(target.texture, sourceRec.view, destRec.view, origin.view, 0.0, rl.WHITE.view);
-  rl.EndMode2D();
-  rl.DrawText(rl.TextFormat("Screen resolution: %ix%i", screenWidth, screenHeight), 10, 10, 20, rl.DARKBLUE.view);
-  rl.DrawText(rl.TextFormat("World resolution: %ix%i", virtualScreenWidth, virtualScreenHeight), 10, 40, 20, rl.DARKGREEN.view);
-  rl.DrawFPS(rl.GetScreenWidth() - 95, 10);
-  rl.EndDrawing();
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RED.view),
+  rl.BeginMode2D(screenSpaceCamera.view),
+  rl.DrawTexturePro(target.texture, sourceRec.view, destRec.view, origin.view, 0.0, rl.WHITE.view),
+  rl.EndMode2D(),
+  rl.DrawText(rl.TextFormat("Screen resolution: %ix%i", screenWidth, screenHeight), 10, 10, 20, rl.DARKBLUE.view),
+  rl.DrawText(rl.TextFormat("World resolution: %ix%i", virtualScreenWidth, virtualScreenHeight), 10, 40, 20, rl.DARKGREEN.view),
+  rl.DrawFPS(rl.GetScreenWidth() - 95, 10),
+  rl.EndDrawing(),
 }
 
-rl.UnloadRenderTexture(target);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadRenderTexture(target),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

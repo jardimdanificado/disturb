@@ -1,30 +1,30 @@
-sum = (a, b){ println(a + b); };
-sum(2, 3);
+sum = (a, b){ println(a + b), },
+sum(2, 3),
 
-var = (a, ...rest){ println(a); println(rest.size); };
-var(1);
-var(1, 2, 3);
+var = (a, ...rest){ println(a), println(rest.size), },
+var(1),
+var(1, 2, 3),
 
-obj = {a = 7, obj = (a){ println(this.a); println(a); }};
-obj(9);
+obj = {a = 7, obj = (a){ println(this.a), println(a), }},
+obj(9),
 
-obj2 = {a = 3, foo = (x){ println(this.a + x); }};
-obj2.foo(4);
+obj2 = {a = 3, foo = (x){ println(this.a + x), }},
+obj2.foo(4),
 
-adder = (a, b = 2){ return a + b; };
-println(adder(3));
-println(adder(3, 4));
+adder = (a, b = 2){ return a + b, },
+println(adder(3)),
+println(adder(3, 4)),
 
-noop = (){ return; };
-n = noop();
-println(n);
+noop = (){ return, },
+n = noop(),
+println(n),
 
-show = (a, b = "x"){ println(a); println(b); };
-show(1);
+show = (a, b = "x"){ println(a), println(b), },
+show(1),
 
-opt = (a, b){ println(a); println(b); };
-opt(1);
-opt(1, 2);
+opt = (a, b){ println(a), println(b), },
+opt(1),
+opt(1, 2),
 
-c = (a){ a(); };
-c((){ println("abc"); });
+c = (a){ a(), },
+c((){ println("abc"), }),

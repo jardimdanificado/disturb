@@ -1,108 +1,108 @@
 // raylib [textures] example - image generation (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
 getTextureByIndex = (idx, t0, t1, t2, t3, t4, t5, t6, t7, t8){
-  if (idx == 0) { return t0; }
-  if (idx == 1) { return t1; }
-  if (idx == 2) { return t2; }
-  if (idx == 3) { return t3; }
-  if (idx == 4) { return t4; }
-  if (idx == 5) { return t5; }
-  if (idx == 6) { return t6; }
-  if (idx == 7) { return t7; }
-  return t8;
-};
+  if (idx == 0) { return t0, }
+  if (idx == 1) { return t1, }
+  if (idx == 2) { return t2, }
+  if (idx == 3) { return t3, }
+  if (idx == 4) { return t4, }
+  if (idx == 5) { return t5, }
+  if (idx == 6) { return t6, }
+  if (idx == 7) { return t7, }
+  return t8,
+},
 
-screenWidth = 800;
-screenHeight = 450;
-rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - image generation");
-rl.SetTargetFPS(60);
+screenWidth = 800,
+screenHeight = 450,
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - image generation"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-img0 = rl.GenImageGradientLinear(screenWidth, screenHeight, 0, rl.RED.view, rl.BLUE.view);
-img1 = rl.GenImageGradientLinear(screenWidth, screenHeight, 90, rl.RED.view, rl.BLUE.view);
-img2 = rl.GenImageGradientLinear(screenWidth, screenHeight, 45, rl.RED.view, rl.BLUE.view);
-img3 = rl.GenImageGradientRadial(screenWidth, screenHeight, 0.0, rl.WHITE.view, rl.BLACK.view);
-img4 = rl.GenImageGradientSquare(screenWidth, screenHeight, 0.0, rl.WHITE.view, rl.BLACK.view);
-img5 = rl.GenImageChecked(screenWidth, screenHeight, 32, 32, rl.RED.view, rl.BLUE.view);
-img6 = rl.GenImageWhiteNoise(screenWidth, screenHeight, 0.5);
-img7 = rl.GenImagePerlinNoise(screenWidth, screenHeight, 50, 50, 4.0);
-img8 = rl.GenImageCellular(screenWidth, screenHeight, 32);
+img0 = rl.GenImageGradientLinear(screenWidth, screenHeight, 0, rl.RED.view, rl.BLUE.view),
+img1 = rl.GenImageGradientLinear(screenWidth, screenHeight, 90, rl.RED.view, rl.BLUE.view),
+img2 = rl.GenImageGradientLinear(screenWidth, screenHeight, 45, rl.RED.view, rl.BLUE.view),
+img3 = rl.GenImageGradientRadial(screenWidth, screenHeight, 0.0, rl.WHITE.view, rl.BLACK.view),
+img4 = rl.GenImageGradientSquare(screenWidth, screenHeight, 0.0, rl.WHITE.view, rl.BLACK.view),
+img5 = rl.GenImageChecked(screenWidth, screenHeight, 32, 32, rl.RED.view, rl.BLUE.view),
+img6 = rl.GenImageWhiteNoise(screenWidth, screenHeight, 0.5),
+img7 = rl.GenImagePerlinNoise(screenWidth, screenHeight, 50, 50, 4.0),
+img8 = rl.GenImageCellular(screenWidth, screenHeight, 32),
 
-t0 = rl.LoadTextureFromImage(img0);
-t1 = rl.LoadTextureFromImage(img1);
-t2 = rl.LoadTextureFromImage(img2);
-t3 = rl.LoadTextureFromImage(img3);
-t4 = rl.LoadTextureFromImage(img4);
-t5 = rl.LoadTextureFromImage(img5);
-t6 = rl.LoadTextureFromImage(img6);
-t7 = rl.LoadTextureFromImage(img7);
-t8 = rl.LoadTextureFromImage(img8);
+t0 = rl.LoadTextureFromImage(img0),
+t1 = rl.LoadTextureFromImage(img1),
+t2 = rl.LoadTextureFromImage(img2),
+t3 = rl.LoadTextureFromImage(img3),
+t4 = rl.LoadTextureFromImage(img4),
+t5 = rl.LoadTextureFromImage(img5),
+t6 = rl.LoadTextureFromImage(img6),
+t7 = rl.LoadTextureFromImage(img7),
+t8 = rl.LoadTextureFromImage(img8),
 
-rl.UnloadImage(img0);
-rl.UnloadImage(img1);
-rl.UnloadImage(img2);
-rl.UnloadImage(img3);
-rl.UnloadImage(img4);
-rl.UnloadImage(img5);
-rl.UnloadImage(img6);
-rl.UnloadImage(img7);
-rl.UnloadImage(img8);
+rl.UnloadImage(img0),
+rl.UnloadImage(img1),
+rl.UnloadImage(img2),
+rl.UnloadImage(img3),
+rl.UnloadImage(img4),
+rl.UnloadImage(img5),
+rl.UnloadImage(img6),
+rl.UnloadImage(img7),
+rl.UnloadImage(img8),
 
-currentTexture = 0;
+currentTexture = 0,
 while (!rl.WindowShouldClose()) {
   if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) || rl.IsKeyPressed(rl.KEY_RIGHT)) {
-    currentTexture = (currentTexture + 1)%9;
+    currentTexture = (currentTexture + 1)%9,
   }
 
-  tex = getTextureByIndex(currentTexture, t0, t1, t2, t3, t4, t5, t6, t7, t8);
+  tex = getTextureByIndex(currentTexture, t0, t1, t2, t3, t4, t5, t6, t7, t8),
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
-  rl.DrawTexture(tex, 0, 0, rl.WHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
+  rl.DrawTexture(tex, 0, 0, rl.WHITE.view),
 
-  panel = rl.Fade(rl.SKYBLUE.view, 0.5);
-  border = rl.Fade(rl.WHITE.view, 0.5);
-  rl.DrawRectangle(30, 400, 325, 30, panel);
-  rl.DrawRectangleLines(30, 400, 325, 30, border);
-  rl.DrawText("MOUSE LEFT BUTTON to CYCLE PROCEDURAL TEXTURES", 40, 410, 10, rl.WHITE.view);
+  panel = rl.Fade(rl.SKYBLUE.view, 0.5),
+  border = rl.Fade(rl.WHITE.view, 0.5),
+  rl.DrawRectangle(30, 400, 325, 30, panel),
+  rl.DrawRectangleLines(30, 400, 325, 30, border),
+  rl.DrawText("MOUSE LEFT BUTTON to CYCLE PROCEDURAL TEXTURES", 40, 410, 10, rl.WHITE.view),
 
-  if (currentTexture == 0) { rl.DrawText("VERTICAL GRADIENT", 560, 10, 20, rl.RAYWHITE.view); }
-  if (currentTexture == 1) { rl.DrawText("HORIZONTAL GRADIENT", 540, 10, 20, rl.RAYWHITE.view); }
-  if (currentTexture == 2) { rl.DrawText("DIAGONAL GRADIENT", 540, 10, 20, rl.RAYWHITE.view); }
-  if (currentTexture == 3) { rl.DrawText("RADIAL GRADIENT", 580, 10, 20, rl.LIGHTGRAY.view); }
-  if (currentTexture == 4) { rl.DrawText("SQUARE GRADIENT", 580, 10, 20, rl.LIGHTGRAY.view); }
-  if (currentTexture == 5) { rl.DrawText("CHECKED", 680, 10, 20, rl.RAYWHITE.view); }
-  if (currentTexture == 6) { rl.DrawText("WHITE NOISE", 640, 10, 20, rl.RED.view); }
-  if (currentTexture == 7) { rl.DrawText("PERLIN NOISE", 640, 10, 20, rl.RED.view); }
-  if (currentTexture == 8) { rl.DrawText("CELLULAR", 670, 10, 20, rl.RAYWHITE.view); }
+  if (currentTexture == 0) { rl.DrawText("VERTICAL GRADIENT", 560, 10, 20, rl.RAYWHITE.view), }
+  if (currentTexture == 1) { rl.DrawText("HORIZONTAL GRADIENT", 540, 10, 20, rl.RAYWHITE.view), }
+  if (currentTexture == 2) { rl.DrawText("DIAGONAL GRADIENT", 540, 10, 20, rl.RAYWHITE.view), }
+  if (currentTexture == 3) { rl.DrawText("RADIAL GRADIENT", 580, 10, 20, rl.LIGHTGRAY.view), }
+  if (currentTexture == 4) { rl.DrawText("SQUARE GRADIENT", 580, 10, 20, rl.LIGHTGRAY.view), }
+  if (currentTexture == 5) { rl.DrawText("CHECKED", 680, 10, 20, rl.RAYWHITE.view), }
+  if (currentTexture == 6) { rl.DrawText("WHITE NOISE", 640, 10, 20, rl.RED.view), }
+  if (currentTexture == 7) { rl.DrawText("PERLIN NOISE", 640, 10, 20, rl.RED.view), }
+  if (currentTexture == 8) { rl.DrawText("CELLULAR", 670, 10, 20, rl.RAYWHITE.view), }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.UnloadTexture(t0);
-rl.UnloadTexture(t1);
-rl.UnloadTexture(t2);
-rl.UnloadTexture(t3);
-rl.UnloadTexture(t4);
-rl.UnloadTexture(t5);
-rl.UnloadTexture(t6);
-rl.UnloadTexture(t7);
-rl.UnloadTexture(t8);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadTexture(t0),
+rl.UnloadTexture(t1),
+rl.UnloadTexture(t2),
+rl.UnloadTexture(t3),
+rl.UnloadTexture(t4),
+rl.UnloadTexture(t5),
+rl.UnloadTexture(t6),
+rl.UnloadTexture(t7),
+rl.UnloadTexture(t8),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

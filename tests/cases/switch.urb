@@ -1,18 +1,18 @@
-value = "beta";
+value = "beta",
 
 switch (value) {
 case "alpha":
-    println("alpha");
+    println("alpha"),
 case "beta":
-    println("beta");
+    println("beta"),
 case "gamma":
-    println("gamma");
+    println("gamma"),
 default:
-    println("default");
+    println("default"),
 }
 
-goto skip;
-println("should skip");
+goto skip,
+println("should skip"),
 
 skip:
-println("done");
+println("done"),

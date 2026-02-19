@@ -58,8 +58,8 @@ Notes:
 ## First Script
 
 ```disturb
-msg = "hello";
-println(msg);
+msg = "hello",
+println(msg),
 ```
 
 Run:
@@ -71,7 +71,7 @@ Run:
 ## Language Model
 
 Core behavior:
-- assignment is global by default: `x = 1;` is equivalent to `global.x = 1;`
+- assignment is global by default: `x = 1,` is equivalent to `global.x = 1,`
 - missing globals/keys evaluate to `null`
 - `global` is a real table
 - `global.common` stores common methods
@@ -90,7 +90,7 @@ Type names used by `.type`:
 
 ## Syntax Basics
 
-Statements end with `;`.
+Statements end with `,` (commas now act as terminators).
 
 Comments:
 

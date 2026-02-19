@@ -1,8 +1,8 @@
 // example/guide/modules/math/math.urb
-base = 40;
+base = 40,
 
 return {
   tag = "math",
-  add = (a, b){ return a + b; },
-  answer = (){ return base + 2; }
-};
+  add = (a, b){ return a + b, },
+  answer = (){ return base + 2, }
+},

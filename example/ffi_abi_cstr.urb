@@ -1,40 +1,40 @@
 ffi_sig_name = (sig){
-  s = sig.trim();
-  depth = 0;
-  open = -1;
-  i = s.size - 1;
+  s = sig.trim(),
+  depth = 0,
+  open = -1,
+  i = s.size - 1,
   while (i >= 0) {
-    ch = s.slice(i, i + 1);
+    ch = s.slice(i, i + 1),
     if (ch == ")") {
-      depth++;
+      depth++,
     } else if (ch == "(") {
-      depth--;
+      depth--,
       if (depth == 0) {
-        open = i;
-        break;
+        open = i,
+        break,
       }
     }
-    i--;
+    i--,
   }
-  if (open < 0) { return null; }
-  head = s.slice(0, open).trim();
-  parts = head.split(" ");
-  if (parts.size == 0) { return null; }
-  return (parts[parts.size - 1].split("!")[0] + "");
-};
+  if (open < 0) { return null, }
+  head = s.slice(0, open).trim(),
+  parts = head.split(" "),
+  if (parts.size == 0) { return null, }
+  return (parts[parts.size - 1].split("!")[0] + ""),
+},
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
-  api = { __lib = h };
+  h = ffi.open(path),
+  if (h == null) { return null, }
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
-    if (ptr == null) { return null; }
-    api[name] = ffi.bind(ptr, sig);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
+    if (ptr == null) { return null, }
+    api[name] = ffi.bind(ptr, sig),
   }
-  return api;
-};
+  return api,
+},
 
 // Example: ABI prefix + explicit cstr.
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
@@ -45,34 +45,34 @@ load_fixture = (path){
     "void* get_add_stdcall_i32_ptr()",
     "i32 cstr_len(string)",
     "string ffi_test_name()"
-  );
-};
+  ),
+},
 
-lib = load_fixture("./tests/ffi/libffi_view_struct.so");
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+lib = load_fixture("./tests/ffi/libffi_view_struct.so"),
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"), }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"), }
 if (lib == null) {
-  println("ffi fixture not found");
-  return 0;
+  println("ffi fixture not found"),
+  return 0,
 }
 
-add_ptr = lib.get_add_i32_ptr();
-add_default = ffi.bind(add_ptr, "abi(default) i32 add_default(i32, i32)");
-add_cdecl = ffi.bind(add_ptr, "cdecl i32 add_cdecl(i32, i32)");
+add_ptr = lib.get_add_i32_ptr(),
+add_default = ffi.bind(add_ptr, "abi(default) i32 add_default(i32, i32)"),
+add_cdecl = ffi.bind(add_ptr, "cdecl i32 add_cdecl(i32, i32)"),
 
-println("abi(default):", add_default(20, 22));
-println("cdecl:", add_cdecl(20, 22));
+println("abi(default):", add_default(20, 22)),
+println("cdecl:", add_cdecl(20, 22)),
 
-std_ptr = lib.get_add_stdcall_i32_ptr();
-std_default = ffi.bind(std_ptr, "abi(default) i32 std_default(i32, i32)");
-println("stdcall pointer via default abi:", std_default(20, 22));
+std_ptr = lib.get_add_stdcall_i32_ptr(),
+std_default = ffi.bind(std_ptr, "abi(default) i32 std_default(i32, i32)"),
+println("stdcall pointer via default abi:", std_default(20, 22)),
 
-println("cstr_len(string):", lib.cstr_len("disturb"));
-println("ffi_test_name() as string:", lib.ffi_test_name());
+println("cstr_len(string):", lib.cstr_len("disturb")),
+println("ffi_test_name() as string:", lib.ffi_test_name()),
 
-name_ptr = ffi.sym(lib.__lib, "ffi_test_name");
+name_ptr = ffi.sym(lib.__lib, "ffi_test_name"),
 if (name_ptr != null) {
-  name_c = ffi.bind(name_ptr, "cstring ffi_test_name()");
-  raw = name_c();
-  println("ffi_test_name() as cstring ptr -> ffi.string:", ffi.string(raw));
+  name_c = ffi.bind(name_ptr, "cstring ffi_test_name()"),
+  raw = name_c(),
+  println("ffi_test_name() as cstring ptr -> ffi.string:", ffi.string(raw)),
 }

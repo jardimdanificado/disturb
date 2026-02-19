@@ -1,84 +1,84 @@
 // raylib [shapes] example - lines drawing (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - lines drawing");
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - lines drawing"),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-startText = 1;
-mousePositionPrevious = rl.GetMousePosition();
-canvas = rl.LoadRenderTexture(screenWidth, screenHeight);
-lineThickness = 8.0;
+startText = 1,
+mousePositionPrevious = rl.GetMousePosition(),
+canvas = rl.LoadRenderTexture(screenWidth, screenHeight),
+lineThickness = 8.0,
 
-source = rl.newRectangle(rl.Rectangle, 0.0, 0.0, canvas.texture.width, -canvas.texture.height);
-zero = rl.newVector2(rl.Vector2, 0.0, 0.0);
+source = rl.newRectangle(rl.Rectangle, 0.0, 0.0, canvas.texture.width, -canvas.texture.height),
+zero = rl.newVector2(rl.Vector2, 0.0, 0.0),
 
-rl.BeginTextureMode(canvas);
-rl.ClearBackground(rl.RAYWHITE.view);
-rl.EndTextureMode();
+rl.BeginTextureMode(canvas),
+rl.ClearBackground(rl.RAYWHITE.view),
+rl.EndTextureMode(),
 
-rl.SetTargetFPS(60);
+rl.SetTargetFPS(60),
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && startText) { startText = 0; }
+  if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT) && startText) { startText = 0, }
 
   if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_MIDDLE)) {
-    rl.BeginTextureMode(canvas);
-    rl.ClearBackground(rl.RAYWHITE.view);
-    rl.EndTextureMode();
+    rl.BeginTextureMode(canvas),
+    rl.ClearBackground(rl.RAYWHITE.view),
+    rl.EndTextureMode(),
   }
 
-  leftButtonDown = rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT);
-  rightButtonDown = rl.IsMouseButtonDown(rl.MOUSE_BUTTON_RIGHT);
+  leftButtonDown = rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT),
+  rightButtonDown = rl.IsMouseButtonDown(rl.MOUSE_BUTTON_RIGHT),
 
   if (leftButtonDown || rightButtonDown) {
-    mouseNow = rl.GetMousePosition();
+    mouseNow = rl.GetMousePosition(),
 
-    if (leftButtonDown) { drawColor = rl.BLUE; }
-    else { drawColor = rl.RAYWHITE; }
+    if (leftButtonDown) { drawColor = rl.BLUE, }
+    else { drawColor = rl.RAYWHITE, }
 
-    rl.BeginTextureMode(canvas);
-    rl.DrawCircleV(mousePositionPrevious, lineThickness/2.0, drawColor.view);
-    rl.DrawCircleV(mouseNow, lineThickness/2.0, drawColor.view);
-    rl.DrawLineEx(mousePositionPrevious, mouseNow, lineThickness, drawColor.view);
-    rl.EndTextureMode();
+    rl.BeginTextureMode(canvas),
+    rl.DrawCircleV(mousePositionPrevious, lineThickness/2.0, drawColor.view),
+    rl.DrawCircleV(mouseNow, lineThickness/2.0, drawColor.view),
+    rl.DrawLineEx(mousePositionPrevious, mouseNow, lineThickness, drawColor.view),
+    rl.EndTextureMode(),
   }
 
-  lineThickness = lineThickness + rl.GetMouseWheelMove();
-  if (lineThickness < 1.0) { lineThickness = 1.0; }
-  if (lineThickness > 500.0) { lineThickness = 500.0; }
+  lineThickness = lineThickness + rl.GetMouseWheelMove(),
+  if (lineThickness < 1.0) { lineThickness = 1.0, }
+  if (lineThickness > 500.0) { lineThickness = 500.0, }
 
-  mousePositionPrevious = rl.GetMousePosition();
+  mousePositionPrevious = rl.GetMousePosition(),
 
-  rl.BeginDrawing();
-  rl.DrawTextureRec(canvas.texture, source.view, zero.view, rl.WHITE.view);
+  rl.BeginDrawing(),
+  rl.DrawTextureRec(canvas.texture, source.view, zero.view, rl.WHITE.view),
 
   if (!leftButtonDown) {
-    rl.DrawCircleLinesV(rl.GetMousePosition(), lineThickness/2.0, rl.newColor(rl.Color, 127, 127, 127, 127).view);
+    rl.DrawCircleLinesV(rl.GetMousePosition(), lineThickness/2.0, rl.newColor(rl.Color, 127, 127, 127, 127).view),
   }
 
-  if (startText) { rl.DrawText("try clicking and dragging!", 275, 215, 20, rl.LIGHTGRAY.view); }
+  if (startText) { rl.DrawText("try clicking and dragging!", 275, 215, 20, rl.LIGHTGRAY.view), }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.UnloadRenderTexture(canvas);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadRenderTexture(canvas),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -2,18 +2,18 @@
 // Bytecode compilation and evaluation.
 
 // parse() compiles source into bytecode bytes.
-code = "println(1 + 2);";
-bytecode = parse(code);
-println(len(bytecode));
+code = "println(1 + 2),",
+bytecode = parse(code),
+println(len(bytecode)),
 
 // emit() renders a disassembly-like view of bytecode bytes.
-println(emit(bytecode));
+println(emit(bytecode)),
 
 // evalBytecode() executes bytecode bytes.
-evalBytecode(bytecode);
+evalBytecode(bytecode),
 
 // asm()/disasm() are provided by example/asm_lib.urb.
-eval(read("example/asm_lib.urb"));
-asm_text = "PUSH_INT 1\nPUSH_INT 2\nBUILD_INT 2\n";
-asm_bytes = asm(asm_text);
-println(disasm(asm_bytes));
+eval(read("example/asm_lib.urb")),
+asm_text = "PUSH_INT 1\nPUSH_INT 2\nBUILD_INT 2\n",
+asm_bytes = asm(asm_text),
+println(disasm(asm_bytes)),

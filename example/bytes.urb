@@ -1,9 +1,9 @@
 // String literals are int lists with the .string view.
-b = "ABC";
+b = "ABC",
 
 // Indexing yields a single-byte string.
-println(b[2]);
+println(b[2]),
 
 // Assigning a single byte updates the string in-place.
-b[1] = 68;
-println(b);
+b[1] = 68,
+println(b),

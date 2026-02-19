@@ -1,46 +1,46 @@
 // raylib [text] example - writing anim (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
-message = "This sample illustrates a text writing\nanimation effect! Check it out! ;)";
+screenWidth = 800,
+screenHeight = 450,
+message = "This sample illustrates a text writing\nanimation effect! Check it out! ,)",
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - writing anim");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - writing anim"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-framesCounter = 0;
+framesCounter = 0,
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsKeyDown(rl.KEY_SPACE)) { framesCounter = framesCounter + 8; }
-  else { framesCounter = framesCounter + 1; }
-  if (rl.IsKeyPressed(rl.KEY_ENTER)) { framesCounter = 0; }
+  if (rl.IsKeyDown(rl.KEY_SPACE)) { framesCounter = framesCounter + 8, }
+  else { framesCounter = framesCounter + 1, }
+  if (rl.IsKeyPressed(rl.KEY_ENTER)) { framesCounter = 0, }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawText(rl.TextSubtext(message, 0, framesCounter/10), 210, 160, 20, rl.MAROON.view);
-  rl.DrawText("PRESS [ENTER] to RESTART!", 240, 260, 20, rl.LIGHTGRAY.view);
-  rl.DrawText("HOLD [SPACE] to SPEED UP!", 239, 300, 20, rl.LIGHTGRAY.view);
+  rl.DrawText(rl.TextSubtext(message, 0, framesCounter/10), 210, 160, 20, rl.MAROON.view),
+  rl.DrawText("PRESS [ENTER] to RESTART!", 240, 260, 20, rl.LIGHTGRAY.view),
+  rl.DrawText("HOLD [SPACE] to SPEED UP!", 239, 300, 20, rl.LIGHTGRAY.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,
 

@@ -1,318 +1,318 @@
 // raylib [textures] example - tiled drawing (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
 drawTextureTiled = (texture, source, dest, origin, rotation, scale, tint){
-  if (texture.id <= 0 || scale <= 0.0) { return; }
-  if (source.width == 0.0 || source.height == 0.0) { return; }
+  if (texture.id <= 0 || scale <= 0.0) { return, }
+  if (source.width == 0.0 || source.height == 0.0) { return, }
 
-  tileWidth = source.width*scale;
-  tileHeight = source.height*scale;
+  tileWidth = source.width*scale,
+  tileHeight = source.height*scale,
 
   if (dest.width < tileWidth && dest.height < tileHeight) {
-    tileSrcTmp.view.x = source.x;
-    tileSrcTmp.view.y = source.y;
-    tileSrcTmp.view.width = (dest.width/tileWidth)*source.width;
-    tileSrcTmp.view.height = (dest.height/tileHeight)*source.height;
-    rl.DrawTexturePro(texture, tileSrcTmp.view, dest, origin, rotation, tint);
-    return;
+    tileSrcTmp.view.x = source.x,
+    tileSrcTmp.view.y = source.y,
+    tileSrcTmp.view.width = (dest.width/tileWidth)*source.width,
+    tileSrcTmp.view.height = (dest.height/tileHeight)*source.height,
+    rl.DrawTexturePro(texture, tileSrcTmp.view, dest, origin, rotation, tint),
+    return,
   }
 
   if (dest.width <= tileWidth) {
-    dy = 0.0;
+    dy = 0.0,
     while (dy + tileHeight < dest.height) {
-      tileSrcTmp.view.x = source.x;
-      tileSrcTmp.view.y = source.y;
-      tileSrcTmp.view.width = (dest.width/tileWidth)*source.width;
-      tileSrcTmp.view.height = source.height;
-      tileDstTmp.view.x = dest.x;
-      tileDstTmp.view.y = dest.y + dy;
-      tileDstTmp.view.width = dest.width;
-      tileDstTmp.view.height = tileHeight;
-      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint);
-      dy = dy + tileHeight;
+      tileSrcTmp.view.x = source.x,
+      tileSrcTmp.view.y = source.y,
+      tileSrcTmp.view.width = (dest.width/tileWidth)*source.width,
+      tileSrcTmp.view.height = source.height,
+      tileDstTmp.view.x = dest.x,
+      tileDstTmp.view.y = dest.y + dy,
+      tileDstTmp.view.width = dest.width,
+      tileDstTmp.view.height = tileHeight,
+      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint),
+      dy = dy + tileHeight,
     }
     if (dy < dest.height) {
-      tileSrcTmp.view.x = source.x;
-      tileSrcTmp.view.y = source.y;
-      tileSrcTmp.view.width = (dest.width/tileWidth)*source.width;
-      tileSrcTmp.view.height = ((dest.height - dy)/tileHeight)*source.height;
-      tileDstTmp.view.x = dest.x;
-      tileDstTmp.view.y = dest.y + dy;
-      tileDstTmp.view.width = dest.width;
-      tileDstTmp.view.height = dest.height - dy;
-      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint);
+      tileSrcTmp.view.x = source.x,
+      tileSrcTmp.view.y = source.y,
+      tileSrcTmp.view.width = (dest.width/tileWidth)*source.width,
+      tileSrcTmp.view.height = ((dest.height - dy)/tileHeight)*source.height,
+      tileDstTmp.view.x = dest.x,
+      tileDstTmp.view.y = dest.y + dy,
+      tileDstTmp.view.width = dest.width,
+      tileDstTmp.view.height = dest.height - dy,
+      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint),
     }
-    return;
+    return,
   }
 
   if (dest.height <= tileHeight) {
-    dx = 0.0;
+    dx = 0.0,
     while (dx + tileWidth < dest.width) {
-      tileSrcTmp.view.x = source.x;
-      tileSrcTmp.view.y = source.y;
-      tileSrcTmp.view.width = source.width;
-      tileSrcTmp.view.height = (dest.height/tileHeight)*source.height;
-      tileDstTmp.view.x = dest.x + dx;
-      tileDstTmp.view.y = dest.y;
-      tileDstTmp.view.width = tileWidth;
-      tileDstTmp.view.height = dest.height;
-      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint);
-      dx = dx + tileWidth;
+      tileSrcTmp.view.x = source.x,
+      tileSrcTmp.view.y = source.y,
+      tileSrcTmp.view.width = source.width,
+      tileSrcTmp.view.height = (dest.height/tileHeight)*source.height,
+      tileDstTmp.view.x = dest.x + dx,
+      tileDstTmp.view.y = dest.y,
+      tileDstTmp.view.width = tileWidth,
+      tileDstTmp.view.height = dest.height,
+      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint),
+      dx = dx + tileWidth,
     }
     if (dx < dest.width) {
-      tileSrcTmp.view.x = source.x;
-      tileSrcTmp.view.y = source.y;
-      tileSrcTmp.view.width = ((dest.width - dx)/tileWidth)*source.width;
-      tileSrcTmp.view.height = (dest.height/tileHeight)*source.height;
-      tileDstTmp.view.x = dest.x + dx;
-      tileDstTmp.view.y = dest.y;
-      tileDstTmp.view.width = dest.width - dx;
-      tileDstTmp.view.height = dest.height;
-      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint);
+      tileSrcTmp.view.x = source.x,
+      tileSrcTmp.view.y = source.y,
+      tileSrcTmp.view.width = ((dest.width - dx)/tileWidth)*source.width,
+      tileSrcTmp.view.height = (dest.height/tileHeight)*source.height,
+      tileDstTmp.view.x = dest.x + dx,
+      tileDstTmp.view.y = dest.y,
+      tileDstTmp.view.width = dest.width - dx,
+      tileDstTmp.view.height = dest.height,
+      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint),
     }
-    return;
+    return,
   }
 
-  dx = 0.0;
+  dx = 0.0,
   while (dx + tileWidth < dest.width) {
-    dy = 0.0;
+    dy = 0.0,
     while (dy + tileHeight < dest.height) {
-      tileDstTmp.view.x = dest.x + dx;
-      tileDstTmp.view.y = dest.y + dy;
-      tileDstTmp.view.width = tileWidth;
-      tileDstTmp.view.height = tileHeight;
-      rl.DrawTexturePro(texture, source, tileDstTmp.view, origin, rotation, tint);
-      dy = dy + tileHeight;
+      tileDstTmp.view.x = dest.x + dx,
+      tileDstTmp.view.y = dest.y + dy,
+      tileDstTmp.view.width = tileWidth,
+      tileDstTmp.view.height = tileHeight,
+      rl.DrawTexturePro(texture, source, tileDstTmp.view, origin, rotation, tint),
+      dy = dy + tileHeight,
     }
     if (dy < dest.height) {
-      tileSrcTmp.view.x = source.x;
-      tileSrcTmp.view.y = source.y;
-      tileSrcTmp.view.width = source.width;
-      tileSrcTmp.view.height = ((dest.height - dy)/tileHeight)*source.height;
-      tileDstTmp.view.x = dest.x + dx;
-      tileDstTmp.view.y = dest.y + dy;
-      tileDstTmp.view.width = tileWidth;
-      tileDstTmp.view.height = dest.height - dy;
-      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint);
+      tileSrcTmp.view.x = source.x,
+      tileSrcTmp.view.y = source.y,
+      tileSrcTmp.view.width = source.width,
+      tileSrcTmp.view.height = ((dest.height - dy)/tileHeight)*source.height,
+      tileDstTmp.view.x = dest.x + dx,
+      tileDstTmp.view.y = dest.y + dy,
+      tileDstTmp.view.width = tileWidth,
+      tileDstTmp.view.height = dest.height - dy,
+      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint),
     }
-    dx = dx + tileWidth;
+    dx = dx + tileWidth,
   }
 
   if (dx < dest.width) {
-    dy = 0.0;
+    dy = 0.0,
     while (dy + tileHeight < dest.height) {
-      tileSrcTmp.view.x = source.x;
-      tileSrcTmp.view.y = source.y;
-      tileSrcTmp.view.width = ((dest.width - dx)/tileWidth)*source.width;
-      tileSrcTmp.view.height = source.height;
-      tileDstTmp.view.x = dest.x + dx;
-      tileDstTmp.view.y = dest.y + dy;
-      tileDstTmp.view.width = dest.width - dx;
-      tileDstTmp.view.height = tileHeight;
-      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint);
-      dy = dy + tileHeight;
+      tileSrcTmp.view.x = source.x,
+      tileSrcTmp.view.y = source.y,
+      tileSrcTmp.view.width = ((dest.width - dx)/tileWidth)*source.width,
+      tileSrcTmp.view.height = source.height,
+      tileDstTmp.view.x = dest.x + dx,
+      tileDstTmp.view.y = dest.y + dy,
+      tileDstTmp.view.width = dest.width - dx,
+      tileDstTmp.view.height = tileHeight,
+      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint),
+      dy = dy + tileHeight,
     }
     if (dy < dest.height) {
-      tileSrcTmp.view.x = source.x;
-      tileSrcTmp.view.y = source.y;
-      tileSrcTmp.view.width = ((dest.width - dx)/tileWidth)*source.width;
-      tileSrcTmp.view.height = ((dest.height - dy)/tileHeight)*source.height;
-      tileDstTmp.view.x = dest.x + dx;
-      tileDstTmp.view.y = dest.y + dy;
-      tileDstTmp.view.width = dest.width - dx;
-      tileDstTmp.view.height = dest.height - dy;
-      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint);
+      tileSrcTmp.view.x = source.x,
+      tileSrcTmp.view.y = source.y,
+      tileSrcTmp.view.width = ((dest.width - dx)/tileWidth)*source.width,
+      tileSrcTmp.view.height = ((dest.height - dy)/tileHeight)*source.height,
+      tileDstTmp.view.x = dest.x + dx,
+      tileDstTmp.view.y = dest.y + dy,
+      tileDstTmp.view.width = dest.width - dx,
+      tileDstTmp.view.height = dest.height - dy,
+      rl.DrawTexturePro(texture, tileSrcTmp.view, tileDstTmp.view, origin, rotation, tint),
     }
   }
-};
+},
 
 getPattern = (idx, p0, p1, p2, p3, p4, p5){
-  if (idx == 0) { return p0.view; }
-  if (idx == 1) { return p1.view; }
-  if (idx == 2) { return p2.view; }
-  if (idx == 3) { return p3.view; }
-  if (idx == 4) { return p4.view; }
-  return p5.view;
-};
+  if (idx == 0) { return p0.view, }
+  if (idx == 1) { return p1.view, }
+  if (idx == 2) { return p2.view, }
+  if (idx == 3) { return p3.view, }
+  if (idx == 4) { return p4.view, }
+  return p5.view,
+},
 
 getColor = (idx, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9){
-  if (idx == 0) { return c0; }
-  if (idx == 1) { return c1; }
-  if (idx == 2) { return c2; }
-  if (idx == 3) { return c3; }
-  if (idx == 4) { return c4; }
-  if (idx == 5) { return c5; }
-  if (idx == 6) { return c6; }
-  if (idx == 7) { return c7; }
-  if (idx == 8) { return c8; }
-  return c9;
-};
+  if (idx == 0) { return c0, }
+  if (idx == 1) { return c1, }
+  if (idx == 2) { return c2, }
+  if (idx == 3) { return c3, }
+  if (idx == 4) { return c4, }
+  if (idx == 5) { return c5, }
+  if (idx == 6) { return c6, }
+  if (idx == 7) { return c7, }
+  if (idx == 8) { return c8, }
+  return c9,
+},
 
-OPT_WIDTH = 220;
-MARGIN_SIZE = 8;
-COLOR_SIZE = 16;
+OPT_WIDTH = 220,
+MARGIN_SIZE = 8,
+COLOR_SIZE = 16,
 
-screenWidth = 800;
-screenHeight = 450;
-rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE);
-rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - tiled drawing");
-rl.SetTargetFPS(60);
+screenWidth = 800,
+screenHeight = 450,
+rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE),
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - tiled drawing"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-texPattern = rl.LoadTexture("../raylib/examples/textures/resources/patterns.png");
+texPattern = rl.LoadTexture("../raylib/examples/textures/resources/patterns.png"),
 if (texPattern.id == 0) {
-  println("could not load texture: ../raylib/examples/textures/resources/patterns.png");
-  rl.CloseWindow();
-  gc.collect();
-  return 0;
+  println("could not load texture: ../raylib/examples/textures/resources/patterns.png"),
+  rl.CloseWindow(),
+  gc.collect(),
+  return 0,
 }
-rl.SetTextureFilter(texPattern, rl.TEXTURE_FILTER_BILINEAR);
+rl.SetTextureFilter(texPattern, rl.TEXTURE_FILTER_BILINEAR),
 
-tileSrcTmp = rl.newRectangle(rl.Rectangle, 0.0, 0.0, 0.0, 0.0);
-tileDstTmp = rl.newRectangle(rl.Rectangle, 0.0, 0.0, 0.0, 0.0);
-tileArea = rl.newRectangle(rl.Rectangle, 0.0, 0.0, 0.0, 0.0);
-tileOrigin = rl.newVector2(rl.Vector2, 0.0, 0.0);
+tileSrcTmp = rl.newRectangle(rl.Rectangle, 0.0, 0.0, 0.0, 0.0),
+tileDstTmp = rl.newRectangle(rl.Rectangle, 0.0, 0.0, 0.0, 0.0),
+tileArea = rl.newRectangle(rl.Rectangle, 0.0, 0.0, 0.0, 0.0),
+tileOrigin = rl.newVector2(rl.Vector2, 0.0, 0.0),
 
-p0 = rl.newRectangle(rl.Rectangle, 3.0, 3.0, 66.0, 66.0);
-p1 = rl.newRectangle(rl.Rectangle, 75.0, 3.0, 100.0, 100.0);
-p2 = rl.newRectangle(rl.Rectangle, 3.0, 75.0, 66.0, 66.0);
-p3 = rl.newRectangle(rl.Rectangle, 7.0, 156.0, 50.0, 50.0);
-p4 = rl.newRectangle(rl.Rectangle, 85.0, 106.0, 90.0, 45.0);
-p5 = rl.newRectangle(rl.Rectangle, 75.0, 154.0, 100.0, 60.0);
+p0 = rl.newRectangle(rl.Rectangle, 3.0, 3.0, 66.0, 66.0),
+p1 = rl.newRectangle(rl.Rectangle, 75.0, 3.0, 100.0, 100.0),
+p2 = rl.newRectangle(rl.Rectangle, 3.0, 75.0, 66.0, 66.0),
+p3 = rl.newRectangle(rl.Rectangle, 7.0, 156.0, 50.0, 50.0),
+p4 = rl.newRectangle(rl.Rectangle, 85.0, 106.0, 90.0, 45.0),
+p5 = rl.newRectangle(rl.Rectangle, 75.0, 154.0, 100.0, 60.0),
 
-c0 = rl.BLACK.view;
-c1 = rl.MAROON.view;
-c2 = rl.ORANGE.view;
-c3 = rl.BLUE.view;
-c4 = rl.PURPLE.view;
-c5 = rl.BEIGE.view;
-c6 = rl.LIME.view;
-c7 = rl.RED.view;
-c8 = rl.DARKGRAY.view;
-c9 = rl.SKYBLUE.view;
+c0 = rl.BLACK.view,
+c1 = rl.MAROON.view,
+c2 = rl.ORANGE.view,
+c3 = rl.BLUE.view,
+c4 = rl.PURPLE.view,
+c5 = rl.BEIGE.view,
+c6 = rl.LIME.view,
+c7 = rl.RED.view,
+c8 = rl.DARKGRAY.view,
+c9 = rl.SKYBLUE.view,
 
-cr0 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE);
-cr1 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 40, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE);
-cr2 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 80, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE);
-cr3 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 120, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE);
-cr4 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 160, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE);
-cr5 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE);
-cr6 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 40, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE);
-cr7 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 80, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE);
-cr8 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 120, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE);
-cr9 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 160, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE);
+cr0 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE),
+cr1 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 40, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE),
+cr2 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 80, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE),
+cr3 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 120, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE),
+cr4 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 160, 22.0 + 256.0 + MARGIN_SIZE, COLOR_SIZE*2.0, COLOR_SIZE),
+cr5 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE),
+cr6 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 40, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE),
+cr7 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 80, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE),
+cr8 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 120, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE),
+cr9 = rl.newRectangle(rl.Rectangle, 2.0 + MARGIN_SIZE + 160, 22.0 + 256.0 + MARGIN_SIZE + 24, COLOR_SIZE*2.0, COLOR_SIZE),
 
-activePattern = 0;
-activeCol = 0;
-scale = 1.0;
-rotation = 0.0;
+activePattern = 0,
+activeCol = 0,
+scale = 1.0,
+rotation = 0.0,
 
 while (!rl.WindowShouldClose()) {
   if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) {
-    mouse = rl.GetMousePosition();
+    mouse = rl.GetMousePosition(),
 
-    hit0 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p0.view.x, 40 + MARGIN_SIZE + p0.view.y, p0.view.width, p0.view.height);
-    hit1 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p1.view.x, 40 + MARGIN_SIZE + p1.view.y, p1.view.width, p1.view.height);
-    hit2 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p2.view.x, 40 + MARGIN_SIZE + p2.view.y, p2.view.width, p2.view.height);
-    hit3 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p3.view.x, 40 + MARGIN_SIZE + p3.view.y, p3.view.width, p3.view.height);
-    hit4 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p4.view.x, 40 + MARGIN_SIZE + p4.view.y, p4.view.width, p4.view.height);
-    hit5 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p5.view.x, 40 + MARGIN_SIZE + p5.view.y, p5.view.width, p5.view.height);
+    hit0 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p0.view.x, 40 + MARGIN_SIZE + p0.view.y, p0.view.width, p0.view.height),
+    hit1 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p1.view.x, 40 + MARGIN_SIZE + p1.view.y, p1.view.width, p1.view.height),
+    hit2 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p2.view.x, 40 + MARGIN_SIZE + p2.view.y, p2.view.width, p2.view.height),
+    hit3 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p3.view.x, 40 + MARGIN_SIZE + p3.view.y, p3.view.width, p3.view.height),
+    hit4 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p4.view.x, 40 + MARGIN_SIZE + p4.view.y, p4.view.width, p4.view.height),
+    hit5 = rl.newRectangle(rl.Rectangle, 2 + MARGIN_SIZE + p5.view.x, 40 + MARGIN_SIZE + p5.view.y, p5.view.width, p5.view.height),
 
-    if (rl.CheckCollisionPointRec(mouse, hit0.view)) { activePattern = 0; }
-    if (rl.CheckCollisionPointRec(mouse, hit1.view)) { activePattern = 1; }
-    if (rl.CheckCollisionPointRec(mouse, hit2.view)) { activePattern = 2; }
-    if (rl.CheckCollisionPointRec(mouse, hit3.view)) { activePattern = 3; }
-    if (rl.CheckCollisionPointRec(mouse, hit4.view)) { activePattern = 4; }
-    if (rl.CheckCollisionPointRec(mouse, hit5.view)) { activePattern = 5; }
+    if (rl.CheckCollisionPointRec(mouse, hit0.view)) { activePattern = 0, }
+    if (rl.CheckCollisionPointRec(mouse, hit1.view)) { activePattern = 1, }
+    if (rl.CheckCollisionPointRec(mouse, hit2.view)) { activePattern = 2, }
+    if (rl.CheckCollisionPointRec(mouse, hit3.view)) { activePattern = 3, }
+    if (rl.CheckCollisionPointRec(mouse, hit4.view)) { activePattern = 4, }
+    if (rl.CheckCollisionPointRec(mouse, hit5.view)) { activePattern = 5, }
 
-    if (rl.CheckCollisionPointRec(mouse, cr0.view)) { activeCol = 0; }
-    if (rl.CheckCollisionPointRec(mouse, cr1.view)) { activeCol = 1; }
-    if (rl.CheckCollisionPointRec(mouse, cr2.view)) { activeCol = 2; }
-    if (rl.CheckCollisionPointRec(mouse, cr3.view)) { activeCol = 3; }
-    if (rl.CheckCollisionPointRec(mouse, cr4.view)) { activeCol = 4; }
-    if (rl.CheckCollisionPointRec(mouse, cr5.view)) { activeCol = 5; }
-    if (rl.CheckCollisionPointRec(mouse, cr6.view)) { activeCol = 6; }
-    if (rl.CheckCollisionPointRec(mouse, cr7.view)) { activeCol = 7; }
-    if (rl.CheckCollisionPointRec(mouse, cr8.view)) { activeCol = 8; }
-    if (rl.CheckCollisionPointRec(mouse, cr9.view)) { activeCol = 9; }
+    if (rl.CheckCollisionPointRec(mouse, cr0.view)) { activeCol = 0, }
+    if (rl.CheckCollisionPointRec(mouse, cr1.view)) { activeCol = 1, }
+    if (rl.CheckCollisionPointRec(mouse, cr2.view)) { activeCol = 2, }
+    if (rl.CheckCollisionPointRec(mouse, cr3.view)) { activeCol = 3, }
+    if (rl.CheckCollisionPointRec(mouse, cr4.view)) { activeCol = 4, }
+    if (rl.CheckCollisionPointRec(mouse, cr5.view)) { activeCol = 5, }
+    if (rl.CheckCollisionPointRec(mouse, cr6.view)) { activeCol = 6, }
+    if (rl.CheckCollisionPointRec(mouse, cr7.view)) { activeCol = 7, }
+    if (rl.CheckCollisionPointRec(mouse, cr8.view)) { activeCol = 8, }
+    if (rl.CheckCollisionPointRec(mouse, cr9.view)) { activeCol = 9, }
   }
 
-  if (rl.IsKeyPressed(rl.KEY_UP)) { scale = scale + 0.25; }
-  if (rl.IsKeyPressed(rl.KEY_DOWN)) { scale = scale - 0.25; }
-  if (scale > 10.0) { scale = 10.0; }
-  if (scale <= 0.0) { scale = 0.25; }
-  if (rl.IsKeyPressed(rl.KEY_LEFT)) { rotation = rotation - 25.0; }
-  if (rl.IsKeyPressed(rl.KEY_RIGHT)) { rotation = rotation + 25.0; }
-  if (rl.IsKeyPressed(rl.KEY_SPACE)) { rotation = 0.0; scale = 1.0; }
+  if (rl.IsKeyPressed(rl.KEY_UP)) { scale = scale + 0.25, }
+  if (rl.IsKeyPressed(rl.KEY_DOWN)) { scale = scale - 0.25, }
+  if (scale > 10.0) { scale = 10.0, }
+  if (scale <= 0.0) { scale = 0.25, }
+  if (rl.IsKeyPressed(rl.KEY_LEFT)) { rotation = rotation - 25.0, }
+  if (rl.IsKeyPressed(rl.KEY_RIGHT)) { rotation = rotation + 25.0, }
+  if (rl.IsKeyPressed(rl.KEY_SPACE)) { rotation = 0.0, scale = 1.0, }
 
-  activePatternView = getPattern(activePattern, p0, p1, p2, p3, p4, p5);
-  activeColorView = getColor(activeCol, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9);
+  activePatternView = getPattern(activePattern, p0, p1, p2, p3, p4, p5),
+  activeColorView = getColor(activeCol, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9),
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  tileArea.view.x = OPT_WIDTH + MARGIN_SIZE;
-  tileArea.view.y = MARGIN_SIZE;
-  tileArea.view.width = rl.GetScreenWidth() - OPT_WIDTH - 2.0*MARGIN_SIZE;
-  tileArea.view.height = rl.GetScreenHeight() - 2.0*MARGIN_SIZE;
-  drawTextureTiled(texPattern, activePatternView, tileArea.view, tileOrigin.view, rotation, scale, activeColorView);
+  tileArea.view.x = OPT_WIDTH + MARGIN_SIZE,
+  tileArea.view.y = MARGIN_SIZE,
+  tileArea.view.width = rl.GetScreenWidth() - OPT_WIDTH - 2.0*MARGIN_SIZE,
+  tileArea.view.height = rl.GetScreenHeight() - 2.0*MARGIN_SIZE,
+  drawTextureTiled(texPattern, activePatternView, tileArea.view, tileOrigin.view, rotation, scale, activeColorView),
 
-  panel = rl.Fade(rl.LIGHTGRAY.view, 0.5);
-  rl.DrawRectangle(MARGIN_SIZE, MARGIN_SIZE, OPT_WIDTH - MARGIN_SIZE, rl.GetScreenHeight() - 2*MARGIN_SIZE, panel);
-  rl.DrawText("Select Pattern", 2 + MARGIN_SIZE, 30 + MARGIN_SIZE, 10, rl.BLACK.view);
-  rl.DrawTexture(texPattern, 2 + MARGIN_SIZE, 40 + MARGIN_SIZE, rl.BLACK.view);
-  selected = rl.Fade(rl.DARKBLUE.view, 0.3);
-  rl.DrawRectangle(2 + MARGIN_SIZE + activePatternView.x, 40 + MARGIN_SIZE + activePatternView.y, activePatternView.width, activePatternView.height, selected);
+  panel = rl.Fade(rl.LIGHTGRAY.view, 0.5),
+  rl.DrawRectangle(MARGIN_SIZE, MARGIN_SIZE, OPT_WIDTH - MARGIN_SIZE, rl.GetScreenHeight() - 2*MARGIN_SIZE, panel),
+  rl.DrawText("Select Pattern", 2 + MARGIN_SIZE, 30 + MARGIN_SIZE, 10, rl.BLACK.view),
+  rl.DrawTexture(texPattern, 2 + MARGIN_SIZE, 40 + MARGIN_SIZE, rl.BLACK.view),
+  selected = rl.Fade(rl.DARKBLUE.view, 0.3),
+  rl.DrawRectangle(2 + MARGIN_SIZE + activePatternView.x, 40 + MARGIN_SIZE + activePatternView.y, activePatternView.width, activePatternView.height, selected),
 
-  rl.DrawText("Select Color", 2 + MARGIN_SIZE, 10 + 256 + MARGIN_SIZE, 10, rl.BLACK.view);
-  rl.DrawRectangleRec(cr0.view, c0);
-  rl.DrawRectangleRec(cr1.view, c1);
-  rl.DrawRectangleRec(cr2.view, c2);
-  rl.DrawRectangleRec(cr3.view, c3);
-  rl.DrawRectangleRec(cr4.view, c4);
-  rl.DrawRectangleRec(cr5.view, c5);
-  rl.DrawRectangleRec(cr6.view, c6);
-  rl.DrawRectangleRec(cr7.view, c7);
-  rl.DrawRectangleRec(cr8.view, c8);
-  rl.DrawRectangleRec(cr9.view, c9);
+  rl.DrawText("Select Color", 2 + MARGIN_SIZE, 10 + 256 + MARGIN_SIZE, 10, rl.BLACK.view),
+  rl.DrawRectangleRec(cr0.view, c0),
+  rl.DrawRectangleRec(cr1.view, c1),
+  rl.DrawRectangleRec(cr2.view, c2),
+  rl.DrawRectangleRec(cr3.view, c3),
+  rl.DrawRectangleRec(cr4.view, c4),
+  rl.DrawRectangleRec(cr5.view, c5),
+  rl.DrawRectangleRec(cr6.view, c6),
+  rl.DrawRectangleRec(cr7.view, c7),
+  rl.DrawRectangleRec(cr8.view, c8),
+  rl.DrawRectangleRec(cr9.view, c9),
 
-  whiteFaded = rl.Fade(rl.WHITE.view, 0.5);
-  if (activeCol == 0) { rl.DrawRectangleLinesEx(cr0.view, 3.0, whiteFaded); }
-  if (activeCol == 1) { rl.DrawRectangleLinesEx(cr1.view, 3.0, whiteFaded); }
-  if (activeCol == 2) { rl.DrawRectangleLinesEx(cr2.view, 3.0, whiteFaded); }
-  if (activeCol == 3) { rl.DrawRectangleLinesEx(cr3.view, 3.0, whiteFaded); }
-  if (activeCol == 4) { rl.DrawRectangleLinesEx(cr4.view, 3.0, whiteFaded); }
-  if (activeCol == 5) { rl.DrawRectangleLinesEx(cr5.view, 3.0, whiteFaded); }
-  if (activeCol == 6) { rl.DrawRectangleLinesEx(cr6.view, 3.0, whiteFaded); }
-  if (activeCol == 7) { rl.DrawRectangleLinesEx(cr7.view, 3.0, whiteFaded); }
-  if (activeCol == 8) { rl.DrawRectangleLinesEx(cr8.view, 3.0, whiteFaded); }
-  if (activeCol == 9) { rl.DrawRectangleLinesEx(cr9.view, 3.0, whiteFaded); }
+  whiteFaded = rl.Fade(rl.WHITE.view, 0.5),
+  if (activeCol == 0) { rl.DrawRectangleLinesEx(cr0.view, 3.0, whiteFaded), }
+  if (activeCol == 1) { rl.DrawRectangleLinesEx(cr1.view, 3.0, whiteFaded), }
+  if (activeCol == 2) { rl.DrawRectangleLinesEx(cr2.view, 3.0, whiteFaded), }
+  if (activeCol == 3) { rl.DrawRectangleLinesEx(cr3.view, 3.0, whiteFaded), }
+  if (activeCol == 4) { rl.DrawRectangleLinesEx(cr4.view, 3.0, whiteFaded), }
+  if (activeCol == 5) { rl.DrawRectangleLinesEx(cr5.view, 3.0, whiteFaded), }
+  if (activeCol == 6) { rl.DrawRectangleLinesEx(cr6.view, 3.0, whiteFaded), }
+  if (activeCol == 7) { rl.DrawRectangleLinesEx(cr7.view, 3.0, whiteFaded), }
+  if (activeCol == 8) { rl.DrawRectangleLinesEx(cr8.view, 3.0, whiteFaded), }
+  if (activeCol == 9) { rl.DrawRectangleLinesEx(cr9.view, 3.0, whiteFaded), }
 
-  rl.DrawText("Scale (UP/DOWN to change)", 2 + MARGIN_SIZE, 80 + 256 + MARGIN_SIZE, 10, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("%.2fx", scale), 2 + MARGIN_SIZE, 92 + 256 + MARGIN_SIZE, 20, rl.BLACK.view);
-  rl.DrawText("Rotation (LEFT/RIGHT to change)", 2 + MARGIN_SIZE, 122 + 256 + MARGIN_SIZE, 10, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("%.0f degrees", rotation), 2 + MARGIN_SIZE, 134 + 256 + MARGIN_SIZE, 20, rl.BLACK.view);
-  rl.DrawText("Press [SPACE] to reset", 2 + MARGIN_SIZE, 164 + 256 + MARGIN_SIZE, 10, rl.DARKBLUE.view);
-  rl.DrawText(rl.TextFormat("%i FPS", rl.GetFPS()), 2 + MARGIN_SIZE, 2 + MARGIN_SIZE, 20, rl.BLACK.view);
+  rl.DrawText("Scale (UP/DOWN to change)", 2 + MARGIN_SIZE, 80 + 256 + MARGIN_SIZE, 10, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("%.2fx", scale), 2 + MARGIN_SIZE, 92 + 256 + MARGIN_SIZE, 20, rl.BLACK.view),
+  rl.DrawText("Rotation (LEFT/RIGHT to change)", 2 + MARGIN_SIZE, 122 + 256 + MARGIN_SIZE, 10, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("%.0f degrees", rotation), 2 + MARGIN_SIZE, 134 + 256 + MARGIN_SIZE, 20, rl.BLACK.view),
+  rl.DrawText("Press [SPACE] to reset", 2 + MARGIN_SIZE, 164 + 256 + MARGIN_SIZE, 10, rl.DARKBLUE.view),
+  rl.DrawText(rl.TextFormat("%i FPS", rl.GetFPS()), 2 + MARGIN_SIZE, 2 + MARGIN_SIZE, 20, rl.BLACK.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.UnloadTexture(texPattern);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadTexture(texPattern),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

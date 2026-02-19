@@ -1,7 +1,7 @@
-use strict;
+use strict,
 
-println(1i + 2i);
-println(1f + 2f);
+println(1i + 2i),
+println(1f + 2f),
 
-s = "hello";
-println(s.string);
+s = "hello",
+println(s.string),

@@ -1,7 +1,7 @@
-secret = 7;
-module_only = 123;
+secret = 7,
+module_only = 123,
 return {
   tag = "math",
-  add = (a, b){ return a + b; },
+  add = (a, b){ return a + b, },
   secret = secret
-};
+},

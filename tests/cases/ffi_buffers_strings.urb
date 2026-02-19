@@ -1,74 +1,74 @@
 ffi_sig_name = (sig){
-  s = sig.trim();
-  depth = 0;
-  open = -1;
-  i = s.size - 1;
+  s = sig.trim(),
+  depth = 0,
+  open = -1,
+  i = s.size - 1,
   while (i >= 0) {
-    ch = s.slice(i, i + 1);
+    ch = s.slice(i, i + 1),
     if (ch == ")") {
-      depth++;
+      depth++,
     } else if (ch == "(") {
-      depth--;
+      depth--,
       if (depth == 0) {
-        open = i;
-        break;
+        open = i,
+        break,
       }
     }
-    i--;
+    i--,
   }
-  if (open < 0) { return null; }
-  head = s.slice(0, open).trim();
-  parts = head.split(" ");
-  if (parts.size == 0) { return null; }
-  return (parts[parts.size - 1].split("!")[0] + "");
-};
+  if (open < 0) { return null, }
+  head = s.slice(0, open).trim(),
+  parts = head.split(" "),
+  if (parts.size == 0) { return null, }
+  return (parts[parts.size - 1].split("!")[0] + ""),
+},
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
-  api = { __lib = h };
+  h = ffi.open(path),
+  if (h == null) { return null, }
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
-    if (ptr == null) { return null; }
-    api[name] = ffi.bind(ptr, sig);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
+    if (ptr == null) { return null, }
+    api[name] = ffi.bind(ptr, sig),
   }
-  return api;
-};
+  return api,
+},
 
-fail = 0;
+fail = 0,
 
 load_fixture = (path){
   return ffi_bind_all(path,
     "i32 cstr_len(char*)",
     "i32 write_seq_u8(void*, i32, i32)",
     "i32 read_u8(void*, i32)"
-  );
-};
+  ),
+},
 
-lib = load_fixture("./tests/ffi/libffi_view_struct.so");
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+lib = load_fixture("./tests/ffi/libffi_view_struct.so"),
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"), }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"), }
 if (lib == null) {
-  println(1);
-  return 0;
+  println(1),
+  return 0,
 }
 
-buf = ffi.buffer(8);
-arr = ffi.viewArray(buf, "u8", 8);
+buf = ffi.buffer(8),
+arr = ffi.viewArray(buf, "u8", 8),
 
-arr[0] = 65;
-arr[1] = 66;
-arr[2] = 67;
-arr[3] = 0;
-if (ffi.string(buf) != "ABC") { fail++; }
-if (ffi.string(buf, 3) != "ABC") { fail++; }
-if (lib.cstr_len(buf) != 3) { fail++; }
+arr[0] = 65,
+arr[1] = 66,
+arr[2] = 67,
+arr[3] = 0,
+if (ffi.string(buf) != "ABC") { fail++, }
+if (ffi.string(buf, 3) != "ABC") { fail++, }
+if (lib.cstr_len(buf) != 3) { fail++, }
 
-if (lib.write_seq_u8(buf, 5, 10) != 5) { fail++; }
-if (arr[0] != 10) { fail++; }
-if (arr[4] != 14) { fail++; }
-if (lib.read_u8(buf, 2) != 12) { fail++; }
+if (lib.write_seq_u8(buf, 5, 10) != 5) { fail++, }
+if (arr[0] != 10) { fail++, }
+if (arr[4] != 14) { fail++, }
+if (lib.read_u8(buf, 2) != 12) { fail++, }
 
-ffi.free(buf);
-println(fail);
+ffi.free(buf),
+println(fail),

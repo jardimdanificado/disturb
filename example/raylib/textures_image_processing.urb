@@ -1,276 +1,276 @@
 // raylib [textures] example - image processing (Disturb port)
 // Linear version to avoid function-bytecode edge cases in some runtime builds.
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
-rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - image processing");
-rl.SetTargetFPS(60);
+screenWidth = 800,
+screenHeight = 450,
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - image processing"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-imagePath = "../raylib/examples/textures/resources/parrots.png";
+imagePath = "../raylib/examples/textures/resources/parrots.png",
 
-img0 = rl.LoadImage(imagePath);
+img0 = rl.LoadImage(imagePath),
 if (img0.data == null) {
-  println("could not load image: ../raylib/examples/textures/resources/parrots.png");
-  rl.CloseWindow();
-  gc.collect();
-  return 0;
+  println("could not load image: ../raylib/examples/textures/resources/parrots.png"),
+  rl.CloseWindow(),
+  gc.collect(),
+  return 0,
 }
-img0Ref = rl.newImageRef(rl.Image, img0);
-t0 = rl.LoadTextureFromImage(img0Ref.view);
-rl.UnloadImage(img0Ref.view);
+img0Ref = rl.newImageRef(rl.Image, img0),
+t0 = rl.LoadTextureFromImage(img0Ref.view),
+rl.UnloadImage(img0Ref.view),
 
-img1 = rl.LoadImage(imagePath);
-img1Ref = rl.newImageRef(rl.Image, img1);
-rl.ImageColorGrayscale(img1Ref.ptr);
-t1 = rl.LoadTextureFromImage(img1Ref.view);
-rl.UnloadImage(img1Ref.view);
+img1 = rl.LoadImage(imagePath),
+img1Ref = rl.newImageRef(rl.Image, img1),
+rl.ImageColorGrayscale(img1Ref.ptr),
+t1 = rl.LoadTextureFromImage(img1Ref.view),
+rl.UnloadImage(img1Ref.view),
 
-img2 = rl.LoadImage(imagePath);
-img2Ref = rl.newImageRef(rl.Image, img2);
-rl.ImageColorTint(img2Ref.ptr, rl.GREEN.view);
-t2 = rl.LoadTextureFromImage(img2Ref.view);
-rl.UnloadImage(img2Ref.view);
+img2 = rl.LoadImage(imagePath),
+img2Ref = rl.newImageRef(rl.Image, img2),
+rl.ImageColorTint(img2Ref.ptr, rl.GREEN.view),
+t2 = rl.LoadTextureFromImage(img2Ref.view),
+rl.UnloadImage(img2Ref.view),
 
-img3 = rl.LoadImage(imagePath);
-img3Ref = rl.newImageRef(rl.Image, img3);
-rl.ImageColorInvert(img3Ref.ptr);
-t3 = rl.LoadTextureFromImage(img3Ref.view);
-rl.UnloadImage(img3Ref.view);
+img3 = rl.LoadImage(imagePath),
+img3Ref = rl.newImageRef(rl.Image, img3),
+rl.ImageColorInvert(img3Ref.ptr),
+t3 = rl.LoadTextureFromImage(img3Ref.view),
+rl.UnloadImage(img3Ref.view),
 
-img4 = rl.LoadImage(imagePath);
-img4Ref = rl.newImageRef(rl.Image, img4);
-rl.ImageColorContrast(img4Ref.ptr, -40.0);
-t4 = rl.LoadTextureFromImage(img4Ref.view);
-rl.UnloadImage(img4Ref.view);
+img4 = rl.LoadImage(imagePath),
+img4Ref = rl.newImageRef(rl.Image, img4),
+rl.ImageColorContrast(img4Ref.ptr, -40.0),
+t4 = rl.LoadTextureFromImage(img4Ref.view),
+rl.UnloadImage(img4Ref.view),
 
-img5 = rl.LoadImage(imagePath);
-img5Ref = rl.newImageRef(rl.Image, img5);
-rl.ImageColorBrightness(img5Ref.ptr, -80);
-t5 = rl.LoadTextureFromImage(img5Ref.view);
-rl.UnloadImage(img5Ref.view);
+img5 = rl.LoadImage(imagePath),
+img5Ref = rl.newImageRef(rl.Image, img5),
+rl.ImageColorBrightness(img5Ref.ptr, -80),
+t5 = rl.LoadTextureFromImage(img5Ref.view),
+rl.UnloadImage(img5Ref.view),
 
-img6 = rl.LoadImage(imagePath);
-img6Ref = rl.newImageRef(rl.Image, img6);
-rl.ImageBlurGaussian(img6Ref.ptr, 10);
-t6 = rl.LoadTextureFromImage(img6Ref.view);
-rl.UnloadImage(img6Ref.view);
+img6 = rl.LoadImage(imagePath),
+img6Ref = rl.newImageRef(rl.Image, img6),
+rl.ImageBlurGaussian(img6Ref.ptr, 10),
+t6 = rl.LoadTextureFromImage(img6Ref.view),
+rl.UnloadImage(img6Ref.view),
 
-img7 = rl.LoadImage(imagePath);
-img7Ref = rl.newImageRef(rl.Image, img7);
-rl.ImageFlipVertical(img7Ref.ptr);
-t7 = rl.LoadTextureFromImage(img7Ref.view);
-rl.UnloadImage(img7Ref.view);
+img7 = rl.LoadImage(imagePath),
+img7Ref = rl.newImageRef(rl.Image, img7),
+rl.ImageFlipVertical(img7Ref.ptr),
+t7 = rl.LoadTextureFromImage(img7Ref.view),
+rl.UnloadImage(img7Ref.view),
 
-img8 = rl.LoadImage(imagePath);
-img8Ref = rl.newImageRef(rl.Image, img8);
-rl.ImageFlipHorizontal(img8Ref.ptr);
-t8 = rl.LoadTextureFromImage(img8Ref.view);
-rl.UnloadImage(img8Ref.view);
+img8 = rl.LoadImage(imagePath),
+img8Ref = rl.newImageRef(rl.Image, img8),
+rl.ImageFlipHorizontal(img8Ref.ptr),
+t8 = rl.LoadTextureFromImage(img8Ref.view),
+rl.UnloadImage(img8Ref.view),
 
-buttonX = 40;
-buttonY = 50;
-buttonW = 150;
-buttonH = 30;
-buttonStep = 32;
+buttonX = 40,
+buttonY = 50,
+buttonW = 150,
+buttonH = 30,
+buttonStep = 32,
 
-label0 = "NO PROCESSING";
-label1 = "COLOR GRAYSCALE";
-label2 = "COLOR TINT";
-label3 = "COLOR INVERT";
-label4 = "COLOR CONTRAST";
-label5 = "COLOR BRIGHTNESS";
-label6 = "GAUSSIAN BLUR";
-label7 = "FLIP VERTICAL";
-label8 = "FLIP HORIZONTAL";
+label0 = "NO PROCESSING",
+label1 = "COLOR GRAYSCALE",
+label2 = "COLOR TINT",
+label3 = "COLOR INVERT",
+label4 = "COLOR CONTRAST",
+label5 = "COLOR BRIGHTNESS",
+label6 = "GAUSSIAN BLUR",
+label7 = "FLIP VERTICAL",
+label8 = "FLIP HORIZONTAL",
 
-currentProcess = 1;
-mouseHoverRec = -1;
-tex = t1;
+currentProcess = 1,
+mouseHoverRec = -1,
+tex = t1,
 
 while (!rl.WindowShouldClose()) {
-  mouse = rl.GetMousePosition();
-  mouseX = mouse.x;
-  mouseY = mouse.y;
-  mouseHoverRec = -1;
+  mouse = rl.GetMousePosition(),
+  mouseX = mouse.x,
+  mouseY = mouse.y,
+  mouseHoverRec = -1,
 
   if ((mouseX >= buttonX) && (mouseX <= (buttonX + buttonW)) && (mouseY >= (buttonY + buttonStep*0)) && (mouseY <= (buttonY + buttonStep*0 + buttonH))) {
-    mouseHoverRec = 0;
-    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 0; }
+    mouseHoverRec = 0,
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 0, }
   }
   if ((mouseX >= buttonX) && (mouseX <= (buttonX + buttonW)) && (mouseY >= (buttonY + buttonStep*1)) && (mouseY <= (buttonY + buttonStep*1 + buttonH))) {
-    mouseHoverRec = 1;
-    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 1; }
+    mouseHoverRec = 1,
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 1, }
   }
   if ((mouseX >= buttonX) && (mouseX <= (buttonX + buttonW)) && (mouseY >= (buttonY + buttonStep*2)) && (mouseY <= (buttonY + buttonStep*2 + buttonH))) {
-    mouseHoverRec = 2;
-    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 2; }
+    mouseHoverRec = 2,
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 2, }
   }
   if ((mouseX >= buttonX) && (mouseX <= (buttonX + buttonW)) && (mouseY >= (buttonY + buttonStep*3)) && (mouseY <= (buttonY + buttonStep*3 + buttonH))) {
-    mouseHoverRec = 3;
-    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 3; }
+    mouseHoverRec = 3,
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 3, }
   }
   if ((mouseX >= buttonX) && (mouseX <= (buttonX + buttonW)) && (mouseY >= (buttonY + buttonStep*4)) && (mouseY <= (buttonY + buttonStep*4 + buttonH))) {
-    mouseHoverRec = 4;
-    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 4; }
+    mouseHoverRec = 4,
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 4, }
   }
   if ((mouseX >= buttonX) && (mouseX <= (buttonX + buttonW)) && (mouseY >= (buttonY + buttonStep*5)) && (mouseY <= (buttonY + buttonStep*5 + buttonH))) {
-    mouseHoverRec = 5;
-    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 5; }
+    mouseHoverRec = 5,
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 5, }
   }
   if ((mouseX >= buttonX) && (mouseX <= (buttonX + buttonW)) && (mouseY >= (buttonY + buttonStep*6)) && (mouseY <= (buttonY + buttonStep*6 + buttonH))) {
-    mouseHoverRec = 6;
-    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 6; }
+    mouseHoverRec = 6,
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 6, }
   }
   if ((mouseX >= buttonX) && (mouseX <= (buttonX + buttonW)) && (mouseY >= (buttonY + buttonStep*7)) && (mouseY <= (buttonY + buttonStep*7 + buttonH))) {
-    mouseHoverRec = 7;
-    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 7; }
+    mouseHoverRec = 7,
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 7, }
   }
   if ((mouseX >= buttonX) && (mouseX <= (buttonX + buttonW)) && (mouseY >= (buttonY + buttonStep*8)) && (mouseY <= (buttonY + buttonStep*8 + buttonH))) {
-    mouseHoverRec = 8;
-    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 8; }
+    mouseHoverRec = 8,
+    if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT)) { currentProcess = 8, }
   }
 
   if (rl.IsKeyPressed(rl.KEY_DOWN)) {
-    currentProcess = currentProcess + 1;
-    if (currentProcess > 8) { currentProcess = 0; }
+    currentProcess = currentProcess + 1,
+    if (currentProcess > 8) { currentProcess = 0, }
   } else if (rl.IsKeyPressed(rl.KEY_UP)) {
-    currentProcess = currentProcess - 1;
-    if (currentProcess < 0) { currentProcess = 8; }
+    currentProcess = currentProcess - 1,
+    if (currentProcess < 0) { currentProcess = 8, }
   }
 
-  if (rl.IsKeyPressed(rl.KEY_ONE)) { currentProcess = 0; }
-  if (rl.IsKeyPressed(rl.KEY_TWO)) { currentProcess = 1; }
-  if (rl.IsKeyPressed(rl.KEY_THREE)) { currentProcess = 2; }
-  if (rl.IsKeyPressed(rl.KEY_FOUR)) { currentProcess = 3; }
-  if (rl.IsKeyPressed(rl.KEY_FIVE)) { currentProcess = 4; }
-  if (rl.IsKeyPressed(rl.KEY_SIX)) { currentProcess = 5; }
-  if (rl.IsKeyPressed(rl.KEY_SEVEN)) { currentProcess = 6; }
-  if (rl.IsKeyPressed(rl.KEY_EIGHT)) { currentProcess = 7; }
-  if (rl.IsKeyPressed(rl.KEY_NINE)) { currentProcess = 8; }
+  if (rl.IsKeyPressed(rl.KEY_ONE)) { currentProcess = 0, }
+  if (rl.IsKeyPressed(rl.KEY_TWO)) { currentProcess = 1, }
+  if (rl.IsKeyPressed(rl.KEY_THREE)) { currentProcess = 2, }
+  if (rl.IsKeyPressed(rl.KEY_FOUR)) { currentProcess = 3, }
+  if (rl.IsKeyPressed(rl.KEY_FIVE)) { currentProcess = 4, }
+  if (rl.IsKeyPressed(rl.KEY_SIX)) { currentProcess = 5, }
+  if (rl.IsKeyPressed(rl.KEY_SEVEN)) { currentProcess = 6, }
+  if (rl.IsKeyPressed(rl.KEY_EIGHT)) { currentProcess = 7, }
+  if (rl.IsKeyPressed(rl.KEY_NINE)) { currentProcess = 8, }
 
-  tex = t0;
-  if (currentProcess == 1) { tex = t1; }
-  if (currentProcess == 2) { tex = t2; }
-  if (currentProcess == 3) { tex = t3; }
-  if (currentProcess == 4) { tex = t4; }
-  if (currentProcess == 5) { tex = t5; }
-  if (currentProcess == 6) { tex = t6; }
-  if (currentProcess == 7) { tex = t7; }
-  if (currentProcess == 8) { tex = t8; }
+  tex = t0,
+  if (currentProcess == 1) { tex = t1, }
+  if (currentProcess == 2) { tex = t2, }
+  if (currentProcess == 3) { tex = t3, }
+  if (currentProcess == 4) { tex = t4, }
+  if (currentProcess == 5) { tex = t5, }
+  if (currentProcess == 6) { tex = t6, }
+  if (currentProcess == 7) { tex = t7, }
+  if (currentProcess == 8) { tex = t8, }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
-  rl.DrawText("IMAGE PROCESSING:", 40, 30, 10, rl.DARKGRAY.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
+  rl.DrawText("IMAGE PROCESSING:", 40, 30, 10, rl.DARKGRAY.view),
 
-  c0 = rl.LIGHTGRAY.view; b0 = rl.GRAY.view; t0c = rl.DARKGRAY.view;
-  if ((mouseHoverRec == 0) || (currentProcess == 0)) { c0 = rl.SKYBLUE.view; b0 = rl.BLUE.view; t0c = rl.DARKBLUE.view; }
-  rl.DrawRectangle(buttonX, buttonY + buttonStep*0, buttonW, buttonH, c0);
-  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*0, buttonW, buttonH, b0);
-  w0 = rl.MeasureText(label0, 10);
-  rl.DrawText(label0, buttonX + buttonW/2 - w0/2, buttonY + buttonStep*0 + 11, 10, t0c);
+  c0 = rl.LIGHTGRAY.view, b0 = rl.GRAY.view, t0c = rl.DARKGRAY.view,
+  if ((mouseHoverRec == 0) || (currentProcess == 0)) { c0 = rl.SKYBLUE.view, b0 = rl.BLUE.view, t0c = rl.DARKBLUE.view, }
+  rl.DrawRectangle(buttonX, buttonY + buttonStep*0, buttonW, buttonH, c0),
+  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*0, buttonW, buttonH, b0),
+  w0 = rl.MeasureText(label0, 10),
+  rl.DrawText(label0, buttonX + buttonW/2 - w0/2, buttonY + buttonStep*0 + 11, 10, t0c),
 
-  c1 = rl.LIGHTGRAY.view; b1 = rl.GRAY.view; t1c = rl.DARKGRAY.view;
-  if ((mouseHoverRec == 1) || (currentProcess == 1)) { c1 = rl.SKYBLUE.view; b1 = rl.BLUE.view; t1c = rl.DARKBLUE.view; }
-  rl.DrawRectangle(buttonX, buttonY + buttonStep*1, buttonW, buttonH, c1);
-  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*1, buttonW, buttonH, b1);
-  w1 = rl.MeasureText(label1, 10);
-  rl.DrawText(label1, buttonX + buttonW/2 - w1/2, buttonY + buttonStep*1 + 11, 10, t1c);
+  c1 = rl.LIGHTGRAY.view, b1 = rl.GRAY.view, t1c = rl.DARKGRAY.view,
+  if ((mouseHoverRec == 1) || (currentProcess == 1)) { c1 = rl.SKYBLUE.view, b1 = rl.BLUE.view, t1c = rl.DARKBLUE.view, }
+  rl.DrawRectangle(buttonX, buttonY + buttonStep*1, buttonW, buttonH, c1),
+  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*1, buttonW, buttonH, b1),
+  w1 = rl.MeasureText(label1, 10),
+  rl.DrawText(label1, buttonX + buttonW/2 - w1/2, buttonY + buttonStep*1 + 11, 10, t1c),
 
-  c2 = rl.LIGHTGRAY.view; b2 = rl.GRAY.view; t2c = rl.DARKGRAY.view;
-  if ((mouseHoverRec == 2) || (currentProcess == 2)) { c2 = rl.SKYBLUE.view; b2 = rl.BLUE.view; t2c = rl.DARKBLUE.view; }
-  rl.DrawRectangle(buttonX, buttonY + buttonStep*2, buttonW, buttonH, c2);
-  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*2, buttonW, buttonH, b2);
-  w2 = rl.MeasureText(label2, 10);
-  rl.DrawText(label2, buttonX + buttonW/2 - w2/2, buttonY + buttonStep*2 + 11, 10, t2c);
+  c2 = rl.LIGHTGRAY.view, b2 = rl.GRAY.view, t2c = rl.DARKGRAY.view,
+  if ((mouseHoverRec == 2) || (currentProcess == 2)) { c2 = rl.SKYBLUE.view, b2 = rl.BLUE.view, t2c = rl.DARKBLUE.view, }
+  rl.DrawRectangle(buttonX, buttonY + buttonStep*2, buttonW, buttonH, c2),
+  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*2, buttonW, buttonH, b2),
+  w2 = rl.MeasureText(label2, 10),
+  rl.DrawText(label2, buttonX + buttonW/2 - w2/2, buttonY + buttonStep*2 + 11, 10, t2c),
 
-  c3 = rl.LIGHTGRAY.view; b3 = rl.GRAY.view; t3c = rl.DARKGRAY.view;
-  if ((mouseHoverRec == 3) || (currentProcess == 3)) { c3 = rl.SKYBLUE.view; b3 = rl.BLUE.view; t3c = rl.DARKBLUE.view; }
-  rl.DrawRectangle(buttonX, buttonY + buttonStep*3, buttonW, buttonH, c3);
-  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*3, buttonW, buttonH, b3);
-  w3 = rl.MeasureText(label3, 10);
-  rl.DrawText(label3, buttonX + buttonW/2 - w3/2, buttonY + buttonStep*3 + 11, 10, t3c);
+  c3 = rl.LIGHTGRAY.view, b3 = rl.GRAY.view, t3c = rl.DARKGRAY.view,
+  if ((mouseHoverRec == 3) || (currentProcess == 3)) { c3 = rl.SKYBLUE.view, b3 = rl.BLUE.view, t3c = rl.DARKBLUE.view, }
+  rl.DrawRectangle(buttonX, buttonY + buttonStep*3, buttonW, buttonH, c3),
+  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*3, buttonW, buttonH, b3),
+  w3 = rl.MeasureText(label3, 10),
+  rl.DrawText(label3, buttonX + buttonW/2 - w3/2, buttonY + buttonStep*3 + 11, 10, t3c),
 
-  c4 = rl.LIGHTGRAY.view; b4 = rl.GRAY.view; t4c = rl.DARKGRAY.view;
-  if ((mouseHoverRec == 4) || (currentProcess == 4)) { c4 = rl.SKYBLUE.view; b4 = rl.BLUE.view; t4c = rl.DARKBLUE.view; }
-  rl.DrawRectangle(buttonX, buttonY + buttonStep*4, buttonW, buttonH, c4);
-  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*4, buttonW, buttonH, b4);
-  w4 = rl.MeasureText(label4, 10);
-  rl.DrawText(label4, buttonX + buttonW/2 - w4/2, buttonY + buttonStep*4 + 11, 10, t4c);
+  c4 = rl.LIGHTGRAY.view, b4 = rl.GRAY.view, t4c = rl.DARKGRAY.view,
+  if ((mouseHoverRec == 4) || (currentProcess == 4)) { c4 = rl.SKYBLUE.view, b4 = rl.BLUE.view, t4c = rl.DARKBLUE.view, }
+  rl.DrawRectangle(buttonX, buttonY + buttonStep*4, buttonW, buttonH, c4),
+  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*4, buttonW, buttonH, b4),
+  w4 = rl.MeasureText(label4, 10),
+  rl.DrawText(label4, buttonX + buttonW/2 - w4/2, buttonY + buttonStep*4 + 11, 10, t4c),
 
-  c5 = rl.LIGHTGRAY.view; b5 = rl.GRAY.view; t5c = rl.DARKGRAY.view;
-  if ((mouseHoverRec == 5) || (currentProcess == 5)) { c5 = rl.SKYBLUE.view; b5 = rl.BLUE.view; t5c = rl.DARKBLUE.view; }
-  rl.DrawRectangle(buttonX, buttonY + buttonStep*5, buttonW, buttonH, c5);
-  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*5, buttonW, buttonH, b5);
-  w5 = rl.MeasureText(label5, 10);
-  rl.DrawText(label5, buttonX + buttonW/2 - w5/2, buttonY + buttonStep*5 + 11, 10, t5c);
+  c5 = rl.LIGHTGRAY.view, b5 = rl.GRAY.view, t5c = rl.DARKGRAY.view,
+  if ((mouseHoverRec == 5) || (currentProcess == 5)) { c5 = rl.SKYBLUE.view, b5 = rl.BLUE.view, t5c = rl.DARKBLUE.view, }
+  rl.DrawRectangle(buttonX, buttonY + buttonStep*5, buttonW, buttonH, c5),
+  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*5, buttonW, buttonH, b5),
+  w5 = rl.MeasureText(label5, 10),
+  rl.DrawText(label5, buttonX + buttonW/2 - w5/2, buttonY + buttonStep*5 + 11, 10, t5c),
 
-  c6 = rl.LIGHTGRAY.view; b6 = rl.GRAY.view; t6c = rl.DARKGRAY.view;
-  if ((mouseHoverRec == 6) || (currentProcess == 6)) { c6 = rl.SKYBLUE.view; b6 = rl.BLUE.view; t6c = rl.DARKBLUE.view; }
-  rl.DrawRectangle(buttonX, buttonY + buttonStep*6, buttonW, buttonH, c6);
-  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*6, buttonW, buttonH, b6);
-  w6 = rl.MeasureText(label6, 10);
-  rl.DrawText(label6, buttonX + buttonW/2 - w6/2, buttonY + buttonStep*6 + 11, 10, t6c);
+  c6 = rl.LIGHTGRAY.view, b6 = rl.GRAY.view, t6c = rl.DARKGRAY.view,
+  if ((mouseHoverRec == 6) || (currentProcess == 6)) { c6 = rl.SKYBLUE.view, b6 = rl.BLUE.view, t6c = rl.DARKBLUE.view, }
+  rl.DrawRectangle(buttonX, buttonY + buttonStep*6, buttonW, buttonH, c6),
+  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*6, buttonW, buttonH, b6),
+  w6 = rl.MeasureText(label6, 10),
+  rl.DrawText(label6, buttonX + buttonW/2 - w6/2, buttonY + buttonStep*6 + 11, 10, t6c),
 
-  c7 = rl.LIGHTGRAY.view; b7 = rl.GRAY.view; t7c = rl.DARKGRAY.view;
-  if ((mouseHoverRec == 7) || (currentProcess == 7)) { c7 = rl.SKYBLUE.view; b7 = rl.BLUE.view; t7c = rl.DARKBLUE.view; }
-  rl.DrawRectangle(buttonX, buttonY + buttonStep*7, buttonW, buttonH, c7);
-  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*7, buttonW, buttonH, b7);
-  w7 = rl.MeasureText(label7, 10);
-  rl.DrawText(label7, buttonX + buttonW/2 - w7/2, buttonY + buttonStep*7 + 11, 10, t7c);
+  c7 = rl.LIGHTGRAY.view, b7 = rl.GRAY.view, t7c = rl.DARKGRAY.view,
+  if ((mouseHoverRec == 7) || (currentProcess == 7)) { c7 = rl.SKYBLUE.view, b7 = rl.BLUE.view, t7c = rl.DARKBLUE.view, }
+  rl.DrawRectangle(buttonX, buttonY + buttonStep*7, buttonW, buttonH, c7),
+  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*7, buttonW, buttonH, b7),
+  w7 = rl.MeasureText(label7, 10),
+  rl.DrawText(label7, buttonX + buttonW/2 - w7/2, buttonY + buttonStep*7 + 11, 10, t7c),
 
-  c8 = rl.LIGHTGRAY.view; b8 = rl.GRAY.view; t8c = rl.DARKGRAY.view;
-  if ((mouseHoverRec == 8) || (currentProcess == 8)) { c8 = rl.SKYBLUE.view; b8 = rl.BLUE.view; t8c = rl.DARKBLUE.view; }
-  rl.DrawRectangle(buttonX, buttonY + buttonStep*8, buttonW, buttonH, c8);
-  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*8, buttonW, buttonH, b8);
-  w8 = rl.MeasureText(label8, 10);
-  rl.DrawText(label8, buttonX + buttonW/2 - w8/2, buttonY + buttonStep*8 + 11, 10, t8c);
+  c8 = rl.LIGHTGRAY.view, b8 = rl.GRAY.view, t8c = rl.DARKGRAY.view,
+  if ((mouseHoverRec == 8) || (currentProcess == 8)) { c8 = rl.SKYBLUE.view, b8 = rl.BLUE.view, t8c = rl.DARKBLUE.view, }
+  rl.DrawRectangle(buttonX, buttonY + buttonStep*8, buttonW, buttonH, c8),
+  rl.DrawRectangleLines(buttonX, buttonY + buttonStep*8, buttonW, buttonH, b8),
+  w8 = rl.MeasureText(label8, 10),
+  rl.DrawText(label8, buttonX + buttonW/2 - w8/2, buttonY + buttonStep*8 + 11, 10, t8c),
 
-  tx = screenWidth - tex.width - 60;
-  ty = screenHeight/2 - tex.height/2;
-  rl.DrawTexture(tex, tx, ty, rl.WHITE.view);
-  rl.DrawRectangleLines(tx, ty, tex.width, tex.height, rl.BLACK.view);
+  tx = screenWidth - tex.width - 60,
+  ty = screenHeight/2 - tex.height/2,
+  rl.DrawTexture(tex, tx, ty, rl.WHITE.view),
+  rl.DrawRectangleLines(tx, ty, tex.width, tex.height, rl.BLACK.view),
 
-  currentLabel = label0;
-  if (currentProcess == 1) { currentLabel = label1; }
-  if (currentProcess == 2) { currentLabel = label2; }
-  if (currentProcess == 3) { currentLabel = label3; }
-  if (currentProcess == 4) { currentLabel = label4; }
-  if (currentProcess == 5) { currentLabel = label5; }
-  if (currentProcess == 6) { currentLabel = label6; }
-  if (currentProcess == 7) { currentLabel = label7; }
-  if (currentProcess == 8) { currentLabel = label8; }
+  currentLabel = label0,
+  if (currentProcess == 1) { currentLabel = label1, }
+  if (currentProcess == 2) { currentLabel = label2, }
+  if (currentProcess == 3) { currentLabel = label3, }
+  if (currentProcess == 4) { currentLabel = label4, }
+  if (currentProcess == 5) { currentLabel = label5, }
+  if (currentProcess == 6) { currentLabel = label6, }
+  if (currentProcess == 7) { currentLabel = label7, }
+  if (currentProcess == 8) { currentLabel = label8, }
 
-  rl.DrawText("Current:", 40, 345, 10, rl.DARKGRAY.view);
-  rl.DrawText(currentLabel, 90, 345, 10, rl.DARKGRAY.view);
-  rl.DrawText("Use [1..9] or [UP/DOWN], or click list", 40, 362, 10, rl.GRAY.view);
-  rl.EndDrawing();
+  rl.DrawText("Current:", 40, 345, 10, rl.DARKGRAY.view),
+  rl.DrawText(currentLabel, 90, 345, 10, rl.DARKGRAY.view),
+  rl.DrawText("Use [1..9] or [UP/DOWN], or click list", 40, 362, 10, rl.GRAY.view),
+  rl.EndDrawing(),
 }
 
-rl.UnloadTexture(t0);
-rl.UnloadTexture(t1);
-rl.UnloadTexture(t2);
-rl.UnloadTexture(t3);
-rl.UnloadTexture(t4);
-rl.UnloadTexture(t5);
-rl.UnloadTexture(t6);
-rl.UnloadTexture(t7);
-rl.UnloadTexture(t8);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadTexture(t0),
+rl.UnloadTexture(t1),
+rl.UnloadTexture(t2),
+rl.UnloadTexture(t3),
+rl.UnloadTexture(t4),
+rl.UnloadTexture(t5),
+rl.UnloadTexture(t6),
+rl.UnloadTexture(t7),
+rl.UnloadTexture(t8),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

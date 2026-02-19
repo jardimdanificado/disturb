@@ -1,65 +1,65 @@
 // raylib [textures] example - image text (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
-rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - image text");
-rl.SetTargetFPS(60);
+screenWidth = 800,
+screenHeight = 450,
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - image text"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-parrots = rl.LoadImage("../raylib/examples/textures/resources/parrots.png");
+parrots = rl.LoadImage("../raylib/examples/textures/resources/parrots.png"),
 if (parrots.data == null) {
-  println("could not load image: ../raylib/examples/textures/resources/parrots.png");
-  rl.CloseWindow();
-  gc.collect();
-  return 0;
+  println("could not load image: ../raylib/examples/textures/resources/parrots.png"),
+  rl.CloseWindow(),
+  gc.collect(),
+  return 0,
 }
-parrotsRef = rl.newImageRef(rl.Image, parrots);
+parrotsRef = rl.newImageRef(rl.Image, parrots),
 
-font = rl.LoadFontEx("../raylib/examples/textures/resources/KAISG.ttf", 64, null, 0);
-posText = rl.newVector2(rl.Vector2, 20.0, 20.0);
-rl.ImageDrawTextEx(parrotsRef.ptr, font, "[Parrots font drawing]", posText.view, font.baseSize, 0.0, rl.RED.view);
+font = rl.LoadFontEx("../raylib/examples/textures/resources/KAISG.ttf", 64, null, 0),
+posText = rl.newVector2(rl.Vector2, 20.0, 20.0),
+rl.ImageDrawTextEx(parrotsRef.ptr, font, "[Parrots font drawing]", posText.view, font.baseSize, 0.0, rl.RED.view),
 
-texture = rl.LoadTextureFromImage(parrotsRef.view);
-rl.UnloadImage(parrotsRef.view);
+texture = rl.LoadTextureFromImage(parrotsRef.view),
+rl.UnloadImage(parrotsRef.view),
 
-position = rl.newVector2(rl.Vector2, screenWidth/2 - texture.width/2, screenHeight/2 - texture.height/2 - 20);
-showFont = false;
+position = rl.newVector2(rl.Vector2, screenWidth/2 - texture.width/2, screenHeight/2 - texture.height/2 - 20),
+showFont = false,
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsKeyDown(rl.KEY_SPACE)) { showFont = true; } else { showFont = false; }
+  if (rl.IsKeyDown(rl.KEY_SPACE)) { showFont = true, } else { showFont = false, }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
   if (!showFont) {
-    rl.DrawTextureV(texture, position.view, rl.WHITE.view);
-    pos2 = rl.newVector2(rl.Vector2, position.view.x + 20, position.view.y + 20 + 280);
-    rl.DrawTextEx(font, "[Parrots font drawing]", pos2.view, font.baseSize, 0.0, rl.WHITE.view);
+    rl.DrawTextureV(texture, position.view, rl.WHITE.view),
+    pos2 = rl.newVector2(rl.Vector2, position.view.x + 20, position.view.y + 20 + 280),
+    rl.DrawTextEx(font, "[Parrots font drawing]", pos2.view, font.baseSize, 0.0, rl.WHITE.view),
   } else {
-    rl.DrawTexture(font.texture, screenWidth/2 - font.texture.width/2, 50, rl.BLACK.view);
+    rl.DrawTexture(font.texture, screenWidth/2 - font.texture.width/2, 50, rl.BLACK.view),
   }
 
-  rl.DrawText("PRESS SPACE to SHOW FONT ATLAS USED", 290, 420, 10, rl.DARKGRAY.view);
-  rl.EndDrawing();
+  rl.DrawText("PRESS SPACE to SHOW FONT ATLAS USED", 290, 420, 10, rl.DARKGRAY.view),
+  rl.EndDrawing(),
 }
 
-rl.UnloadTexture(texture);
-rl.UnloadFont(font);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadTexture(texture),
+rl.UnloadFont(font),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -1,53 +1,53 @@
 // raylib [core] example - window should close (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - window should close");
-rl.SetExitKey(rl.KEY_NULL);
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - window should close"),
+rl.SetExitKey(rl.KEY_NULL),
 
-exitWindowRequested = 0;
-exitWindow = 0;
+exitWindowRequested = 0,
+exitWindow = 0,
 
-rl.SetTargetFPS(60);
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
 while (!exitWindow) {
-  if (rl.WindowShouldClose() || rl.IsKeyPressed(rl.KEY_ESCAPE)) { exitWindowRequested = 1; }
+  if (rl.WindowShouldClose() || rl.IsKeyPressed(rl.KEY_ESCAPE)) { exitWindowRequested = 1, }
 
   if (exitWindowRequested) {
-    if (rl.IsKeyPressed(rl.KEY_Y)) { exitWindow = 1; }
-    else if (rl.IsKeyPressed(rl.KEY_N)) { exitWindowRequested = 0; }
+    if (rl.IsKeyPressed(rl.KEY_Y)) { exitWindow = 1, }
+    else if (rl.IsKeyPressed(rl.KEY_N)) { exitWindowRequested = 0, }
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
   if (exitWindowRequested) {
-    rl.DrawRectangle(0, 100, screenWidth, 200, rl.BLACK.view);
-    rl.DrawText("Are you sure you want to exit program? [Y/N]", 40, 180, 30, rl.WHITE.view);
+    rl.DrawRectangle(0, 100, screenWidth, 200, rl.BLACK.view),
+    rl.DrawText("Are you sure you want to exit program? [Y/N]", 40, 180, 30, rl.WHITE.view),
   } else {
-    rl.DrawText("Try to close the window to get confirmation message!", 120, 200, 20, rl.LIGHTGRAY.view);
+    rl.DrawText("Try to close the window to get confirmation message!", 120, 200, 20, rl.LIGHTGRAY.view),
   }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

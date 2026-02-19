@@ -1,20 +1,20 @@
-x = 1;
+x = 1,
 f = (n) {
-  x = 2;
-  return x;
-};
-println(f(0));
-println(x);
-println(global.has("n"));
+  x = 2,
+  return x,
+},
+println(f(0)),
+println(x),
+println(global.has("n")),
 
 g = (n) {
-  if (n <= 1) { return n; }
-  return g(n - 1) + g(n - 2);
-};
-println(g(10));
+  if (n <= 1) { return n, }
+  return g(n - 1) + g(n - 2),
+},
+println(g(10)),
 
 h = () {
-  keep = 7;
-  return local.remove("keep");
-};
-println(h());
+  keep = 7,
+  return local.remove("keep"),
+},
+println(h()),

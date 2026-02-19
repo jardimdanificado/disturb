@@ -1,12 +1,12 @@
 // Meta fields are accessed via string keys.
-obj = {alpha = "test", beta = [1, 2, 3]};
+obj = {alpha = "test", beta = [1, 2, 3]},
 
 // name/type/size/capacity come from meta.
-println(obj.name);
-println(obj.type);
-println(obj.size);
-println(obj.capacity);
+println(obj.name),
+println(obj.type),
+println(obj.size),
+println(obj.capacity),
 
 // size can be changed (read-only fields will error).
-obj.size = 1;
-println(obj.size);
+obj.size = 1,
+println(obj.size),

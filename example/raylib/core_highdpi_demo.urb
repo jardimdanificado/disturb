@@ -1,119 +1,119 @@
 // raylib [core] example - highdpi demo (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.SetConfigFlags(rl.FLAG_WINDOW_HIGHDPI | rl.FLAG_WINDOW_RESIZABLE);
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - highdpi demo");
-rl.SetWindowMinSize(450, 450);
-rl.SetTargetFPS(60);
+rl.SetConfigFlags(rl.FLAG_WINDOW_HIGHDPI | rl.FLAG_WINDOW_RESIZABLE),
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - highdpi demo"),
+rl.SetWindowMinSize(450, 450),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-logicalGridDescY = 120;
-logicalGridLabelY = logicalGridDescY + 30;
-logicalGridTop = logicalGridLabelY + 30;
-logicalGridBottom = logicalGridTop + 80;
-pixelGridTop = logicalGridBottom - 20;
-pixelGridBottom = pixelGridTop + 80;
-pixelGridLabelY = pixelGridBottom + 30;
-pixelGridDescY = pixelGridLabelY + 30;
-cellSize = 50;
+logicalGridDescY = 120,
+logicalGridLabelY = logicalGridDescY + 30,
+logicalGridTop = logicalGridLabelY + 30,
+logicalGridBottom = logicalGridTop + 80,
+pixelGridTop = logicalGridBottom - 20,
+pixelGridBottom = pixelGridTop + 80,
+pixelGridLabelY = pixelGridBottom + 30,
+pixelGridDescY = pixelGridLabelY + 30,
+cellSize = 50,
 
 while (!rl.WindowShouldClose()) {
-  monitorCount = rl.GetMonitorCount();
+  monitorCount = rl.GetMonitorCount(),
   if (monitorCount > 1) {
     if (rl.IsKeyPressed(rl.KEY_N)) {
-      rl.SetWindowMonitor((rl.GetCurrentMonitor() + 1)%monitorCount);
+      rl.SetWindowMonitor((rl.GetCurrentMonitor() + 1)%monitorCount),
     }
   }
 
-  currentMonitor = rl.GetCurrentMonitor();
-  dpiScale = rl.GetWindowScaleDPI();
-  cellSizePx = cellSize/dpiScale.x;
+  currentMonitor = rl.GetCurrentMonitor(),
+  dpiScale = rl.GetWindowScaleDPI(),
+  cellSizePx = cellSize/dpiScale.x,
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  windowCenter = rl.GetScreenWidth()/2;
+  windowCenter = rl.GetScreenWidth()/2,
 
-  title1 = rl.TextFormat("Dpi Scale: %f", dpiScale.x);
-  width1 = rl.MeasureText(title1, 40);
-  rl.DrawText(title1, windowCenter - width1/2, 10, 40, rl.DARKGRAY.view);
+  title1 = rl.TextFormat("Dpi Scale: %f", dpiScale.x),
+  width1 = rl.MeasureText(title1, 40),
+  rl.DrawText(title1, windowCenter - width1/2, 10, 40, rl.DARKGRAY.view),
 
-  title2 = rl.TextFormat("Monitor: %d/%d ([N] next monitor)", currentMonitor + 1, monitorCount);
-  width2 = rl.MeasureText(title2, 20);
-  rl.DrawText(title2, windowCenter - width2/2, 60, 20, rl.LIGHTGRAY.view);
+  title2 = rl.TextFormat("Monitor: %d/%d ([N] next monitor)", currentMonitor + 1, monitorCount),
+  width2 = rl.MeasureText(title2, 20),
+  rl.DrawText(title2, windowCenter - width2/2, 60, 20, rl.LIGHTGRAY.view),
 
-  title3 = rl.TextFormat("Window is %d logical points wide", rl.GetScreenWidth());
-  width3 = rl.MeasureText(title3, 20);
-  rl.DrawText(title3, windowCenter - width3/2, logicalGridDescY, 20, rl.ORANGE.view);
+  title3 = rl.TextFormat("Window is %d logical points wide", rl.GetScreenWidth()),
+  width3 = rl.MeasureText(title3, 20),
+  rl.DrawText(title3, windowCenter - width3/2, logicalGridDescY, 20, rl.ORANGE.view),
 
-  odd = 1;
-  i = cellSize;
+  odd = 1,
+  i = cellSize,
   while (i < rl.GetScreenWidth()) {
     if (odd == 1) {
-      rl.DrawRectangle(i, logicalGridTop, cellSize, logicalGridBottom - logicalGridTop, rl.ORANGE.view);
-      odd = 0;
+      rl.DrawRectangle(i, logicalGridTop, cellSize, logicalGridBottom - logicalGridTop, rl.ORANGE.view),
+      odd = 0,
     } else {
-      odd = 1;
+      odd = 1,
     }
-    mark = rl.TextFormat("%d", i);
-    markW = rl.MeasureText(mark, 10);
-    rl.DrawText(mark, i - markW/2, logicalGridLabelY, 10, rl.LIGHTGRAY.view);
-    rl.DrawLine(i, logicalGridLabelY + 10, i, logicalGridBottom, rl.GRAY.view);
-    i = i + cellSize;
+    mark = rl.TextFormat("%d", i),
+    markW = rl.MeasureText(mark, 10),
+    rl.DrawText(mark, i - markW/2, logicalGridLabelY, 10, rl.LIGHTGRAY.view),
+    rl.DrawLine(i, logicalGridLabelY + 10, i, logicalGridBottom, rl.GRAY.view),
+    i = i + cellSize,
   }
 
-  odd = 1;
-  minTextSpace = 30;
-  lastTextX = -minTextSpace;
-  i = cellSize;
+  odd = 1,
+  minTextSpace = 30,
+  lastTextX = -minTextSpace,
+  i = cellSize,
   while (i < rl.GetRenderWidth()) {
-    x = i/dpiScale.x;
+    x = i/dpiScale.x,
     if (odd == 1) {
-      fadedBlue = rl.Fade(rl.BLUE.view, 0.4);
-      rl.DrawRectangle(x, pixelGridTop, cellSizePx, pixelGridBottom - pixelGridTop, fadedBlue);
-      odd = 0;
+      fadedBlue = rl.Fade(rl.BLUE.view, 0.4),
+      rl.DrawRectangle(x, pixelGridTop, cellSizePx, pixelGridBottom - pixelGridTop, fadedBlue),
+      odd = 0,
     } else {
-      odd = 1;
+      odd = 1,
     }
 
-    rl.DrawLine(x, pixelGridTop, x, pixelGridLabelY - 10, rl.GRAY.view);
+    rl.DrawLine(x, pixelGridTop, x, pixelGridLabelY - 10, rl.GRAY.view),
     if (x - lastTextX >= minTextSpace) {
-      mark = rl.TextFormat("%d", i);
-      markW = rl.MeasureText(mark, 10);
-      rl.DrawText(mark, x - markW/2, pixelGridLabelY, 10, rl.LIGHTGRAY.view);
-      lastTextX = x;
+      mark = rl.TextFormat("%d", i),
+      markW = rl.MeasureText(mark, 10),
+      rl.DrawText(mark, x - markW/2, pixelGridLabelY, 10, rl.LIGHTGRAY.view),
+      lastTextX = x,
     }
-    i = i + cellSize;
+    i = i + cellSize,
   }
 
-  title4 = rl.TextFormat("Window is %d physical pixels wide", rl.GetRenderWidth());
-  width4 = rl.MeasureText(title4, 20);
-  rl.DrawText(title4, windowCenter - width4/2, pixelGridDescY, 20, rl.BLUE.view);
+  title4 = rl.TextFormat("Window is %d physical pixels wide", rl.GetRenderWidth()),
+  width4 = rl.MeasureText(title4, 20),
+  rl.DrawText(title4, windowCenter - width4/2, pixelGridDescY, 20, rl.BLUE.view),
 
-  infoText = "Can you see this?";
-  infoW = rl.MeasureText(infoText, 20);
-  rl.DrawText(infoText, rl.GetScreenWidth() - infoW - 5, rl.GetScreenHeight() - 25, 20, rl.LIGHTGRAY.view);
+  infoText = "Can you see this?",
+  infoW = rl.MeasureText(infoText, 20),
+  rl.DrawText(infoText, rl.GetScreenWidth() - infoW - 5, rl.GetScreenHeight() - 25, 20, rl.LIGHTGRAY.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

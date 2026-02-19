@@ -1,103 +1,103 @@
 // raylib [core] example - 2d camera (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-MAX_BUILDINGS = 100;
+MAX_BUILDINGS = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - 2d camera");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - 2d camera"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-player = rl.newRectangle(rl.Rectangle, 400.0, 280.0, 40.0, 40.0);
+player = rl.newRectangle(rl.Rectangle, 400.0, 280.0, 40.0, 40.0),
 
 camera = rl.newCamera2D(rl.Camera2D,
   screenWidth/2.0, screenHeight/2.0,
   player.view.x + 20.0, player.view.y + 20.0,
   0.0, 1.0
-);
+),
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsKeyDown(rl.KEY_RIGHT)) { player.view.x = player.view.x + 2; }
-  else if (rl.IsKeyDown(rl.KEY_LEFT)) { player.view.x = player.view.x - 2; }
+  if (rl.IsKeyDown(rl.KEY_RIGHT)) { player.view.x = player.view.x + 2, }
+  else if (rl.IsKeyDown(rl.KEY_LEFT)) { player.view.x = player.view.x - 2, }
 
-  camera.view.targetX = player.view.x + 20.0;
-  camera.view.targetY = player.view.y + 20.0;
+  camera.view.targetX = player.view.x + 20.0,
+  camera.view.targetY = player.view.y + 20.0,
 
-  if (rl.IsKeyDown(rl.KEY_A)) { camera.view.rotation = camera.view.rotation - 1; }
-  else if (rl.IsKeyDown(rl.KEY_S)) { camera.view.rotation = camera.view.rotation + 1; }
+  if (rl.IsKeyDown(rl.KEY_A)) { camera.view.rotation = camera.view.rotation - 1, }
+  else if (rl.IsKeyDown(rl.KEY_S)) { camera.view.rotation = camera.view.rotation + 1, }
 
-  if (camera.view.rotation > 40) { camera.view.rotation = 40; }
-  else if (camera.view.rotation < -40) { camera.view.rotation = -40; }
+  if (camera.view.rotation > 40) { camera.view.rotation = 40, }
+  else if (camera.view.rotation < -40) { camera.view.rotation = -40, }
 
-  wheel = rl.GetMouseWheelMove();
+  wheel = rl.GetMouseWheelMove(),
   if (wheel != 0) {
-    camera.view.zoom = camera.view.zoom + wheel*0.1;
-    if (camera.view.zoom > 3.0) { camera.view.zoom = 3.0; }
-    else if (camera.view.zoom < 0.1) { camera.view.zoom = 0.1; }
+    camera.view.zoom = camera.view.zoom + wheel*0.1,
+    if (camera.view.zoom > 3.0) { camera.view.zoom = 3.0, }
+    else if (camera.view.zoom < 0.1) { camera.view.zoom = 0.1, }
   }
 
   if (rl.IsKeyPressed(rl.KEY_R)) {
-    camera.view.zoom = 1.0;
-    camera.view.rotation = 0.0;
+    camera.view.zoom = 1.0,
+    camera.view.rotation = 0.0,
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.BeginMode2D(camera.view);
+  rl.BeginMode2D(camera.view),
 
-  rl.DrawRectangle(-6000, 320, 13000, 8000, rl.DARKGRAY.view);
-  spacing = 0;
-  for (i = 0; i < MAX_BUILDINGS; i++) {
-    w = 50 + ((i*37)%151);
-    h = 100 + ((i*53)%701);
-    x = -6000 + spacing;
-    y = screenHeight - 130 - h;
-    spacing = spacing + w;
-    rl.DrawRectangle(x, y, w, h, rl.LIGHTGRAY.view);
+  rl.DrawRectangle(-6000, 320, 13000, 8000, rl.DARKGRAY.view),
+  spacing = 0,
+  for (i = 0, i < MAX_BUILDINGS, i++) {
+    w = 50 + ((i*37)%151),
+    h = 100 + ((i*53)%701),
+    x = -6000 + spacing,
+    y = screenHeight - 130 - h,
+    spacing = spacing + w,
+    rl.DrawRectangle(x, y, w, h, rl.LIGHTGRAY.view),
   }
-  rl.DrawRectangleRec(player.view, rl.RED.view);
+  rl.DrawRectangleRec(player.view, rl.RED.view),
 
-  rl.DrawLine(camera.view.targetX, -screenHeight*10, camera.view.targetX, screenHeight*10, rl.GREEN.view);
-  rl.DrawLine(-screenWidth*10, camera.view.targetY, screenWidth*10, camera.view.targetY, rl.GREEN.view);
+  rl.DrawLine(camera.view.targetX, -screenHeight*10, camera.view.targetX, screenHeight*10, rl.GREEN.view),
+  rl.DrawLine(-screenWidth*10, camera.view.targetY, screenWidth*10, camera.view.targetY, rl.GREEN.view),
 
-  rl.EndMode2D();
+  rl.EndMode2D(),
 
-  rl.DrawText("SCREEN AREA", 640, 10, 20, rl.RED.view);
+  rl.DrawText("SCREEN AREA", 640, 10, 20, rl.RED.view),
 
-  rl.DrawRectangle(0, 0, screenWidth, 5, rl.RED.view);
-  rl.DrawRectangle(0, 5, 5, screenHeight - 10, rl.RED.view);
-  rl.DrawRectangle(screenWidth - 5, 5, 5, screenHeight - 10, rl.RED.view);
-  rl.DrawRectangle(0, screenHeight - 5, screenWidth, 5, rl.RED.view);
+  rl.DrawRectangle(0, 0, screenWidth, 5, rl.RED.view),
+  rl.DrawRectangle(0, 5, 5, screenHeight - 10, rl.RED.view),
+  rl.DrawRectangle(screenWidth - 5, 5, 5, screenHeight - 10, rl.RED.view),
+  rl.DrawRectangle(0, screenHeight - 5, screenWidth, 5, rl.RED.view),
 
-  rl.DrawRectangle(10, 10, 250, 113, rl.Fade(rl.SKYBLUE.view, 0.5));
-  rl.DrawRectangleLines(10, 10, 250, 113, rl.BLUE.view);
+  rl.DrawRectangle(10, 10, 250, 113, rl.Fade(rl.SKYBLUE.view, 0.5)),
+  rl.DrawRectangleLines(10, 10, 250, 113, rl.BLUE.view),
 
-  rl.DrawText("Free 2D camera controls:", 20, 20, 10, rl.BLACK.view);
-  rl.DrawText("- Right/Left to move player", 40, 40, 10, rl.DARKGRAY.view);
-  rl.DrawText("- Mouse Wheel to Zoom in-out", 40, 60, 10, rl.DARKGRAY.view);
-  rl.DrawText("- A / S to Rotate", 40, 80, 10, rl.DARKGRAY.view);
-  rl.DrawText("- R to reset Zoom and Rotation", 40, 100, 10, rl.DARKGRAY.view);
+  rl.DrawText("Free 2D camera controls:", 20, 20, 10, rl.BLACK.view),
+  rl.DrawText("- Right/Left to move player", 40, 40, 10, rl.DARKGRAY.view),
+  rl.DrawText("- Mouse Wheel to Zoom in-out", 40, 60, 10, rl.DARKGRAY.view),
+  rl.DrawText("- A / S to Rotate", 40, 80, 10, rl.DARKGRAY.view),
+  rl.DrawText("- R to reset Zoom and Rotation", 40, 100, 10, rl.DARKGRAY.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

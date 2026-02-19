@@ -1,59 +1,59 @@
 // raylib [text] example - font loading (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - font loading");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - font loading"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-msg = "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHI\nJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmn\nopqrstuvwxyz{|}~";
+msg = "!\"#$%&'()*+,-./0123456789:,<=>?@ABCDEFGHI\nJKLMNOPQRSTUVWXYZ[]^_`abcdefghijklmn\nopqrstuvwxyz{|}~",
 
-fontBm = rl.LoadFont("../raylib/examples/text/resources/pixantiqua.fnt");
-fontTtf = rl.LoadFontEx("../raylib/examples/text/resources/pixantiqua.ttf", 32, null, 250);
-rl.SetTextLineSpacing(16);
+fontBm = rl.LoadFont("../raylib/examples/text/resources/pixantiqua.fnt"),
+fontTtf = rl.LoadFontEx("../raylib/examples/text/resources/pixantiqua.ttf", 32, null, 250),
+rl.SetTextLineSpacing(16),
 
-useTtf = 0;
-msgPos = rl.newVector2(rl.Vector2, 20.0, 100.0);
+useTtf = 0,
+msgPos = rl.newVector2(rl.Vector2, 20.0, 100.0),
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsKeyDown(rl.KEY_SPACE)) { useTtf = 1; }
-  else { useTtf = 0; }
+  if (rl.IsKeyDown(rl.KEY_SPACE)) { useTtf = 1, }
+  else { useTtf = 0, }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawText("Hold SPACE to use TTF generated font", 20, 20, 20, rl.LIGHTGRAY.view);
+  rl.DrawText("Hold SPACE to use TTF generated font", 20, 20, 20, rl.LIGHTGRAY.view),
 
   if (!useTtf) {
-    rl.DrawTextEx(fontBm, msg, msgPos.view, fontBm.baseSize, 2.0, rl.MAROON.view);
-    rl.DrawText("Using BMFont (Angelcode) imported", 20, rl.GetScreenHeight() - 30, 20, rl.GRAY.view);
+    rl.DrawTextEx(fontBm, msg, msgPos.view, fontBm.baseSize, 2.0, rl.MAROON.view),
+    rl.DrawText("Using BMFont (Angelcode) imported", 20, rl.GetScreenHeight() - 30, 20, rl.GRAY.view),
   } else {
-    rl.DrawTextEx(fontTtf, msg, msgPos.view, fontTtf.baseSize, 2.0, rl.LIME.view);
-    rl.DrawText("Using TTF font generated", 20, rl.GetScreenHeight() - 30, 20, rl.GRAY.view);
+    rl.DrawTextEx(fontTtf, msg, msgPos.view, fontTtf.baseSize, 2.0, rl.LIME.view),
+    rl.DrawText("Using TTF font generated", 20, rl.GetScreenHeight() - 30, 20, rl.GRAY.view),
   }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.UnloadFont(fontBm);
-rl.UnloadFont(fontTtf);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadFont(fontBm),
+rl.UnloadFont(fontTtf),
+rl.CloseWindow(),
+gc.collect(),
+return 0,
 

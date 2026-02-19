@@ -1,92 +1,92 @@
 // raylib [core] example - clipboard text (Disturb port, simplified without raygui)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - clipboard text");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - clipboard text"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-sample1 = "Hello from raylib!";
-sample2 = "The quick brown fox jumps over the lazy dog";
-sample3 = "Clipboard operations are useful!";
-sample4 = "raylib is a simple and easy-to-use library";
-sample5 = "Copy and paste me!";
+sample1 = "Hello from raylib!",
+sample2 = "The quick brown fox jumps over the lazy dog",
+sample3 = "Clipboard operations are useful!",
+sample4 = "raylib is a simple and easy-to-use library",
+sample5 = "Copy and paste me!",
 
-inputText = sample1;
-status = "Ready";
-clipboardText = rl.GetClipboardText();
-if (clipboardText == null) { clipboardText = ""; }
+inputText = sample1,
+status = "Ready",
+clipboardText = rl.GetClipboardText(),
+if (clipboardText == null) { clipboardText = "", }
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsKeyPressed(rl.KEY_ONE)) { inputText = sample1; }
-  if (rl.IsKeyPressed(rl.KEY_TWO)) { inputText = sample2; }
-  if (rl.IsKeyPressed(rl.KEY_THREE)) { inputText = sample3; }
-  if (rl.IsKeyPressed(rl.KEY_FOUR)) { inputText = sample4; }
-  if (rl.IsKeyPressed(rl.KEY_FIVE)) { inputText = sample5; }
+  if (rl.IsKeyPressed(rl.KEY_ONE)) { inputText = sample1, }
+  if (rl.IsKeyPressed(rl.KEY_TWO)) { inputText = sample2, }
+  if (rl.IsKeyPressed(rl.KEY_THREE)) { inputText = sample3, }
+  if (rl.IsKeyPressed(rl.KEY_FOUR)) { inputText = sample4, }
+  if (rl.IsKeyPressed(rl.KEY_FIVE)) { inputText = sample5, }
 
-  ctrlDown = rl.IsKeyDown(rl.KEY_LEFT_CONTROL) || rl.IsKeyDown(rl.KEY_RIGHT_CONTROL);
+  ctrlDown = rl.IsKeyDown(rl.KEY_LEFT_CONTROL) || rl.IsKeyDown(rl.KEY_RIGHT_CONTROL),
 
   if (ctrlDown && rl.IsKeyPressed(rl.KEY_C)) {
-    rl.SetClipboardText(inputText);
-    clipboardText = rl.GetClipboardText();
-    status = "Copied current input text";
+    rl.SetClipboardText(inputText),
+    clipboardText = rl.GetClipboardText(),
+    status = "Copied current input text",
   }
 
   if (ctrlDown && rl.IsKeyPressed(rl.KEY_X)) {
-    rl.SetClipboardText(inputText);
-    clipboardText = rl.GetClipboardText();
-    inputText = "";
-    status = "Cut current input text";
+    rl.SetClipboardText(inputText),
+    clipboardText = rl.GetClipboardText(),
+    inputText = "",
+    status = "Cut current input text",
   }
 
   if (ctrlDown && rl.IsKeyPressed(rl.KEY_V)) {
-    txt = rl.GetClipboardText();
+    txt = rl.GetClipboardText(),
     if (txt != null) {
-      inputText = txt;
-      clipboardText = txt;
-      status = "Pasted clipboard into input";
+      inputText = txt,
+      clipboardText = txt,
+      status = "Pasted clipboard into input",
     }
   }
 
   if (rl.IsKeyPressed(rl.KEY_BACKSPACE)) {
-    inputText = "";
-    status = "Input cleared";
+    inputText = "",
+    status = "Input cleared",
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawText("KEYS: [1..5] sample text  [Ctrl+C] copy  [Ctrl+X] cut  [Ctrl+V] paste  [Backspace] clear", 30, 30, 18, rl.DARKGRAY.view);
-  rl.DrawText("Current input text:", 30, 90, 20, rl.BLACK.view);
-  rl.DrawRectangleLines(30, 120, 740, 80, rl.GRAY.view);
-  rl.DrawText(inputText, 40, 145, 20, rl.MAROON.view);
+  rl.DrawText("KEYS: [1..5] sample text  [Ctrl+C] copy  [Ctrl+X] cut  [Ctrl+V] paste  [Backspace] clear", 30, 30, 18, rl.DARKGRAY.view),
+  rl.DrawText("Current input text:", 30, 90, 20, rl.BLACK.view),
+  rl.DrawRectangleLines(30, 120, 740, 80, rl.GRAY.view),
+  rl.DrawText(inputText, 40, 145, 20, rl.MAROON.view),
 
-  rl.DrawText("Clipboard current text:", 30, 235, 20, rl.BLACK.view);
-  rl.DrawRectangleLines(30, 265, 740, 80, rl.GRAY.view);
-  rl.DrawText(clipboardText, 40, 290, 20, rl.BLUE.view);
+  rl.DrawText("Clipboard current text:", 30, 235, 20, rl.BLACK.view),
+  rl.DrawRectangleLines(30, 265, 740, 80, rl.GRAY.view),
+  rl.DrawText(clipboardText, 40, 290, 20, rl.BLUE.view),
 
-  rl.DrawText(rl.TextFormat("Status: %s", status), 30, 370, 20, rl.DARKGREEN.view);
-  rl.DrawFPS(700, 20);
+  rl.DrawText(rl.TextFormat("Status: %s", status), 30, 370, 20, rl.DARKGREEN.view),
+  rl.DrawFPS(700, 20),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

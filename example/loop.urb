@@ -1,7 +1,7 @@
-gc.keyintern = 0;
-gc.rate = 100;
-for(i = 0;i<100000;i++)
+gc.keyintern = 0,
+gc.rate = 100,
+for(i = 0,i<100000,i++)
 {
-    println(i);
+    println(i),
 }
-gc.stats();
+gc.stats(),

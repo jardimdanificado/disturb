@@ -1,284 +1,284 @@
 // raylib [shapes] example - mouse trail (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-MAX_TRAIL_LENGTH = 30;
+MAX_TRAIL_LENGTH = 30,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - mouse trail");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - mouse trail"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-x1 = 0.0; y1 = 0.0;
-x2 = 0.0; y2 = 0.0;
-x3 = 0.0; y3 = 0.0;
-x4 = 0.0; y4 = 0.0;
-x5 = 0.0; y5 = 0.0;
-x6 = 0.0; y6 = 0.0;
-x7 = 0.0; y7 = 0.0;
-x8 = 0.0; y8 = 0.0;
-x9 = 0.0; y9 = 0.0;
-x10 = 0.0; y10 = 0.0;
-x11 = 0.0; y11 = 0.0;
-x12 = 0.0; y12 = 0.0;
-x13 = 0.0; y13 = 0.0;
-x14 = 0.0; y14 = 0.0;
-x15 = 0.0; y15 = 0.0;
-x16 = 0.0; y16 = 0.0;
-x17 = 0.0; y17 = 0.0;
-x18 = 0.0; y18 = 0.0;
-x19 = 0.0; y19 = 0.0;
-x20 = 0.0; y20 = 0.0;
-x21 = 0.0; y21 = 0.0;
-x22 = 0.0; y22 = 0.0;
-x23 = 0.0; y23 = 0.0;
-x24 = 0.0; y24 = 0.0;
-x25 = 0.0; y25 = 0.0;
-x26 = 0.0; y26 = 0.0;
-x27 = 0.0; y27 = 0.0;
-x28 = 0.0; y28 = 0.0;
-x29 = 0.0; y29 = 0.0;
-x30 = 0.0; y30 = 0.0;
+x1 = 0.0, y1 = 0.0,
+x2 = 0.0, y2 = 0.0,
+x3 = 0.0, y3 = 0.0,
+x4 = 0.0, y4 = 0.0,
+x5 = 0.0, y5 = 0.0,
+x6 = 0.0, y6 = 0.0,
+x7 = 0.0, y7 = 0.0,
+x8 = 0.0, y8 = 0.0,
+x9 = 0.0, y9 = 0.0,
+x10 = 0.0, y10 = 0.0,
+x11 = 0.0, y11 = 0.0,
+x12 = 0.0, y12 = 0.0,
+x13 = 0.0, y13 = 0.0,
+x14 = 0.0, y14 = 0.0,
+x15 = 0.0, y15 = 0.0,
+x16 = 0.0, y16 = 0.0,
+x17 = 0.0, y17 = 0.0,
+x18 = 0.0, y18 = 0.0,
+x19 = 0.0, y19 = 0.0,
+x20 = 0.0, y20 = 0.0,
+x21 = 0.0, y21 = 0.0,
+x22 = 0.0, y22 = 0.0,
+x23 = 0.0, y23 = 0.0,
+x24 = 0.0, y24 = 0.0,
+x25 = 0.0, y25 = 0.0,
+x26 = 0.0, y26 = 0.0,
+x27 = 0.0, y27 = 0.0,
+x28 = 0.0, y28 = 0.0,
+x29 = 0.0, y29 = 0.0,
+x30 = 0.0, y30 = 0.0,
 
 while (!rl.WindowShouldClose()) {
-  mousePosition = rl.GetMousePosition();
+  mousePosition = rl.GetMousePosition(),
 
-  x30 = x29; y30 = y29;
-  x29 = x28; y29 = y28;
-  x28 = x27; y28 = y27;
-  x27 = x26; y27 = y26;
-  x26 = x25; y26 = y25;
-  x25 = x24; y25 = y24;
-  x24 = x23; y24 = y23;
-  x23 = x22; y23 = y22;
-  x22 = x21; y22 = y21;
-  x21 = x20; y21 = y20;
-  x20 = x19; y20 = y19;
-  x19 = x18; y19 = y18;
-  x18 = x17; y18 = y17;
-  x17 = x16; y17 = y16;
-  x16 = x15; y16 = y15;
-  x15 = x14; y15 = y14;
-  x14 = x13; y14 = y13;
-  x13 = x12; y13 = y12;
-  x12 = x11; y12 = y11;
-  x11 = x10; y11 = y10;
-  x10 = x9; y10 = y9;
-  x9 = x8; y9 = y8;
-  x8 = x7; y8 = y7;
-  x7 = x6; y7 = y6;
-  x6 = x5; y6 = y5;
-  x5 = x4; y5 = y4;
-  x4 = x3; y4 = y3;
-  x3 = x2; y3 = y2;
-  x2 = x1; y2 = y1;
-  x1 = mousePosition.x; y1 = mousePosition.y;
+  x30 = x29, y30 = y29,
+  x29 = x28, y29 = y28,
+  x28 = x27, y28 = y27,
+  x27 = x26, y27 = y26,
+  x26 = x25, y26 = y25,
+  x25 = x24, y25 = y24,
+  x24 = x23, y24 = y23,
+  x23 = x22, y23 = y22,
+  x22 = x21, y22 = y21,
+  x21 = x20, y21 = y20,
+  x20 = x19, y20 = y19,
+  x19 = x18, y19 = y18,
+  x18 = x17, y18 = y17,
+  x17 = x16, y17 = y16,
+  x16 = x15, y16 = y15,
+  x15 = x14, y15 = y14,
+  x14 = x13, y14 = y13,
+  x13 = x12, y13 = y12,
+  x12 = x11, y12 = y11,
+  x11 = x10, y11 = y10,
+  x10 = x9, y10 = y9,
+  x9 = x8, y9 = y8,
+  x8 = x7, y8 = y7,
+  x7 = x6, y7 = y6,
+  x6 = x5, y6 = y5,
+  x5 = x4, y5 = y4,
+  x4 = x3, y4 = y3,
+  x3 = x2, y3 = y2,
+  x2 = x1, y2 = y1,
+  x1 = mousePosition.x, y1 = mousePosition.y,
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.BLACK.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.BLACK.view),
 
   if ((x1 != 0.0) || (y1 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 1 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x1, y1, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 1 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x1, y1, trailRadius, trailColor),
   }
   if ((x2 != 0.0) || (y2 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 2 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x2, y2, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 2 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x2, y2, trailRadius, trailColor),
   }
   if ((x3 != 0.0) || (y3 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 3 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x3, y3, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 3 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x3, y3, trailRadius, trailColor),
   }
   if ((x4 != 0.0) || (y4 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 4 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x4, y4, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 4 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x4, y4, trailRadius, trailColor),
   }
   if ((x5 != 0.0) || (y5 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 5 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x5, y5, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 5 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x5, y5, trailRadius, trailColor),
   }
   if ((x6 != 0.0) || (y6 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 6 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x6, y6, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 6 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x6, y6, trailRadius, trailColor),
   }
   if ((x7 != 0.0) || (y7 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 7 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x7, y7, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 7 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x7, y7, trailRadius, trailColor),
   }
   if ((x8 != 0.0) || (y8 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 8 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x8, y8, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 8 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x8, y8, trailRadius, trailColor),
   }
   if ((x9 != 0.0) || (y9 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 9 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x9, y9, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 9 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x9, y9, trailRadius, trailColor),
   }
   if ((x10 != 0.0) || (y10 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 10 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x10, y10, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 10 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x10, y10, trailRadius, trailColor),
   }
   if ((x11 != 0.0) || (y11 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 11 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x11, y11, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 11 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x11, y11, trailRadius, trailColor),
   }
   if ((x12 != 0.0) || (y12 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 12 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x12, y12, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 12 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x12, y12, trailRadius, trailColor),
   }
   if ((x13 != 0.0) || (y13 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 13 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x13, y13, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 13 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x13, y13, trailRadius, trailColor),
   }
   if ((x14 != 0.0) || (y14 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 14 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x14, y14, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 14 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x14, y14, trailRadius, trailColor),
   }
   if ((x15 != 0.0) || (y15 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 15 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x15, y15, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 15 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x15, y15, trailRadius, trailColor),
   }
   if ((x16 != 0.0) || (y16 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 16 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x16, y16, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 16 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x16, y16, trailRadius, trailColor),
   }
   if ((x17 != 0.0) || (y17 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 17 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x17, y17, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 17 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x17, y17, trailRadius, trailColor),
   }
   if ((x18 != 0.0) || (y18 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 18 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x18, y18, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 18 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x18, y18, trailRadius, trailColor),
   }
   if ((x19 != 0.0) || (y19 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 19 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x19, y19, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 19 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x19, y19, trailRadius, trailColor),
   }
   if ((x20 != 0.0) || (y20 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 20 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x20, y20, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 20 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x20, y20, trailRadius, trailColor),
   }
   if ((x21 != 0.0) || (y21 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 21 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x21, y21, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 21 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x21, y21, trailRadius, trailColor),
   }
   if ((x22 != 0.0) || (y22 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 22 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x22, y22, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 22 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x22, y22, trailRadius, trailColor),
   }
   if ((x23 != 0.0) || (y23 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 23 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x23, y23, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 23 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x23, y23, trailRadius, trailColor),
   }
   if ((x24 != 0.0) || (y24 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 24 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x24, y24, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 24 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x24, y24, trailRadius, trailColor),
   }
   if ((x25 != 0.0) || (y25 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 25 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x25, y25, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 25 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x25, y25, trailRadius, trailColor),
   }
   if ((x26 != 0.0) || (y26 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 26 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x26, y26, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 26 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x26, y26, trailRadius, trailColor),
   }
   if ((x27 != 0.0) || (y27 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 27 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x27, y27, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 27 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x27, y27, trailRadius, trailColor),
   }
   if ((x28 != 0.0) || (y28 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 28 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x28, y28, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 28 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x28, y28, trailRadius, trailColor),
   }
   if ((x29 != 0.0) || (y29 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 29 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x29, y29, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 29 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x29, y29, trailRadius, trailColor),
   }
   if ((x30 != 0.0) || (y30 != 0.0)) {
-    ratio = (MAX_TRAIL_LENGTH - 30 + 1.0)/MAX_TRAIL_LENGTH;
-    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5);
-    trailRadius = 15.0*ratio;
-    rl.DrawCircle(x30, y30, trailRadius, trailColor);
+    ratio = (MAX_TRAIL_LENGTH - 30 + 1.0)/MAX_TRAIL_LENGTH,
+    trailColor = rl.Fade(rl.SKYBLUE.view, ratio*0.5 + 0.5),
+    trailRadius = 15.0*ratio,
+    rl.DrawCircle(x30, y30, trailRadius, trailColor),
   }
 
-  rl.DrawCircle(mousePosition.x, mousePosition.y, 15.0, rl.WHITE.view);
-  rl.DrawText("Move the mouse to see the trail effect!", 10, screenHeight - 30, 20, rl.LIGHTGRAY.view);
+  rl.DrawCircle(mousePosition.x, mousePosition.y, 15.0, rl.WHITE.view),
+  rl.DrawText("Move the mouse to see the trail effect!", 10, screenHeight - 30, 20, rl.LIGHTGRAY.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

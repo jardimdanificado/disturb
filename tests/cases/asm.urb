@@ -1,6 +1,6 @@
-eval(read("example/asm_lib.urb"));
+eval(read("example/asm_lib.urb")),
 
-src = read("tests/asm/input.asm");
-bytecode = asm(src);
-out = disasm(bytecode);
-println(out);
+src = read("tests/asm/input.asm"),
+bytecode = asm(src),
+out = disasm(bytecode),
+println(out),

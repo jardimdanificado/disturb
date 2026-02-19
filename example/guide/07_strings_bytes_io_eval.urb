@@ -2,28 +2,28 @@
 // Strings, bytes, Papagaio, and IO/eval.
 
 // String literals are int lists with the .string view.
-bytes = "Hi!";
-println(bytes.string);
+bytes = "Hi!",
+println(bytes.string),
 
 // String helpers work on strings too.
-println(bytes.lower().string);
-println("baNANA".replaceAll("NA", "na"));
+println(bytes.lower().string),
+println("baNANA".replaceAll("NA", "na")),
 
 // Papagaio directives work inside any literal string.
-println("$pattern{hello $name}{Oi $name}hello Joao");
-println("$pattern{$regex num {\\d+}}{<$regex{0}>}12 34");
-println("$pattern{hi $name}{[$eval{return this.match;}]}hi Ana");
+println("$pattern{hello $name}{Oi $name}hello Joao"),
+println("$pattern{$regex num {\\d+}}{<$regex{0}>}12 34"),
+println("$pattern{hi $name}{[$eval{return this.match,}]}hi Ana"),
 
 // Escape $ to avoid processing.
-raw = "\$pattern{a}{b}a";
-println(raw);
-println(papagaio(raw));
+raw = "\$pattern{a}{b}a",
+println(raw),
+println(papagaio(raw)),
 
 // read/write are plain bytes with no mode.
-path = "tmp_guide.txt";
-write(path, "file data");
-content = read(path);
-println(content.string);
+path = "tmp_guide.txt",
+write(path, "file data"),
+content = read(path),
+println(content.string),
 
 // eval executes code in the current VM.
-eval("x = 10; println(x);");
+eval("x = 10, println(x),"),

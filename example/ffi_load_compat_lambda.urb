@@ -3,61 +3,61 @@
 // usando ffi.open + ffi.sym + ffi.bind.
 
 ffi_load_compat = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
+  h = ffi.open(path),
+  if (h == null) { return null, }
 
   ffi_sig_name = (sig){
-    s = sig.trim();
-    depth = 0;
-    open = -1;
-    i = s.size - 1;
+    s = sig.trim(),
+    depth = 0,
+    open = -1,
+    i = s.size - 1,
     while (i >= 0) {
-      ch = s.slice(i, i + 1);
+      ch = s.slice(i, i + 1),
       if (ch == ")") {
-        depth++;
+        depth++,
       } else if (ch == "(") {
-        depth--;
+        depth--,
         if (depth == 0) {
-          open = i;
-          break;
+          open = i,
+          break,
         }
       }
-      i--;
+      i--,
     }
-    if (open < 0) { return null; }
-    head = s.slice(0, open).trim();
-    parts = head.split(" ");
-    if (parts.size == 0) { return null; }
-    return (parts[parts.size - 1].split("!")[0] + "");
-  };
+    if (open < 0) { return null, }
+    head = s.slice(0, open).trim(),
+    parts = head.split(" "),
+    if (parts.size == 0) { return null, }
+    return (parts[parts.size - 1].split("!")[0] + ""),
+  },
 
-  api = { __lib = h };
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
     if (ptr == null) {
-      ffi.close(h);
-      return null;
+      ffi.close(h),
+      return null,
     }
-    api[name] = ffi.bind(ptr, sig);
+    api[name] = ffi.bind(ptr, sig),
   }
 
   // Conveniencia para liberar handle manualmente.
-  api.close = (){ ffi.close(this.__lib); };
-  return api;
-};
+  api.close = (){ ffi.close(this.__lib), },
+  return api,
+},
 
 lib = ffi_load_compat("libc.so.6",
   "i32 puts(char*)",
   "char* getenv(char*)"
-);
-if (lib == null) { lib = ffi_load_compat("libSystem.B.dylib", "i32 puts(char*)", "char* getenv(char*)"); }
-if (lib == null) { lib = ffi_load_compat("msvcrt.dll", "i32 puts(char*)", "char* getenv(char*)"); }
+),
+if (lib == null) { lib = ffi_load_compat("libSystem.B.dylib", "i32 puts(char*)", "char* getenv(char*)"), }
+if (lib == null) { lib = ffi_load_compat("msvcrt.dll", "i32 puts(char*)", "char* getenv(char*)"), }
 if (lib == null) {
-  println("libc not found");
-  return 0;
+  println("libc not found"),
+  return 0,
 }
 
-lib.puts("hello from ffi_load_compat lambda");
-println(lib.getenv("HOME"));
-lib.close();
+lib.puts("hello from ffi_load_compat lambda"),
+println(lib.getenv("HOME")),
+lib.close(),

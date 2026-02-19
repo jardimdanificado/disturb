@@ -1,92 +1,92 @@
 // raylib [shapes] example - rounded rectangle drawing (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - rounded rectangle drawing");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - rounded rectangle drawing"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-roundness = 0.2;
-width = 200.0;
-height = 100.0;
-segments = 0;
-lineThick = 1.0;
+roundness = 0.2,
+width = 200.0,
+height = 100.0,
+segments = 0,
+lineThick = 1.0,
 
-drawRect = 0;
-drawRoundedRect = 1;
-drawRoundedLines = 0;
+drawRect = 0,
+drawRoundedRect = 1,
+drawRoundedLines = 0,
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsKeyDown(rl.KEY_Q)) { width = width - 2.0; }
-  if (rl.IsKeyDown(rl.KEY_W)) { width = width + 2.0; }
-  if (rl.IsKeyDown(rl.KEY_A)) { height = height - 2.0; }
-  if (rl.IsKeyDown(rl.KEY_S)) { height = height + 2.0; }
-  if (rl.IsKeyDown(rl.KEY_E)) { roundness = roundness - 0.01; }
-  if (rl.IsKeyDown(rl.KEY_D)) { roundness = roundness + 0.01; }
-  if (rl.IsKeyPressed(rl.KEY_R)) { segments = segments - 1; }
-  if (rl.IsKeyPressed(rl.KEY_F)) { segments = segments + 1; }
-  if (rl.IsKeyDown(rl.KEY_T)) { lineThick = lineThick - 0.1; }
-  if (rl.IsKeyDown(rl.KEY_G)) { lineThick = lineThick + 0.1; }
+  if (rl.IsKeyDown(rl.KEY_Q)) { width = width - 2.0, }
+  if (rl.IsKeyDown(rl.KEY_W)) { width = width + 2.0, }
+  if (rl.IsKeyDown(rl.KEY_A)) { height = height - 2.0, }
+  if (rl.IsKeyDown(rl.KEY_S)) { height = height + 2.0, }
+  if (rl.IsKeyDown(rl.KEY_E)) { roundness = roundness - 0.01, }
+  if (rl.IsKeyDown(rl.KEY_D)) { roundness = roundness + 0.01, }
+  if (rl.IsKeyPressed(rl.KEY_R)) { segments = segments - 1, }
+  if (rl.IsKeyPressed(rl.KEY_F)) { segments = segments + 1, }
+  if (rl.IsKeyDown(rl.KEY_T)) { lineThick = lineThick - 0.1, }
+  if (rl.IsKeyDown(rl.KEY_G)) { lineThick = lineThick + 0.1, }
 
-  if (rl.IsKeyPressed(rl.KEY_ONE)) { drawRoundedRect = !drawRoundedRect; }
-  if (rl.IsKeyPressed(rl.KEY_TWO)) { drawRoundedLines = !drawRoundedLines; }
-  if (rl.IsKeyPressed(rl.KEY_THREE)) { drawRect = !drawRect; }
+  if (rl.IsKeyPressed(rl.KEY_ONE)) { drawRoundedRect = !drawRoundedRect, }
+  if (rl.IsKeyPressed(rl.KEY_TWO)) { drawRoundedLines = !drawRoundedLines, }
+  if (rl.IsKeyPressed(rl.KEY_THREE)) { drawRect = !drawRect, }
 
-  maxWidth = rl.GetScreenWidth() - 300.0;
-  maxHeight = rl.GetScreenHeight() - 50.0;
-  if (width < 4.0) { width = 4.0; }
-  if (height < 4.0) { height = 4.0; }
-  if (width > maxWidth) { width = maxWidth; }
-  if (height > maxHeight) { height = maxHeight; }
-  if (roundness < 0.0) { roundness = 0.0; }
-  if (roundness > 1.0) { roundness = 1.0; }
-  if (segments < 0) { segments = 0; }
-  if (segments > 60) { segments = 60; }
-  if (lineThick < 0.1) { lineThick = 0.1; }
-  if (lineThick > 20.0) { lineThick = 20.0; }
+  maxWidth = rl.GetScreenWidth() - 300.0,
+  maxHeight = rl.GetScreenHeight() - 50.0,
+  if (width < 4.0) { width = 4.0, }
+  if (height < 4.0) { height = 4.0, }
+  if (width > maxWidth) { width = maxWidth, }
+  if (height > maxHeight) { height = maxHeight, }
+  if (roundness < 0.0) { roundness = 0.0, }
+  if (roundness > 1.0) { roundness = 1.0, }
+  if (segments < 0) { segments = 0, }
+  if (segments > 60) { segments = 60, }
+  if (lineThick < 0.1) { lineThick = 0.1, }
+  if (lineThick > 20.0) { lineThick = 20.0, }
 
-  rec = rl.newRectangle(rl.Rectangle, ((rl.GetScreenWidth() - width - 250)/2.0), ((rl.GetScreenHeight() - height)/2.0), width, height);
+  rec = rl.newRectangle(rl.Rectangle, ((rl.GetScreenWidth() - width - 250)/2.0), ((rl.GetScreenHeight() - height)/2.0), width, height),
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawLine(560, 0, 560, rl.GetScreenHeight(), rl.Fade(rl.LIGHTGRAY.view, 0.6));
-  rl.DrawRectangle(560, 0, rl.GetScreenWidth() - 500, rl.GetScreenHeight(), rl.Fade(rl.LIGHTGRAY.view, 0.3));
+  rl.DrawLine(560, 0, 560, rl.GetScreenHeight(), rl.Fade(rl.LIGHTGRAY.view, 0.6)),
+  rl.DrawRectangle(560, 0, rl.GetScreenWidth() - 500, rl.GetScreenHeight(), rl.Fade(rl.LIGHTGRAY.view, 0.3)),
 
-  if (drawRect) { rl.DrawRectangleRec(rec.view, rl.Fade(rl.GOLD.view, 0.6)); }
-  if (drawRoundedRect) { rl.DrawRectangleRounded(rec.view, roundness, segments, rl.Fade(rl.MAROON.view, 0.2)); }
-  if (drawRoundedLines) { rl.DrawRectangleRoundedLinesEx(rec.view, roundness, segments, lineThick, rl.Fade(rl.MAROON.view, 0.4)); }
+  if (drawRect) { rl.DrawRectangleRec(rec.view, rl.Fade(rl.GOLD.view, 0.6)), }
+  if (drawRoundedRect) { rl.DrawRectangleRounded(rec.view, roundness, segments, rl.Fade(rl.MAROON.view, 0.2)), }
+  if (drawRoundedLines) { rl.DrawRectangleRoundedLinesEx(rec.view, roundness, segments, lineThick, rl.Fade(rl.MAROON.view, 0.4)), }
 
-  rl.DrawText("Q/W width  A/S height", 585, 35, 18, rl.DARKGRAY.view);
-  rl.DrawText("E/D round  R/F seg", 585, 60, 18, rl.DARKGRAY.view);
-  rl.DrawText("T/G thick", 585, 85, 18, rl.DARKGRAY.view);
-  rl.DrawText("1 rounded fill 2 rounded line 3 rect", 585, 110, 16, rl.DARKGRAY.view);
-  rl.DrawText(rl.TextFormat("Width: %.1f", width), 585, 160, 20, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("Height: %.1f", height), 585, 185, 20, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("Roundness: %.2f", roundness), 585, 210, 20, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("Segments: %i", segments), 585, 235, 20, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("Thickness: %.1f", lineThick), 585, 260, 20, rl.BLACK.view);
+  rl.DrawText("Q/W width  A/S height", 585, 35, 18, rl.DARKGRAY.view),
+  rl.DrawText("E/D round  R/F seg", 585, 60, 18, rl.DARKGRAY.view),
+  rl.DrawText("T/G thick", 585, 85, 18, rl.DARKGRAY.view),
+  rl.DrawText("1 rounded fill 2 rounded line 3 rect", 585, 110, 16, rl.DARKGRAY.view),
+  rl.DrawText(rl.TextFormat("Width: %.1f", width), 585, 160, 20, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("Height: %.1f", height), 585, 185, 20, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("Roundness: %.2f", roundness), 585, 210, 20, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("Segments: %i", segments), 585, 235, 20, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("Thickness: %.1f", lineThick), 585, 260, 20, rl.BLACK.view),
 
-  rl.DrawFPS(10, 10);
-  rl.EndDrawing();
+  rl.DrawFPS(10, 10),
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

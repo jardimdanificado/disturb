@@ -1,20 +1,20 @@
-obj = {alpha = "test", beta = [1, 2, 3]};
+obj = {alpha = "test", beta = [1, 2, 3]},
 
-println(obj.name);
-println(obj.type);
-println(obj.size);
-println(obj.capacity);
+println(obj.name),
+println(obj.type),
+println(obj.size),
+println(obj.capacity),
 
-obj.size = 1;
-println(obj.size);
+obj.size = 1,
+println(obj.size),
 
-obj.capacity = 4;
-println(obj.capacity);
+obj.capacity = 4,
+println(obj.capacity),
 
-println(global.name);
-println(global.name[0]);
+println(global.name),
+println(global.name[0]),
 
-s = "ab";
-c = 'x';
-println(s.type);
-println(c.type);
+s = "ab",
+c = 'x',
+println(s.type),
+println(c.type),

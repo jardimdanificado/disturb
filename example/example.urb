@@ -1,14 +1,14 @@
 // Basic values and globals.
-a = [1, 2, 3];
+a = [1, 2, 3],
 
-// Everything lives under global; missing keys resolve to null.
-global.e = {a = 1, b = [2, 3]};
-global.i = "hello world!\n";
+// Everything lives under global, missing keys resolve to null.
+global.e = {a = 1, b = [2, 3]},
+global.i = "hello world!\n",
 
 // Print a string and a nested value.
-println(global.i);
-println(global.e.a);
+println(global.i),
+println(global.e.a),
 
 // Indexing into int/float lists is numeric (0-based).
-x = global.e.b[1];
-println(x);
+x = global.e.b[1],
+println(x),

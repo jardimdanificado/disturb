@@ -1,7 +1,7 @@
-o = {a = 1};
+o = {a = 1},
 
-println(o.a);
-println(o["a"]);
+println(o.a),
+println(o["a"]),
 
-k = "a";
-println(o[k]);
+k = "a",
+println(o[k]),

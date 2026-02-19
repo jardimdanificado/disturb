@@ -1,75 +1,75 @@
 // raylib [core] example - delta time (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - delta time");
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - delta time"),
 
-currentFps = 60;
-deltaCircle = rl.newVector2(rl.Vector2, 0.0, screenHeight/3.0);
-frameCircle = rl.newVector2(rl.Vector2, 0.0, screenHeight*(2.0/3.0));
+currentFps = 60,
+deltaCircle = rl.newVector2(rl.Vector2, 0.0, screenHeight/3.0),
+frameCircle = rl.newVector2(rl.Vector2, 0.0, screenHeight*(2.0/3.0)),
 
-speed = 10.0;
-circleRadius = 32.0;
+speed = 10.0,
+circleRadius = 32.0,
 
-rl.SetTargetFPS(currentFps);
+rl.SetTargetFPS(currentFps),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
 while (!rl.WindowShouldClose()) {
-  mouseWheel = rl.GetMouseWheelMove();
+  mouseWheel = rl.GetMouseWheelMove(),
   if (mouseWheel != 0) {
-    if (mouseWheel > 0) { currentFps++; }
-    else { currentFps--; }
-    if (currentFps < 0) { currentFps = 0; }
-    rl.SetTargetFPS(currentFps);
+    if (mouseWheel > 0) { currentFps++, }
+    else { currentFps--, }
+    if (currentFps < 0) { currentFps = 0, }
+    rl.SetTargetFPS(currentFps),
   }
 
-  deltaCircle.view.x = deltaCircle.view.x + rl.GetFrameTime()*6.0*speed;
-  frameCircle.view.x = frameCircle.view.x + 0.1*speed;
+  deltaCircle.view.x = deltaCircle.view.x + rl.GetFrameTime()*6.0*speed,
+  frameCircle.view.x = frameCircle.view.x + 0.1*speed,
 
-  if (deltaCircle.view.x > screenWidth) { deltaCircle.view.x = 0.0; }
-  if (frameCircle.view.x > screenWidth) { frameCircle.view.x = 0.0; }
+  if (deltaCircle.view.x > screenWidth) { deltaCircle.view.x = 0.0, }
+  if (frameCircle.view.x > screenWidth) { frameCircle.view.x = 0.0, }
 
   if (rl.IsKeyPressed(rl.KEY_R)) {
-    deltaCircle.view.x = 0.0;
-    frameCircle.view.x = 0.0;
+    deltaCircle.view.x = 0.0,
+    frameCircle.view.x = 0.0,
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawCircleV(deltaCircle.view, circleRadius, rl.RED.view);
-  rl.DrawCircleV(frameCircle.view, circleRadius, rl.BLUE.view);
+  rl.DrawCircleV(deltaCircle.view, circleRadius, rl.RED.view),
+  rl.DrawCircleV(frameCircle.view, circleRadius, rl.BLUE.view),
 
-  fpsText = null;
-  if (currentFps <= 0) { fpsText = rl.TextFormat("FPS: unlimited (%i)", rl.GetFPS()); }
-  else { fpsText = rl.TextFormat("FPS: %i (target: %i)", rl.GetFPS(), currentFps); }
+  fpsText = null,
+  if (currentFps <= 0) { fpsText = rl.TextFormat("FPS: unlimited (%i)", rl.GetFPS()), }
+  else { fpsText = rl.TextFormat("FPS: %i (target: %i)", rl.GetFPS(), currentFps), }
 
-  rl.DrawText(fpsText, 10, 10, 20, rl.DARKGRAY.view);
-  rl.DrawText(rl.TextFormat("Frame time: %02.02f ms", rl.GetFrameTime()), 10, 30, 20, rl.DARKGRAY.view);
-  rl.DrawText("Use the scroll wheel to change the fps limit, r to reset", 10, 50, 20, rl.DARKGRAY.view);
+  rl.DrawText(fpsText, 10, 10, 20, rl.DARKGRAY.view),
+  rl.DrawText(rl.TextFormat("Frame time: %02.02f ms", rl.GetFrameTime()), 10, 30, 20, rl.DARKGRAY.view),
+  rl.DrawText("Use the scroll wheel to change the fps limit, r to reset", 10, 50, 20, rl.DARKGRAY.view),
 
-  rl.DrawText("FUNC: x += GetFrameTime()*speed", 10, 90, 20, rl.RED.view);
-  rl.DrawText("FUNC: x += speed", 10, 240, 20, rl.BLUE.view);
+  rl.DrawText("FUNC: x += GetFrameTime()*speed", 10, 90, 20, rl.RED.view),
+  rl.DrawText("FUNC: x += speed", 10, 240, 20, rl.BLUE.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

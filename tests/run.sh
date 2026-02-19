@@ -47,7 +47,7 @@ run_case strict
 run_case strict_toggle
 run_case value
 if [ "${EMBEDDED_MODE:-0}" = "1" ]; then
-  echo "EMBEDDED_MODE=1; skipping modules case"
+  echo "EMBEDDED_MODE=1, skipping modules case"
 else
   run_case modules
 fi
@@ -107,13 +107,13 @@ run_negative strict_mixed_list
 run_negative bitwise_float
 run_negative vararg_old_syntax
 if [ "${SKIP_FFI:-0}" = "1" ]; then
-  echo "SKIP_FFI=1; skipping negative ffi_const_write_strict"
+  echo "SKIP_FFI=1, skipping negative ffi_const_write_strict"
 else
   run_negative ffi_const_write_strict
 fi
 
 if [ "${SKIP_FFI:-0}" = "1" ]; then
-  echo "SKIP_FFI=1; skipping ffi struct view test"
+  echo "SKIP_FFI=1, skipping ffi struct view test"
   if [ "${EMBEDDED_MODE:-0}" = "1" ]; then
     probe_file="$(mktemp)"
     cat > "$probe_file" <<'EOF'
@@ -166,10 +166,10 @@ else
       run_ffi_case ffi_callbacks
       run_ffi_case ffi_const_views
     else
-      echo "gcc not found; skipping ffi struct view test"
+      echo "gcc not found, skipping ffi struct view test"
     fi
   else
-    echo "ffi module unavailable; skipping ffi struct view test"
+    echo "ffi module unavailable, skipping ffi struct view test"
   fi
   rm -f "$probe_file"
 fi
@@ -179,7 +179,7 @@ if command -v valgrind >/dev/null 2>&1; then
   valgrind --leak-check=full --error-exitcode=1 \
     "$BIN" tests/cases/basic.urb >/dev/null
 else
-  echo "valgrind not found; skipping leak check"
+  echo "valgrind not found, skipping leak check"
 fi
 
 echo "all tests passed"

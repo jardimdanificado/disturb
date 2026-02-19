@@ -1,149 +1,149 @@
-a = 1 + 2 * 3;
-b = (1 + 2) * 3;
-c = 10 / 2 + 4;
-d = 7 % 4;
-e = -5 + 2;
-f = !null;
-g = 1 < 2;
-h = 2 <= 2;
-i = 3 > 4;
-j = 3 >= 4;
-k = 1 == 1;
-l = 1 != 2;
-m = 1 == 2;
-n = 1 != 1;
-o = 1 && null;
-p = 1 && 2;
-q = null || 2;
-r = null || null;
-s = "a" + 1;
-t = 1 + "a";
-u = "x" + {a = 1, b = "c"};
-v = "n=" + [1, 2];
-w = "hi" == "hi";
-x = "hi" != "ho";
+a = 1 + 2 * 3,
+b = (1 + 2) * 3,
+c = 10 / 2 + 4,
+d = 7 % 4,
+e = -5 + 2,
+f = !null,
+g = 1 < 2,
+h = 2 <= 2,
+i = 3 > 4,
+j = 3 >= 4,
+k = 1 == 1,
+l = 1 != 2,
+m = 1 == 2,
+n = 1 != 1,
+o = 1 && null,
+p = 1 && 2,
+q = null || 2,
+r = null || null,
+s = "a" + 1,
+t = 1 + "a",
+u = "x" + {a = 1, b = "c"},
+v = "n=" + [1, 2],
+w = "hi" == "hi",
+x = "hi" != "ho",
 
-println(a);
-println(b);
-println(c);
-println(d);
-println(e);
-println(f);
-println(g);
-println(h);
-println(i);
-println(j);
-println(k);
-println(l);
-println(m);
-println(n);
-println(o);
-println(p);
-println(q);
-println(r);
-println(s);
-println(t);
-println(u);
-println(v);
-println(w);
-println(x);
+println(a),
+println(b),
+println(c),
+println(d),
+println(e),
+println(f),
+println(g),
+println(h),
+println(i),
+println(j),
+println(k),
+println(l),
+println(m),
+println(n),
+println(o),
+println(p),
+println(q),
+println(r),
+println(s),
+println(t),
+println(u),
+println(v),
+println(w),
+println(x),
 
-acc = 5;
-acc += 3;
-println(acc);
-acc -= 2;
-println(acc);
-acc *= 4;
-println(acc);
-acc /= 3;
-println(acc);
-acc %= 5;
-println(acc);
+acc = 5,
+acc += 3,
+println(acc),
+acc -= 2,
+println(acc),
+acc *= 4,
+println(acc),
+acc /= 3,
+println(acc),
+acc %= 5,
+println(acc),
 
-++acc;
-println(acc);
-acc++;
-println(acc);
---acc;
-println(acc);
-acc--;
-println(acc);
+++acc,
+println(acc),
+acc++,
+println(acc),
+--acc,
+println(acc),
+acc--,
+println(acc),
 
-i = 1;
-fn = (x) { return x; };
-println(fn(i++));
-println(i);
-println(fn(++i));
-println(i);
-println(i += 2);
-println(i);
-println(i = i + 1);
-println(i);
+i = 1,
+fn = (x) { return x, },
+println(fn(i++)),
+println(i),
+println(fn(++i)),
+println(i),
+println(i += 2),
+println(i),
+println(i = i + 1),
+println(i),
 
-arr = [10, 20];
-println(arr[0]++);
-println(arr[0]);
-println(++arr[0]);
-println(arr[0]);
-println(arr[1] += 5);
-println(arr[1]);
+arr = [10, 20],
+println(arr[0]++),
+println(arr[0]),
+println(++arr[0]),
+println(arr[0]),
+println(arr[1] += 5),
+println(arr[1]),
 
-tbl = {a = 3};
-println(tbl.a--);
-println(tbl.a);
-println(--tbl.a);
-println(tbl.a);
+tbl = {a = 3},
+println(tbl.a--),
+println(tbl.a),
+println(--tbl.a),
+println(tbl.a),
 
-ba = 6 & 3;
-bb = 6 | 3;
-bc = 6 ^ 3;
-bd = ~6;
-be = 1 << 5;
-bf = 64 >> 3;
-bg = 1 + 2 << 3;
-bh = 16 >> 1 + 1;
-bi = 5 & 3 == 1;
-bj = 5 == 5 & 1;
-bk = 1 | 0 && 0;
-bl = 0 || 1 & 0;
-bm = ~1 + 2;
+ba = 6 & 3,
+bb = 6 | 3,
+bc = 6 ^ 3,
+bd = ~6,
+be = 1 << 5,
+bf = 64 >> 3,
+bg = 1 + 2 << 3,
+bh = 16 >> 1 + 1,
+bi = 5 & 3 == 1,
+bj = 5 == 5 & 1,
+bk = 1 | 0 && 0,
+bl = 0 || 1 & 0,
+bm = ~1 + 2,
 
-println(ba);
-println(bb);
-println(bc);
-println(bd);
-println(be);
-println(bf);
-println(bg);
-println(bh);
-println(bi);
-println(bj);
-println(bk);
-println(bl);
-println(bm);
+println(ba),
+println(bb),
+println(bc),
+println(bd),
+println(be),
+println(bf),
+println(bg),
+println(bh),
+println(bi),
+println(bj),
+println(bk),
+println(bl),
+println(bm),
 
-acc2 = 10;
-acc2 &= 6;
-println(acc2);
-acc2 |= 8;
-println(acc2);
-acc2 ^= 3;
-println(acc2);
-acc2 <<= 1;
-println(acc2);
-acc2 >>= 2;
-println(acc2);
+acc2 = 10,
+acc2 &= 6,
+println(acc2),
+acc2 |= 8,
+println(acc2),
+acc2 ^= 3,
+println(acc2),
+acc2 <<= 1,
+println(acc2),
+acc2 >>= 2,
+println(acc2),
 
-arr2 = [15];
-println(arr2[0] &= 7);
-println(arr2[0] |= 8);
-println(arr2[0] ^= 3);
-println(arr2[0] <<= 1);
-println(arr2[0] >>= 2);
+arr2 = [15],
+println(arr2[0] &= 7),
+println(arr2[0] |= 8),
+println(arr2[0] ^= 3),
+println(arr2[0] <<= 1),
+println(arr2[0] >>= 2),
 
-tbl2 = {v = 9};
-println(tbl2.v &= 6);
-println(tbl2.v |= 1);
-println(tbl2.v ^= 2);
-println(tbl2.v <<= 2);
-println(tbl2.v >>= 1);
+tbl2 = {v = 9},
+println(tbl2.v &= 6),
+println(tbl2.v |= 1),
+println(tbl2.v ^= 2),
+println(tbl2.v <<= 2),
+println(tbl2.v >>= 1),

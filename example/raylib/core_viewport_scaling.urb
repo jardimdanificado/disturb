@@ -1,265 +1,265 @@
 // raylib [core] example - viewport scaling (Disturb port, original flow)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-KEEP_ASPECT_INTEGER = 0;
-KEEP_HEIGHT_INTEGER = 1;
-KEEP_WIDTH_INTEGER = 2;
-KEEP_ASPECT = 3;
-KEEP_HEIGHT = 4;
-KEEP_WIDTH = 5;
-VIEWPORT_TYPE_COUNT = 6;
+KEEP_ASPECT_INTEGER = 0,
+KEEP_HEIGHT_INTEGER = 1,
+KEEP_WIDTH_INTEGER = 2,
+KEEP_ASPECT = 3,
+KEEP_HEIGHT = 4,
+KEEP_WIDTH = 5,
+VIEWPORT_TYPE_COUNT = 6,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE);
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - viewport scaling");
+rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE),
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - viewport scaling"),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-resolutionIndex = 0;
-gameWidth = 64;
-gameHeight = 64;
-viewportType = KEEP_ASPECT_INTEGER;
+resolutionIndex = 0,
+gameWidth = 64,
+gameHeight = 64,
+viewportType = KEEP_ASPECT_INTEGER,
 
-sourceRect = rl.newRectangle(rl.Rectangle, 0.0, gameHeight, gameWidth, -gameHeight);
-destRect = rl.newRectangle(rl.Rectangle, 0.0, 0.0, screenWidth, screenHeight);
-origin = rl.newVector2(rl.Vector2, 0.0, 0.0);
+sourceRect = rl.newRectangle(rl.Rectangle, 0.0, gameHeight, gameWidth, -gameHeight),
+destRect = rl.newRectangle(rl.Rectangle, 0.0, 0.0, screenWidth, screenHeight),
+origin = rl.newVector2(rl.Vector2, 0.0, 0.0),
 
-target = rl.LoadRenderTexture(gameWidth, gameHeight);
+target = rl.LoadRenderTexture(gameWidth, gameHeight),
 
 // Buttons
-decRes = rl.newRectangle(rl.Rectangle, 200.0, 30.0, 10.0, 10.0);
-incRes = rl.newRectangle(rl.Rectangle, 215.0, 30.0, 10.0, 10.0);
-decType = rl.newRectangle(rl.Rectangle, 200.0, 45.0, 10.0, 10.0);
-incType = rl.newRectangle(rl.Rectangle, 215.0, 45.0, 10.0, 10.0);
+decRes = rl.newRectangle(rl.Rectangle, 200.0, 30.0, 10.0, 10.0),
+incRes = rl.newRectangle(rl.Rectangle, 215.0, 30.0, 10.0, 10.0),
+decType = rl.newRectangle(rl.Rectangle, 200.0, 45.0, 10.0, 10.0),
+incType = rl.newRectangle(rl.Rectangle, 215.0, 45.0, 10.0, 10.0),
 
-needResize = 1;
-rl.SetTargetFPS(60);
+needResize = 1,
+rl.SetTargetFPS(60),
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsWindowResized()) { needResize = 1; }
+  if (rl.IsWindowResized()) { needResize = 1, }
 
-  mouse = rl.GetMousePosition();
-  mousePressed = rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT);
+  mouse = rl.GetMousePosition(),
+  mousePressed = rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_LEFT),
 
   inDecRes = (mouse.x >= decRes.view.x) && (mouse.x <= decRes.view.x + decRes.view.width) &&
-             (mouse.y >= decRes.view.y) && (mouse.y <= decRes.view.y + decRes.view.height);
+             (mouse.y >= decRes.view.y) && (mouse.y <= decRes.view.y + decRes.view.height),
   inIncRes = (mouse.x >= incRes.view.x) && (mouse.x <= incRes.view.x + incRes.view.width) &&
-             (mouse.y >= incRes.view.y) && (mouse.y <= incRes.view.y + incRes.view.height);
+             (mouse.y >= incRes.view.y) && (mouse.y <= incRes.view.y + incRes.view.height),
   inDecType = (mouse.x >= decType.view.x) && (mouse.x <= decType.view.x + decType.view.width) &&
-              (mouse.y >= decType.view.y) && (mouse.y <= decType.view.y + decType.view.height);
+              (mouse.y >= decType.view.y) && (mouse.y <= decType.view.y + decType.view.height),
   inIncType = (mouse.x >= incType.view.x) && (mouse.x <= incType.view.x + incType.view.width) &&
-              (mouse.y >= incType.view.y) && (mouse.y <= incType.view.y + incType.view.height);
+              (mouse.y >= incType.view.y) && (mouse.y <= incType.view.y + incType.view.height),
 
   if (mousePressed && inDecRes) {
-    resolutionIndex = (resolutionIndex + 3)%4;
-    if (resolutionIndex == 0) { gameWidth = 64; gameHeight = 64; }
-    else if (resolutionIndex == 1) { gameWidth = 256; gameHeight = 240; }
-    else if (resolutionIndex == 2) { gameWidth = 320; gameHeight = 180; }
-    else { gameWidth = 3840; gameHeight = 2160; }
-    needResize = 1;
+    resolutionIndex = (resolutionIndex + 3)%4,
+    if (resolutionIndex == 0) { gameWidth = 64, gameHeight = 64, }
+    else if (resolutionIndex == 1) { gameWidth = 256, gameHeight = 240, }
+    else if (resolutionIndex == 2) { gameWidth = 320, gameHeight = 180, }
+    else { gameWidth = 3840, gameHeight = 2160, }
+    needResize = 1,
   }
 
   if (mousePressed && inIncRes) {
-    resolutionIndex = (resolutionIndex + 1)%4;
-    if (resolutionIndex == 0) { gameWidth = 64; gameHeight = 64; }
-    else if (resolutionIndex == 1) { gameWidth = 256; gameHeight = 240; }
-    else if (resolutionIndex == 2) { gameWidth = 320; gameHeight = 180; }
-    else { gameWidth = 3840; gameHeight = 2160; }
-    needResize = 1;
+    resolutionIndex = (resolutionIndex + 1)%4,
+    if (resolutionIndex == 0) { gameWidth = 64, gameHeight = 64, }
+    else if (resolutionIndex == 1) { gameWidth = 256, gameHeight = 240, }
+    else if (resolutionIndex == 2) { gameWidth = 320, gameHeight = 180, }
+    else { gameWidth = 3840, gameHeight = 2160, }
+    needResize = 1,
   }
 
   if (mousePressed && inDecType) {
-    viewportType = (viewportType + VIEWPORT_TYPE_COUNT - 1)%VIEWPORT_TYPE_COUNT;
-    needResize = 1;
+    viewportType = (viewportType + VIEWPORT_TYPE_COUNT - 1)%VIEWPORT_TYPE_COUNT,
+    needResize = 1,
   }
 
   if (mousePressed && inIncType) {
-    viewportType = (viewportType + 1)%VIEWPORT_TYPE_COUNT;
-    needResize = 1;
+    viewportType = (viewportType + 1)%VIEWPORT_TYPE_COUNT,
+    needResize = 1,
   }
 
   if (needResize) {
-    screenWidth = rl.GetScreenWidth();
-    screenHeight = rl.GetScreenHeight();
+    screenWidth = rl.GetScreenWidth(),
+    screenHeight = rl.GetScreenHeight(),
 
     if (viewportType == KEEP_ASPECT_INTEGER) {
-      sourceRect.view.x = 0.0;
-      sourceRect.view.y = gameHeight;
-      sourceRect.view.width = gameWidth;
-      sourceRect.view.height = -gameHeight;
+      sourceRect.view.x = 0.0,
+      sourceRect.view.y = gameHeight,
+      sourceRect.view.width = gameWidth,
+      sourceRect.view.height = -gameHeight,
 
-      ratioX = (screenWidth/gameWidth);
-      ratioY = (screenHeight/gameHeight);
-      resizeRatio = ratioX;
-      if (ratioY < resizeRatio) { resizeRatio = ratioY; }
+      ratioX = (screenWidth/gameWidth),
+      ratioY = (screenHeight/gameHeight),
+      resizeRatio = ratioX,
+      if (ratioY < resizeRatio) { resizeRatio = ratioY, }
 
-      destRect.view.x = (screenWidth - (gameWidth*resizeRatio))*0.5;
-      destRect.view.y = (screenHeight - (gameHeight*resizeRatio))*0.5;
-      destRect.view.width = gameWidth*resizeRatio;
-      destRect.view.height = gameHeight*resizeRatio;
+      destRect.view.x = (screenWidth - (gameWidth*resizeRatio))*0.5,
+      destRect.view.y = (screenHeight - (gameHeight*resizeRatio))*0.5,
+      destRect.view.width = gameWidth*resizeRatio,
+      destRect.view.height = gameHeight*resizeRatio,
     } else if (viewportType == KEEP_HEIGHT_INTEGER) {
-      resizeRatio = (1.0*screenHeight)/gameHeight;
+      resizeRatio = (1.0*screenHeight)/gameHeight,
 
-      sourceRect.view.x = 0.0;
-      sourceRect.view.y = 0.0;
-      sourceRect.view.width = (1.0*screenWidth)/resizeRatio;
-      sourceRect.view.height = -gameHeight;
+      sourceRect.view.x = 0.0,
+      sourceRect.view.y = 0.0,
+      sourceRect.view.width = (1.0*screenWidth)/resizeRatio,
+      sourceRect.view.height = -gameHeight,
 
-      destRect.view.x = (screenWidth - (sourceRect.view.width*resizeRatio))*0.5;
-      destRect.view.y = (screenHeight - (gameHeight*resizeRatio))*0.5;
-      destRect.view.width = sourceRect.view.width*resizeRatio;
-      destRect.view.height = gameHeight*resizeRatio;
+      destRect.view.x = (screenWidth - (sourceRect.view.width*resizeRatio))*0.5,
+      destRect.view.y = (screenHeight - (gameHeight*resizeRatio))*0.5,
+      destRect.view.width = sourceRect.view.width*resizeRatio,
+      destRect.view.height = gameHeight*resizeRatio,
     } else if (viewportType == KEEP_WIDTH_INTEGER) {
-      resizeRatio = (1.0*screenWidth)/gameWidth;
+      resizeRatio = (1.0*screenWidth)/gameWidth,
 
-      sourceRect.view.x = 0.0;
-      sourceRect.view.y = 0.0;
-      sourceRect.view.width = gameWidth;
-      sourceRect.view.height = (1.0*screenHeight)/resizeRatio;
+      sourceRect.view.x = 0.0,
+      sourceRect.view.y = 0.0,
+      sourceRect.view.width = gameWidth,
+      sourceRect.view.height = (1.0*screenHeight)/resizeRatio,
 
-      destRect.view.x = (screenWidth - (gameWidth*resizeRatio))*0.5;
-      destRect.view.y = (screenHeight - (sourceRect.view.height*resizeRatio))*0.5;
-      destRect.view.width = gameWidth*resizeRatio;
-      destRect.view.height = sourceRect.view.height*resizeRatio;
+      destRect.view.x = (screenWidth - (gameWidth*resizeRatio))*0.5,
+      destRect.view.y = (screenHeight - (sourceRect.view.height*resizeRatio))*0.5,
+      destRect.view.width = gameWidth*resizeRatio,
+      destRect.view.height = sourceRect.view.height*resizeRatio,
 
-      sourceRect.view.height = sourceRect.view.height*-1.0;
+      sourceRect.view.height = sourceRect.view.height*-1.0,
     } else if (viewportType == KEEP_ASPECT) {
-      sourceRect.view.x = 0.0;
-      sourceRect.view.y = gameHeight;
-      sourceRect.view.width = gameWidth;
-      sourceRect.view.height = -gameHeight;
+      sourceRect.view.x = 0.0,
+      sourceRect.view.y = gameHeight,
+      sourceRect.view.width = gameWidth,
+      sourceRect.view.height = -gameHeight,
 
-      ratioX = (1.0*screenWidth)/gameWidth;
-      ratioY = (1.0*screenHeight)/gameHeight;
-      resizeRatio = ratioX;
-      if (ratioY < resizeRatio) { resizeRatio = ratioY; }
+      ratioX = (1.0*screenWidth)/gameWidth,
+      ratioY = (1.0*screenHeight)/gameHeight,
+      resizeRatio = ratioX,
+      if (ratioY < resizeRatio) { resizeRatio = ratioY, }
 
-      destRect.view.x = (screenWidth - (gameWidth*resizeRatio))*0.5;
-      destRect.view.y = (screenHeight - (gameHeight*resizeRatio))*0.5;
-      destRect.view.width = gameWidth*resizeRatio;
-      destRect.view.height = gameHeight*resizeRatio;
+      destRect.view.x = (screenWidth - (gameWidth*resizeRatio))*0.5,
+      destRect.view.y = (screenHeight - (gameHeight*resizeRatio))*0.5,
+      destRect.view.width = gameWidth*resizeRatio,
+      destRect.view.height = gameHeight*resizeRatio,
     } else if (viewportType == KEEP_HEIGHT) {
-      resizeRatio = (1.0*screenHeight)/gameHeight;
+      resizeRatio = (1.0*screenHeight)/gameHeight,
 
-      sourceRect.view.x = 0.0;
-      sourceRect.view.y = 0.0;
-      sourceRect.view.width = (1.0*screenWidth)/resizeRatio;
-      sourceRect.view.height = -gameHeight;
+      sourceRect.view.x = 0.0,
+      sourceRect.view.y = 0.0,
+      sourceRect.view.width = (1.0*screenWidth)/resizeRatio,
+      sourceRect.view.height = -gameHeight,
 
-      destRect.view.x = (screenWidth - (sourceRect.view.width*resizeRatio))*0.5;
-      destRect.view.y = (screenHeight - (gameHeight*resizeRatio))*0.5;
-      destRect.view.width = sourceRect.view.width*resizeRatio;
-      destRect.view.height = gameHeight*resizeRatio;
+      destRect.view.x = (screenWidth - (sourceRect.view.width*resizeRatio))*0.5,
+      destRect.view.y = (screenHeight - (gameHeight*resizeRatio))*0.5,
+      destRect.view.width = sourceRect.view.width*resizeRatio,
+      destRect.view.height = gameHeight*resizeRatio,
     } else {
-      resizeRatio = (1.0*screenWidth)/gameWidth;
+      resizeRatio = (1.0*screenWidth)/gameWidth,
 
-      sourceRect.view.x = 0.0;
-      sourceRect.view.y = 0.0;
-      sourceRect.view.width = gameWidth;
-      sourceRect.view.height = (1.0*screenHeight)/resizeRatio;
+      sourceRect.view.x = 0.0,
+      sourceRect.view.y = 0.0,
+      sourceRect.view.width = gameWidth,
+      sourceRect.view.height = (1.0*screenHeight)/resizeRatio,
 
-      destRect.view.x = (screenWidth - (gameWidth*resizeRatio))*0.5;
-      destRect.view.y = (screenHeight - (sourceRect.view.height*resizeRatio))*0.5;
-      destRect.view.width = gameWidth*resizeRatio;
-      destRect.view.height = sourceRect.view.height*resizeRatio;
+      destRect.view.x = (screenWidth - (gameWidth*resizeRatio))*0.5,
+      destRect.view.y = (screenHeight - (sourceRect.view.height*resizeRatio))*0.5,
+      destRect.view.width = gameWidth*resizeRatio,
+      destRect.view.height = sourceRect.view.height*resizeRatio,
 
-      sourceRect.view.height = sourceRect.view.height*-1.0;
+      sourceRect.view.height = sourceRect.view.height*-1.0,
     }
 
-    texW = sourceRect.view.width;
-    texH = -sourceRect.view.height;
-    if (texW < 1) { texW = 1; }
-    if (texH < 1) { texH = 1; }
+    texW = sourceRect.view.width,
+    texH = -sourceRect.view.height,
+    if (texW < 1) { texW = 1, }
+    if (texH < 1) { texH = 1, }
 
-    rl.UnloadRenderTexture(target);
-    target = rl.LoadRenderTexture(texW, texH);
+    rl.UnloadRenderTexture(target),
+    target = rl.LoadRenderTexture(texW, texH),
 
     // Force source rectangle to actual texture size to avoid repeated tiling artifacts.
-    sourceRect.view.x = 0.0;
-    sourceRect.view.y = target.texture.height;
-    sourceRect.view.width = target.texture.width;
-    sourceRect.view.height = -target.texture.height;
+    sourceRect.view.x = 0.0,
+    sourceRect.view.y = target.texture.height,
+    sourceRect.view.width = target.texture.width,
+    sourceRect.view.height = -target.texture.height,
 
-    needResize = 0;
+    needResize = 0,
   }
 
-  relativeX = mouse.x - destRect.view.x;
-  relativeY = mouse.y - destRect.view.y;
+  relativeX = mouse.x - destRect.view.x,
+  relativeY = mouse.y - destRect.view.y,
 
-  ratioX = 1.0;
-  ratioY = 1.0;
-  if (destRect.view.width != 0) { ratioX = sourceRect.view.width/destRect.view.width; }
-  if (destRect.view.height != 0) { ratioY = -sourceRect.view.height/destRect.view.height; }
+  ratioX = 1.0,
+  ratioY = 1.0,
+  if (destRect.view.width != 0) { ratioX = sourceRect.view.width/destRect.view.width, }
+  if (destRect.view.height != 0) { ratioY = -sourceRect.view.height/destRect.view.height, }
 
-  textureMouseX = relativeX*ratioX;
-  textureMouseY = relativeY*ratioY;
+  textureMouseX = relativeX*ratioX,
+  textureMouseY = relativeY*ratioY,
 
-  rl.BeginTextureMode(target);
-  rl.ClearBackground(rl.WHITE.view);
-  rl.DrawCircle(textureMouseX, textureMouseY, 20.0, rl.LIME.view);
-  rl.EndTextureMode();
+  rl.BeginTextureMode(target),
+  rl.ClearBackground(rl.WHITE.view),
+  rl.DrawCircle(textureMouseX, textureMouseY, 20.0, rl.LIME.view),
+  rl.EndTextureMode(),
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.BLACK.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.BLACK.view),
 
-  rl.DrawTexturePro(target.texture, sourceRect.view, destRect.view, origin.view, 0.0, rl.WHITE.view);
+  rl.DrawTexturePro(target.texture, sourceRect.view, destRect.view, origin.view, 0.0, rl.WHITE.view),
 
-  typeName = "KEEP_WIDTH";
-  if (viewportType == KEEP_ASPECT_INTEGER) { typeName = "KEEP_ASPECT_INTEGER"; }
-  else if (viewportType == KEEP_HEIGHT_INTEGER) { typeName = "KEEP_HEIGHT_INTEGER"; }
-  else if (viewportType == KEEP_WIDTH_INTEGER) { typeName = "KEEP_WIDTH_INTEGER"; }
-  else if (viewportType == KEEP_ASPECT) { typeName = "KEEP_ASPECT"; }
-  else if (viewportType == KEEP_HEIGHT) { typeName = "KEEP_HEIGHT"; }
+  typeName = "KEEP_WIDTH",
+  if (viewportType == KEEP_ASPECT_INTEGER) { typeName = "KEEP_ASPECT_INTEGER", }
+  else if (viewportType == KEEP_HEIGHT_INTEGER) { typeName = "KEEP_HEIGHT_INTEGER", }
+  else if (viewportType == KEEP_WIDTH_INTEGER) { typeName = "KEEP_WIDTH_INTEGER", }
+  else if (viewportType == KEEP_ASPECT) { typeName = "KEEP_ASPECT", }
+  else if (viewportType == KEEP_HEIGHT) { typeName = "KEEP_HEIGHT", }
 
-  rl.DrawRectangle(5, 5, 330, 105, rl.Fade(rl.LIGHTGRAY.view, 0.7));
-  rl.DrawRectangleLines(5, 5, 330, 105, rl.BLUE.view);
+  rl.DrawRectangle(5, 5, 330, 105, rl.Fade(rl.LIGHTGRAY.view, 0.7)),
+  rl.DrawRectangleLines(5, 5, 330, 105, rl.BLUE.view),
 
-  rl.DrawText(rl.TextFormat("Window Resolution: %i x %i", screenWidth, screenHeight), 15, 15, 10, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("Game Resolution: %i x %i", gameWidth, gameHeight), 15, 30, 10, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("Type: %s", typeName), 15, 45, 10, rl.BLACK.view);
+  rl.DrawText(rl.TextFormat("Window Resolution: %i x %i", screenWidth, screenHeight), 15, 15, 10, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("Game Resolution: %i x %i", gameWidth, gameHeight), 15, 30, 10, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("Type: %s", typeName), 15, 45, 10, rl.BLACK.view),
 
-  scaleX = 0.0;
-  scaleY = 0.0;
-  if (sourceRect.view.width != 0) { scaleX = destRect.view.width/sourceRect.view.width; }
-  if (sourceRect.view.height != 0) { scaleY = -destRect.view.height/sourceRect.view.height; }
+  scaleX = 0.0,
+  scaleY = 0.0,
+  if (sourceRect.view.width != 0) { scaleX = destRect.view.width/sourceRect.view.width, }
+  if (sourceRect.view.height != 0) { scaleY = -destRect.view.height/sourceRect.view.height, }
 
   if ((scaleX < 0.001) || (scaleY < 0.001)) {
-    rl.DrawText("Scale ratio: INVALID", 15, 60, 10, rl.BLACK.view);
+    rl.DrawText("Scale ratio: INVALID", 15, 60, 10, rl.BLACK.view),
   } else {
-    rl.DrawText(rl.TextFormat("Scale ratio: %02.02f x %02.02f", scaleX, scaleY), 15, 60, 10, rl.BLACK.view);
+    rl.DrawText(rl.TextFormat("Scale ratio: %02.02f x %02.02f", scaleX, scaleY), 15, 60, 10, rl.BLACK.view),
   }
 
-  rl.DrawText(rl.TextFormat("Source size: %02.02f x %02.02f", sourceRect.view.width, -sourceRect.view.height), 15, 75, 10, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("Destination size: %02.02f x %02.02f", destRect.view.width, destRect.view.height), 15, 90, 10, rl.BLACK.view);
+  rl.DrawText(rl.TextFormat("Source size: %02.02f x %02.02f", sourceRect.view.width, -sourceRect.view.height), 15, 75, 10, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("Destination size: %02.02f x %02.02f", destRect.view.width, destRect.view.height), 15, 90, 10, rl.BLACK.view),
 
-  rl.DrawRectangleRec(decType.view, rl.SKYBLUE.view);
-  rl.DrawRectangleRec(incType.view, rl.SKYBLUE.view);
-  rl.DrawRectangleRec(decRes.view, rl.SKYBLUE.view);
-  rl.DrawRectangleRec(incRes.view, rl.SKYBLUE.view);
-  rl.DrawText("<", decType.view.x + 3, decType.view.y + 1, 10, rl.BLACK.view);
-  rl.DrawText(">", incType.view.x + 3, incType.view.y + 1, 10, rl.BLACK.view);
-  rl.DrawText("<", decRes.view.x + 3, decRes.view.y + 1, 10, rl.BLACK.view);
-  rl.DrawText(">", incRes.view.x + 3, incRes.view.y + 1, 10, rl.BLACK.view);
+  rl.DrawRectangleRec(decType.view, rl.SKYBLUE.view),
+  rl.DrawRectangleRec(incType.view, rl.SKYBLUE.view),
+  rl.DrawRectangleRec(decRes.view, rl.SKYBLUE.view),
+  rl.DrawRectangleRec(incRes.view, rl.SKYBLUE.view),
+  rl.DrawText("<", decType.view.x + 3, decType.view.y + 1, 10, rl.BLACK.view),
+  rl.DrawText(">", incType.view.x + 3, incType.view.y + 1, 10, rl.BLACK.view),
+  rl.DrawText("<", decRes.view.x + 3, decRes.view.y + 1, 10, rl.BLACK.view),
+  rl.DrawText(">", incRes.view.x + 3, incRes.view.y + 1, 10, rl.BLACK.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.UnloadRenderTexture(target);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadRenderTexture(target),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

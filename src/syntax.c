@@ -43,7 +43,8 @@ typedef enum {
     TOK_DOT,
     TOK_COMMA,
     TOK_COLON,
-    TOK_SEMI,
+    /* ; is mapped to COMMA by the scanner so it never appears here */
+    TOK_SEMI,  /* retained for backwards compatibility, but unused */
     TOK_EQ,
     TOK_QEQ,
     TOK_PLUS,
@@ -753,7 +754,12 @@ static Token next_token(Parser *p)
         break;
     case ',': t.kind = TOK_COMMA; break;
     case ':': t.kind = TOK_COLON; break;
-    case ';': t.kind = TOK_SEMI; break;
+    case ';':
+        /* semicolon is treated as a comma in the new syntax – statements are
+           comma‑terminated.  Keep the token kind for old bytecode compatibility
+           but the parser never expects TOK_SEMI any more. */
+        t.kind = TOK_COMMA;
+        break;
     case '+':
         if (peek_char(p) == '+') {
             next_char(p);
@@ -1109,7 +1115,11 @@ static Expr *parse_object_literal(Parser *p)
             pairs[count].value = value;
             count++;
 
-            if (match(p, TOK_COMMA)) continue;
+            if (match(p, TOK_COMMA)) {
+                /* allow trailing comma before closing brace */
+                if (p->current.kind == TOK_RBRACE) break;
+                continue;
+            }
             break;
         }
     }
@@ -2689,11 +2699,11 @@ static int emit_loop_continue(Parser *p, Bytecode *bc)
     return 1;
 }
 
-static int parse_simple_statement(Parser *p, Bytecode *bc, int require_semi)
+static int parse_simple_statement(Parser *p, Bytecode *bc, int require_sep)
 {
     Expr *expr = parse_expr(p);
     if (!expr) return 0;
-    if (require_semi && !expect(p, TOK_SEMI, "expected ';' after statement")) return 0;
+    if (require_sep && !expect(p, TOK_COMMA, "expected ',' after statement")) return 0;
     if (!emit_expr(bc, p, expr)) return 0;
     if (!bc_emit_u8(bc, BC_POP)) {
         parser_error(p, "failed to emit POP");
@@ -2872,15 +2882,15 @@ static int parse_for_statement(Parser *p, Bytecode *bc)
         return 0;
     }
 
-    if (p->current.kind != TOK_SEMI) {
+    if (p->current.kind != TOK_COMMA) {
         if (!parse_simple_statement(p, bc, 0)) { loop_pop(p); return 0; }
     }
-    if (!expect(p, TOK_SEMI, "expected ';' after for init")) { loop_pop(p); return 0; }
+    if (!expect(p, TOK_COMMA, "expected ',' after for init")) { loop_pop(p); return 0; }
 
     size_t loop_start = bc->len;
     int has_cond = 0;
     size_t jmp_out = 0;
-    if (p->current.kind != TOK_SEMI) {
+    if (p->current.kind != TOK_COMMA) {
         Expr *cond = parse_expr(p);
         if (!cond) { loop_pop(p); return 0; }
         if (!emit_expr(bc, p, cond)) { loop_pop(p); return 0; }
@@ -2888,7 +2898,7 @@ static int parse_for_statement(Parser *p, Bytecode *bc)
         if (!jmp_out) { loop_pop(p); return 0; }
         has_cond = 1;
     }
-    if (!expect(p, TOK_SEMI, "expected ';' after for condition")) { loop_pop(p); return 0; }
+    if (!expect(p, TOK_COMMA, "expected ',' after for condition")) { loop_pop(p); return 0; }
 
     Bytecode step;
     bc_init(&step);
@@ -3078,7 +3088,7 @@ static int parse_statement(Parser *p, Bytecode *bc)
         Token next = next_token(&probe);
         Token after = next_token(&probe);
         int mode = 0;
-        if (after.kind == TOK_SEMI) {
+        if (after.kind == TOK_COMMA) {
             if (next.kind == TOK_STRING) {
                 if (next.str_len == 6 && memcmp(next.str, "strict", 6) == 0) mode = 1;
                 else if (next.str_len == 8 && memcmp(next.str, "nostrict", 8) == 0) mode = -1;
@@ -3115,8 +3125,8 @@ static int parse_statement(Parser *p, Bytecode *bc)
                 return 0;
             }
             advance(p);
-            if (!expect(p, TOK_SEMI, mode > 0 ? "expected ';' after use strict"
-                                              : "expected ';' after use nostrict")) {
+            if (!expect(p, TOK_COMMA, mode > 0 ? "expected ',' after use strict"
+                                              : "expected ',' after use nostrict")) {
                 return 0;
             }
             /* Directives toggle parser strict mode and emit runtime strict toggle bytecode. */
@@ -3148,7 +3158,7 @@ static int parse_statement(Parser *p, Bytecode *bc)
         size_t jmp_target = emit_jump(bc, p, BC_JMP);
         if (!jmp_target) return 0;
         if (!label_add_ref(p, bc, name, len, jmp_target)) return 0;
-        if (!expect(p, TOK_SEMI, "expected ';' after goto")) return 0;
+        if (!expect(p, TOK_COMMA, "expected ',' after goto")) return 0;
         return 1;
     }
     if (match(p, TOK_SWITCH)) {
@@ -3167,14 +3177,14 @@ static int parse_statement(Parser *p, Bytecode *bc)
         return parse_each_statement(p, bc);
     }
     if (match(p, TOK_RETURN)) {
-        if (p->current.kind == TOK_SEMI) {
+        if (p->current.kind == TOK_COMMA) {
             if (!emit_load_global_name(bc, p, "null", 4)) return 0;
             advance(p);
         } else {
             Expr *value = parse_expr(p);
             if (!value) return 0;
             if (!emit_expr(bc, p, value)) return 0;
-            if (!expect(p, TOK_SEMI, "expected ';' after return")) return 0;
+            if (!expect(p, TOK_COMMA, "expected ',' after return")) return 0;
         }
         if (!bc_emit_u8(bc, BC_RETURN)) {
             parser_error(p, "failed to emit RETURN");
@@ -3184,12 +3194,12 @@ static int parse_statement(Parser *p, Bytecode *bc)
     }
     if (match(p, TOK_BREAK)) {
         if (!emit_loop_break(p, bc)) return 0;
-        if (!expect(p, TOK_SEMI, "expected ';' after break")) return 0;
+        if (!expect(p, TOK_COMMA, "expected ',' after break")) return 0;
         return 1;
     }
     if (match(p, TOK_CONTINUE)) {
         if (!emit_loop_continue(p, bc)) return 0;
-        if (!expect(p, TOK_SEMI, "expected ';' after continue")) return 0;
+        if (!expect(p, TOK_COMMA, "expected ',' after continue")) return 0;
         return 1;
     }
     if (p->current.kind == TOK_LBRACE) {

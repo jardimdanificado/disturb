@@ -1,16 +1,16 @@
 sum = (...rest){
-  println(rest.size);
-  if (rest.size > 0) { println(rest[0]); } else { println("empty"); }
-  if (rest.size > 2) { println(rest[2]); } else { println("na"); }
-};
+  println(rest.size),
+  if (rest.size > 0) { println(rest[0]), } else { println("empty"), }
+  if (rest.size > 2) { println(rest[2]), } else { println("na"), }
+},
 
-sum();
-sum(10, 20, 30);
+sum(),
+sum(10, 20, 30),
 
 mix = (a, ...rest){
-  println(a);
-  println(rest.size);
-};
+  println(a),
+  println(rest.size),
+},
 
-mix(7);
-mix(7, 8, 9);
+mix(7),
+mix(7, 8, 9),

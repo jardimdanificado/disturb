@@ -1,77 +1,77 @@
 // raylib [textures] example - sprite button (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-NUM_FRAMES = 3;
+NUM_FRAMES = 3,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - sprite button");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - sprite button"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-audioEnabled = 0;
-fxButton = null;
-rl.InitAudioDevice();
+audioEnabled = 0,
+fxButton = null,
+rl.InitAudioDevice(),
 if (rl.IsAudioDeviceReady()) {
-  audioEnabled = 1;
-  fxButton = rl.LoadSound("../raylib/examples/textures/resources/buttonfx.wav");
+  audioEnabled = 1,
+  fxButton = rl.LoadSound("../raylib/examples/textures/resources/buttonfx.wav"),
 }
 
-button = rl.LoadTexture("../raylib/examples/textures/resources/button.png");
+button = rl.LoadTexture("../raylib/examples/textures/resources/button.png"),
 if (button.id == 0) {
-  println("could not load texture: ../raylib/examples/textures/resources/button.png");
-  if (audioEnabled) { rl.UnloadSound(fxButton); rl.CloseAudioDevice(); }
-  rl.CloseWindow();
-  gc.collect();
-  return 0;
+  println("could not load texture: ../raylib/examples/textures/resources/button.png"),
+  if (audioEnabled) { rl.UnloadSound(fxButton), rl.CloseAudioDevice(), }
+  rl.CloseWindow(),
+  gc.collect(),
+  return 0,
 }
 
-frameHeight = button.height/NUM_FRAMES;
-sourceRec = rl.newRectangle(rl.Rectangle, 0.0, 0.0, button.width, frameHeight);
-btnBounds = rl.newRectangle(rl.Rectangle, screenWidth/2.0 - button.width/2.0, screenHeight/2.0 - (button.height/NUM_FRAMES)/2.0, button.width, frameHeight);
-btnState = 0;
-btnAction = 0;
+frameHeight = button.height/NUM_FRAMES,
+sourceRec = rl.newRectangle(rl.Rectangle, 0.0, 0.0, button.width, frameHeight),
+btnBounds = rl.newRectangle(rl.Rectangle, screenWidth/2.0 - button.width/2.0, screenHeight/2.0 - (button.height/NUM_FRAMES)/2.0, button.width, frameHeight),
+btnState = 0,
+btnAction = 0,
 
 while (!rl.WindowShouldClose()) {
-  mousePoint = rl.GetMousePosition();
-  btnAction = 0;
+  mousePoint = rl.GetMousePosition(),
+  btnAction = 0,
 
   if (rl.CheckCollisionPointRec(mousePoint, btnBounds.view)) {
-    if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) { btnState = 2; }
-    else { btnState = 1; }
-    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT)) { btnAction = 1; }
+    if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) { btnState = 2, }
+    else { btnState = 1, }
+    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT)) { btnAction = 1, }
   } else {
-    btnState = 0;
+    btnState = 0,
   }
 
-  if (btnAction && audioEnabled) { rl.PlaySound(fxButton); }
-  sourceRec.view.y = btnState*frameHeight;
+  if (btnAction && audioEnabled) { rl.PlaySound(fxButton), }
+  sourceRec.view.y = btnState*frameHeight,
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
-  pos = rl.newVector2(rl.Vector2, btnBounds.view.x, btnBounds.view.y);
-  rl.DrawTextureRec(button, sourceRec.view, pos.view, rl.WHITE.view);
-  rl.DrawText("Click button to play sound", 300, 330, 20, rl.DARKGRAY.view);
-  rl.EndDrawing();
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
+  pos = rl.newVector2(rl.Vector2, btnBounds.view.x, btnBounds.view.y),
+  rl.DrawTextureRec(button, sourceRec.view, pos.view, rl.WHITE.view),
+  rl.DrawText("Click button to play sound", 300, 330, 20, rl.DARKGRAY.view),
+  rl.EndDrawing(),
 }
 
-rl.UnloadTexture(button);
-if (audioEnabled) { rl.UnloadSound(fxButton); rl.CloseAudioDevice(); }
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadTexture(button),
+if (audioEnabled) { rl.UnloadSound(fxButton), rl.CloseAudioDevice(), }
+rl.CloseWindow(),
+gc.collect(),
+return 0,

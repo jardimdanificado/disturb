@@ -1,64 +1,64 @@
 ffi_sig_name = (sig){
-  s = sig.trim();
-  depth = 0;
-  open = -1;
-  i = s.size - 1;
+  s = sig.trim(),
+  depth = 0,
+  open = -1,
+  i = s.size - 1,
   while (i >= 0) {
-    ch = s.slice(i, i + 1);
+    ch = s.slice(i, i + 1),
     if (ch == ")") {
-      depth++;
+      depth++,
     } else if (ch == "(") {
-      depth--;
+      depth--,
       if (depth == 0) {
-        open = i;
-        break;
+        open = i,
+        break,
       }
     }
-    i--;
+    i--,
   }
-  if (open < 0) { return null; }
-  head = s.slice(0, open).trim();
-  parts = head.split(" ");
-  if (parts.size == 0) { return null; }
-  return (parts[parts.size - 1].split("!")[0] + "");
-};
+  if (open < 0) { return null, }
+  head = s.slice(0, open).trim(),
+  parts = head.split(" "),
+  if (parts.size == 0) { return null, }
+  return (parts[parts.size - 1].split("!")[0] + ""),
+},
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
-  api = { __lib = h };
+  h = ffi.open(path),
+  if (h == null) { return null, }
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
-    if (ptr == null) { return null; }
-    api[name] = ffi.bind(ptr, sig);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
+    if (ptr == null) { return null, }
+    api[name] = ffi.bind(ptr, sig),
   }
-  return api;
-};
+  return api,
+},
 
 // Example: callback with struct-by-value signature.
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
 
-pair = { a = "i32", b = "i32" };
+pair = { a = "i32", b = "i32" },
 
 load_fixture = (path){
   return ffi_bind_all(path,
     "i32 call_cb_pair_sum(void*, i32, i32)"
-  );
-};
+  ),
+},
 
-lib = load_fixture("./tests/ffi/libffi_view_struct.so");
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+lib = load_fixture("./tests/ffi/libffi_view_struct.so"),
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"), }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"), }
 if (lib == null) {
-  println("ffi fixture not found");
-  return 0;
+  println("ffi fixture not found"),
+  return 0,
 }
 
 cb = ffi.callback("struct(pair) pair_cb(struct(pair))", (p){
-  p.a = p.a + 1;
-  p.b = p.b + 2;
-  return p;
-});
+  p.a = p.a + 1,
+  p.b = p.b + 2,
+  return p,
+}),
 
-println("call_cb_pair_sum(3, 4):", lib.call_cb_pair_sum(cb, 3, 4)); // 10
+println("call_cb_pair_sum(3, 4):", lib.call_cb_pair_sum(cb, 3, 4)), // 10

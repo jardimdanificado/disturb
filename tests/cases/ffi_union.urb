@@ -1,65 +1,65 @@
 ffi_sig_name = (sig){
-  s = sig.trim();
-  depth = 0;
-  open = -1;
-  i = s.size - 1;
+  s = sig.trim(),
+  depth = 0,
+  open = -1,
+  i = s.size - 1,
   while (i >= 0) {
-    ch = s.slice(i, i + 1);
+    ch = s.slice(i, i + 1),
     if (ch == ")") {
-      depth++;
+      depth++,
     } else if (ch == "(") {
-      depth--;
+      depth--,
       if (depth == 0) {
-        open = i;
-        break;
+        open = i,
+        break,
       }
     }
-    i--;
+    i--,
   }
-  if (open < 0) { return null; }
-  head = s.slice(0, open).trim();
-  parts = head.split(" ");
-  if (parts.size == 0) { return null; }
-  return (parts[parts.size - 1].split("!")[0] + "");
-};
+  if (open < 0) { return null, }
+  head = s.slice(0, open).trim(),
+  parts = head.split(" "),
+  if (parts.size == 0) { return null, }
+  return (parts[parts.size - 1].split("!")[0] + ""),
+},
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
-  api = { __lib = h };
+  h = ffi.open(path),
+  if (h == null) { return null, }
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
-    if (ptr == null) { return null; }
-    api[name] = ffi.bind(ptr, sig);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
+    if (ptr == null) { return null, }
+    api[name] = ffi.bind(ptr, sig),
   }
-  return api;
-};
+  return api,
+},
 
-fail = 0;
+fail = 0,
 
 half = {
   lo = "int16",
   hi = "int16"
-};
+},
 
 bits = {
   __meta = { union = 1 },
   i = "int32",
   f = "float",
   p = "struct(half)"
-};
+},
 
 holder = {
   tag = "int32",
   payload = "union(bits)"
-};
+},
 
 holder_ptr = {
   tag = "int32",
   payload = "union(bits)",
   ref = "pointer(bits)"
-};
+},
 
 load_fixture = (path){
   return ffi_bind_all(path,
@@ -75,58 +75,58 @@ load_fixture = (path){
     "i32 holder_off_tag()",
     "i32 holder_off_payload()",
     "i32 holder_take_payload_i(struct(holder))"
-  );
-};
+  ),
+},
 
-lib = load_fixture("./tests/ffi/libffi_view_struct.so");
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+lib = load_fixture("./tests/ffi/libffi_view_struct.so"),
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"), }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"), }
 if (lib == null) {
-  println(1);
-  return 0;
+  println(1),
+  return 0,
 }
 
-if (ffi.sizeof(bits) != lib.bits_sizeof()) { fail++; }
-if (ffi.offsetof(bits, "i") != lib.bits_off_i()) { fail++; }
-if (ffi.offsetof(bits, "f") != lib.bits_off_f()) { fail++; }
-if (ffi.offsetof(bits, "p") != lib.bits_off_p()) { fail++; }
+if (ffi.sizeof(bits) != lib.bits_sizeof()) { fail++, }
+if (ffi.offsetof(bits, "i") != lib.bits_off_i()) { fail++, }
+if (ffi.offsetof(bits, "f") != lib.bits_off_f()) { fail++, }
+if (ffi.offsetof(bits, "p") != lib.bits_off_p()) { fail++, }
 
-if (ffi.sizeof(holder) != lib.holder_sizeof()) { fail++; }
-if (ffi.offsetof(holder, "tag") != lib.holder_off_tag()) { fail++; }
-if (ffi.offsetof(holder, "payload") != lib.holder_off_payload()) { fail++; }
+if (ffi.sizeof(holder) != lib.holder_sizeof()) { fail++, }
+if (ffi.offsetof(holder, "tag") != lib.holder_off_tag()) { fail++, }
+if (ffi.offsetof(holder, "payload") != lib.holder_off_payload()) { fail++, }
 
-bp = ffi.new(bits);
-bv = ffi.view(bp, bits);
+bp = ffi.new(bits),
+bv = ffi.view(bp, bits),
 
-bv.i = 42;
-if (lib.bits_take_value_i(bv) != 42) { fail++; }
+bv.i = 42,
+if (lib.bits_take_value_i(bv) != 42) { fail++, }
 
-lib.bits_write_i(bp, 0x11223344);
-if (bv.i != 0x11223344) { fail++; }
+lib.bits_write_i(bp, 0x11223344),
+if (bv.i != 0x11223344) { fail++, }
 
-bv.p.hi = 123;
-if (lib.bits_read_hi(bv) != 123) { fail++; }
+bv.p.hi = 123,
+if (lib.bits_read_hi(bv) != 123) { fail++, }
 
-ret = lib.make_bits_value_i(99);
-if (ret.i != 99) { fail++; }
+ret = lib.make_bits_value_i(99),
+if (ret.i != 99) { fail++, }
 
-hp = ffi.new(holder);
-hv = ffi.view(hp, holder);
+hp = ffi.new(holder),
+hv = ffi.view(hp, holder),
 
-hv.tag = 7;
-hv.payload.i = 77;
-if (lib.holder_take_payload_i(hv) != 77) { fail++; }
+hv.tag = 7,
+hv.payload.i = 77,
+if (lib.holder_take_payload_i(hv) != 77) { fail++, }
 
-hp2 = ffi.new(holder_ptr);
-hv2 = ffi.view(hp2, holder_ptr);
-hv2.ref = bp;
-if (hv2.ref.i != bv.i) { fail++; }
+hp2 = ffi.new(holder_ptr),
+hv2 = ffi.view(hp2, holder_ptr),
+hv2.ref = bp,
+if (hv2.ref.i != bv.i) { fail++, }
 
-hv2.ref.i = -12;
-if (bv.i != -12) { fail++; }
+hv2.ref.i = -12,
+if (bv.i != -12) { fail++, }
 
-ffi.free(hp);
-ffi.free(hp2);
-ffi.free(bp);
+ffi.free(hp),
+ffi.free(hp2),
+ffi.free(bp),
 
-println(fail);
+println(fail),

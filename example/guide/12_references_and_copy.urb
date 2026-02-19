@@ -2,26 +2,26 @@
 // Reference semantics and explicit copies.
 
 // Assignment shares the same object (reference).
-a = {x = 1};
-b = a;
-b.x = 9;
-println(a.x);
+a = {x = 1},
+b = a,
+b.x = 9,
+println(a.x),
 
 // Collections store references as well.
-list = {};
-list.push(a);
-a.x = 7;
-println(list[0].x);
+list = {},
+list.push(a),
+a.x = 7,
+println(list[0].x),
 
 // clone() makes a shallow copy.
-c = a.clone();
-c.x = 100;
-println(a.x);
-println(c.x);
+c = a.clone(),
+c.x = 100,
+println(a.x),
+println(c.x),
 
 // copy() makes a deep copy (nested objects too).
-d = {n = {v = 1}};
-e = d.copy();
-e.n.v = 2;
-println(d.n.v);
-println(e.n.v);
+d = {n = {v = 1}},
+e = d.copy(),
+e.n.v = 2,
+println(d.n.v),
+println(e.n.v),

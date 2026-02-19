@@ -1,76 +1,76 @@
 // raylib [core] example - highdpi testbed (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE | rl.FLAG_WINDOW_HIGHDPI);
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - highdpi testbed");
-rl.SetTargetFPS(60);
+rl.SetConfigFlags(rl.FLAG_WINDOW_RESIZABLE | rl.FLAG_WINDOW_HIGHDPI),
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - highdpi testbed"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-gridSpacing = 40;
+gridSpacing = 40,
 
 while (!rl.WindowShouldClose()) {
-  mousePos = rl.GetMousePosition();
-  currentMonitor = rl.GetCurrentMonitor();
-  scaleDpi = rl.GetWindowScaleDPI();
-  windowPos = rl.GetWindowPosition();
+  mousePos = rl.GetMousePosition(),
+  currentMonitor = rl.GetCurrentMonitor(),
+  scaleDpi = rl.GetWindowScaleDPI(),
+  windowPos = rl.GetWindowPosition(),
 
-  if (rl.IsKeyPressed(rl.KEY_SPACE)) { rl.ToggleBorderlessWindowed(); }
-  if (rl.IsKeyPressed(rl.KEY_F)) { rl.ToggleFullscreen(); }
+  if (rl.IsKeyPressed(rl.KEY_SPACE)) { rl.ToggleBorderlessWindowed(), }
+  if (rl.IsKeyPressed(rl.KEY_F)) { rl.ToggleFullscreen(), }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  h = 0;
+  h = 0,
   while (h < rl.GetScreenHeight()/gridSpacing + 1) {
-    y = h*gridSpacing;
-    rl.DrawText(rl.TextFormat("%02i", y), 4, y - 4, 10, rl.GRAY.view);
-    rl.DrawLine(24, y, rl.GetScreenWidth(), y, rl.LIGHTGRAY.view);
-    h = h + 1;
+    y = h*gridSpacing,
+    rl.DrawText(rl.TextFormat("%02i", y), 4, y - 4, 10, rl.GRAY.view),
+    rl.DrawLine(24, y, rl.GetScreenWidth(), y, rl.LIGHTGRAY.view),
+    h = h + 1,
   }
-  v = 0;
+  v = 0,
   while (v < rl.GetScreenWidth()/gridSpacing + 1) {
-    x = v*gridSpacing;
-    rl.DrawText(rl.TextFormat("%02i", x), x - 10, 4, 10, rl.GRAY.view);
-    rl.DrawLine(x, 20, x, rl.GetScreenHeight(), rl.LIGHTGRAY.view);
-    v = v + 1;
+    x = v*gridSpacing,
+    rl.DrawText(rl.TextFormat("%02i", x), x - 10, 4, 10, rl.GRAY.view),
+    rl.DrawLine(x, 20, x, rl.GetScreenHeight(), rl.LIGHTGRAY.view),
+    v = v + 1,
   }
 
-  rl.DrawText(rl.TextFormat("CURRENT MONITOR: %i/%i (%ix%i)", currentMonitor + 1, rl.GetMonitorCount(), rl.GetMonitorWidth(currentMonitor), rl.GetMonitorHeight(currentMonitor)), 50, 50, 20, rl.DARKGRAY.view);
-  rl.DrawText(rl.TextFormat("WINDOW POSITION: %ix%i", windowPos.x, windowPos.y), 50, 90, 20, rl.DARKGRAY.view);
-  rl.DrawText(rl.TextFormat("SCREEN SIZE: %ix%i", rl.GetScreenWidth(), rl.GetScreenHeight()), 50, 130, 20, rl.DARKGRAY.view);
-  rl.DrawText(rl.TextFormat("RENDER SIZE: %ix%i", rl.GetRenderWidth(), rl.GetRenderHeight()), 50, 170, 20, rl.DARKGRAY.view);
-  rl.DrawText(rl.TextFormat("SCALE FACTOR: %.1fx%.1f", scaleDpi.x, scaleDpi.y), 50, 210, 20, rl.GRAY.view);
+  rl.DrawText(rl.TextFormat("CURRENT MONITOR: %i/%i (%ix%i)", currentMonitor + 1, rl.GetMonitorCount(), rl.GetMonitorWidth(currentMonitor), rl.GetMonitorHeight(currentMonitor)), 50, 50, 20, rl.DARKGRAY.view),
+  rl.DrawText(rl.TextFormat("WINDOW POSITION: %ix%i", windowPos.x, windowPos.y), 50, 90, 20, rl.DARKGRAY.view),
+  rl.DrawText(rl.TextFormat("SCREEN SIZE: %ix%i", rl.GetScreenWidth(), rl.GetScreenHeight()), 50, 130, 20, rl.DARKGRAY.view),
+  rl.DrawText(rl.TextFormat("RENDER SIZE: %ix%i", rl.GetRenderWidth(), rl.GetRenderHeight()), 50, 170, 20, rl.DARKGRAY.view),
+  rl.DrawText(rl.TextFormat("SCALE FACTOR: %.1fx%.1f", scaleDpi.x, scaleDpi.y), 50, 210, 20, rl.GRAY.view),
 
-  rl.DrawRectangle(0, 0, 30, 60, rl.RED.view);
-  rl.DrawRectangle(rl.GetScreenWidth() - 30, rl.GetScreenHeight() - 60, 30, 60, rl.BLUE.view);
+  rl.DrawRectangle(0, 0, 30, 60, rl.RED.view),
+  rl.DrawRectangle(rl.GetScreenWidth() - 30, rl.GetScreenHeight() - 60, 30, 60, rl.BLUE.view),
 
-  rl.DrawCircleV(mousePos, 20.0, rl.MAROON.view);
-  rl.DrawRectangle(mousePos.x - 25, mousePos.y, 50, 2, rl.BLACK.view);
-  rl.DrawRectangle(mousePos.x, mousePos.y - 25, 2, 50, rl.BLACK.view);
-  textY = mousePos.y + 30;
-  if (mousePos.y > rl.GetScreenHeight() - 60) { textY = mousePos.y - 46; }
-  rl.DrawText(rl.TextFormat("[%i,%i]", rl.GetMouseX(), rl.GetMouseY()), mousePos.x - 44, textY, 20, rl.BLACK.view);
+  rl.DrawCircleV(mousePos, 20.0, rl.MAROON.view),
+  rl.DrawRectangle(mousePos.x - 25, mousePos.y, 50, 2, rl.BLACK.view),
+  rl.DrawRectangle(mousePos.x, mousePos.y - 25, 2, 50, rl.BLACK.view),
+  textY = mousePos.y + 30,
+  if (mousePos.y > rl.GetScreenHeight() - 60) { textY = mousePos.y - 46, }
+  rl.DrawText(rl.TextFormat("[%i,%i]", rl.GetMouseX(), rl.GetMouseY()), mousePos.x - 44, textY, 20, rl.BLACK.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

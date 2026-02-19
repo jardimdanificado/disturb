@@ -1,40 +1,40 @@
 ffi_sig_name = (sig){
-  s = sig.trim();
-  depth = 0;
-  open = -1;
-  i = s.size - 1;
+  s = sig.trim(),
+  depth = 0,
+  open = -1,
+  i = s.size - 1,
   while (i >= 0) {
-    ch = s.slice(i, i + 1);
+    ch = s.slice(i, i + 1),
     if (ch == ")") {
-      depth++;
+      depth++,
     } else if (ch == "(") {
-      depth--;
+      depth--,
       if (depth == 0) {
-        open = i;
-        break;
+        open = i,
+        break,
       }
     }
-    i--;
+    i--,
   }
-  if (open < 0) { return null; }
-  head = s.slice(0, open).trim();
-  parts = head.split(" ");
-  if (parts.size == 0) { return null; }
-  return (parts[parts.size - 1].split("!")[0] + "");
-};
+  if (open < 0) { return null, }
+  head = s.slice(0, open).trim(),
+  parts = head.split(" "),
+  if (parts.size == 0) { return null, }
+  return (parts[parts.size - 1].split("!")[0] + ""),
+},
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
-  api = { __lib = h };
+  h = ffi.open(path),
+  if (h == null) { return null, }
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
-    if (ptr == null) { return null; }
-    api[name] = ffi.bind(ptr, sig);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
+    if (ptr == null) { return null, }
+    api[name] = ffi.bind(ptr, sig),
   }
-  return api;
-};
+  return api,
+},
 
 // ffi_fnptr_fields.urb
 // Function pointer fields in schemas via function(signature).
@@ -42,36 +42,36 @@ ffi_bind_all = (path, ...sigs){
 
 holder = {
   cb = "function(i32 cb(i32, i32))"
-};
+},
 
 load_fixture = (path){
   return ffi_bind_all(path,
     "void fn_holder_set_add(pointer(holder))",
     "i32 fn_holder_call(pointer(holder), i32, i32)",
     "void* get_add_i32_ptr()"
-  );
-};
+  ),
+},
 
-lib = load_fixture("./tests/ffi/libffi_view_struct.so");
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+lib = load_fixture("./tests/ffi/libffi_view_struct.so"),
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"), }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"), }
 if (lib == null) {
-  println("ffi test library not available");
-  return 0;
+  println("ffi test library not available"),
+  return 0,
 }
 
-p = ffi.new(holder);
-v = ffi.view(p, holder);
+p = ffi.new(holder),
+v = ffi.view(p, holder),
 
-lib.fn_holder_set_add(p);
-f = v.cb;
-println(f(20, 22));
+lib.fn_holder_set_add(p),
+f = v.cb,
+println(f(20, 22)),
 
-v.cb = ffi.callback("i32 cb(i32, i32)", (a, b){ return a * b; });
-println(lib.fn_holder_call(p, 6, 7));
+v.cb = ffi.callback("i32 cb(i32, i32)", (a, b){ return a * b, }),
+println(lib.fn_holder_call(p, 6, 7)),
 
-v.cb = lib.get_add_i32_ptr();
-f2 = v.cb;
-println(f2(10, 5));
+v.cb = lib.get_add_i32_ptr(),
+f2 = v.cb,
+println(f2(10, 5)),
 
-ffi.free(p);
+ffi.free(p),

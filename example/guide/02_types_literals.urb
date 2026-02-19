@@ -1,46 +1,46 @@
 // 02_types_literals.urb
 // Ints, floats, strings, tables, and meta.
 
-// Ints are stored as int lists; single ints are just length 1.
-n = 42;
-list = [1, 2, 3];
-f = 3.14;
-flist = [1, 2.5];
+// Ints are stored as int lists, single ints are just length 1.
+n = 42,
+list = [1, 2, 3],
+f = 3.14,
+flist = [1, 2.5],
 
 // Strings can be written as "..." or 'c' for single-byte.
-s = "text";
-c = 'x';
+s = "text",
+c = 'x',
 
 // Strings are int lists with the .string view.
-b = "ABC";
-println(b.string);
+b = "ABC",
+println(b.string),
 
 // Numeric suffixes pick a literal type.
-ai = 1i;
-af = 1f;
-println(ai);
-println(af);
+ai = 1i,
+af = 1f,
+println(ai),
+println(af),
 
 // Infinity is a global float constant.
-println(inf);
+println(inf),
 
-// Tables are key/value pairs; values can be any type.
-obj = {a = 1, b = "hi", c = [9, 8]};
+// Tables are key/value pairs, values can be any type.
+obj = {a = 1, b = "hi", c = [9, 8]},
 
 // Meta fields are accessed as string keys.
-println(obj.type);
-println(obj.size);
-println(obj.capacity);
+println(obj.type),
+println(obj.size),
+println(obj.capacity),
 
 // type can be reassigned within compatible layouts (list <-> list).
-obj.type = "int";
-println(obj.type);
-obj.type = "table";
+obj.type = "int",
+println(obj.type),
+obj.type = "table",
 
 // name is the key name inside its parent.
-global.sample = obj;
-println(global.sample.name);
+global.sample = obj,
+println(global.sample.name),
 
 // value copies or assigns entry content without changing identity.
-global.sample.value = {x = 9};
-println(global.sample.value.x);
+global.sample.value = {x = 9},
+println(global.sample.value.x),

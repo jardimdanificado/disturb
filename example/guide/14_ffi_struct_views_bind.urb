@@ -1,40 +1,40 @@
 ffi_sig_name = (sig){
-  s = sig.trim();
-  depth = 0;
-  open = -1;
-  i = s.size - 1;
+  s = sig.trim(),
+  depth = 0,
+  open = -1,
+  i = s.size - 1,
   while (i >= 0) {
-    ch = s.slice(i, i + 1);
+    ch = s.slice(i, i + 1),
     if (ch == ")") {
-      depth++;
+      depth++,
     } else if (ch == "(") {
-      depth--;
+      depth--,
       if (depth == 0) {
-        open = i;
-        break;
+        open = i,
+        break,
       }
     }
-    i--;
+    i--,
   }
-  if (open < 0) { return null; }
-  head = s.slice(0, open).trim();
-  parts = head.split(" ");
-  if (parts.size == 0) { return null; }
-  return (parts[parts.size - 1].split("!")[0] + "");
-};
+  if (open < 0) { return null, }
+  head = s.slice(0, open).trim(),
+  parts = head.split(" "),
+  if (parts.size == 0) { return null, }
+  return (parts[parts.size - 1].split("!")[0] + ""),
+},
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
-  api = { __lib = h };
+  h = ffi.open(path),
+  if (h == null) { return null, }
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
-    if (ptr == null) { return null; }
-    api[name] = ffi.bind(ptr, sig);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
+    if (ptr == null) { return null, }
+    api[name] = ffi.bind(ptr, sig),
   }
-  return api;
-};
+  return api,
+},
 
 // 14_ffi_struct_views_bind.urb
 // Advanced FFI: struct views + function pointer bind.
@@ -49,42 +49,42 @@ load_fixture = (path){
     "void* get_add_i32_ptr()",
     "i32 sum_outer_value(struct(outer))",
     "struct(outer) make_outer_value(i32, f64, i8, i16)"
-  );
-};
+  ),
+},
 
-inner = { a = "int8", b = "int16" };
+inner = { a = "int8", b = "int16" },
 schema = {
   a = "int32",
   b = "float64",
   d = "struct(inner)"
-};
-outer = schema;
+},
+outer = schema,
 
-lib = load_fixture("./tests/ffi/libffi_view_struct.so");
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+lib = load_fixture("./tests/ffi/libffi_view_struct.so"),
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"), }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"), }
 
 if (lib == null) {
-  println("ffi test library not available");
-  return 0;
+  println("ffi test library not available"),
+  return 0,
 }
 
-ptr = lib.make_outer();
-v = ffi.view(ptr, schema);
-v.a = 45;
-v.d.b = 123;
+ptr = lib.make_outer(),
+v = ffi.view(ptr, schema),
+v.a = 45,
+v.d.b = 123,
 
-println(v.a);
-println(v.d.b);
-println(lib.outer_get_a(ptr));
-println(lib.inner_get_b(ptr));
-println(lib.sum_outer_value(v));
-lib.free_outer(ptr);
+println(v.a),
+println(v.d.b),
+println(lib.outer_get_a(ptr)),
+println(lib.inner_get_b(ptr)),
+println(lib.sum_outer_value(v)),
+lib.free_outer(ptr),
 
-add_ptr = lib.get_add_i32_ptr();
-add = ffi.bind(add_ptr, "i32 add(i32, i32)");
-println(add(20, 22));
+add_ptr = lib.get_add_i32_ptr(),
+add = ffi.bind(add_ptr, "i32 add(i32, i32)"),
+println(add(20, 22)),
 
-ret = lib.make_outer_value(7, 1.5, 2, 9);
-println(ret.a);
-println(ret.d.b);
+ret = lib.make_outer_value(7, 1.5, 2, 9),
+println(ret.a),
+println(ret.d.b),

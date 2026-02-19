@@ -1,2 +1,2 @@
-use strict;
-bad = [1, 2.5];
+use strict,
+bad = [1, 2.5],

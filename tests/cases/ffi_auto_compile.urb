@@ -1,49 +1,49 @@
 ffi_sig_name = (sig){
-  s = sig.trim();
-  depth = 0;
-  open = -1;
-  i = s.size - 1;
+  s = sig.trim(),
+  depth = 0,
+  open = -1,
+  i = s.size - 1,
   while (i >= 0) {
-    ch = s.slice(i, i + 1);
+    ch = s.slice(i, i + 1),
     if (ch == ")") {
-      depth++;
+      depth++,
     } else if (ch == "(") {
-      depth--;
+      depth--,
       if (depth == 0) {
-        open = i;
-        break;
+        open = i,
+        break,
       }
     }
-    i--;
+    i--,
   }
-  if (open < 0) { return null; }
-  head = s.slice(0, open).trim();
-  parts = head.split(" ");
-  if (parts.size == 0) { return null; }
-  return (parts[parts.size - 1].split("!")[0] + "");
-};
+  if (open < 0) { return null, }
+  head = s.slice(0, open).trim(),
+  parts = head.split(" "),
+  if (parts.size == 0) { return null, }
+  return (parts[parts.size - 1].split("!")[0] + ""),
+},
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
-  api = { __lib = h };
+  h = ffi.open(path),
+  if (h == null) { return null, }
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
-    if (ptr == null) { return null; }
-    api[name] = ffi.bind(ptr, sig);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
+    if (ptr == null) { return null, }
+    api[name] = ffi.bind(ptr, sig),
   }
-  return api;
-};
+  return api,
+},
 
-fail = 0;
+fail = 0,
 
-inner = { a = "int8", b = "int16" };
+inner = { a = "int8", b = "int16" },
 outer = {
   a = "int32",
   b = "float64",
   d = "struct(inner)"
-};
+},
 
 load_fixture = (path){
   return ffi_bind_all(path,
@@ -55,41 +55,41 @@ load_fixture = (path){
     "i32 inner_off_b()",
     "i32 outer_get_a(pointer(outer))",
     "i32 inner_get_b(pointer(outer))"
-  );
-};
+  ),
+},
 
-lib = load_fixture("./tests/ffi/libffi_view_struct.so");
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+lib = load_fixture("./tests/ffi/libffi_view_struct.so"),
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"), }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"), }
 if (lib == null) {
-  println(1);
-  return 0;
+  println(1),
+  return 0,
 }
 
-layout = ffi.compile(outer);
+layout = ffi.compile(outer),
 
-if (ffi.sizeof(outer) != ffi.sizeof(layout)) { fail++; }
-if (ffi.alignof(outer) != ffi.alignof(layout)) { fail++; }
-if (ffi.offsetof(outer, "a") != ffi.offsetof(layout, "a")) { fail++; }
-if (ffi.offsetof(outer, "d.b") != ffi.offsetof(layout, "d.b")) { fail++; }
+if (ffi.sizeof(outer) != ffi.sizeof(layout)) { fail++, }
+if (ffi.alignof(outer) != ffi.alignof(layout)) { fail++, }
+if (ffi.offsetof(outer, "a") != ffi.offsetof(layout, "a")) { fail++, }
+if (ffi.offsetof(outer, "d.b") != ffi.offsetof(layout, "d.b")) { fail++, }
 
-if (ffi.sizeof(outer) != lib.outer_sizeof()) { fail++; }
-if (ffi.offsetof(outer, "a") != lib.outer_off_a()) { fail++; }
-if (ffi.offsetof(outer, "d") != lib.outer_off_d()) { fail++; }
-if (ffi.offsetof(outer, "d.b") != (lib.outer_off_d() + lib.inner_off_b())) { fail++; }
+if (ffi.sizeof(outer) != lib.outer_sizeof()) { fail++, }
+if (ffi.offsetof(outer, "a") != lib.outer_off_a()) { fail++, }
+if (ffi.offsetof(outer, "d") != lib.outer_off_d()) { fail++, }
+if (ffi.offsetof(outer, "d.b") != (lib.outer_off_d() + lib.inner_off_b())) { fail++, }
 
-ptr = lib.make_outer();
-v_schema = ffi.view(ptr, outer);  // auto compile path
-v_layout = ffi.view(ptr, layout); // precompiled path
+ptr = lib.make_outer(),
+v_schema = ffi.view(ptr, outer),  // auto compile path
+v_layout = ffi.view(ptr, layout), // precompiled path
 
-v_schema.a = 31;
-v_layout.d.b = 9;
+v_schema.a = 31,
+v_layout.d.b = 9,
 
-if (lib.outer_get_a(ptr) != 31) { fail++; }
-if (lib.inner_get_b(ptr) != 9) { fail++; }
+if (lib.outer_get_a(ptr) != 31) { fail++, }
+if (lib.inner_get_b(ptr) != 9) { fail++, }
 
-if (v_schema.a != 31) { fail++; }
-if (v_layout.d.b != 9) { fail++; }
+if (v_schema.a != 31) { fail++, }
+if (v_layout.d.b != 9) { fail++, }
 
-lib.free_outer(ptr);
-println(fail);
+lib.free_outer(ptr),
+println(fail),

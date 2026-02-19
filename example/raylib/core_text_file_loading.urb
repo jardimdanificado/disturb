@@ -1,95 +1,95 @@
 // raylib [core] example - text file loading (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - text file loading");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - text file loading"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-fileName = "../raylib/examples/core/resources/text_file.txt";
-loaded = true;
-hasLoadFileText = (rl.LoadFileText != null);
-hasUnloadFileText = (rl.UnloadFileText != null);
+fileName = "../raylib/examples/core/resources/text_file.txt",
+loaded = true,
+hasLoadFileText = (rl.LoadFileText != null),
+hasUnloadFileText = (rl.UnloadFileText != null),
 
 if (hasLoadFileText) {
-  text = rl.LoadFileText(fileName);
+  text = rl.LoadFileText(fileName),
 } else {
-  text = null;
+  text = null,
 }
 
 if (text == null) {
-  text = "could not load ../raylib/examples/core/resources/text_file.txt";
-  loaded = false;
+  text = "could not load ../raylib/examples/core/resources/text_file.txt",
+  loaded = false,
 }
 
-lines = text.split("\n");
-lineCount = lines.size;
-fontSize = 20;
-lineStep = 30;
-textTop = 25 + fontSize;
-textHeight = textTop + lineCount*lineStep;
+lines = text.split("\n"),
+lineCount = lines.size,
+fontSize = 20,
+lineStep = 30,
+textTop = 25 + fontSize,
+textHeight = textTop + lineCount*lineStep,
 
-scrollY = 0.0;
+scrollY = 0.0,
 
 while (!rl.WindowShouldClose()) {
-  scroll = rl.GetMouseWheelMove();
-  scrollY = scrollY - scroll*fontSize*1.5;
+  scroll = rl.GetMouseWheelMove(),
+  scrollY = scrollY - scroll*fontSize*1.5,
 
-  if (scrollY < 0.0) { scrollY = 0.0; }
-  maxScroll = textHeight - screenHeight + textTop;
-  if (maxScroll < 0.0) { maxScroll = 0.0; }
-  if (scrollY > maxScroll) { scrollY = maxScroll; }
+  if (scrollY < 0.0) { scrollY = 0.0, }
+  maxScroll = textHeight - screenHeight + textTop,
+  if (maxScroll < 0.0) { maxScroll = 0.0, }
+  if (scrollY > maxScroll) { scrollY = maxScroll, }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  i = 0;
-  y = textTop;
+  i = 0,
+  y = textTop,
   while (i < lineCount) {
-    drawY = y - scrollY;
+    drawY = y - scrollY,
     if (drawY > -lineStep && drawY < (screenHeight + lineStep)) {
-      rl.DrawText(lines[i], 10, drawY, fontSize, rl.RED.view);
+      rl.DrawText(lines[i], 10, drawY, fontSize, rl.RED.view),
     }
-    y = y + lineStep;
-    i = i + 1;
+    y = y + lineStep,
+    i = i + 1,
   }
 
-  rl.DrawRectangle(0, 0, screenWidth, textTop - 10, rl.BEIGE.view);
+  rl.DrawRectangle(0, 0, screenWidth, textTop - 10, rl.BEIGE.view),
   if (hasLoadFileText) {
-    rl.DrawText(rl.TextFormat("File: %s", fileName), 10, 10, fontSize, rl.MAROON.view);
+    rl.DrawText(rl.TextFormat("File: %s", fileName), 10, 10, fontSize, rl.MAROON.view),
   } else {
-    rl.DrawText("LoadFileText unavailable in this raylib build", 10, 10, fontSize, rl.MAROON.view);
+    rl.DrawText("LoadFileText unavailable in this raylib build", 10, 10, fontSize, rl.MAROON.view),
   }
 
   if (textHeight > screenHeight) {
-    barH = screenHeight*screenHeight/textHeight;
-    barY = (screenHeight - barH)*(scrollY/maxScroll);
-    rl.DrawRectangle(screenWidth - 5, barY, 5, barH, rl.MAROON.view);
+    barH = screenHeight*screenHeight/textHeight,
+    barY = (screenHeight - barH)*(scrollY/maxScroll),
+    rl.DrawRectangle(screenWidth - 5, barY, 5, barH, rl.MAROON.view),
   }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
 if (loaded && hasUnloadFileText) {
-  rl.UnloadFileText(text);
+  rl.UnloadFileText(text),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -1,6 +1,6 @@
-b = "ABC";
+b = "ABC",
 
-println(b[2]);
+println(b[2]),
 
-b[1] = 68;
-println(b);
+b[1] = 68,
+println(b),

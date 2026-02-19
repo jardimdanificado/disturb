@@ -2,28 +2,28 @@
 // Operators, precedence, truthiness, and default assignment.
 
 // Arithmetic and precedence.
-println(1 + 2 * 3);
-println((1 + 2) * 3);
+println(1 + 2 * 3),
+println((1 + 2) * 3),
 
 // Comparison and logical operators return 1 or 0.
-println(2 > 1);
-println(2 < 1);
-println(1 && 2);
-println(null || 9);
+println(2 > 1),
+println(2 < 1),
+println(1 && 2),
+println(null || 9),
 
 // Only null and numeric 0 are false.
-println(!null);
-println(!0);
-println(!5);
+println(!null),
+println(!0),
+println(!5),
 
 // String concatenation auto-stringifies values.
-println("n=" + 10);
-println("obj=" + {a = 1});
+println("n=" + 10),
+println("obj=" + {a = 1}),
 
 // Default assignment only sets when null.
-x = null;
-x ?= "fallback";
-println(x);
+x = null,
+x ?= "fallback",
+println(x),
 
 // Infinity is available as a global float constant.
-println(inf);
+println(inf),

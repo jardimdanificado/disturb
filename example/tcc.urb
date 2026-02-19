@@ -1,36 +1,36 @@
 // TinyCC module example.
 // Requires: import system + FFI + libtcc available in the dynamic loader path.
 
-tcc = import("lib/tcc");
-mod = tcc.auto();
+tcc = import("lib/tcc"),
+mod = tcc.auto(),
 
 if (mod == null) {
-  println("libtcc not found");
-  return 0;
+  println("libtcc not found"),
+  return 0,
 }
 
-ctx = mod.new();
+ctx = mod.new(),
 if (ctx == null) {
-  println("failed to create TCC state");
-  return 0;
+  println("failed to create TCC state"),
+  return 0,
 }
 
-ctx.setOutputType(mod.OUTPUT_MEMORY);
-src = "int add(int a, int b) { return a + b; }";
+ctx.setOutputType(mod.OUTPUT_MEMORY),
+src = "int add(int a, int b) { return a + b, }",
 
-rc_compile = ctx.compile(src);
-rc_reloc = ctx.relocate();
-add_ptr = ctx.getSymbol("add");
+rc_compile = ctx.compile(src),
+rc_reloc = ctx.relocate(),
+add_ptr = ctx.getSymbol("add"),
 
 if (rc_compile != 0 || rc_reloc != 0 || add_ptr == 0 || add_ptr == null) {
-  println("tcc compile/relocate failed");
-  println(rc_compile);
-  println(rc_reloc);
-  ctx.close();
-  return 0;
+  println("tcc compile/relocate failed"),
+  println(rc_compile),
+  println(rc_reloc),
+  ctx.close(),
+  return 0,
 }
 
-add = ffi.bind(add_ptr, "i32 add(i32, i32)");
-println(add(20, 22));
+add = ffi.bind(add_ptr, "i32 add(i32, i32)"),
+println(add(20, 22)),
 
-ctx.close();
+ctx.close(),

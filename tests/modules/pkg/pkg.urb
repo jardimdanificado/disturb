@@ -1,6 +1,6 @@
-counter = 0;
-counter++;
+counter = 0,
+counter++,
 return {
   tag = "pkg",
   count = counter
-};
+},

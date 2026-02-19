@@ -1,31 +1,31 @@
-use strict;
-use nostrict;
+use strict,
+use nostrict,
 
-mixed = [1, 2.5];
-println(mixed[0]);
-println(mixed[1]);
+mixed = [1, 2.5],
+println(mixed[0]),
+println(mixed[1]),
 
-gc.strict = 1;
-gc.strict = 0;
-println(1 + 2.5);
+gc.strict = 1,
+gc.strict = 0,
+println(1 + 2.5),
 
-gc.keyintern = 0;
-obj = {};
-i = 0;
+gc.keyintern = 0,
+obj = {},
+i = 0,
 while (i < 20) {
-    key = "k" + i;
-    obj[key] = i;
-    i = i + 1;
+    key = "k" + i,
+    obj[key] = i,
+    i = i + 1,
 }
 
-gc.keyintern = 1;
-i = 20;
+gc.keyintern = 1,
+i = 20,
 while (i < 40) {
-    key = "k" + i;
-    obj[key] = i;
-    i = i + 1;
+    key = "k" + i,
+    obj[key] = i,
+    i = i + 1,
 }
 
-println(obj["k0"]);
-println(obj["k39"]);
-println("ok");
+println(obj["k0"]),
+println(obj["k39"]),
+println("ok"),

@@ -1,10 +1,10 @@
 // Nested indexing on lists and tables.
-data = {a = [10, 20, 30], b = {c = "hi"}};
+data = {a = [10, 20, 30], b = {c = "hi"}},
 
 // Numeric indexing uses 0-based positions.
-x = data.a[1];
+x = data.a[1],
 // Strings can be indexed to single-byte strings.
-y = data.b.c[0];
+y = data.b.c[0],
 
-println(x);
-println(y);
+println(x),
+println(y),

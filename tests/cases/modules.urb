@@ -1,52 +1,52 @@
-fail = 0;
-secret = 999;
+fail = 0,
+secret = 999,
 
-m1 = import("tests/modules/math.urb");
-m2 = import("tests/modules/math.urb");
+m1 = import("tests/modules/math.urb"),
+m2 = import("tests/modules/math.urb"),
 
 if (m1 === m2) {
 } else {
-  fail++;
+  fail++,
 }
 
 if (m1.tag == "math") {
 } else {
-  fail++;
+  fail++,
 }
 
 if (m1.add(2, 3) == 5) {
 } else {
-  fail++;
+  fail++,
 }
 
 if (m1.secret == 7) {
 } else {
-  fail++;
+  fail++,
 }
 
 if (secret == 999) {
 } else {
-  fail++;
+  fail++,
 }
 if (module_only == null) {
 } else {
-  fail++;
+  fail++,
 }
 
-pkg = import("tests/modules/pkg");
+pkg = import("tests/modules/pkg"),
 if (pkg.tag == "pkg") {
 } else {
-  fail++;
+  fail++,
 }
 if (pkg.count == 1) {
 } else {
-  fail++;
+  fail++,
 }
 
-pkg2 = import("tests/modules/pkg");
+pkg2 = import("tests/modules/pkg"),
 if (pkg === pkg2) {
 } else {
-  fail++;
+  fail++,
 }
 
-println(fail);
+println(fail),

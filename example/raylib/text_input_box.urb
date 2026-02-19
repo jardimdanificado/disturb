@@ -1,97 +1,97 @@
 // raylib [text] example - input box (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-MAX_INPUT_CHARS = 9;
+MAX_INPUT_CHARS = 9,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - input box");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [text] example - input box"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-chars = {};
+chars = {},
 
-textBox = rl.newRectangle(rl.Rectangle, screenWidth/2.0 - 100.0, 180.0, 225.0, 50.0);
-mouseOnText = 0;
-framesCounter = 0;
-ASCII_PRINTABLE = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
+textBox = rl.newRectangle(rl.Rectangle, screenWidth/2.0 - 100.0, 180.0, 225.0, 50.0),
+mouseOnText = 0,
+framesCounter = 0,
+ASCII_PRINTABLE = " !\"#$%&'()*+,-./0123456789:,<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
 
 while (!rl.WindowShouldClose()) {
-  if (rl.CheckCollisionPointRec(rl.GetMousePosition(), textBox.view)) { mouseOnText = 1; }
-  else { mouseOnText = 0; }
+  if (rl.CheckCollisionPointRec(rl.GetMousePosition(), textBox.view)) { mouseOnText = 1, }
+  else { mouseOnText = 0, }
 
   if (mouseOnText) {
-    rl.SetMouseCursor(rl.MOUSE_CURSOR_IBEAM);
+    rl.SetMouseCursor(rl.MOUSE_CURSOR_IBEAM),
 
-    key = rl.GetCharPressed();
+    key = rl.GetCharPressed(),
     while (key > 0) {
       if ((key >= 32) && (key <= 125) && (chars.size < MAX_INPUT_CHARS)) {
-        chars.push((ASCII_PRINTABLE[key - 32] + "").copy());
+        chars.push((ASCII_PRINTABLE[key - 32] + "").copy()),
       }
-      key = rl.GetCharPressed();
+      key = rl.GetCharPressed(),
     }
 
     if (rl.IsKeyPressed(rl.KEY_BACKSPACE)) {
-      if (chars.size > 0) { chars.pop(); }
+      if (chars.size > 0) { chars.pop(), }
     }
   } else {
-    rl.SetMouseCursor(rl.MOUSE_CURSOR_DEFAULT);
+    rl.SetMouseCursor(rl.MOUSE_CURSOR_DEFAULT),
   }
 
-  if (mouseOnText) { framesCounter = framesCounter + 1; }
-  else { framesCounter = 0; }
+  if (mouseOnText) { framesCounter = framesCounter + 1, }
+  else { framesCounter = 0, }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawText("PLACE MOUSE OVER INPUT BOX!", 240, 140, 20, rl.GRAY.view);
+  rl.DrawText("PLACE MOUSE OVER INPUT BOX!", 240, 140, 20, rl.GRAY.view),
 
-  rl.DrawRectangleRec(textBox.view, rl.LIGHTGRAY.view);
-  if (mouseOnText) { rl.DrawRectangleLines(textBox.view.x, textBox.view.y, textBox.view.width, textBox.view.height, rl.RED.view); }
-  else { rl.DrawRectangleLines(textBox.view.x, textBox.view.y, textBox.view.width, textBox.view.height, rl.DARKGRAY.view); }
+  rl.DrawRectangleRec(textBox.view, rl.LIGHTGRAY.view),
+  if (mouseOnText) { rl.DrawRectangleLines(textBox.view.x, textBox.view.y, textBox.view.width, textBox.view.height, rl.RED.view), }
+  else { rl.DrawRectangleLines(textBox.view.x, textBox.view.y, textBox.view.width, textBox.view.height, rl.DARKGRAY.view), }
 
-  visibleName = "";
-  i = 0;
+  visibleName = "",
+  i = 0,
   while (i < chars.size) {
-    piece = chars[i];
+    piece = chars[i],
     if (piece != null) {
-      visibleName = visibleName + (piece + "");
+      visibleName = visibleName + (piece + ""),
     }
-    i = i + 1;
+    i = i + 1,
   }
-  letterCount = chars.size;
-  rl.DrawText(visibleName, textBox.view.x + 5, textBox.view.y + 8, 40, rl.MAROON.view);
-  rl.DrawText(rl.TextFormat("INPUT CHARS: %i/%i", letterCount, MAX_INPUT_CHARS), 315, 250, 20, rl.DARKGRAY.view);
+  letterCount = chars.size,
+  rl.DrawText(visibleName, textBox.view.x + 5, textBox.view.y + 8, 40, rl.MAROON.view),
+  rl.DrawText(rl.TextFormat("INPUT CHARS: %i/%i", letterCount, MAX_INPUT_CHARS), 315, 250, 20, rl.DARKGRAY.view),
 
   if (mouseOnText) {
     if (letterCount < MAX_INPUT_CHARS) {
       if (((framesCounter/20)%2) == 0) {
-        rl.DrawText("_", textBox.view.x + 8 + rl.MeasureText(visibleName, 40), textBox.view.y + 12, 40, rl.MAROON.view);
+        rl.DrawText("_", textBox.view.x + 8 + rl.MeasureText(visibleName, 40), textBox.view.y + 12, 40, rl.MAROON.view),
       }
     } else {
-      rl.DrawText("Press BACKSPACE to delete chars...", 230, 300, 20, rl.GRAY.view);
+      rl.DrawText("Press BACKSPACE to delete chars...", 230, 300, 20, rl.GRAY.view),
     }
   }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.SetMouseCursor(rl.MOUSE_CURSOR_DEFAULT);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.SetMouseCursor(rl.MOUSE_CURSOR_DEFAULT),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

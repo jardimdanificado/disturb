@@ -1,77 +1,77 @@
 // raylib [core] example - random sequence (Disturb port, VM-safe)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
-println("core_random_sequence fix build: 2026-02-12c");
+gc.rate = 100,
+println("core_random_sequence fix build: 2026-02-12c"),
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - random sequence");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - random sequence"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-rectCount = 20;
-seedBase = 1337;
+rectCount = 20,
+seedBase = 1337,
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsKeyPressed(rl.KEY_SPACE)) { seedBase = seedBase + 977; }
+  if (rl.IsKeyPressed(rl.KEY_SPACE)) { seedBase = seedBase + 977, }
   if (rl.IsKeyPressed(rl.KEY_UP)) {
-    rectCount = rectCount + 1;
-    if (rectCount > 80) { rectCount = 80; }
-    seedBase = seedBase + 577;
+    rectCount = rectCount + 1,
+    if (rectCount > 80) { rectCount = 80, }
+    seedBase = seedBase + 577,
   }
   if (rl.IsKeyPressed(rl.KEY_DOWN)) {
-    rectCount = rectCount - 1;
-    if (rectCount < 4) { rectCount = 4; }
-    seedBase = seedBase + 733;
+    rectCount = rectCount - 1,
+    if (rectCount < 4) { rectCount = 4, }
+    seedBase = seedBase + 733,
   }
 
-  rectSize = screenWidth/rectCount;
+  rectSize = screenWidth/rectCount,
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  i = 0;
+  i = 0,
   while (i < rectCount) {
     // Deterministic pseudo-random values derived from index + seed.
-    v1 = ((seedBase + i*110351 + 12345) % 2147483647);
-    v2 = ((seedBase + i*265443 + 22222) % 2147483647);
-    v3 = ((seedBase + i*362437 + 33333) % 2147483647);
-    v4 = ((seedBase + i*472129 + 44444) % 2147483647);
+    v1 = ((seedBase + i*110351 + 12345) % 2147483647),
+    v2 = ((seedBase + i*265443 + 22222) % 2147483647),
+    v3 = ((seedBase + i*362437 + 33333) % 2147483647),
+    v4 = ((seedBase + i*472129 + 44444) % 2147483647),
 
-    h = 20 + (v1 % (((screenHeight*3)/4) - 20));
-    rr = v2 % 256;
-    gg = v3 % 256;
-    bb = v4 % 256;
+    h = 20 + (v1 % (((screenHeight*3)/4) - 20)),
+    rr = v2 % 256,
+    gg = v3 % 256,
+    bb = v4 % 256,
 
-    x = i*rectSize;
-    y = (screenHeight*3)/4 - h + 30;
-    c = rl.newColor(rl.Color, rr, gg, bb, 255);
-    rl.DrawRectangle(x, y, rectSize + 1, h, c.view);
-    i = i + 1;
+    x = i*rectSize,
+    y = (screenHeight*3)/4 - h + 30,
+    c = rl.newColor(rl.Color, rr, gg, bb, 255),
+    rl.DrawRectangle(x, y, rectSize + 1, h, c.view),
+    i = i + 1,
   }
 
-  rl.DrawText("Press SPACE to shuffle the current sequence", 10, screenHeight - 96, 20, rl.BLACK.view);
-  rl.DrawText("Press UP to add a rectangle and generate a new sequence", 10, screenHeight - 64, 20, rl.BLACK.view);
-  rl.DrawText("Press DOWN to remove a rectangle and generate a new sequence", 10, screenHeight - 32, 20, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("Count: %i rectangles", rectCount), 10, 10, 20, rl.MAROON.view);
-  rl.DrawFPS(screenWidth - 80, 10);
-  rl.EndDrawing();
+  rl.DrawText("Press SPACE to shuffle the current sequence", 10, screenHeight - 96, 20, rl.BLACK.view),
+  rl.DrawText("Press UP to add a rectangle and generate a new sequence", 10, screenHeight - 64, 20, rl.BLACK.view),
+  rl.DrawText("Press DOWN to remove a rectangle and generate a new sequence", 10, screenHeight - 32, 20, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("Count: %i rectangles", rectCount), 10, 10, 20, rl.MAROON.view),
+  rl.DrawFPS(screenWidth - 80, 10),
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

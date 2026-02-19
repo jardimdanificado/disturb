@@ -1,61 +1,61 @@
-x = 5;
-println(x.add(2, 3));
+x = 5,
+println(x.add(2, 3)),
 
-println(x.mul(2));
+println(x.mul(2)),
 
-s = "ab";
-println(s.upper());
+s = "ab",
+println(s.upper()),
 
-println("hi,there".split(","));
+println("hi,there".split(",")),
 
-arr = {a = "hi", b = "there"};
-println(arr.join("-"));
+arr = {a = "hi", b = "there"},
+println(arr.join("-")),
 
-println("  trim  ".trim());
+println("  trim  ".trim()),
 
-println("hello".replace("hello", "hi"));
-println("banana".replaceAll("na", "NA"));
+println("hello".replace("hello", "hi")),
+println("banana".replaceAll("na", "NA")),
 
-o = {a = 1, b = 2};
-println(o.keys());
+o = {a = 1, b = 2},
+println(o.keys()),
 
-println(o.values());
+println(o.values()),
 
-println(o.has("a"));
+println(o.has("a")),
 
-println(o.delete("a"));
-println(o.remove("b"));
-println(o.has("b"));
+println(o.delete("a")),
+println(o.remove("b")),
+println(o.has("b")),
 
-println(o.has("a"));
+println(o.has("a")),
 
-n = [1, 2];
-n.push(3);
-println(n);
+n = [1, 2],
+n.push(3),
+println(n),
 
-println(n.pop());
+println(n.pop()),
 
-n.insert(1, 9);
-println(n);
+n.insert(1, 9),
+println(n),
 
-println(n.remove(1));
+println(n.remove(1)),
 
-str = "ab";
-str.push("c");
-println(str);
+str = "ab",
+str.push("c"),
+println(str),
 
-println(str.remove(1));
-println(str);
+println(str.remove(1)),
+println(str),
 
-a = {x = 1};
-b = a;
-b.x = 2;
-println(a.x);
+a = {x = 1},
+b = a,
+b.x = 2,
+println(a.x),
 
-c = a.clone();
-c.x = 3;
-println(a.x);
+c = a.clone(),
+c.x = 3,
+println(a.x),
 
-d = a.copy();
-d.x = 4;
-println(a.x);
+d = a.copy(),
+d.x = 4,
+println(a.x),

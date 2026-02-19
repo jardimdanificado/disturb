@@ -1,83 +1,83 @@
 // raylib [textures] example - npatch drawing (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - npatch drawing");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - npatch drawing"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-nPatchTexture = rl.LoadTexture("../raylib/examples/textures/resources/ninepatch_button.png");
+nPatchTexture = rl.LoadTexture("../raylib/examples/textures/resources/ninepatch_button.png"),
 if (nPatchTexture.id == 0) {
-  println("could not load texture: ../raylib/examples/textures/resources/ninepatch_button.png");
-  rl.CloseWindow();
-  gc.collect();
-  return 0;
+  println("could not load texture: ../raylib/examples/textures/resources/ninepatch_button.png"),
+  rl.CloseWindow(),
+  gc.collect(),
+  return 0,
 }
 
-origin = rl.newVector2(rl.Vector2, 0.0, 0.0);
+origin = rl.newVector2(rl.Vector2, 0.0, 0.0),
 
-dstRec1 = rl.newRectangle(rl.Rectangle, 480.0, 160.0, 32.0, 32.0);
-dstRec2 = rl.newRectangle(rl.Rectangle, 160.0, 160.0, 32.0, 32.0);
-dstRecH = rl.newRectangle(rl.Rectangle, 160.0, 93.0, 32.0, 32.0);
-dstRecV = rl.newRectangle(rl.Rectangle, 92.0, 160.0, 32.0, 32.0);
+dstRec1 = rl.newRectangle(rl.Rectangle, 480.0, 160.0, 32.0, 32.0),
+dstRec2 = rl.newRectangle(rl.Rectangle, 160.0, 160.0, 32.0, 32.0),
+dstRecH = rl.newRectangle(rl.Rectangle, 160.0, 93.0, 32.0, 32.0),
+dstRecV = rl.newRectangle(rl.Rectangle, 92.0, 160.0, 32.0, 32.0),
 
-ninePatchInfo1 = rl.newNPatchInfo(rl.NPatchInfo, 0.0, 0.0, 64.0, 64.0, 12, 40, 12, 12, rl.NPATCH_NINE_PATCH);
-ninePatchInfo2 = rl.newNPatchInfo(rl.NPatchInfo, 0.0, 128.0, 64.0, 64.0, 16, 16, 16, 16, rl.NPATCH_NINE_PATCH);
-h3PatchInfo = rl.newNPatchInfo(rl.NPatchInfo, 0.0, 64.0, 64.0, 64.0, 8, 8, 8, 8, rl.NPATCH_THREE_PATCH_HORIZONTAL);
-v3PatchInfo = rl.newNPatchInfo(rl.NPatchInfo, 0.0, 192.0, 64.0, 64.0, 6, 6, 6, 6, rl.NPATCH_THREE_PATCH_VERTICAL);
+ninePatchInfo1 = rl.newNPatchInfo(rl.NPatchInfo, 0.0, 0.0, 64.0, 64.0, 12, 40, 12, 12, rl.NPATCH_NINE_PATCH),
+ninePatchInfo2 = rl.newNPatchInfo(rl.NPatchInfo, 0.0, 128.0, 64.0, 64.0, 16, 16, 16, 16, rl.NPATCH_NINE_PATCH),
+h3PatchInfo = rl.newNPatchInfo(rl.NPatchInfo, 0.0, 64.0, 64.0, 64.0, 8, 8, 8, 8, rl.NPATCH_THREE_PATCH_HORIZONTAL),
+v3PatchInfo = rl.newNPatchInfo(rl.NPatchInfo, 0.0, 192.0, 64.0, 64.0, 6, 6, 6, 6, rl.NPATCH_THREE_PATCH_VERTICAL),
 
 while (!rl.WindowShouldClose()) {
-  mousePosition = rl.GetMousePosition();
+  mousePosition = rl.GetMousePosition(),
 
-  dstRec1.view.width = mousePosition.x - dstRec1.view.x;
-  dstRec1.view.height = mousePosition.y - dstRec1.view.y;
-  dstRec2.view.width = mousePosition.x - dstRec2.view.x;
-  dstRec2.view.height = mousePosition.y - dstRec2.view.y;
-  dstRecH.view.width = mousePosition.x - dstRecH.view.x;
-  dstRecV.view.height = mousePosition.y - dstRecV.view.y;
+  dstRec1.view.width = mousePosition.x - dstRec1.view.x,
+  dstRec1.view.height = mousePosition.y - dstRec1.view.y,
+  dstRec2.view.width = mousePosition.x - dstRec2.view.x,
+  dstRec2.view.height = mousePosition.y - dstRec2.view.y,
+  dstRecH.view.width = mousePosition.x - dstRecH.view.x,
+  dstRecV.view.height = mousePosition.y - dstRecV.view.y,
 
-  if (dstRec1.view.width < 1.0) { dstRec1.view.width = 1.0; }
-  if (dstRec1.view.width > 300.0) { dstRec1.view.width = 300.0; }
-  if (dstRec1.view.height < 1.0) { dstRec1.view.height = 1.0; }
-  if (dstRec2.view.width < 1.0) { dstRec2.view.width = 1.0; }
-  if (dstRec2.view.width > 300.0) { dstRec2.view.width = 300.0; }
-  if (dstRec2.view.height < 1.0) { dstRec2.view.height = 1.0; }
-  if (dstRecH.view.width < 1.0) { dstRecH.view.width = 1.0; }
-  if (dstRecV.view.height < 1.0) { dstRecV.view.height = 1.0; }
+  if (dstRec1.view.width < 1.0) { dstRec1.view.width = 1.0, }
+  if (dstRec1.view.width > 300.0) { dstRec1.view.width = 300.0, }
+  if (dstRec1.view.height < 1.0) { dstRec1.view.height = 1.0, }
+  if (dstRec2.view.width < 1.0) { dstRec2.view.width = 1.0, }
+  if (dstRec2.view.width > 300.0) { dstRec2.view.width = 300.0, }
+  if (dstRec2.view.height < 1.0) { dstRec2.view.height = 1.0, }
+  if (dstRecH.view.width < 1.0) { dstRecH.view.width = 1.0, }
+  if (dstRecV.view.height < 1.0) { dstRecV.view.height = 1.0, }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawTextureNPatch(nPatchTexture, ninePatchInfo2.view, dstRec2.view, origin.view, 0.0, rl.WHITE.view);
-  rl.DrawTextureNPatch(nPatchTexture, ninePatchInfo1.view, dstRec1.view, origin.view, 0.0, rl.WHITE.view);
-  rl.DrawTextureNPatch(nPatchTexture, h3PatchInfo.view, dstRecH.view, origin.view, 0.0, rl.WHITE.view);
-  rl.DrawTextureNPatch(nPatchTexture, v3PatchInfo.view, dstRecV.view, origin.view, 0.0, rl.WHITE.view);
+  rl.DrawTextureNPatch(nPatchTexture, ninePatchInfo2.view, dstRec2.view, origin.view, 0.0, rl.WHITE.view),
+  rl.DrawTextureNPatch(nPatchTexture, ninePatchInfo1.view, dstRec1.view, origin.view, 0.0, rl.WHITE.view),
+  rl.DrawTextureNPatch(nPatchTexture, h3PatchInfo.view, dstRecH.view, origin.view, 0.0, rl.WHITE.view),
+  rl.DrawTextureNPatch(nPatchTexture, v3PatchInfo.view, dstRecV.view, origin.view, 0.0, rl.WHITE.view),
 
-  rl.DrawRectangleLines(5, 88, 74, 266, rl.BLUE.view);
-  rl.DrawTexture(nPatchTexture, 10, 93, rl.WHITE.view);
-  rl.DrawText("TEXTURE", 15, 360, 10, rl.DARKGRAY.view);
-  rl.DrawText("Move the mouse to stretch or shrink the n-patches", 10, 20, 20, rl.DARKGRAY.view);
+  rl.DrawRectangleLines(5, 88, 74, 266, rl.BLUE.view),
+  rl.DrawTexture(nPatchTexture, 10, 93, rl.WHITE.view),
+  rl.DrawText("TEXTURE", 15, 360, 10, rl.DARKGRAY.view),
+  rl.DrawText("Move the mouse to stretch or shrink the n-patches", 10, 20, 20, rl.DARKGRAY.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.UnloadTexture(nPatchTexture);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadTexture(nPatchTexture),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

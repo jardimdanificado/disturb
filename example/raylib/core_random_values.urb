@@ -1,46 +1,46 @@
 // raylib [core] example - random values (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - random values");
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - random values"),
 
-randValue = rl.GetRandomValue(-8, 5);
-framesCounter = 0;
+randValue = rl.GetRandomValue(-8, 5),
+framesCounter = 0,
 
-rl.SetTargetFPS(60);
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
 while (!rl.WindowShouldClose()) {
-  framesCounter++;
+  framesCounter++,
 
   if (((framesCounter/120)%2) == 1) {
-    randValue = rl.GetRandomValue(-8, 5);
-    framesCounter = 0;
+    randValue = rl.GetRandomValue(-8, 5),
+    framesCounter = 0,
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
-  rl.DrawText("Every 2 seconds a new random value is generated:", 130, 100, 20, rl.MAROON.view);
-  rl.DrawText(rl.TextFormat("%i", randValue), 360, 180, 80, rl.LIGHTGRAY.view);
-  rl.EndDrawing();
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
+  rl.DrawText("Every 2 seconds a new random value is generated:", 130, 100, 20, rl.MAROON.view),
+  rl.DrawText(rl.TextFormat("%i", randValue), 360, 180, 80, rl.LIGHTGRAY.view),
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -2,19 +2,19 @@
 // Basic syntax, globals, and output.
 
 // Assignment puts values in the global table by default.
-greeting = "hello";
-count = 3;
+greeting = "hello",
+count = 3,
 
 // You can also address global explicitly.
-global.title = "Disturb";
+global.title = "Disturb",
 
-// print prints entries with type info; println prints plain values.
-print(greeting);
-println();
-println("hello world");
+// print prints entries with type info, println prints plain values.
+print(greeting),
+println(),
+println("hello world"),
 
 // Missing keys resolve to null (no exception).
-println(global.missing);
+println(global.missing),
 
 // Global is a real table.
-println(global.title);
+println(global.title),

@@ -1,51 +1,51 @@
 // raylib [textures] example - to image (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
-rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - to image");
-rl.SetTargetFPS(60);
+screenWidth = 800,
+screenHeight = 450,
+rl.InitWindow(screenWidth, screenHeight, "raylib [textures] example - to image"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-image0 = rl.LoadImage("../raylib/examples/textures/resources/raylib_logo.png");
+image0 = rl.LoadImage("../raylib/examples/textures/resources/raylib_logo.png"),
 if (image0.data == null) {
-  println("could not load image: ../raylib/examples/textures/resources/raylib_logo.png");
-  rl.CloseWindow();
-  gc.collect();
-  return 0;
+  println("could not load image: ../raylib/examples/textures/resources/raylib_logo.png"),
+  rl.CloseWindow(),
+  gc.collect(),
+  return 0,
 }
 
-texture0 = rl.LoadTextureFromImage(image0);
-rl.UnloadImage(image0);
+texture0 = rl.LoadTextureFromImage(image0),
+rl.UnloadImage(image0),
 
-image1 = rl.LoadImageFromTexture(texture0);
-rl.UnloadTexture(texture0);
-texture = rl.LoadTextureFromImage(image1);
-rl.UnloadImage(image1);
+image1 = rl.LoadImageFromTexture(texture0),
+rl.UnloadTexture(texture0),
+texture = rl.LoadTextureFromImage(image1),
+rl.UnloadImage(image1),
 
 while (!rl.WindowShouldClose()) {
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
-  rl.DrawTexture(texture, screenWidth/2 - texture.width/2, screenHeight/2 - texture.height/2, rl.WHITE.view);
-  rl.DrawText("this IS a texture loaded from an image!", 300, 370, 10, rl.GRAY.view);
-  rl.EndDrawing();
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
+  rl.DrawTexture(texture, screenWidth/2 - texture.width/2, screenHeight/2 - texture.height/2, rl.WHITE.view),
+  rl.DrawText("this IS a texture loaded from an image!", 300, 370, 10, rl.GRAY.view),
+  rl.EndDrawing(),
 }
 
-rl.UnloadTexture(texture);
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.UnloadTexture(texture),
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -1,49 +1,49 @@
 // raylib [core] example - input multitouch (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-MAX_TOUCH_POINTS = 10;
+MAX_TOUCH_POINTS = 10,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - input multitouch");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - input multitouch"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
 while (!rl.WindowShouldClose()) {
-  tCount = rl.GetTouchPointCount();
-  if (tCount > MAX_TOUCH_POINTS) { tCount = MAX_TOUCH_POINTS; }
+  tCount = rl.GetTouchPointCount(),
+  if (tCount > MAX_TOUCH_POINTS) { tCount = MAX_TOUCH_POINTS, }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  for (i = 0; i < tCount; i++) {
-    touch = rl.GetTouchPosition(i);
+  for (i = 0, i < tCount, i++) {
+    touch = rl.GetTouchPosition(i),
 
     if ((touch.x > 0) && (touch.y > 0)) {
-      rl.DrawCircleV(touch, 34.0, rl.ORANGE.view);
-      rl.DrawText(rl.TextFormat("%i", i), touch.x - 10, touch.y - 70, 40, rl.BLACK.view);
+      rl.DrawCircleV(touch, 34.0, rl.ORANGE.view),
+      rl.DrawText(rl.TextFormat("%i", i), touch.x - 10, touch.y - 70, 40, rl.BLACK.view),
     }
   }
 
-  rl.DrawText("touch the screen at multiple locations to get multiple balls", 10, 10, 20, rl.DARKGRAY.view);
-  rl.EndDrawing();
+  rl.DrawText("touch the screen at multiple locations to get multiple balls", 10, 10, 20, rl.DARKGRAY.view),
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -1,116 +1,116 @@
 // raylib [audio] example - module playing (Disturb port, VM-safe)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
-println("audio_module_playing fix build: 2026-02-12c");
+gc.rate = 100,
+println("audio_module_playing fix build: 2026-02-12c"),
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.SetConfigFlags(rl.FLAG_MSAA_4X_HINT);
-rl.InitWindow(screenWidth, screenHeight, "raylib [audio] example - module playing");
-rl.SetTargetFPS(60);
+rl.SetConfigFlags(rl.FLAG_MSAA_4X_HINT),
+rl.InitWindow(screenWidth, screenHeight, "raylib [audio] example - module playing"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-audioEnabled = 0;
-music = null;
-pitch = 1.0;
-timePlayed = 0.0;
-pause = 0;
-frame = 0;
+audioEnabled = 0,
+music = null,
+pitch = 1.0,
+timePlayed = 0.0,
+pause = 0,
+frame = 0,
 
-rl.InitAudioDevice();
+rl.InitAudioDevice(),
 if (rl.IsAudioDeviceReady()) {
-  audioEnabled = 1;
-  music = rl.LoadMusicStream("../raylib/examples/audio/resources/mini1111.xm");
-  music.looping = 0;
-  rl.PlayMusicStream(music);
+  audioEnabled = 1,
+  music = rl.LoadMusicStream("../raylib/examples/audio/resources/mini1111.xm"),
+  music.looping = 0,
+  rl.PlayMusicStream(music),
 }
 
 while (!rl.WindowShouldClose()) {
-  frame = frame + 1;
+  frame = frame + 1,
 
   if (audioEnabled) {
-    rl.UpdateMusicStream(music);
+    rl.UpdateMusicStream(music),
 
     if (rl.IsKeyPressed(rl.KEY_SPACE)) {
-      rl.StopMusicStream(music);
-      rl.PlayMusicStream(music);
-      pause = 0;
+      rl.StopMusicStream(music),
+      rl.PlayMusicStream(music),
+      pause = 0,
     }
 
     if (rl.IsKeyPressed(rl.KEY_P)) {
-      pause = !pause;
-      if (pause) { rl.PauseMusicStream(music); }
-      else { rl.ResumeMusicStream(music); }
+      pause = !pause,
+      if (pause) { rl.PauseMusicStream(music), }
+      else { rl.ResumeMusicStream(music), }
     }
 
-    if (rl.IsKeyDown(rl.KEY_DOWN)) { pitch = pitch - 0.01; }
-    else if (rl.IsKeyDown(rl.KEY_UP)) { pitch = pitch + 0.01; }
-    rl.SetMusicPitch(music, pitch);
+    if (rl.IsKeyDown(rl.KEY_DOWN)) { pitch = pitch - 0.01, }
+    else if (rl.IsKeyDown(rl.KEY_UP)) { pitch = pitch + 0.01, }
+    rl.SetMusicPitch(music, pitch),
 
-    mlen = rl.GetMusicTimeLength(music);
-    if (mlen > 0.0) { timePlayed = (rl.GetMusicTimePlayed(music)/mlen)*(screenWidth - 40); }
-    else { timePlayed = 0.0; }
+    mlen = rl.GetMusicTimeLength(music),
+    if (mlen > 0.0) { timePlayed = (rl.GetMusicTimePlayed(music)/mlen)*(screenWidth - 40), }
+    else { timePlayed = 0.0, }
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  i = 0;
+  i = 0,
   while (i < 24) {
     // Procedural circles (no dynamic indexed storage).
-    a = frame + i*23;
-    x = 40 + ((a*17) % (screenWidth - 80));
-    y = 40 + ((a*31) % (screenHeight - 120));
-    r = 10 + ((a*7) % 30);
-    alpha = 0.15 + (((a*13) % 85)/100.0);
+    a = frame + i*23,
+    x = 40 + ((a*17) % (screenWidth - 80)),
+    y = 40 + ((a*31) % (screenHeight - 120)),
+    r = 10 + ((a*7) % 30),
+    alpha = 0.15 + (((a*13) % 85)/100.0),
 
-    pick = i % 7;
-    if (pick == 0) { base = rl.ORANGE; }
-    if (pick == 1) { base = rl.RED; }
-    if (pick == 2) { base = rl.GOLD; }
-    if (pick == 3) { base = rl.LIME; }
-    if (pick == 4) { base = rl.BLUE; }
-    if (pick == 5) { base = rl.VIOLET; }
-    if (pick == 6) { base = rl.BEIGE; }
+    pick = i % 7,
+    if (pick == 0) { base = rl.ORANGE, }
+    if (pick == 1) { base = rl.RED, }
+    if (pick == 2) { base = rl.GOLD, }
+    if (pick == 3) { base = rl.LIME, }
+    if (pick == 4) { base = rl.BLUE, }
+    if (pick == 5) { base = rl.VIOLET, }
+    if (pick == 6) { base = rl.BEIGE, }
 
-    p = rl.newVector2(rl.Vector2, x, y);
-    rl.DrawCircleV(p.view, r, rl.Fade(base.view, alpha));
-    i = i + 1;
+    p = rl.newVector2(rl.Vector2, x, y),
+    rl.DrawCircleV(p.view, r, rl.Fade(base.view, alpha)),
+    i = i + 1,
   }
 
-  rl.DrawRectangle(20, screenHeight - 32, screenWidth - 40, 12, rl.LIGHTGRAY.view);
-  rl.DrawRectangle(20, screenHeight - 32, timePlayed, 12, rl.MAROON.view);
-  rl.DrawRectangleLines(20, screenHeight - 32, screenWidth - 40, 12, rl.GRAY.view);
+  rl.DrawRectangle(20, screenHeight - 32, screenWidth - 40, 12, rl.LIGHTGRAY.view),
+  rl.DrawRectangle(20, screenHeight - 32, timePlayed, 12, rl.MAROON.view),
+  rl.DrawRectangleLines(20, screenHeight - 32, screenWidth - 40, 12, rl.GRAY.view),
 
-  rl.DrawRectangle(20, 20, 425, 145, rl.WHITE.view);
-  rl.DrawRectangleLines(20, 20, 425, 145, rl.GRAY.view);
-  rl.DrawText("PRESS SPACE TO RESTART MUSIC", 40, 40, 20, rl.BLACK.view);
-  rl.DrawText("PRESS P TO PAUSE/RESUME", 40, 70, 20, rl.BLACK.view);
-  rl.DrawText("PRESS UP/DOWN TO CHANGE SPEED", 40, 100, 20, rl.BLACK.view);
-  rl.DrawText(rl.TextFormat("SPEED: %f", pitch), 40, 130, 20, rl.MAROON.view);
-  if (!audioEnabled) { rl.DrawText("Audio device not available on this system", 220, 220, 20, rl.MAROON.view); }
+  rl.DrawRectangle(20, 20, 425, 145, rl.WHITE.view),
+  rl.DrawRectangleLines(20, 20, 425, 145, rl.GRAY.view),
+  rl.DrawText("PRESS SPACE TO RESTART MUSIC", 40, 40, 20, rl.BLACK.view),
+  rl.DrawText("PRESS P TO PAUSE/RESUME", 40, 70, 20, rl.BLACK.view),
+  rl.DrawText("PRESS UP/DOWN TO CHANGE SPEED", 40, 100, 20, rl.BLACK.view),
+  rl.DrawText(rl.TextFormat("SPEED: %f", pitch), 40, 130, 20, rl.MAROON.view),
+  if (!audioEnabled) { rl.DrawText("Audio device not available on this system", 220, 220, 20, rl.MAROON.view), }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
 if (audioEnabled) {
-  rl.UnloadMusicStream(music);
-  rl.CloseAudioDevice();
+  rl.UnloadMusicStream(music),
+  rl.CloseAudioDevice(),
 }
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

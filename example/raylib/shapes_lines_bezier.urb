@@ -1,69 +1,69 @@
 // raylib [shapes] example - lines bezier (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.SetConfigFlags(rl.FLAG_MSAA_4X_HINT);
-rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - lines bezier");
-rl.SetTargetFPS(60);
+rl.SetConfigFlags(rl.FLAG_MSAA_4X_HINT),
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - lines bezier"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-startPoint = rl.newVector2(rl.Vector2, 30.0, 30.0);
-endPoint = rl.newVector2(rl.Vector2, screenWidth - 30.0, screenHeight - 30.0);
-moveStartPoint = 0;
-moveEndPoint = 0;
+startPoint = rl.newVector2(rl.Vector2, 30.0, 30.0),
+endPoint = rl.newVector2(rl.Vector2, screenWidth - 30.0, screenHeight - 30.0),
+moveStartPoint = 0,
+moveEndPoint = 0,
 
 while (!rl.WindowShouldClose()) {
-  mouse = rl.GetMousePosition();
+  mouse = rl.GetMousePosition(),
 
-  if (rl.CheckCollisionPointCircle(mouse, startPoint.view, 10.0) && rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) { moveStartPoint = 1; }
-  else if (rl.CheckCollisionPointCircle(mouse, endPoint.view, 10.0) && rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) { moveEndPoint = 1; }
+  if (rl.CheckCollisionPointCircle(mouse, startPoint.view, 10.0) && rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) { moveStartPoint = 1, }
+  else if (rl.CheckCollisionPointCircle(mouse, endPoint.view, 10.0) && rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) { moveEndPoint = 1, }
 
   if (moveStartPoint) {
-    startPoint.view.x = mouse.x;
-    startPoint.view.y = mouse.y;
-    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT)) { moveStartPoint = 0; }
+    startPoint.view.x = mouse.x,
+    startPoint.view.y = mouse.y,
+    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT)) { moveStartPoint = 0, }
   }
 
   if (moveEndPoint) {
-    endPoint.view.x = mouse.x;
-    endPoint.view.y = mouse.y;
-    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT)) { moveEndPoint = 0; }
+    endPoint.view.x = mouse.x,
+    endPoint.view.y = mouse.y,
+    if (rl.IsMouseButtonReleased(rl.MOUSE_BUTTON_LEFT)) { moveEndPoint = 0, }
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawText("MOVE START-END POINTS WITH MOUSE", 15, 20, 20, rl.GRAY.view);
-  rl.DrawLineBezier(startPoint.view, endPoint.view, 4.0, rl.BLUE.view);
+  rl.DrawText("MOVE START-END POINTS WITH MOUSE", 15, 20, 20, rl.GRAY.view),
+  rl.DrawLineBezier(startPoint.view, endPoint.view, 4.0, rl.BLUE.view),
 
-  if (rl.CheckCollisionPointCircle(mouse, startPoint.view, 10.0)) { r0 = 14.0; } else { r0 = 8.0; }
-  if (rl.CheckCollisionPointCircle(mouse, endPoint.view, 10.0)) { r1 = 14.0; } else { r1 = 8.0; }
+  if (rl.CheckCollisionPointCircle(mouse, startPoint.view, 10.0)) { r0 = 14.0, } else { r0 = 8.0, }
+  if (rl.CheckCollisionPointCircle(mouse, endPoint.view, 10.0)) { r1 = 14.0, } else { r1 = 8.0, }
 
-  if (moveStartPoint) { rl.DrawCircleV(startPoint.view, r0, rl.RED.view); }
-  else { rl.DrawCircleV(startPoint.view, r0, rl.BLUE.view); }
+  if (moveStartPoint) { rl.DrawCircleV(startPoint.view, r0, rl.RED.view), }
+  else { rl.DrawCircleV(startPoint.view, r0, rl.BLUE.view), }
 
-  if (moveEndPoint) { rl.DrawCircleV(endPoint.view, r1, rl.RED.view); }
-  else { rl.DrawCircleV(endPoint.view, r1, rl.BLUE.view); }
+  if (moveEndPoint) { rl.DrawCircleV(endPoint.view, r1, rl.RED.view), }
+  else { rl.DrawCircleV(endPoint.view, r1, rl.BLUE.view), }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -2,33 +2,33 @@
 // Lambdas, defaults, varargs, returns, and method calls.
 
 // Function literal assigned to a name.
-add = (a, b){ return a + b; };
-println(add(2, 3));
+add = (a, b){ return a + b, },
+println(add(2, 3)),
 
 // Default arguments and optional args.
-greet = (name = "world"){ return "hi " + name; };
-println(greet());
-println(greet("disturb"));
+greet = (name = "world"){ return "hi " + name, },
+println(greet()),
+println(greet("disturb")),
 
 // Varargs must be named and come last.
 sum = (head, ...rest){
-  total = head;
-  each(v in rest) { total = total + v; }
-  return total;
-};
-println(sum(1, 2, 3, 4));
+  total = head,
+  each(v in rest) { total = total + v, }
+  return total,
+},
+println(sum(1, 2, 3, 4)),
 
 // Table methods use this binding.
-obj = {x = 5, add = (v){ return this.x + v; }};
-println(obj.add(7));
+obj = {x = 5, add = (v){ return this.x + v, }},
+println(obj.add(7)),
 
 // Calling a table by name invokes a method with the same name.
-fn = {fn = (a){ return a + 1; }};
-println(fn(9));
+fn = {fn = (a){ return a + 1, }},
+println(fn(9)),
 
 // Each lambda call gets a local scope table.
 adder = (n){
-  local.msg = "local scope";
-  return n + 1;
-};
-println(adder(4));
+  local.msg = "local scope",
+  return n + 1,
+},
+println(adder(4)),

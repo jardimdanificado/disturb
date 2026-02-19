@@ -1,122 +1,122 @@
 // raylib [shapes] example - logo raylib anim (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - logo raylib anim");
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - logo raylib anim"),
 
-logoPositionX = screenWidth/2 - 128;
-logoPositionY = screenHeight/2 - 128;
+logoPositionX = screenWidth/2 - 128,
+logoPositionY = screenHeight/2 - 128,
 
-framesCounter = 0;
-lettersCount = 0;
+framesCounter = 0,
+lettersCount = 0,
 
-topSideRecWidth = 16;
-leftSideRecHeight = 16;
+topSideRecWidth = 16,
+leftSideRecHeight = 16,
 
-bottomSideRecWidth = 16;
-rightSideRecHeight = 16;
+bottomSideRecWidth = 16,
+rightSideRecHeight = 16,
 
-state = 0;
-alpha = 1.0;
+state = 0,
+alpha = 1.0,
 
-rl.SetTargetFPS(60);
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
 while (!rl.WindowShouldClose()) {
   if (state == 0) {
-    framesCounter++;
+    framesCounter++,
     if (framesCounter == 120) {
-      state = 1;
-      framesCounter = 0;
+      state = 1,
+      framesCounter = 0,
     }
   } else if (state == 1) {
-    topSideRecWidth += 4;
-    leftSideRecHeight += 4;
-    if (topSideRecWidth == 256) { state = 2; }
+    topSideRecWidth += 4,
+    leftSideRecHeight += 4,
+    if (topSideRecWidth == 256) { state = 2, }
   } else if (state == 2) {
-    bottomSideRecWidth += 4;
-    rightSideRecHeight += 4;
-    if (bottomSideRecWidth == 256) { state = 3; }
+    bottomSideRecWidth += 4,
+    rightSideRecHeight += 4,
+    if (bottomSideRecWidth == 256) { state = 3, }
   } else if (state == 3) {
-    framesCounter++;
+    framesCounter++,
 
     if ((framesCounter/12) != 0) {
-      lettersCount++;
-      framesCounter = 0;
+      lettersCount++,
+      framesCounter = 0,
     }
 
     if (lettersCount >= 10) {
-      alpha = alpha - 0.02;
+      alpha = alpha - 0.02,
       if (alpha <= 0.0) {
-        alpha = 0.0;
-        state = 4;
+        alpha = 0.0,
+        state = 4,
       }
     }
   } else if (state == 4) {
     if (rl.IsKeyPressed(rl.KEY_R)) {
-      framesCounter = 0;
-      lettersCount = 0;
+      framesCounter = 0,
+      lettersCount = 0,
 
-      topSideRecWidth = 16;
-      leftSideRecHeight = 16;
-      bottomSideRecWidth = 16;
-      rightSideRecHeight = 16;
+      topSideRecWidth = 16,
+      leftSideRecHeight = 16,
+      bottomSideRecWidth = 16,
+      rightSideRecHeight = 16,
 
-      alpha = 1.0;
-      state = 0;
+      alpha = 1.0,
+      state = 0,
     }
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
   if (state == 0) {
-    if (((framesCounter/15)%2) != 0) { rl.DrawRectangle(logoPositionX, logoPositionY, 16, 16, rl.BLACK.view); }
+    if (((framesCounter/15)%2) != 0) { rl.DrawRectangle(logoPositionX, logoPositionY, 16, 16, rl.BLACK.view), }
   } else if (state == 1) {
-    rl.DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, rl.BLACK.view);
-    rl.DrawRectangle(logoPositionX, logoPositionY, 16, leftSideRecHeight, rl.BLACK.view);
+    rl.DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, rl.BLACK.view),
+    rl.DrawRectangle(logoPositionX, logoPositionY, 16, leftSideRecHeight, rl.BLACK.view),
   } else if (state == 2) {
-    rl.DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, rl.BLACK.view);
-    rl.DrawRectangle(logoPositionX, logoPositionY, 16, leftSideRecHeight, rl.BLACK.view);
+    rl.DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, rl.BLACK.view),
+    rl.DrawRectangle(logoPositionX, logoPositionY, 16, leftSideRecHeight, rl.BLACK.view),
 
-    rl.DrawRectangle(logoPositionX + 240, logoPositionY, 16, rightSideRecHeight, rl.BLACK.view);
-    rl.DrawRectangle(logoPositionX, logoPositionY + 240, bottomSideRecWidth, 16, rl.BLACK.view);
+    rl.DrawRectangle(logoPositionX + 240, logoPositionY, 16, rightSideRecHeight, rl.BLACK.view),
+    rl.DrawRectangle(logoPositionX, logoPositionY + 240, bottomSideRecWidth, 16, rl.BLACK.view),
   } else if (state == 3) {
-    fadeBlack = rl.Fade(rl.BLACK.view, alpha);
-    fadeWhite = rl.Fade(rl.RAYWHITE.view, alpha);
+    fadeBlack = rl.Fade(rl.BLACK.view, alpha),
+    fadeWhite = rl.Fade(rl.RAYWHITE.view, alpha),
 
-    rl.DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, fadeBlack);
-    rl.DrawRectangle(logoPositionX, logoPositionY + 16, 16, leftSideRecHeight - 32, fadeBlack);
+    rl.DrawRectangle(logoPositionX, logoPositionY, topSideRecWidth, 16, fadeBlack),
+    rl.DrawRectangle(logoPositionX, logoPositionY + 16, 16, leftSideRecHeight - 32, fadeBlack),
 
-    rl.DrawRectangle(logoPositionX + 240, logoPositionY + 16, 16, rightSideRecHeight - 32, fadeBlack);
-    rl.DrawRectangle(logoPositionX, logoPositionY + 240, bottomSideRecWidth, 16, fadeBlack);
+    rl.DrawRectangle(logoPositionX + 240, logoPositionY + 16, 16, rightSideRecHeight - 32, fadeBlack),
+    rl.DrawRectangle(logoPositionX, logoPositionY + 240, bottomSideRecWidth, 16, fadeBlack),
 
-    rl.DrawRectangle(rl.GetScreenWidth()/2 - 112, rl.GetScreenHeight()/2 - 112, 224, 224, fadeWhite);
+    rl.DrawRectangle(rl.GetScreenWidth()/2 - 112, rl.GetScreenHeight()/2 - 112, 224, 224, fadeWhite),
 
-    rl.DrawText(rl.TextSubtext("raylib", 0, lettersCount), rl.GetScreenWidth()/2 - 44, rl.GetScreenHeight()/2 + 48, 50, fadeBlack);
+    rl.DrawText(rl.TextSubtext("raylib", 0, lettersCount), rl.GetScreenWidth()/2 - 44, rl.GetScreenHeight()/2 + 48, 50, fadeBlack),
   } else if (state == 4) {
-    rl.DrawText("[R] REPLAY", 340, 200, 20, rl.GRAY.view);
+    rl.DrawText("[R] REPLAY", 340, 200, 20, rl.GRAY.view),
   }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

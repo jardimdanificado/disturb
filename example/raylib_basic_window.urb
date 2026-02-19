@@ -2,40 +2,40 @@
 // Basic usage of lib/raylib wrapper.
 // Requires ENABLE_FFI=1 and raylib shared library available.
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 
 if (rl == null) {
-  println("raylib nao encontrada. Passe o caminho manual:");
-  println("  rl = raylib.load(\"../raylib/build/raylib/libraylib.so\")");
-  gc.collect();
-  return 0;
+  println("raylib nao encontrada. Passe o caminho manual:"),
+  println("  rl = raylib.load(\"../raylib/build/raylib/libraylib.so\")"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-rl.InitWindow(800, 450, "disturb + raylib");
-rl.SetTargetFPS(60);
+rl.InitWindow(800, 450, "disturb + raylib"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend grafico indisponivel (sem DISPLAY?)");
-  gc.collect();
-  return 0;
+  println("raylib backend grafico indisponivel (sem DISPLAY?)"),
+  gc.collect(),
+  return 0,
 }
 
 while (!rl.WindowShouldClose()) {
-  mouse = rl.GetMousePosition();
+  mouse = rl.GetMousePosition(),
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.BLACK.view);
-  rl.DrawText("disturb + raylib", 20, 20, 32, rl.GREEN.view);
-  rl.DrawText("ESC para sair", 20, 62, 20, rl.WHITE.view);
-  rl.DrawCircleV(mouse, 8.0, rl.YELLOW.view);
-  rl.DrawRectangleLines(12, 12, 340, 88, rl.BLUE.view);
-  rl.DrawFPS(20, 100);
-  rl.EndDrawing();
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.BLACK.view),
+  rl.DrawText("disturb + raylib", 20, 20, 32, rl.GREEN.view),
+  rl.DrawText("ESC para sair", 20, 62, 20, rl.WHITE.view),
+  rl.DrawCircleV(mouse, 8.0, rl.YELLOW.view),
+  rl.DrawRectangleLines(12, 12, 340, 88, rl.BLUE.view),
+  rl.DrawFPS(20, 100),
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

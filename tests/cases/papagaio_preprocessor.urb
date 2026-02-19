@@ -1,4 +1,4 @@
-$pattern{FALA}{println("compile-time ok");}
+$pattern{FALA}{println("compile-time ok"),}
 FALA
-raw = "$pattern{a}{b}a";
-println(papagaio(raw));
+raw = "$pattern{a}{b}a",
+println(papagaio(raw)),

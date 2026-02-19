@@ -1,54 +1,54 @@
 ffi_sig_name = (sig){
-  s = sig.trim();
-  depth = 0;
-  open = -1;
-  i = s.size - 1;
+  s = sig.trim(),
+  depth = 0,
+  open = -1,
+  i = s.size - 1,
   while (i >= 0) {
-    ch = s.slice(i, i + 1);
+    ch = s.slice(i, i + 1),
     if (ch == ")") {
-      depth++;
+      depth++,
     } else if (ch == "(") {
-      depth--;
+      depth--,
       if (depth == 0) {
-        open = i;
-        break;
+        open = i,
+        break,
       }
     }
-    i--;
+    i--,
   }
-  if (open < 0) { return null; }
-  head = s.slice(0, open).trim();
-  parts = head.split(" ");
-  if (parts.size == 0) { return null; }
-  return (parts[parts.size - 1].split("!")[0] + "");
-};
+  if (open < 0) { return null, }
+  head = s.slice(0, open).trim(),
+  parts = head.split(" "),
+  if (parts.size == 0) { return null, }
+  return (parts[parts.size - 1].split("!")[0] + ""),
+},
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
-  api = { __lib = h };
+  h = ffi.open(path),
+  if (h == null) { return null, }
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
-    if (ptr == null) { return null; }
-    api[name] = ffi.bind(ptr, sig);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
+    if (ptr == null) { return null, }
+    api[name] = ffi.bind(ptr, sig),
   }
-  return api;
-};
+  return api,
+},
 
-fail = 0;
+fail = 0,
 
 inner = {
   a = "int8",
   b = "int16"
-};
+},
 
 schema = {
   a = "int32",
   b = "float64",
   d = "struct(inner)"
-};
-outer = schema;
+},
+outer = schema,
 
 load_fixture = (path){
   return ffi_bind_all(path,
@@ -83,195 +83,195 @@ load_fixture = (path){
     "i32 read_i32_ptrptr(pointer(pointer(i32)))",
     "i32 cstr_len(string)",
     "string ffi_test_name()"
-  );
-};
+  ),
+},
 
-lib = load_fixture("./tests/ffi/libffi_view_struct.so");
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+lib = load_fixture("./tests/ffi/libffi_view_struct.so"),
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"), }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"), }
 if (lib == null) {
-  println(1);
-  return 0;
+  println(1),
+  return 0,
 }
 
-layout = ffi.compile(schema);
+layout = ffi.compile(schema),
 
-if (ffi.sizeof(layout) != lib.outer_sizeof()) { fail++; }
-if (ffi.offsetof(layout, "a") != lib.outer_off_a()) { fail++; }
-if (ffi.offsetof(layout, "b") != lib.outer_off_b()) { fail++; }
-if (ffi.offsetof(layout, "d") != lib.outer_off_d()) { fail++; }
-if (ffi.offsetof(layout, "d.a") != lib.outer_off_d() + lib.inner_off_a()) { fail++; }
-if (ffi.offsetof(layout, "d.b") != lib.outer_off_d() + lib.inner_off_b()) { fail++; }
+if (ffi.sizeof(layout) != lib.outer_sizeof()) { fail++, }
+if (ffi.offsetof(layout, "a") != lib.outer_off_a()) { fail++, }
+if (ffi.offsetof(layout, "b") != lib.outer_off_b()) { fail++, }
+if (ffi.offsetof(layout, "d") != lib.outer_off_d()) { fail++, }
+if (ffi.offsetof(layout, "d.a") != lib.outer_off_d() + lib.inner_off_a()) { fail++, }
+if (ffi.offsetof(layout, "d.b") != lib.outer_off_d() + lib.inner_off_b()) { fail++, }
 
 arr_schema = {
   head = "int32",
   vals = "int64[8]",
   f32s = "float[3]"
-};
+},
 
-if (ffi.sizeof(arr_schema) != lib.arr_outer_sizeof()) { fail++; }
-if (ffi.offsetof(arr_schema, "head") != lib.arr_outer_off_head()) { fail++; }
-if (ffi.offsetof(arr_schema, "vals") != lib.arr_outer_off_vals()) { fail++; }
-if (ffi.offsetof(arr_schema, "f32s") != lib.arr_outer_off_f32s()) { fail++; }
+if (ffi.sizeof(arr_schema) != lib.arr_outer_sizeof()) { fail++, }
+if (ffi.offsetof(arr_schema, "head") != lib.arr_outer_off_head()) { fail++, }
+if (ffi.offsetof(arr_schema, "vals") != lib.arr_outer_off_vals()) { fail++, }
+if (ffi.offsetof(arr_schema, "f32s") != lib.arr_outer_off_f32s()) { fail++, }
 
-if (ffi.sizeof({ p = "int32[]" }) != ffi.sizeof({ p = "ptr" })) { fail++; }
+if (ffi.sizeof({ p = "int32[]" }) != ffi.sizeof({ p = "ptr" })) { fail++, }
 
-ptr = lib.make_outer();
-v = ffi.view(ptr, layout);
+ptr = lib.make_outer(),
+v = ffi.view(ptr, layout),
 
-if (v.a != 0) { fail++; }
-if (v.d.a != 0) { fail++; }
-if (v.d.b != 0) { fail++; }
+if (v.a != 0) { fail++, }
+if (v.d.a != 0) { fail++, }
+if (v.d.b != 0) { fail++, }
 
-v.a = 45;
-v.b = 10.5;
-v.d.b = 45;
-v.d.a = 128;
+v.a = 45,
+v.b = 10.5,
+v.d.b = 45,
+v.d.a = 128,
 
-if (lib.outer_get_a(ptr) != 45) { fail++; }
-if (lib.inner_get_b(ptr) != 45) { fail++; }
-if (lib.inner_get_a(ptr) != -128) { fail++; }
+if (lib.outer_get_a(ptr) != 45) { fail++, }
+if (lib.inner_get_b(ptr) != 45) { fail++, }
+if (lib.inner_get_a(ptr) != -128) { fail++, }
 
-if (v.a != 45) { fail++; }
-if (v.d.b != 45) { fail++; }
-if (v.d.a != -128) { fail++; }
+if (v.a != 45) { fail++, }
+if (v.d.b != 45) { fail++, }
+if (v.d.a != -128) { fail++, }
 
-lib.free_outer(ptr);
+lib.free_outer(ptr),
 
-arr_ptr = lib.make_arr_outer();
-arr_v = ffi.view(arr_ptr, arr_schema);
-arr_v.vals[2] = 77;
-arr_v.f32s[1] = 1.5;
-if (lib.arr_outer_get_val(arr_ptr, 2) != 77) { fail++; }
-if (lib.arr_outer_get_f32(arr_ptr, 1) != 1.5) { fail++; }
-lib.free_arr_outer(arr_ptr);
+arr_ptr = lib.make_arr_outer(),
+arr_v = ffi.view(arr_ptr, arr_schema),
+arr_v.vals[2] = 77,
+arr_v.f32s[1] = 1.5,
+if (lib.arr_outer_get_val(arr_ptr, 2) != 77) { fail++, }
+if (lib.arr_outer_get_f32(arr_ptr, 1) != 1.5) { fail++, }
+lib.free_arr_outer(arr_ptr),
 
-add_ptr = lib.get_add_i32_ptr();
-add = ffi.bind(add_ptr, "i32 add(i32, i32)");
-if (add(20, 22) != 42) { fail++; }
-add_abi = ffi.bind(add_ptr, "abi(default) i32 add_abi(i32, i32)");
-if (add_abi(20, 22) != 42) { fail++; }
-add_cdecl = ffi.bind(add_ptr, "cdecl i32 add_cdecl(i32, i32)");
-if (add_cdecl(19, 23) != 42) { fail++; }
-if (lib.sum_variadic_i32(4, 1, 2, 3, 4) != 10) { fail++; }
+add_ptr = lib.get_add_i32_ptr(),
+add = ffi.bind(add_ptr, "i32 add(i32, i32)"),
+if (add(20, 22) != 42) { fail++, }
+add_abi = ffi.bind(add_ptr, "abi(default) i32 add_abi(i32, i32)"),
+if (add_abi(20, 22) != 42) { fail++, }
+add_cdecl = ffi.bind(add_ptr, "cdecl i32 add_cdecl(i32, i32)"),
+if (add_cdecl(19, 23) != 42) { fail++, }
+if (lib.sum_variadic_i32(4, 1, 2, 3, 4) != 10) { fail++, }
 
-stdcall_ptr = lib.get_add_stdcall_i32_ptr();
-add_std_default = ffi.bind(stdcall_ptr, "abi(default) i32 add_std_default(i32, i32)");
-if (add_std_default(20, 22) != 42) { fail++; }
+stdcall_ptr = lib.get_add_stdcall_i32_ptr(),
+add_std_default = ffi.bind(stdcall_ptr, "abi(default) i32 add_std_default(i32, i32)"),
+if (add_std_default(20, 22) != 42) { fail++, }
 
-ptr2 = lib.make_outer();
-v2 = ffi.view(ptr2, layout);
-v2.a = 10;
-v2.d.a = 2;
-v2.d.b = 3;
-if (lib.sum_outer_value(v2) != 15) { fail++; }
-lib.free_outer(ptr2);
+ptr2 = lib.make_outer(),
+v2 = ffi.view(ptr2, layout),
+v2.a = 10,
+v2.d.a = 2,
+v2.d.b = 3,
+if (lib.sum_outer_value(v2) != 15) { fail++, }
+lib.free_outer(ptr2),
 
-ptr3 = ffi.new(layout);
-if (ptr3 == 0) { fail++; }
-v3 = ffi.view(ptr3, layout);
-if (v3.a != 0) { fail++; }
-if (v3.d.a != 0) { fail++; }
-if (v3.d.b != 0) { fail++; }
-v3.a = 20;
-v3.d.a = 3;
-v3.d.b = 4;
-if (lib.sum_outer_value(v3) != 27) { fail++; }
-ffi.free(ptr3);
+ptr3 = ffi.new(layout),
+if (ptr3 == 0) { fail++, }
+v3 = ffi.view(ptr3, layout),
+if (v3.a != 0) { fail++, }
+if (v3.d.a != 0) { fail++, }
+if (v3.d.b != 0) { fail++, }
+v3.a = 20,
+v3.d.a = 3,
+v3.d.b = 4,
+if (lib.sum_outer_value(v3) != 27) { fail++, }
+ffi.free(ptr3),
 
-ret = lib.make_outer_value(7, 1.5, 2, 9);
-if (ret.a != 7) { fail++; }
-if (ret.d.a != 2) { fail++; }
-if (ret.d.b != 9) { fail++; }
-if (ret.b != 1.5) { fail++; }
+ret = lib.make_outer_value(7, 1.5, 2, 9),
+if (ret.a != 7) { fail++, }
+if (ret.d.a != 2) { fail++, }
+if (ret.d.b != 9) { fail++, }
+if (ret.b != 1.5) { fail++, }
 
-pp = lib.make_i32_ptrptr(1234);
-if (lib.read_i32_ptrptr(pp) != 1234) { fail++; }
-lib.free_i32_ptrptr(pp);
+pp = lib.make_i32_ptrptr(1234),
+if (lib.read_i32_ptrptr(pp) != 1234) { fail++, }
+lib.free_i32_ptrptr(pp),
 
-if (lib.cstr_len("abcd") != 4) { fail++; } // string marshals as owned C string.
-if (lib.ffi_test_name() != "ffi-test") { fail++; } // string return marshals back to Disturb string.
+if (lib.cstr_len("abcd") != 4) { fail++, } // string marshals as owned C string.
+if (lib.ffi_test_name() != "ffi-test") { fail++, } // string return marshals back to Disturb string.
 
-name_ptr = ffi.sym(lib.__lib, "ffi_test_name");
+name_ptr = ffi.sym(lib.__lib, "ffi_test_name"),
 if (name_ptr != null) {
-  name_c = ffi.bind(name_ptr, "cstring ffi_test_name()");
-  raw_name = name_c();
-  if (raw_name == null) { fail++; }
-  if (ffi.string(raw_name) != "ffi-test") { fail++; } // cstring return stays as raw C pointer.
+  name_c = ffi.bind(name_ptr, "cstring ffi_test_name()"),
+  raw_name = name_c(),
+  if (raw_name == null) { fail++, }
+  if (ffi.string(raw_name) != "ffi-test") { fail++, } // cstring return stays as raw C pointer.
 }
 
 u_test = {
   __meta = { union = 1 },
   i = "int32",
   s = "int16"
-};
+},
 
 bf_test = {
   a = "uint8:3",
   b = "uint8:5"
-};
+},
 
 ptr_test = {
   next = "pointer(outer)"
-};
+},
 
-u_ptr = ffi.new(u_test);
-u_view = ffi.view(u_ptr, u_test);
-u_view.i = 4660;
-if (u_view.s != 4660) { fail++; }
-ffi.free(u_ptr);
+u_ptr = ffi.new(u_test),
+u_view = ffi.view(u_ptr, u_test),
+u_view.i = 4660,
+if (u_view.s != 4660) { fail++, }
+ffi.free(u_ptr),
 
-bf_ptr = ffi.new(bf_test);
-bf_view = ffi.view(bf_ptr, bf_test);
-bf_view.a = 5;
-bf_view.b = 17;
-if (bf_view.a != 5) { fail++; }
-if (bf_view.b != 17) { fail++; }
-ffi.free(bf_ptr);
+bf_ptr = ffi.new(bf_test),
+bf_view = ffi.view(bf_ptr, bf_test),
+bf_view.a = 5,
+bf_view.b = 17,
+if (bf_view.a != 5) { fail++, }
+if (bf_view.b != 17) { fail++, }
+ffi.free(bf_ptr),
 
-p_ptr = ffi.new(ptr_test);
-p_view = ffi.view(p_ptr, ptr_test);
-target_ptr = ffi.new(outer);
-target_view = ffi.view(target_ptr, outer);
-target_view.a = 88;
-p_view.next = target_ptr;
-if (p_view.next.a != 88) { fail++; }
-ffi.free(target_ptr);
-ffi.free(p_ptr);
+p_ptr = ffi.new(ptr_test),
+p_view = ffi.view(p_ptr, ptr_test),
+target_ptr = ffi.new(outer),
+target_view = ffi.view(target_ptr, outer),
+target_view.a = 88,
+p_view.next = target_ptr,
+if (p_view.next.a != 88) { fail++, }
+ffi.free(target_ptr),
+ffi.free(p_ptr),
 
-arr_ptr = ffi.new({ buf = "int32[4]" });
-arr_view = ffi.viewArray(arr_ptr, "int32", 4);
-arr_view[2] = 77;
-if (arr_view[2] != 77) { fail++; }
-ffi.free(arr_ptr);
+arr_ptr = ffi.new({ buf = "int32[4]" }),
+arr_view = ffi.viewArray(arr_ptr, "int32", 4),
+arr_view[2] = 77,
+if (arr_view[2] != 77) { fail++, }
+ffi.free(arr_ptr),
 
 const_schema = {
   a = "const int32",
   b = "int32"
-};
-const_ptr = ffi.new(const_schema);
-const_view = ffi.view(const_ptr, const_schema);
-const_view.a = 99;
-const_view.b = 11;
-if (const_view.a != 0) { fail++; }
-if (const_view.b != 11) { fail++; }
-ffi.free(const_ptr);
+},
+const_ptr = ffi.new(const_schema),
+const_view = ffi.view(const_ptr, const_schema),
+const_view.a = 99,
+const_view.b = 11,
+if (const_view.a != 0) { fail++, }
+if (const_view.b != 11) { fail++, }
+ffi.free(const_ptr),
 
-const_arr = ffi.viewArray(ffi.buffer(8), "const int32", 2);
-const_arr[0] = 55;
-if (const_arr[0] != 0) { fail++; }
+const_arr = ffi.viewArray(ffi.buffer(8), "const int32", 2),
+const_arr[0] = 55,
+if (const_arr[0] != 0) { fail++, }
 
-buf = ffi.buffer(4);
-bv = ffi.viewArray(buf, "u8", 4);
-bv[0] = 104;
-bv[1] = 105;
-bv[2] = 0;
-bv[3] = 33;
-if (ffi.string(buf) != "hi") { fail++; }
-if (ffi.string(buf, 2) != "hi") { fail++; }
-ffi.free(buf);
+buf = ffi.buffer(4),
+bv = ffi.viewArray(buf, "u8", 4),
+bv[0] = 104,
+bv[1] = 105,
+bv[2] = 0,
+bv[3] = 33,
+if (ffi.string(buf) != "hi") { fail++, }
+if (ffi.string(buf, 2) != "hi") { fail++, }
+ffi.free(buf),
 
-cb = ffi.callback("i32 cb(i32, i32)", (a, b){ return a + b; });
-if (lib.call_cb_i32(cb, 9, 4) != 13) { fail++; }
+cb = ffi.callback("i32 cb(i32, i32)", (a, b){ return a + b, }),
+if (lib.call_cb_i32(cb, 9, 4) != 13) { fail++, }
 
-println(fail);
+println(fail),

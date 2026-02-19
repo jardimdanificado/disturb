@@ -1,9 +1,9 @@
-a = [1, 2, 3];
-global.e = {a = 1, b = [2, 3]};
-global.i = "hello";
+a = [1, 2, 3],
+global.e = {a = 1, b = [2, 3]},
+global.i = "hello",
 
-println(global.i);
-println(global.e.a);
+println(global.i),
+println(global.e.a),
 
-x = global.e.b[1];
-println(x);
+x = global.e.b[1],
+println(x),

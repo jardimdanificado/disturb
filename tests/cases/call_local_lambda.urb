@@ -1,13 +1,13 @@
-a = (){ println("global"); };
+a = (){ println("global"), },
 
 runner = (a){
-  a();
-};
+  a(),
+},
 
-runner((){ println("arg"); });
+runner((){ println("arg"), }),
 
 with_len = (len){
-  len();
-};
+  len(),
+},
 
-with_len((){ println("shadow"); });
+with_len((){ println("shadow"), }),

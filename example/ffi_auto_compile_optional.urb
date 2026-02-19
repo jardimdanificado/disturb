@@ -1,51 +1,51 @@
 ffi_sig_name = (sig){
-  s = sig.trim();
-  depth = 0;
-  open = -1;
-  i = s.size - 1;
+  s = sig.trim(),
+  depth = 0,
+  open = -1,
+  i = s.size - 1,
   while (i >= 0) {
-    ch = s.slice(i, i + 1);
+    ch = s.slice(i, i + 1),
     if (ch == ")") {
-      depth++;
+      depth++,
     } else if (ch == "(") {
-      depth--;
+      depth--,
       if (depth == 0) {
-        open = i;
-        break;
+        open = i,
+        break,
       }
     }
-    i--;
+    i--,
   }
-  if (open < 0) { return null; }
-  head = s.slice(0, open).trim();
-  parts = head.split(" ");
-  if (parts.size == 0) { return null; }
-  return (parts[parts.size - 1].split("!")[0] + "");
-};
+  if (open < 0) { return null, }
+  head = s.slice(0, open).trim(),
+  parts = head.split(" "),
+  if (parts.size == 0) { return null, }
+  return (parts[parts.size - 1].split("!")[0] + ""),
+},
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path);
-  if (h == null) { return null; }
-  api = { __lib = h };
+  h = ffi.open(path),
+  if (h == null) { return null, }
+  api = { __lib = h },
   each(sig in sigs) {
-    name = ffi_sig_name(sig);
-    ptr = ffi.sym(h, name);
-    if (ptr == null) { return null; }
-    api[name] = ffi.bind(ptr, sig);
+    name = ffi_sig_name(sig),
+    ptr = ffi.sym(h, name),
+    if (ptr == null) { return null, }
+    api[name] = ffi.bind(ptr, sig),
   }
-  return api;
-};
+  return api,
+},
 
 // ffi_auto_compile_optional.urb
 // ffi.compile is optional: passing a schema table auto-compiles/caches layout.
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
 
-inner = { a = "int8", b = "int16" };
+inner = { a = "int8", b = "int16" },
 outer = {
   a = "int32",
   b = "float64",
   d = "struct(inner)"
-};
+},
 
 load_fixture = (path){
   return ffi_bind_all(path,
@@ -53,28 +53,28 @@ load_fixture = (path){
     "void free_outer(pointer(outer))",
     "i32 outer_get_a(pointer(outer))",
     "i32 inner_get_b(pointer(outer))"
-  );
-};
+  ),
+},
 
-lib = load_fixture("./tests/ffi/libffi_view_struct.so");
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"); }
-if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"); }
+lib = load_fixture("./tests/ffi/libffi_view_struct.so"),
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dylib"), }
+if (lib == null) { lib = load_fixture("./tests/ffi/libffi_view_struct.dll"), }
 if (lib == null) {
-  println("ffi test library not available");
-  return 0;
+  println("ffi test library not available"),
+  return 0,
 }
 
-ptr = lib.make_outer();
+ptr = lib.make_outer(),
 
-v = ffi.view(ptr, outer); // schema path (auto compile)
-v.a = 45;
-v.d.b = 11;
-println(lib.outer_get_a(ptr));
-println(lib.inner_get_b(ptr));
+v = ffi.view(ptr, outer), // schema path (auto compile)
+v.a = 45,
+v.d.b = 11,
+println(lib.outer_get_a(ptr)),
+println(lib.inner_get_b(ptr)),
 
-layout = ffi.compile(outer); // still available when you want explicit handle
-v2 = ffi.view(ptr, layout);
-println(v2.a);
-println(v2.d.b);
+layout = ffi.compile(outer), // still available when you want explicit handle
+v2 = ffi.view(ptr, layout),
+println(v2.a),
+println(v2.d.b),
 
-lib.free_outer(ptr);
+lib.free_outer(ptr),

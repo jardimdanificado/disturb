@@ -1,16 +1,16 @@
-text = "$pattern{$regex num {\\d+}}{<num:$regex{0}>}foo    123    bar 456";
-println(text);
+text = "$pattern{$regex num {\\d+}}{<num:$regex{0}>}foo    123    bar 456",
+println(text),
 
-fmt = "$pattern{$regex triple {(a)(b)(c)}}{$regex{1}-$regex{2}-$regex{3}}abc";
-println(fmt);
+fmt = "$pattern{$regex triple {(a)(b)(c)}}{$regex{1}-$regex{2}-$regex{3}}abc",
+println(fmt),
 
-tmpl = "$pattern{hello $name}{Oi $name} hello Joao";
-println(tmpl);
+tmpl = "$pattern{hello $name}{Oi $name} hello Joao",
+println(tmpl),
 
-escaped = "\$pattern{hello $name}{Oi $name} hello Joao";
-println(escaped);
+escaped = "\$pattern{hello $name}{Oi $name} hello Joao",
+println(escaped),
 
-println("total: $eval{return add(1,2);}");
+println("total: $eval{return add(1,2),}"),
 
-seq = "$pattern{$${}{}items}{$items}{a}{b}{c}";
-println(seq);
+seq = "$pattern{$${}{}items}{$items}{a}{b}{c}",
+println(seq),

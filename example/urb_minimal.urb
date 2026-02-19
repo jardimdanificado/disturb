@@ -1,16 +1,16 @@
-global.title = "urb demo";
-println(global.title);
+global.title = "urb demo",
+println(global.title),
 
 // arithmetic
-a = 10;
-b = 32;
-sum = a + b;
-println(sum);
+a = 10,
+b = 32,
+sum = a + b,
+println(sum),
 
 // strings + concatenation
-msg = "sum = " + sum;
-println(msg);
+msg = "sum = " + sum,
+println(msg),
 
 // list literals and len
-nums = [1, 2, 3, 4];
-println(len(nums));
+nums = [1, 2, 3, 4],
+println(len(nums)),

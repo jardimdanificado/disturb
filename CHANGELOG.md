@@ -143,6 +143,7 @@
 
 ## 0.14.0
 - Simplify literal syntax: table literals always use `{...}`; use `.toInt()`/`.toFloat()` for numeric conversions and keep `(args){}` for lambdas.
+- language overhaul: statements now terminate with commas instead of semicolons (`a = 1, b = 2,`).  Semicolons are still lexed (mapped to commas) for compatibility but no longer required or emitted.  Added support for optional trailing comma in object literals (`{a = 1, b = 2,}`).
 - Add compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`) plus prefix/postfix `++`/`--` statement forms for in-place updates.
 - Add switch/case statements (string/number selectors with `default` handling) plus label/goto support for unconditional jumps.
 

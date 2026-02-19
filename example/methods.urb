@@ -1,16 +1,16 @@
 // Methods are looked up on the table, then global.common.
-x = 5;
-println(x.add(2, 3));
+x = 5,
+println(x.add(2, 3)),
 
 // Strings expose built-in string methods.
-println("ab".upper());
+println("ab".upper()),
 
 // Methods work on literals as well.
-println("hi,there".split(",")[0]);
+println("hi,there".split(",")[0]),
 
 // Table methods can act on table/array-like values.
-println({a = "hi", b = "there"}.join("-"));
+println({a = "hi", b = "there"}.join("-")),
 
 // Table key helpers.
-println({a = 1, b = 2}.keys()[0]);
+println({a = 1, b = 2}.keys()[0]),
 

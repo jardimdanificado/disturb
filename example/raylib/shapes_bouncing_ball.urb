@@ -1,79 +1,79 @@
 // raylib [shapes] example - bouncing ball (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.SetConfigFlags(rl.FLAG_MSAA_4X_HINT);
-rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - bouncing ball");
-rl.SetTargetFPS(60);
+rl.SetConfigFlags(rl.FLAG_MSAA_4X_HINT),
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - bouncing ball"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-ballPosition = rl.newVector2(rl.Vector2, rl.GetScreenWidth()/2.0, rl.GetScreenHeight()/2.0);
-ballSpeed = rl.newVector2(rl.Vector2, 5.0, 4.0);
-ballRadius = 20;
-gravity = 0.2;
-useGravity = 1;
-pause = 0;
-framesCounter = 0;
+ballPosition = rl.newVector2(rl.Vector2, rl.GetScreenWidth()/2.0, rl.GetScreenHeight()/2.0),
+ballSpeed = rl.newVector2(rl.Vector2, 5.0, 4.0),
+ballRadius = 20,
+gravity = 0.2,
+useGravity = 1,
+pause = 0,
+framesCounter = 0,
 
 while (!rl.WindowShouldClose()) {
   if (rl.IsKeyPressed(rl.KEY_G)) {
-    if (useGravity) { useGravity = 0; }
-    else { useGravity = 1; }
+    if (useGravity) { useGravity = 0, }
+    else { useGravity = 1, }
   }
   if (rl.IsKeyPressed(rl.KEY_SPACE)) {
-    if (pause) { pause = 0; }
-    else { pause = 1; }
+    if (pause) { pause = 0, }
+    else { pause = 1, }
   }
 
   if (!pause) {
-    ballPosition.view.x = ballPosition.view.x + ballSpeed.view.x;
-    ballPosition.view.y = ballPosition.view.y + ballSpeed.view.y;
+    ballPosition.view.x = ballPosition.view.x + ballSpeed.view.x,
+    ballPosition.view.y = ballPosition.view.y + ballSpeed.view.y,
 
-    if (useGravity) { ballSpeed.view.y = ballSpeed.view.y + gravity; }
+    if (useGravity) { ballSpeed.view.y = ballSpeed.view.y + gravity, }
 
     if ((ballPosition.view.x >= (rl.GetScreenWidth() - ballRadius)) || (ballPosition.view.x <= ballRadius)) {
-      ballSpeed.view.x = ballSpeed.view.x*-1.0;
+      ballSpeed.view.x = ballSpeed.view.x*-1.0,
     }
     if ((ballPosition.view.y >= (rl.GetScreenHeight() - ballRadius)) || (ballPosition.view.y <= ballRadius)) {
-      ballSpeed.view.y = ballSpeed.view.y*-0.95;
+      ballSpeed.view.y = ballSpeed.view.y*-0.95,
     }
   } else {
-    framesCounter++;
+    framesCounter++,
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawCircleV(ballPosition.view, ballRadius, rl.MAROON.view);
-  rl.DrawText("PRESS SPACE to PAUSE BALL MOVEMENT", 10, rl.GetScreenHeight() - 25, 20, rl.LIGHTGRAY.view);
+  rl.DrawCircleV(ballPosition.view, ballRadius, rl.MAROON.view),
+  rl.DrawText("PRESS SPACE to PAUSE BALL MOVEMENT", 10, rl.GetScreenHeight() - 25, 20, rl.LIGHTGRAY.view),
 
-  if (useGravity) { rl.DrawText("GRAVITY: ON (Press G to disable)", 10, rl.GetScreenHeight() - 50, 20, rl.DARKGREEN.view); }
-  else { rl.DrawText("GRAVITY: OFF (Press G to enable)", 10, rl.GetScreenHeight() - 50, 20, rl.RED.view); }
+  if (useGravity) { rl.DrawText("GRAVITY: ON (Press G to disable)", 10, rl.GetScreenHeight() - 50, 20, rl.DARKGREEN.view), }
+  else { rl.DrawText("GRAVITY: OFF (Press G to enable)", 10, rl.GetScreenHeight() - 50, 20, rl.RED.view), }
 
   if (pause && (((framesCounter/30)%2) == 1)) {
-    rl.DrawText("PAUSED", 350, 200, 30, rl.GRAY.view);
+    rl.DrawText("PAUSED", 350, 200, 30, rl.GRAY.view),
   }
 
-  rl.DrawFPS(10, 10);
-  rl.EndDrawing();
+  rl.DrawFPS(10, 10),
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

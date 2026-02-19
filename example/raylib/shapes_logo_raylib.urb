@@ -1,40 +1,40 @@
 // raylib [shapes] example - logo raylib (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - logo raylib");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [shapes] example - logo raylib"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
 while (!rl.WindowShouldClose()) {
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.DrawRectangle(screenWidth/2 - 128, screenHeight/2 - 128, 256, 256, rl.BLACK.view);
-  rl.DrawRectangle(screenWidth/2 - 112, screenHeight/2 - 112, 224, 224, rl.RAYWHITE.view);
-  rl.DrawText("raylib", screenWidth/2 - 44, screenHeight/2 + 48, 50, rl.BLACK.view);
+  rl.DrawRectangle(screenWidth/2 - 128, screenHeight/2 - 128, 256, 256, rl.BLACK.view),
+  rl.DrawRectangle(screenWidth/2 - 112, screenHeight/2 - 112, 224, 224, rl.RAYWHITE.view),
+  rl.DrawText("raylib", screenWidth/2 - 44, screenHeight/2 + 48, 50, rl.BLACK.view),
 
-  rl.DrawText("this is NOT a texture!", 350, 370, 10, rl.GRAY.view);
+  rl.DrawText("this is NOT a texture!", 350, 370, 10, rl.GRAY.view),
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -1,97 +1,97 @@
 // raylib [core] example - input gamepad (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.SetConfigFlags(rl.FLAG_MSAA_4X_HINT);
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - input gamepad");
-rl.SetTargetFPS(60);
+rl.SetConfigFlags(rl.FLAG_MSAA_4X_HINT),
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - input gamepad"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-gamepad = 0;
-leftDeadzone = 0.10;
-rightDeadzone = 0.10;
+gamepad = 0,
+leftDeadzone = 0.10,
+rightDeadzone = 0.10,
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsKeyPressed(rl.KEY_LEFT) && (gamepad > 0)) { gamepad = gamepad - 1; }
-  if (rl.IsKeyPressed(rl.KEY_RIGHT)) { gamepad = gamepad + 1; }
+  if (rl.IsKeyPressed(rl.KEY_LEFT) && (gamepad > 0)) { gamepad = gamepad - 1, }
+  if (rl.IsKeyPressed(rl.KEY_RIGHT)) { gamepad = gamepad + 1, }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
   if (rl.IsGamepadAvailable(gamepad)) {
-    name = rl.GetGamepadName(gamepad);
-    axisCount = rl.GetGamepadAxisCount(gamepad);
-    if (axisCount < 0) { axisCount = 0; }
+    name = rl.GetGamepadName(gamepad),
+    axisCount = rl.GetGamepadAxisCount(gamepad),
+    if (axisCount < 0) { axisCount = 0, }
 
-    lx = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_LEFT_X);
-    ly = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_LEFT_Y);
-    rx = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_RIGHT_X);
-    ry = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_RIGHT_Y);
-    lt = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_LEFT_TRIGGER);
-    rt = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_RIGHT_TRIGGER);
+    lx = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_LEFT_X),
+    ly = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_LEFT_Y),
+    rx = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_RIGHT_X),
+    ry = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_RIGHT_Y),
+    lt = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_LEFT_TRIGGER),
+    rt = rl.GetGamepadAxisMovement(gamepad, rl.GAMEPAD_AXIS_RIGHT_TRIGGER),
 
-    if ((lx < leftDeadzone) && (lx > -leftDeadzone)) { lx = 0.0; }
-    if ((ly < leftDeadzone) && (ly > -leftDeadzone)) { ly = 0.0; }
-    if ((rx < rightDeadzone) && (rx > -rightDeadzone)) { rx = 0.0; }
-    if ((ry < rightDeadzone) && (ry > -rightDeadzone)) { ry = 0.0; }
+    if ((lx < leftDeadzone) && (lx > -leftDeadzone)) { lx = 0.0, }
+    if ((ly < leftDeadzone) && (ly > -leftDeadzone)) { ly = 0.0, }
+    if ((rx < rightDeadzone) && (rx > -rightDeadzone)) { rx = 0.0, }
+    if ((ry < rightDeadzone) && (ry > -rightDeadzone)) { ry = 0.0, }
 
-    rl.DrawText(rl.TextFormat("GP%i: %s", gamepad, name), 10, 10, 20, rl.BLACK.view);
-    rl.DrawText("LEFT/RIGHT: change gamepad index", 10, 40, 18, rl.DARKGRAY.view);
+    rl.DrawText(rl.TextFormat("GP%i: %s", gamepad, name), 10, 10, 20, rl.BLACK.view),
+    rl.DrawText("LEFT/RIGHT: change gamepad index", 10, 40, 18, rl.DARKGRAY.view),
 
-    rl.DrawText(rl.TextFormat("AXIS COUNT: %i", axisCount), 10, 75, 18, rl.MAROON.view);
+    rl.DrawText(rl.TextFormat("AXIS COUNT: %i", axisCount), 10, 75, 18, rl.MAROON.view),
 
-    i = 0;
+    i = 0,
     while (i < axisCount) {
-      rl.DrawText(rl.TextFormat("AXIS %i: %.02f", i, rl.GetGamepadAxisMovement(gamepad, i)), 20, 100 + 20*i, 18, rl.DARKGRAY.view);
-      i = i + 1;
+      rl.DrawText(rl.TextFormat("AXIS %i: %.02f", i, rl.GetGamepadAxisMovement(gamepad, i)), 20, 100 + 20*i, 18, rl.DARKGRAY.view),
+      i = i + 1,
     }
 
-    btn = rl.GetGamepadButtonPressed();
-    if (btn != rl.GAMEPAD_BUTTON_UNKNOWN) { rl.DrawText(rl.TextFormat("DETECTED BUTTON: %i", btn), 10, 420, 20, rl.RED.view); }
-    else { rl.DrawText("DETECTED BUTTON: NONE", 10, 420, 20, rl.GRAY.view); }
+    btn = rl.GetGamepadButtonPressed(),
+    if (btn != rl.GAMEPAD_BUTTON_UNKNOWN) { rl.DrawText(rl.TextFormat("DETECTED BUTTON: %i", btn), 10, 420, 20, rl.RED.view), }
+    else { rl.DrawText("DETECTED BUTTON: NONE", 10, 420, 20, rl.GRAY.view), }
 
-    leftCenter = rl.newVector2(rl.Vector2, 560.0, 160.0);
-    rightCenter = rl.newVector2(rl.Vector2, 680.0, 160.0);
-    leftPos = rl.newVector2(rl.Vector2, leftCenter.view.x + lx*30.0, leftCenter.view.y + ly*30.0);
-    rightPos = rl.newVector2(rl.Vector2, rightCenter.view.x + rx*30.0, rightCenter.view.y + ry*30.0);
+    leftCenter = rl.newVector2(rl.Vector2, 560.0, 160.0),
+    rightCenter = rl.newVector2(rl.Vector2, 680.0, 160.0),
+    leftPos = rl.newVector2(rl.Vector2, leftCenter.view.x + lx*30.0, leftCenter.view.y + ly*30.0),
+    rightPos = rl.newVector2(rl.Vector2, rightCenter.view.x + rx*30.0, rightCenter.view.y + ry*30.0),
 
-    rl.DrawText("Left Stick", 520, 90, 18, rl.DARKGRAY.view);
-    rl.DrawText("Right Stick", 635, 90, 18, rl.DARKGRAY.view);
-    rl.DrawCircleLinesV(leftCenter.view, 42.0, rl.BLACK.view);
-    rl.DrawCircleLinesV(rightCenter.view, 42.0, rl.BLACK.view);
-    rl.DrawCircleV(leftPos.view, 16.0, rl.BLUE.view);
-    rl.DrawCircleV(rightPos.view, 16.0, rl.GREEN.view);
+    rl.DrawText("Left Stick", 520, 90, 18, rl.DARKGRAY.view),
+    rl.DrawText("Right Stick", 635, 90, 18, rl.DARKGRAY.view),
+    rl.DrawCircleLinesV(leftCenter.view, 42.0, rl.BLACK.view),
+    rl.DrawCircleLinesV(rightCenter.view, 42.0, rl.BLACK.view),
+    rl.DrawCircleV(leftPos.view, 16.0, rl.BLUE.view),
+    rl.DrawCircleV(rightPos.view, 16.0, rl.GREEN.view),
 
-    rl.DrawText("Triggers", 585, 235, 18, rl.DARKGRAY.view);
-    rl.DrawRectangle(560, 260, 24, 120, rl.LIGHTGRAY.view);
-    rl.DrawRectangle(680, 260, 24, 120, rl.LIGHTGRAY.view);
-    rl.DrawRectangle(560, 260, 24, ((lt + 1.0)*0.5)*120.0, rl.RED.view);
-    rl.DrawRectangle(680, 260, 24, ((rt + 1.0)*0.5)*120.0, rl.RED.view);
+    rl.DrawText("Triggers", 585, 235, 18, rl.DARKGRAY.view),
+    rl.DrawRectangle(560, 260, 24, 120, rl.LIGHTGRAY.view),
+    rl.DrawRectangle(680, 260, 24, 120, rl.LIGHTGRAY.view),
+    rl.DrawRectangle(560, 260, 24, ((lt + 1.0)*0.5)*120.0, rl.RED.view),
+    rl.DrawRectangle(680, 260, 24, ((rt + 1.0)*0.5)*120.0, rl.RED.view),
   } else {
-    rl.DrawText(rl.TextFormat("GP%i: NOT DETECTED", gamepad), 10, 10, 20, rl.GRAY.view);
-    rl.DrawText("Connect a gamepad and press LEFT/RIGHT to change index", 10, 40, 18, rl.DARKGRAY.view);
-    rl.DrawRectangleRounded(rl.newRectangle(rl.Rectangle, 180.0, 110.0, 460.0, 220.0).view, 0.3, 16, rl.LIGHTGRAY.view);
+    rl.DrawText(rl.TextFormat("GP%i: NOT DETECTED", gamepad), 10, 10, 20, rl.GRAY.view),
+    rl.DrawText("Connect a gamepad and press LEFT/RIGHT to change index", 10, 40, 18, rl.DARKGRAY.view),
+    rl.DrawRectangleRounded(rl.newRectangle(rl.Rectangle, 180.0, 110.0, 460.0, 220.0).view, 0.3, 16, rl.LIGHTGRAY.view),
   }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

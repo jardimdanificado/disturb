@@ -1,4 +1,4 @@
-println(nope);
+println(nope),
 
-n = nope;
-println(n.name);
+n = nope,
+println(n.name),

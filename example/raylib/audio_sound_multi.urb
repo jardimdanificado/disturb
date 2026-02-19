@@ -1,70 +1,70 @@
 // raylib [audio] example - sound multi (Disturb port, VM-safe)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
-println("audio_sound_multi fix build: 2026-02-12c");
+gc.rate = 100,
+println("audio_sound_multi fix build: 2026-02-12c"),
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [audio] example - sound multi");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [audio] example - sound multi"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-audioEnabled = 0;
-sourceSound = null;
-alias1 = null;
-alias2 = null;
-alias3 = null;
-currentSound = 0;
+audioEnabled = 0,
+sourceSound = null,
+alias1 = null,
+alias2 = null,
+alias3 = null,
+currentSound = 0,
 
-rl.InitAudioDevice();
+rl.InitAudioDevice(),
 if (rl.IsAudioDeviceReady()) {
-  audioEnabled = 1;
-  sourceSound = rl.LoadSound("../raylib/examples/audio/resources/sound.wav");
-  alias1 = rl.LoadSoundAlias(sourceSound);
-  alias2 = rl.LoadSoundAlias(sourceSound);
-  alias3 = rl.LoadSoundAlias(sourceSound);
+  audioEnabled = 1,
+  sourceSound = rl.LoadSound("../raylib/examples/audio/resources/sound.wav"),
+  alias1 = rl.LoadSoundAlias(sourceSound),
+  alias2 = rl.LoadSoundAlias(sourceSound),
+  alias3 = rl.LoadSoundAlias(sourceSound),
 }
 
 while (!rl.WindowShouldClose()) {
   if (audioEnabled && rl.IsKeyPressed(rl.KEY_SPACE)) {
-    if (currentSound == 0) { rl.PlaySound(sourceSound); }
-    if (currentSound == 1) { rl.PlaySound(alias1); }
-    if (currentSound == 2) { rl.PlaySound(alias2); }
-    if (currentSound == 3) { rl.PlaySound(alias3); }
-    currentSound = currentSound + 1;
-    if (currentSound >= 4) { currentSound = 0; }
+    if (currentSound == 0) { rl.PlaySound(sourceSound), }
+    if (currentSound == 1) { rl.PlaySound(alias1), }
+    if (currentSound == 2) { rl.PlaySound(alias2), }
+    if (currentSound == 3) { rl.PlaySound(alias3), }
+    currentSound = currentSound + 1,
+    if (currentSound >= 4) { currentSound = 0, }
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
-  rl.DrawText("Press SPACE to PLAY a WAV sound!", 200, 180, 20, rl.LIGHTGRAY.view);
-  rl.DrawText(rl.TextFormat("Current slot: %i", currentSound), 320, 220, 20, rl.DARKGRAY.view);
-  if (!audioEnabled) { rl.DrawText("Audio device not available on this system", 180, 300, 20, rl.MAROON.view); }
-  rl.EndDrawing();
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
+  rl.DrawText("Press SPACE to PLAY a WAV sound!", 200, 180, 20, rl.LIGHTGRAY.view),
+  rl.DrawText(rl.TextFormat("Current slot: %i", currentSound), 320, 220, 20, rl.DARKGRAY.view),
+  if (!audioEnabled) { rl.DrawText("Audio device not available on this system", 180, 300, 20, rl.MAROON.view), }
+  rl.EndDrawing(),
 }
 
 if (audioEnabled) {
-  rl.UnloadSoundAlias(alias1);
-  rl.UnloadSoundAlias(alias2);
-  rl.UnloadSoundAlias(alias3);
-  rl.UnloadSound(sourceSound);
-  rl.CloseAudioDevice();
+  rl.UnloadSoundAlias(alias1),
+  rl.UnloadSoundAlias(alias2),
+  rl.UnloadSoundAlias(alias3),
+  rl.UnloadSound(sourceSound),
+  rl.CloseAudioDevice(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -2,160 +2,160 @@
 // Pure Disturb assembler/disassembler for bytecode text format.
 
 asm_unescape = (s){
-  out = "";
-  i = 0;
-  n = len(s);
+  out = "",
+  i = 0,
+  n = len(s),
   while (i < n) {
-    c = s[i];
+    c = s[i],
     if (c == "\\") {
-      i = i + 1;
-      if (i >= n) { break; }
-      esc = s[i];
+      i = i + 1,
+      if (i >= n) { break, }
+      esc = s[i],
       if (esc == "n") {
-        out = out + "\n";
+        out = out + "\n",
       } else if (esc == "r") {
-        out = out + "\r";
+        out = out + "\r",
       } else if (esc == "t") {
-        out = out + "\t";
+        out = out + "\t",
       } else if (esc == "\\") {
-        out = out + "\\";
+        out = out + "\\",
       } else if (esc == "\"") {
-        out = out + "\"";
+        out = out + "\"",
       } else if (esc == "'") {
-        out = out + "'";
+        out = out + "'",
       } else {
-        out = out + esc;
+        out = out + esc,
       }
-      i = i + 1;
-      continue;
+      i = i + 1,
+      continue,
     }
-    out = out + c;
-    i = i + 1;
+    out = out + c,
+    i = i + 1,
   }
-  return out;
-};
+  return out,
+},
 
 asm_quote_ended = (s, quote){
-  n = len(s);
-  if (n < 2) { return 0; }
-  if (s.substr(n - 1, 1) != quote) { return 0; }
-  i = n - 2;
-  count = 0;
+  n = len(s),
+  if (n < 2) { return 0, }
+  if (s.substr(n - 1, 1) != quote) { return 0, }
+  i = n - 2,
+  count = 0,
   while (i >= 0 && s.substr(i, 1) == "\\") {
-    count = count + 1;
-    i = i - 1;
+    count = count + 1,
+    i = i - 1,
   }
-  return (count % 2) == 0;
-};
+  return (count % 2) == 0,
+},
 
 asm_parse_tokens = (line){
-  cleaned = line.replaceAll("\t", " ").replaceAll("\r", " ");
-  raw = cleaned.split(" ");
-  tokens = {};
-  pending = "";
-  quote = "";
+  cleaned = line.replaceAll("\t", " ").replaceAll("\r", " "),
+  raw = cleaned.split(" "),
+  tokens = {},
+  pending = "",
+  quote = "",
   each(part in raw) {
-    if (len(part) == 0) { continue; }
+    if (len(part) == 0) { continue, }
     if (len(pending) > 0) {
-      pending = pending + " " + part;
+      pending = pending + " " + part,
       if (asm_quote_ended(pending, quote)) {
-        inner = pending.substr(1, len(pending) - 2);
-        tokens.push(asm_unescape(inner).copy());
-        pending = "";
-        quote = "";
+        inner = pending.substr(1, len(pending) - 2),
+        tokens.push(asm_unescape(inner).copy()),
+        pending = "",
+        quote = "",
       }
-      continue;
+      continue,
     }
-    first = part.substr(0, 1);
+    first = part.substr(0, 1),
     if (first == "\"" || first == "'") {
-      quote = first;
-      pending = part;
+      quote = first,
+      pending = part,
       if (asm_quote_ended(pending, quote)) {
-        inner = pending.substr(1, len(pending) - 2);
-        tokens.push(asm_unescape(inner).copy());
-        pending = "";
-        quote = "";
+        inner = pending.substr(1, len(pending) - 2),
+        tokens.push(asm_unescape(inner).copy()),
+        pending = "",
+        quote = "",
       }
-      continue;
+      continue,
     }
-    tokens.push(part.copy());
+    tokens.push(part.copy()),
   }
   if (len(pending) > 0) {
-    tokens.push(pending.copy());
+    tokens.push(pending.copy()),
   }
-  return tokens;
-};
+  return tokens,
+},
 
 asm_parse_number = (token){
-  eval("__asm_tmp = " + token + ";");
-  return __asm_tmp.copy();
-};
+  eval("__asm_tmp = " + token + ","),
+  return __asm_tmp.copy(),
+},
 
 asm = (text){
-  ops = {};
-  lines = text.split("\n");
+  ops = {},
+  lines = text.split("\n"),
   each(line in lines) {
-    line = line.trim();
-    if (len(line) == 0) { continue; }
-    if (line[0] == "#") { continue; }
-    if (len(line) >= 2 && line.substr(0, 2) == "//") { continue; }
+    line = line.trim(),
+    if (len(line) == 0) { continue, }
+    if (line[0] == "#") { continue, }
+    if (len(line) >= 2 && line.substr(0, 2) == "//") { continue, }
 
-    tokens = asm_parse_tokens(line);
-    if (len(tokens) == 0) { continue; }
-    op = tokens.shift().copy();
+    tokens = asm_parse_tokens(line),
+    if (len(tokens) == 0) { continue, }
+    op = tokens.shift().copy(),
 
     if (op == "PUSH_INT") {
-      ops.push({op = op.copy(), value = asm_parse_number(tokens.shift())});
+      ops.push({op = op.copy(), value = asm_parse_number(tokens.shift())}),
     } else if (op == "PUSH_FLOAT") {
-      ops.push({op = op.copy(), value = asm_parse_number(tokens.shift())});
+      ops.push({op = op.copy(), value = asm_parse_number(tokens.shift())}),
     } else if (op == "PUSH_CHAR") {
-      v = tokens.shift().copy();
-      ops.push({op = op.copy(), value = v.copy()});
+      v = tokens.shift().copy(),
+      ops.push({op = op.copy(), value = v.copy()}),
     } else if (op == "PUSH_STRING") {
-      v = tokens.shift().copy();
-      ops.push({op = op.copy(), value = v.copy()});
+      v = tokens.shift().copy(),
+      ops.push({op = op.copy(), value = v.copy()}),
     } else if (op == "BUILD_INT" || op == "BUILD_FLOAT" || op == "BUILD_OBJECT") {
-      cnt = asm_parse_number(tokens.shift());
-      ops.push({op = op.copy(), count = cnt.copy()});
+      cnt = asm_parse_number(tokens.shift()),
+      ops.push({op = op.copy(), count = cnt.copy()}),
     } else if (op == "BUILD_INT_LIT" || op == "BUILD_FLOAT_LIT") {
-      count = asm_parse_number(tokens.shift());
-      values = {};
-      i = 0;
+      count = asm_parse_number(tokens.shift()),
+      values = {},
+      i = 0,
       while (i < count) {
-        values.push(asm_parse_number(tokens.shift()));
-        i = i + 1;
+        values.push(asm_parse_number(tokens.shift())),
+        i = i + 1,
       }
-      ops.push({op = op.copy(), count = count.copy(), values = values});
+      ops.push({op = op.copy(), count = count.copy(), values = values}),
     } else if (op == "BUILD_FUNCTION") {
-      println("asm error: BUILD_FUNCTION not supported");
-      return null;
+      println("asm error: BUILD_FUNCTION not supported"),
+      return null,
     } else if (op == "LOAD_GLOBAL" || op == "STORE_GLOBAL") {
-      name = tokens.shift().copy();
-      ops.push({op = op.copy(), name = name.copy()});
+      name = tokens.shift().copy(),
+      ops.push({op = op.copy(), name = name.copy()}),
     } else if (op == "CALL") {
-      name = tokens.shift().copy();
-      argc = asm_parse_number(tokens.shift());
-      ops.push({op = op.copy(), name = name.copy(), argc = argc.copy()});
+      name = tokens.shift().copy(),
+      argc = asm_parse_number(tokens.shift()),
+      ops.push({op = op.copy(), name = name.copy(), argc = argc.copy()}),
     } else if (op == "CALL_EX") {
-      name = tokens.shift().copy();
-      argc = asm_parse_number(tokens.shift());
-      override = asm_parse_number(tokens.shift());
-      ops.push({op = op.copy(), name = name.copy(), argc = argc.copy(), override = override.copy()});
+      name = tokens.shift().copy(),
+      argc = asm_parse_number(tokens.shift()),
+      override = asm_parse_number(tokens.shift()),
+      ops.push({op = op.copy(), name = name.copy(), argc = argc.copy(), override = override.copy()}),
     } else if (op == "JMP" || op == "JMP_IF_FALSE") {
-      target = asm_parse_number(tokens.shift());
-      ops.push({op = op.copy(), target = target.copy()});
+      target = asm_parse_number(tokens.shift()),
+      ops.push({op = op.copy(), target = target.copy()}),
     } else {
-      ops.push({op = op.copy()});
+      ops.push({op = op.copy()}),
     }
   }
 
-  ast = {type = "bytecode", ops = ops};
-  return emit(ast);
-};
+  ast = {type = "bytecode", ops = ops},
+  return emit(ast),
+},
 
 disasm = (bytes){
-  if (bytes == null) { return ""; }
-  out = emit(bytes);
-  if (out == null) { return ""; }
-  return out.trim();
-};
+  if (bytes == null) { return "", }
+  out = emit(bytes),
+  if (out == null) { return "", }
+  return out.trim(),
+},

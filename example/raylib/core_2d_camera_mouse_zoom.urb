@@ -1,94 +1,94 @@
 // raylib [core] example - 2d camera mouse zoom (Disturb port)
 
-raylib = import("lib/raylib.urb");
-rl = raylib.load();
+raylib = import("lib/raylib.urb"),
+rl = raylib.load(),
 if (rl == null) {
-  println("raylib library not found");
-  gc.collect();
-  return 0;
+  println("raylib library not found"),
+  gc.collect(),
+  return 0,
 }
 
-gc.rate = 100;
+gc.rate = 100,
 
-screenWidth = 800;
-screenHeight = 450;
+screenWidth = 800,
+screenHeight = 450,
 
-rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - 2d camera mouse zoom");
-rl.SetTargetFPS(60);
+rl.InitWindow(screenWidth, screenHeight, "raylib [core] example - 2d camera mouse zoom"),
+rl.SetTargetFPS(60),
 
 if (!rl.IsWindowReady()) {
-  println("raylib backend not available (DISPLAY missing?)");
-  gc.collect();
-  return 0;
+  println("raylib backend not available (DISPLAY missing?)"),
+  gc.collect(),
+  return 0,
 }
 
-camera = rl.newCamera2D(rl.Camera2D, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0);
-zoomMode = 0;
+camera = rl.newCamera2D(rl.Camera2D, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0),
+zoomMode = 0,
 
 while (!rl.WindowShouldClose()) {
-  if (rl.IsKeyPressed(rl.KEY_ONE)) { zoomMode = 0; }
-  else if (rl.IsKeyPressed(rl.KEY_TWO)) { zoomMode = 1; }
+  if (rl.IsKeyPressed(rl.KEY_ONE)) { zoomMode = 0, }
+  else if (rl.IsKeyPressed(rl.KEY_TWO)) { zoomMode = 1, }
 
   if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_LEFT)) {
-    delta = rl.GetMouseDelta();
-    camera.view.targetX = camera.view.targetX - delta.x/camera.view.zoom;
-    camera.view.targetY = camera.view.targetY - delta.y/camera.view.zoom;
+    delta = rl.GetMouseDelta(),
+    camera.view.targetX = camera.view.targetX - delta.x/camera.view.zoom,
+    camera.view.targetY = camera.view.targetY - delta.y/camera.view.zoom,
   }
 
   if (zoomMode == 0) {
-    wheel = rl.GetMouseWheelMove();
+    wheel = rl.GetMouseWheelMove(),
     if (wheel != 0) {
-      mouse = rl.GetMousePosition();
-      mouseWorldPos = rl.GetScreenToWorld2D(mouse, camera.view);
-      camera.view.offsetX = mouse.x;
-      camera.view.offsetY = mouse.y;
-      camera.view.targetX = mouseWorldPos.x;
-      camera.view.targetY = mouseWorldPos.y;
+      mouse = rl.GetMousePosition(),
+      mouseWorldPos = rl.GetScreenToWorld2D(mouse, camera.view),
+      camera.view.offsetX = mouse.x,
+      camera.view.offsetY = mouse.y,
+      camera.view.targetX = mouseWorldPos.x,
+      camera.view.targetY = mouseWorldPos.y,
 
-      camera.view.zoom = camera.view.zoom + 0.2*wheel;
-      if (camera.view.zoom < 0.125) { camera.view.zoom = 0.125; }
-      else if (camera.view.zoom > 64.0) { camera.view.zoom = 64.0; }
+      camera.view.zoom = camera.view.zoom + 0.2*wheel,
+      if (camera.view.zoom < 0.125) { camera.view.zoom = 0.125, }
+      else if (camera.view.zoom > 64.0) { camera.view.zoom = 64.0, }
     }
   } else {
     if (rl.IsMouseButtonPressed(rl.MOUSE_BUTTON_RIGHT)) {
-      mouse = rl.GetMousePosition();
-      mouseWorldPos = rl.GetScreenToWorld2D(mouse, camera.view);
-      camera.view.offsetX = mouse.x;
-      camera.view.offsetY = mouse.y;
-      camera.view.targetX = mouseWorldPos.x;
-      camera.view.targetY = mouseWorldPos.y;
+      mouse = rl.GetMousePosition(),
+      mouseWorldPos = rl.GetScreenToWorld2D(mouse, camera.view),
+      camera.view.offsetX = mouse.x,
+      camera.view.offsetY = mouse.y,
+      camera.view.targetX = mouseWorldPos.x,
+      camera.view.targetY = mouseWorldPos.y,
     }
 
     if (rl.IsMouseButtonDown(rl.MOUSE_BUTTON_RIGHT)) {
-      delta = rl.GetMouseDelta();
-      camera.view.zoom = camera.view.zoom + 0.005*delta.x;
-      if (camera.view.zoom < 0.125) { camera.view.zoom = 0.125; }
-      else if (camera.view.zoom > 64.0) { camera.view.zoom = 64.0; }
+      delta = rl.GetMouseDelta(),
+      camera.view.zoom = camera.view.zoom + 0.005*delta.x,
+      if (camera.view.zoom < 0.125) { camera.view.zoom = 0.125, }
+      else if (camera.view.zoom > 64.0) { camera.view.zoom = 64.0, }
     }
   }
 
-  rl.BeginDrawing();
-  rl.ClearBackground(rl.RAYWHITE.view);
+  rl.BeginDrawing(),
+  rl.ClearBackground(rl.RAYWHITE.view),
 
-  rl.BeginMode2D(camera.view);
-  for (gx = -50; gx <= 50; gx++) { rl.DrawLine(gx*50, -2500, gx*50, 2500, rl.LIGHTGRAY.view); }
-  for (gy = -50; gy <= 50; gy++) { rl.DrawLine(-2500, gy*50, 2500, gy*50, rl.LIGHTGRAY.view); }
-  rl.DrawLine(-2500, 0, 2500, 0, rl.DARKGRAY.view);
-  rl.DrawLine(0, -2500, 0, 2500, rl.DARKGRAY.view);
-  rl.DrawCircle(rl.GetScreenWidth()/2, rl.GetScreenHeight()/2, 50, rl.MAROON.view);
-  rl.EndMode2D();
+  rl.BeginMode2D(camera.view),
+  for (gx = -50, gx <= 50, gx++) { rl.DrawLine(gx*50, -2500, gx*50, 2500, rl.LIGHTGRAY.view), }
+  for (gy = -50, gy <= 50, gy++) { rl.DrawLine(-2500, gy*50, 2500, gy*50, rl.LIGHTGRAY.view), }
+  rl.DrawLine(-2500, 0, 2500, 0, rl.DARKGRAY.view),
+  rl.DrawLine(0, -2500, 0, 2500, rl.DARKGRAY.view),
+  rl.DrawCircle(rl.GetScreenWidth()/2, rl.GetScreenHeight()/2, 50, rl.MAROON.view),
+  rl.EndMode2D(),
 
-  mouse = rl.GetMousePosition();
-  rl.DrawCircleV(mouse, 4.0, rl.DARKGRAY.view);
-  rl.DrawText(rl.TextFormat("[%i, %i]", rl.GetMouseX(), rl.GetMouseY()), mouse.x - 44, mouse.y - 24, 20, rl.BLACK.view);
+  mouse = rl.GetMousePosition(),
+  rl.DrawCircleV(mouse, 4.0, rl.DARKGRAY.view),
+  rl.DrawText(rl.TextFormat("[%i, %i]", rl.GetMouseX(), rl.GetMouseY()), mouse.x - 44, mouse.y - 24, 20, rl.BLACK.view),
 
-  rl.DrawText("[1][2] Select mouse zoom mode (Wheel or Move)", 20, 20, 20, rl.DARKGRAY.view);
-  if (zoomMode == 0) { rl.DrawText("Mouse left button drag to move, mouse wheel to zoom", 20, 50, 20, rl.DARKGRAY.view); }
-  else { rl.DrawText("Mouse left button drag to move, mouse press and move to zoom", 20, 50, 20, rl.DARKGRAY.view); }
+  rl.DrawText("[1][2] Select mouse zoom mode (Wheel or Move)", 20, 20, 20, rl.DARKGRAY.view),
+  if (zoomMode == 0) { rl.DrawText("Mouse left button drag to move, mouse wheel to zoom", 20, 50, 20, rl.DARKGRAY.view), }
+  else { rl.DrawText("Mouse left button drag to move, mouse press and move to zoom", 20, 50, 20, rl.DARKGRAY.view), }
 
-  rl.EndDrawing();
+  rl.EndDrawing(),
 }
 
-rl.CloseWindow();
-gc.collect();
-return 0;
+rl.CloseWindow(),
+gc.collect(),
+return 0,

@@ -13,7 +13,7 @@ make
 
 ## Core Rules
 
-- `x = 1;` writes to `global.x`.
+- `x = 1,` writes to `global.x`.
 - Missing global/key returns `null`.
 - `global` is a real table.
 - Method call binds `this`: `obj.fn()`.
@@ -62,16 +62,16 @@ True:
 
 - `if / else if / else`
 - `while`
-- `for (init; cond; step)`
+- `for (init, cond, step)`
 - `each(v in expr)`
 - `switch / case / default` (no fallthrough)
 - `break`, `continue`, `return`
-- `label:` + `goto label;`
+- `label:` + `goto label,`
 
 ## Functions (lambdas)
 
 ```disturb
-sum = (a, b = 1, ...rest){ return a + b; };
+sum = (a, b = 1, ...rest){ return a + b, }
 ```
 
 - varargs must be last
@@ -108,13 +108,13 @@ Common checks:
 ## Strict Mode
 
 ```disturb
-use strict;
-use nostrict;
+use strict,
+use nostrict,
 ```
 
 Also valid:
-- `use "strict";`
-- `use "nostrict";`
+- `use "strict",`
+- `use "nostrict",`
 
 Strict mode forbids:
 - mixed int/float arithmetic and numeric comparisons
@@ -125,8 +125,8 @@ Strict mode forbids:
 Runtime toggle:
 
 ```disturb
-global.gc.strict = 1;
-global.gc.strict = 0;
+global.gc.strict = 1,
+global.gc.strict = 0,
 ```
 
 ## IO and Eval
