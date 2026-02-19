@@ -121,7 +121,7 @@ Special global:
 
 List behavior:
 - numeric lists are homogeneous (`int` list or `float` list)
-- mixed numeric literals like `1 2.5` become float lists in non-strict mode
+- mixed numeric literals like `1 2.5` become float lists
 - string values are byte lists with string semantics
 
 Numeric list shorthand example:
@@ -287,40 +287,6 @@ Important constraints:
 - `.size` expects integer
 - `.capacity` expects numeric value
 
-## Strict Mode
-
-Strict directives:
-
-```disturb
-use strict,
-use nostrict,
-```
-
-Accepted forms:
-- `use strict,`
-- `use "strict",`
-- `use nostrict,`
-- `use "nostrict",`
-
-Effects:
-- parser strictness from directive point onward
-- runtime strictness toggled in emitted bytecode
-
-Strict mode rules:
-- forbids mixed int/float arithmetic
-- forbids mixed int/float numeric comparisons
-- forbids number/string comparisons
-- forbids `null` in numeric operations
-- forbids mixed int/float numeric list literals (for example, `1 2.5`)
-- string text output should use `.string`
-
-Runtime toggle:
-
-```disturb
-global.gc.strict = 1,
-global.gc.strict = 0,
-```
-
 ## Built-in Functions and Methods
 
 Disturb installs common functions in `global.common`, so they are callable as methods and as globals.
@@ -464,7 +430,6 @@ Manual GC helpers are under `global.gc`:
 - `stats()`
 
 Runtime flags:
-- `global.gc.strict = 0|1`
 - `global.gc.keyintern = 0|1`
 
 Compatibility alias:
@@ -519,8 +484,7 @@ Schema composition:
 - variadic signatures accepted via `...` in `ffi.bind`
 
 Const behavior in views:
-- non-strict mode: warns and ignores write
-- strict mode: aborts with panic
+- warns and ignores write
 
 Ownership:
 - `memory.new` returns an owned pointer handle (GC releases memory if unreachable)

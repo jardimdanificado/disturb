@@ -109,7 +109,6 @@ struct VM {
     size_t gc_counter;
     Int call_override_len;
     int has_call_override;
-    int strict_mode;
     int keyintern_enabled;
 };
 

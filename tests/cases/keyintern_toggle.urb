@@ -1,12 +1,7 @@
-use strict,
-use nostrict,
-
 mixed = 1 2.5,
 println(mixed[0]),
 println(mixed[1]),
 
-gc.strict = 1,
-gc.strict = 0,
 println(1 + 2.5),
 
 gc.keyintern = 0,

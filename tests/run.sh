@@ -43,8 +43,8 @@ run_case stress_deep
 run_case stress_large_list
 run_case references
 run_case locals
-run_case strict
-run_case strict_toggle
+run_case numeric_suffixes
+run_case keyintern_toggle
 run_case value
 if [ "${EMBEDDED_MODE:-0}" = "1" ]; then
   echo "EMBEDDED_MODE=1, skipping modules case"
@@ -105,14 +105,8 @@ run_negative meta_readonly
 run_negative meta_size_float
 run_negative meta_capacity_string
 run_negative byte_range
-run_negative strict_mixed_list
 run_negative bitwise_float
 run_negative vararg_old_syntax
-if [ "${SKIP_FFI:-0}" = "1" ]; then
-  echo "SKIP_FFI=1, skipping negative ffi_const_write_strict"
-else
-  run_negative ffi_const_write_strict
-fi
 
 if [ "${SKIP_FFI:-0}" = "1" ]; then
   echo "SKIP_FFI=1, skipping ffi struct view test"

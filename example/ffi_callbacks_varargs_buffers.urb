@@ -69,7 +69,7 @@ memory.free(buf),
 schema = { a = "const int32", b = "int32" },
 p = memory.new(schema),
 v = memory.view(p, schema),
-v.a = 99, // ignored (non-strict warning)
+v.a = 99, // ignored (const field warning)
 v.b = 11,
 println("const view:", v.a, v.b),
 memory.free(p),

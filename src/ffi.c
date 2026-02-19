@@ -3450,9 +3450,6 @@ int ffi_view_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value
         return -1;
     }
     if (readonly || field->is_const || (field->layout && field->layout->is_const)) {
-        if (vm->strict_mode) {
-            PANIC("memory.view: write to const field");
-        }
         fprintf(stderr, "warning: memory.view write to const field '%.*s' ignored\n", (int)name_len, name);
         return 1;
     }
@@ -3526,9 +3523,6 @@ int ffi_native_index_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *va
         return -1;
     }
     if (av->readonly || (av->elem_layout && av->elem_layout->is_const)) {
-        if (vm->strict_mode) {
-            PANIC("memory.view: write to const array element");
-        }
         fprintf(stderr, "warning: memory.view write to const array element ignored\n");
         return 1;
     }

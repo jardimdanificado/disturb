@@ -76,7 +76,7 @@ memory.free(buf),
 s = { a = "const int32", b = "volatile int32", c = "restrict int32" },
 p = memory.new(s),
 v = memory.view(p, s),
-v.a = 123, // ignored in non-strict mode
+v.a = 123, // ignored (const field warning)
 v.b = 7,
 v.c = 9,
 println(v.a, v.b, v.c), // 0 7 9

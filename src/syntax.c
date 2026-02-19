@@ -257,7 +257,6 @@ typedef struct {
     LabelEntry *labels;
     int label_count;
     int label_cap;
-    int strict_mode;
 } Parser;
 
 static void arena_init(Arena *a)
@@ -1146,8 +1145,6 @@ static Expr *parse_primary(Parser *p)
             int count = 0;
             int cap = 0;
             int is_float = 0;
-            int saw_int = 0;
-            int saw_float = 0;
             
             for (;;) {
                 if (p->current.kind != TOK_NUMBER) break;
@@ -1167,16 +1164,7 @@ static Expr *parse_primary(Parser *p)
                 vals[count++] = p->current.number;
                 if (p->current.is_float) {
                     is_float = 1;
-                    saw_float = 1;
-                } else {
-                    saw_int = 1;
                 }
-                if (p->strict_mode && saw_int && saw_float) {
-                    parser_error(p, "strict mode: mixed int/float list");
-                    free(vals);
-                    return NULL;
-                }
-                
                 advance(p);
                 
                 /* Stop if next token is not a number */
@@ -3048,13 +3036,7 @@ static int parse_statement(Parser *p, Bytecode *bc)
                                               : "expected ',' after use nostrict")) {
                 return 0;
             }
-            /* Directives toggle parser strict mode and emit runtime strict toggle bytecode. */
-            if (!bc_emit_u8(bc, mode > 0 ? BC_STRICT : BC_UNSTRICT)) {
-                parser_error(p, mode > 0 ? "failed to emit STRICT"
-                                         : "failed to emit UNSTRICT");
-                return 0;
-            }
-            p->strict_mode = mode > 0;
+            /* strict/nostrict kept only for backwards compatibility (no-op). */
             return 1;
         }
     }
@@ -3555,7 +3537,6 @@ static int vm_compile_source_impl(VM *vm, const char *src, Bytecode *out, char *
     p.loop_cap = 0;
     arena_init(&p.arena);
     p.prev_kind = TOK_EOF;
-    p.strict_mode = 0;
     p.current = next_token(&p);
 
     bc_init(out);

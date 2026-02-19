@@ -1,9 +1,0 @@
-// use strict, and use nostrict, deal with parsing stricts
-// for runtime stricts use gc.strict
-use strict,
-
-println(1i + 2i),
-println(1f + 2f),
-
-s = "strict mode",
-println(s.string),

@@ -116,30 +116,6 @@ Common checks:
 - `.size` expects integer
 - `.capacity` expects numeric
 
-## Strict Mode
-
-```disturb
-use strict,
-use nostrict,
-```
-
-Also valid:
-- `use "strict",`
-- `use "nostrict",`
-
-Strict mode forbids:
-- mixed int/float arithmetic and numeric comparisons
-- number/string comparisons
-- `null` in numeric operations
-- mixed int/float numeric list literals
-
-Runtime toggle:
-
-```disturb
-global.gc.strict = 1,
-global.gc.strict = 0,
-```
-
 ## IO and Eval
 
 - `read(path)` -> byte-string
@@ -182,19 +158,7 @@ Patterns:
 - `stats()`
 
 Flags:
-- `global.gc.strict = 0|1`
 - `global.gc.keyintern = 0|1`
-
-## FFI (optional build)
-
-Always available (core FFI is always enabled).
-
-Main API:
-- `memory.point(value)`
-  - `string`: marshals to/from Disturb string values
-  - `cstring`: raw C pointer behavior
-  - strict off: warning + ignored write
-  - strict on: panic/abort
 
 ## Script Args
 

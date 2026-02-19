@@ -2363,6 +2363,7 @@ static void print_key(FILE *out, ObjEntry *entry)
 
 void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry)
 {
+    (void)vm;
     if (!entry || !entry->in_use) {
         fputs("null", out);
         return;
@@ -2371,9 +2372,6 @@ void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry)
     List *obj = entry->obj;
     Int type = disturb_obj_type(obj);
     int print_as_string = entry_is_string(entry);
-    if (vm && vm->strict_mode && print_as_string && !entry->explicit_string) {
-        print_as_string = 0;
-    }
 
     switch (type) {
     case DISTURB_T_NULL:
@@ -2432,6 +2430,7 @@ void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry)
 
 void print_entry(FILE *out, VM *vm, ObjEntry *entry)
 {
+    (void)vm;
     if (!entry || !entry->in_use) {
         fputs("null", out);
         return;
@@ -2440,9 +2439,6 @@ void print_entry(FILE *out, VM *vm, ObjEntry *entry)
     List *obj = entry->obj;
     Int type = disturb_obj_type(obj);
     int print_as_string = entry_is_string(entry);
-    if (vm && vm->strict_mode && print_as_string && !entry->explicit_string) {
-        print_as_string = 0;
-    }
 
     fputs("[", out);
     fputs(disturb_type_name(type), out);
@@ -2523,7 +2519,6 @@ void vm_init(VM *vm)
     vm->call_override_len = -1;
     vm->has_call_override = 0;
     vm->call_entry = NULL;
-    vm->strict_mode = 0;
     vm->keyintern_enabled = 1;
 
     vm->int_cache_count = (size_t)(INT_CACHE_MAX - INT_CACHE_MIN + 1);
@@ -3884,7 +3879,7 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
         return vm_make_int_value(vm, (Int)vm->gc_rate);
     }
     if (vm && target == vm->gc_entry && vm_key_is(index, "strict")) {
-        return vm_make_int_value(vm, vm->strict_mode ? 1 : 0);
+        return vm_make_int_value(vm, 0);
     }
     if (vm && target == vm->gc_entry && vm_key_is(index, "keyintern")) {
         return vm_make_int_value(vm, vm->keyintern_enabled ? 1 : 0);
@@ -4520,7 +4515,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
                 fprintf(stderr, "bytecode error at pc %zu: gc.strict expects int\n", pc);
                 return -1;
             }
-            vm->strict_mode = iv != 0;
+            (void)iv;
             return 1;
         }
         if (vm_key_is(index, "keyintern")) {
@@ -5483,13 +5478,11 @@ BC_L_SET_THIS:
 #ifdef __GNUC__
 BC_L_STRICT:
 #endif
-            vm->strict_mode = 1;
             break;
         case BC_UNSTRICT:
 #ifdef __GNUC__
 BC_L_UNSTRICT:
 #endif
-            vm->strict_mode = 0;
             break;
         case BC_CALL:
         case BC_CALL_EX:
@@ -5726,14 +5719,6 @@ BC_L_OR:
                 vm_stack_push_entry(vm, entry);
                 break;
             }
-            if (vm->strict_mode) {
-                Int lt = disturb_obj_type(left->obj);
-                Int rt = disturb_obj_type(right->obj);
-                if (lt == DISTURB_T_NULL || rt == DISTURB_T_NULL) {
-                    fprintf(stderr, "bytecode error at pc %zu: strict mode forbids null in numeric ops\n", pc);
-                    return 0;
-                }
-            }
             if (op == BC_AND || op == BC_OR) {
                 int l = vm_entry_truthy(left);
                 int r = vm_entry_truthy(right);
@@ -5964,29 +5949,6 @@ BC_L_OR:
                 }
                 
                 /* Scalar fallback */
-                if (vm->strict_mode) {
-                    Int lt = disturb_obj_type(left->obj);
-                    Int rt = disturb_obj_type(right->obj);
-                    if ((op == BC_EQ || op == BC_NEQ) &&
-                        (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
-                        (rt == DISTURB_T_INT && entry_is_string(right))) {
-                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
-                        return 0;
-                    }
-                    if ((op == BC_EQ || op == BC_NEQ) &&
-                        (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT) &&
-                        (lt == DISTURB_T_INT && entry_is_string(left))) {
-                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
-                        return 0;
-                    }
-                    if ((op == BC_EQ || op == BC_NEQ) &&
-                        (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
-                        (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT) &&
-                        lt != rt) {
-                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids mixed numeric types\n", pc);
-                        return 0;
-                    }
-                }
                 int eq = (op == BC_SEQ || op == BC_SNEQ)
                                       ? vm_entry_equal_strict(left, right)
                                       : vm_entry_equal_value(left, right);
@@ -6083,26 +6045,6 @@ BC_L_OR:
                 }
                 
                 /* Scalar fallback */
-                if (vm->strict_mode) {
-                    Int lt = disturb_obj_type(left->obj);
-                    Int rt = disturb_obj_type(right->obj);
-                    if ((lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
-                        (rt == DISTURB_T_INT && entry_is_string(right))) {
-                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
-                        return 0;
-                    }
-                    if ((rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT) &&
-                        (lt == DISTURB_T_INT && entry_is_string(left))) {
-                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids number/string comparisons\n", pc);
-                        return 0;
-                    }
-                    if ((lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
-                        (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT) &&
-                        lt != rt) {
-                        fprintf(stderr, "bytecode error at pc %zu: strict mode forbids mixed numeric types\n", pc);
-                        return 0;
-                    }
-                }
                 int cmp = 0;
                 if (!vm_entry_compare(left, right, &cmp)) {
                     fprintf(stderr, "bytecode error at pc %zu: comparison expects matching number/string types\n", pc);
@@ -6227,10 +6169,6 @@ BC_L_OR:
             int rf_is_float = 0;
             if (!vm_entry_number(left, &li, &lf, &lf_is_float, "OP", pc)) return 0;
             if (!vm_entry_number(right, &ri, &rf, &rf_is_float, "OP", pc)) return 0;
-            if (vm->strict_mode && lf_is_float != rf_is_float) {
-                fprintf(stderr, "bytecode error at pc %zu: strict mode forbids mixed numeric types\n", pc);
-                return 0;
-            }
             double l = lf_is_float ? (double)lf : (double)li;
             double r = rf_is_float ? (double)rf : (double)ri;
             double out = 0.0;
@@ -6255,10 +6193,6 @@ BC_L_BNOT:
             const char *op_name = op == BC_BNOT ? "BNOT" : "NEG";
             ObjEntry *value = vm_stack_pop_entry(vm, op_name, pc);
             if (!value) return 0;
-            if (vm->strict_mode && disturb_obj_type(value->obj) == DISTURB_T_NULL) {
-                fprintf(stderr, "bytecode error at pc %zu: strict mode forbids null in numeric ops\n", pc);
-                return 0;
-            }
             
             Int type = disturb_obj_type(value->obj);
             int value_is_string = (type == DISTURB_T_INT && entry_is_string(value));

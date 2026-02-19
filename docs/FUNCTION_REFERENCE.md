@@ -129,7 +129,6 @@ Return conventions:
 - Returns `null`.
 
 Runtime flags on `gc` object:
-- `gc.strict = 0|1`
 - `gc.keyintern = 0|1`
 
 Note:
@@ -341,8 +340,7 @@ Primary APIs used by examples/tests:
 - unions are declared via `__meta = { union = 1 }`
 - qualifiers accepted in signatures/schema strings: `const`, `volatile`, `restrict`
 - view write behavior on `const` fields/elements:
-  - non-strict: warns and ignores write
-  - strict: aborts runtime (`PANIC`)
+  - warns and ignores write
 - variadic signatures are supported with `...` (for `ffi.bind`)
 - callbacks support scalar and by-value struct/union signatures (callback variadics still unsupported)
 
