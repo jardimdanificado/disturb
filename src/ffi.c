@@ -2398,7 +2398,7 @@ static int parse_base_type(const char *name, FfiBase *out)
 {
     if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
     if (strcmp(name, "string") == 0) { *out = FFI_BASE_CSTR; return 1; }
-    if (strcmp(name, "cstr") == 0 || strcmp(name, "cstring") == 0) { *out = FFI_BASE_CSTR; return 1; }
+    if (strcmp(name, "cstring") == 0) { *out = FFI_BASE_CSTR; return 1; }
     if (strcmp(name, "_Bool") == 0 || strcmp(name, "bool") == 0) { *out = FFI_BASE_U8; return 1; }
     if (strcmp(name, "char") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "schar") == 0) { *out = FFI_BASE_I8; return 1; }
@@ -2621,7 +2621,7 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
     int ptr_depth = 0;
     int is_array = 0;
     int array_len = -1;
-    int is_explicit_cstr = (strcmp(combined, "cstr") == 0 || strcmp(combined, "cstring") == 0);
+    int is_explicit_cstr = (strcmp(combined, "cstring") == 0);
     int legacy_char_cstr = (strcmp(combined, "char") == 0 || strcmp(combined, "schar") == 0);
 
     sig_skip_ws(p);
@@ -2816,7 +2816,7 @@ static int parse_base_type(const char *name, FfiBase *out)
 {
     if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
     if (strcmp(name, "string") == 0) { *out = FFI_BASE_CSTR; return 1; }
-    if (strcmp(name, "cstr") == 0 || strcmp(name, "cstring") == 0) { *out = FFI_BASE_CSTR; return 1; }
+    if (strcmp(name, "cstring") == 0) { *out = FFI_BASE_CSTR; return 1; }
     if (strcmp(name, "_Bool") == 0 || strcmp(name, "bool") == 0) { *out = FFI_BASE_U8; return 1; }
     if (strcmp(name, "char") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "schar") == 0) { *out = FFI_BASE_I8; return 1; }
@@ -3056,12 +3056,12 @@ static FfiLayout *ffi_layout_from_elem_spec(VM *vm, ObjEntry *entry, char *err, 
         if (ffi_parse_schema_type_string(s, disturb_bytes_len(entry->obj),
                                          &base, &is_array, &len, &bits, &is_const)) {
             if (is_array || bits > 0) {
-                snprintf(err, err_cap, "ffi.viewArray element type must be scalar or struct schema");
+                snprintf(err, err_cap, "memory.viewArray element type must be scalar or struct schema");
                 return NULL;
             }
             size_t sz = 0, al = 0;
             if (!ffi_prim_size_align(base, &sz, &al)) {
-                snprintf(err, err_cap, "ffi.viewArray unsupported element type");
+                snprintf(err, err_cap, "memory.viewArray unsupported element type");
                 return NULL;
             }
             FfiLayout *elem = (FfiLayout*)calloc(1, sizeof(FfiLayout));
@@ -3354,7 +3354,7 @@ int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
     size_t name_len = disturb_bytes_len(index->obj);
     FfiLayoutField *field = ffi_layout_find_field(layout, name, name_len);
     if (!field) {
-        fprintf(stderr, "ffi.view: unknown field '%.*s'\n", (int)name_len, name);
+        fprintf(stderr, "memory.view: unknown field '%.*s'\n", (int)name_len, name);
         if (out) *out = vm->null_entry;
         return 1;
     }
@@ -3434,7 +3434,7 @@ int ffi_view_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value
     FfiLayout *layout = NULL;
     int readonly = 0;
     if (!ffi_view_decode(target, &base_ptr, &base_offset, &layout, &readonly) || !layout) {
-        fprintf(stderr, "ffi.view: invalid view\n");
+        fprintf(stderr, "memory.view: invalid view\n");
         return -1;
     }
 
@@ -3442,30 +3442,30 @@ int ffi_view_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value
     size_t name_len = disturb_bytes_len(index->obj);
     FfiLayoutField *field = ffi_layout_find_field(layout, name, name_len);
     if (!field) {
-        fprintf(stderr, "ffi.view: unknown field '%.*s'\n", (int)name_len, name);
+        fprintf(stderr, "memory.view: unknown field '%.*s'\n", (int)name_len, name);
         return -1;
     }
     if (field->layout->kind != FFI_LAYOUT_PRIM) {
-        fprintf(stderr, "ffi.view: field '%.*s' is not a scalar field\n", (int)name_len, name);
+        fprintf(stderr, "memory.view: field '%.*s' is not a scalar field\n", (int)name_len, name);
         return -1;
     }
     if (readonly || field->is_const || (field->layout && field->layout->is_const)) {
         if (vm->strict_mode) {
-            PANIC("ffi.view: write to const field");
+            PANIC("memory.view: write to const field");
         }
-        fprintf(stderr, "warning: ffi.view write to const field '%.*s' ignored\n", (int)name_len, name);
+        fprintf(stderr, "warning: memory.view write to const field '%.*s' ignored\n", (int)name_len, name);
         return 1;
     }
     uintptr_t addr = base_ptr + base_offset + field->offset;
     if (field->bit_width > 0) {
         if (!ffi_store_bitfield_value(field, addr, value)) {
-            fprintf(stderr, "ffi.view: invalid value for bitfield '%.*s'\n", (int)name_len, name);
+            fprintf(stderr, "memory.view: invalid value for bitfield '%.*s'\n", (int)name_len, name);
             return -1;
         }
         return 1;
     }
     if (!ffi_store_prim_value(field->layout->base, addr, value)) {
-        fprintf(stderr, "ffi.view: invalid value for field '%.*s'\n", (int)name_len, name);
+        fprintf(stderr, "memory.view: invalid value for field '%.*s'\n", (int)name_len, name);
         return -1;
     }
     return 1;
@@ -3484,7 +3484,7 @@ int ffi_native_index_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **o
         int is_float = 0;
         if (!entry_number_scalar(index, &idx, &fv, &is_float) || is_float) return 0;
         if (idx < 0 || idx >= (Int)av->len) {
-            fprintf(stderr, "ffi.view: array index out of bounds\n");
+            fprintf(stderr, "memory.view: array index out of bounds\n");
             if (out) *out = vm->null_entry;
             return 1;
         }
@@ -3518,27 +3518,27 @@ int ffi_native_index_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *va
     Float fv = 0;
     int is_float = 0;
     if (!entry_number_scalar(index, &idx, &fv, &is_float) || is_float) {
-        fprintf(stderr, "ffi.view: array index must be integer\n");
+        fprintf(stderr, "memory.view: array index must be integer\n");
         return -1;
     }
     if (idx < 0 || idx >= (Int)av->len) {
-        fprintf(stderr, "ffi.view: array index out of bounds\n");
+        fprintf(stderr, "memory.view: array index out of bounds\n");
         return -1;
     }
     if (av->readonly || (av->elem_layout && av->elem_layout->is_const)) {
         if (vm->strict_mode) {
-            PANIC("ffi.view: write to const array element");
+            PANIC("memory.view: write to const array element");
         }
-        fprintf(stderr, "warning: ffi.view write to const array element ignored\n");
+        fprintf(stderr, "warning: memory.view write to const array element ignored\n");
         return 1;
     }
     if (av->elem_layout->kind != FFI_LAYOUT_PRIM) {
-        fprintf(stderr, "ffi.view: array assignment supports scalar elements only\n");
+        fprintf(stderr, "memory.view: array assignment supports scalar elements only\n");
         return -1;
     }
     uintptr_t addr = av->base_ptr + (size_t)idx * av->elem_layout->size;
     if (!ffi_store_prim_value(av->elem_layout->base, addr, value)) {
-        fprintf(stderr, "ffi.view: invalid value for array element\n");
+        fprintf(stderr, "memory.view: invalid value for array element\n");
         return -1;
     }
     return 1;
@@ -4556,7 +4556,7 @@ void native_ffi_compile(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 1) {
-        fprintf(stderr, "ffi.compile expects schema\n");
+        fprintf(stderr, "memory.compile expects schema\n");
         return;
     }
     ObjEntry *schema = ffi_native_arg(stack, argc, 0);
@@ -4585,18 +4585,18 @@ void native_ffi_new(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 1) {
-        fprintf(stderr, "ffi.new expects schema or compiled layout\n");
+        fprintf(stderr, "memory.new expects schema or compiled layout\n");
         return;
     }
     ObjEntry *schema_or_layout = ffi_native_arg(stack, argc, 0);
     char err[160] = {0};
     FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_or_layout, err, sizeof(err));
     if (!layout) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi: new failed");
+        fprintf(stderr, "%s\n", err[0] ? err : "memory: new failed");
         return;
     }
     if (layout->kind != FFI_LAYOUT_STRUCT) {
-        fprintf(stderr, "ffi.new expects struct schema/layout\n");
+        fprintf(stderr, "memory.new expects struct schema/layout\n");
         return;
     }
     size_t bytes = layout->size ? layout->size : 1;
@@ -4619,7 +4619,7 @@ void native_ffi_free(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 1) {
-        fprintf(stderr, "ffi.free expects ptr\n");
+        fprintf(stderr, "memory.free expects ptr\n");
         return;
     }
     ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
@@ -4639,7 +4639,7 @@ void native_ffi_free(VM *vm, List *stack, List *global)
     }
     uintptr_t ptr = 0;
     if (!ffi_entry_to_ptr(ptr_entry, &ptr)) {
-        fprintf(stderr, "ffi.free expects ptr\n");
+        fprintf(stderr, "memory.free expects ptr\n");
         return;
     }
     if (ptr) free((void*)ptr);
@@ -4651,14 +4651,14 @@ void native_ffi_sizeof(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 1) {
-        fprintf(stderr, "ffi.sizeof expects schema or compiled layout\n");
+        fprintf(stderr, "memory.sizeof expects schema or compiled layout\n");
         return;
     }
     ObjEntry *arg = ffi_native_arg(stack, argc, 0);
     char err[160] = {0};
     FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, arg, err, sizeof(err));
     if (!layout) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi: sizeof failed");
+        fprintf(stderr, "%s\n", err[0] ? err : "memory: sizeof failed");
         return;
     }
     ffi_push_entry(vm, vm_make_int_value(vm, (Int)layout->size));
@@ -4669,14 +4669,14 @@ void native_ffi_alignof(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 1) {
-        fprintf(stderr, "ffi.alignof expects schema or compiled layout\n");
+        fprintf(stderr, "memory.alignof expects schema or compiled layout\n");
         return;
     }
     ObjEntry *arg = ffi_native_arg(stack, argc, 0);
     char err[160] = {0};
     FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, arg, err, sizeof(err));
     if (!layout) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi: alignof failed");
+        fprintf(stderr, "%s\n", err[0] ? err : "memory: alignof failed");
         return;
     }
     ffi_push_entry(vm, vm_make_int_value(vm, (Int)layout->align));
@@ -4687,29 +4687,29 @@ void native_ffi_view(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 2) {
-        fprintf(stderr, "ffi.view expects ptr and schema/layout\n");
+        fprintf(stderr, "memory.view expects ptr and schema/layout\n");
         return;
     }
     ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
     ObjEntry *schema_or_layout = ffi_native_arg(stack, argc, 1);
     uintptr_t ptr = 0;
     if (!ffi_entry_to_ptr(ptr_entry, &ptr)) {
-        fprintf(stderr, "ffi.view expects ptr\n");
+        fprintf(stderr, "memory.view expects ptr\n");
         return;
     }
     char err[160] = {0};
     FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_or_layout, err, sizeof(err));
     if (!layout) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi: view failed");
+        fprintf(stderr, "%s\n", err[0] ? err : "memory: view failed");
         return;
     }
     if (layout->kind != FFI_LAYOUT_STRUCT) {
-        fprintf(stderr, "ffi.view expects struct schema/layout\n");
+        fprintf(stderr, "memory.view expects struct schema/layout\n");
         return;
     }
     ObjEntry *view = ffi_make_struct_view(vm, ptr, layout, 0, layout && layout->is_const);
     if (!view) {
-        fprintf(stderr, "ffi: failed to create view\n");
+        fprintf(stderr, "memory: failed to create view\n");
         return;
     }
     ffi_push_entry(vm, view);
@@ -4720,7 +4720,7 @@ void native_ffi_view_array(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 3) {
-        fprintf(stderr, "ffi.viewArray expects ptr, elemSpec, len\n");
+        fprintf(stderr, "memory.viewArray expects ptr, elemSpec, len\n");
         return;
     }
     ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
@@ -4728,20 +4728,20 @@ void native_ffi_view_array(VM *vm, List *stack, List *global)
     ObjEntry *len_entry = ffi_native_arg(stack, argc, 2);
     uintptr_t ptr = 0;
     if (!ffi_entry_to_ptr(ptr_entry, &ptr)) {
-        fprintf(stderr, "ffi.viewArray expects ptr\n");
+        fprintf(stderr, "memory.viewArray expects ptr\n");
         return;
     }
     Int iv = 0;
     Float fv = 0;
     int is_float = 0;
     if (!entry_number_scalar(len_entry, &iv, &fv, &is_float) || is_float || iv < 0 || iv > INT_MAX) {
-        fprintf(stderr, "ffi.viewArray expects non-negative integer len\n");
+        fprintf(stderr, "memory.viewArray expects non-negative integer len\n");
         return;
     }
     char err[160] = {0};
     FfiLayout *elem = ffi_layout_from_elem_spec(vm, elem_spec, err, sizeof(err));
     if (!elem) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi: viewArray failed");
+        fprintf(stderr, "%s\n", err[0] ? err : "memory: viewArray failed");
         return;
     }
     int elem_owned = ffi_layout_handle_from_entry(elem_spec) ? 0 : 1;
@@ -4750,7 +4750,7 @@ void native_ffi_view_array(VM *vm, List *stack, List *global)
         ffi_make_array_view_entry(vm, ptr, elem, (int)iv, elem && elem->is_const);
     if (!arr) {
         if (elem_owned) ffi_layout_free(elem);
-        fprintf(stderr, "ffi: failed to create array view\n");
+        fprintf(stderr, "memory: failed to create array view\n");
         return;
     }
     ffi_push_entry(vm, arr);
@@ -4761,14 +4761,14 @@ void native_ffi_offsetof(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 2) {
-        fprintf(stderr, "ffi.offsetof expects schema/layout and field path\n");
+        fprintf(stderr, "memory.offsetof expects schema/layout and field path\n");
         return;
     }
     ObjEntry *schema_or_layout = ffi_native_arg(stack, argc, 0);
     ObjEntry *path_entry = ffi_native_arg(stack, argc, 1);
     const char *path = NULL;
     if (!entry_as_cstr(path_entry, &path)) {
-        fprintf(stderr, "ffi.offsetof expects string path\n");
+        fprintf(stderr, "memory.offsetof expects string path\n");
         return;
     }
     size_t path_len = disturb_bytes_len(path_entry->obj);
@@ -4776,11 +4776,11 @@ void native_ffi_offsetof(VM *vm, List *stack, List *global)
     char err[160] = {0};
     FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_or_layout, err, sizeof(err));
     if (!layout) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi: offsetof failed");
+        fprintf(stderr, "%s\n", err[0] ? err : "memory: offsetof failed");
         return;
     }
     if (layout->kind != FFI_LAYOUT_STRUCT) {
-        fprintf(stderr, "ffi.offsetof expects struct schema/layout\n");
+        fprintf(stderr, "memory.offsetof expects struct schema/layout\n");
         return;
     }
 
@@ -4792,19 +4792,19 @@ void native_ffi_offsetof(VM *vm, List *stack, List *global)
         while (end < path_len && path[end] != '.') end++;
         size_t seg_len = end - start;
         if (seg_len == 0) {
-            fprintf(stderr, "ffi.offsetof invalid path\n");
+            fprintf(stderr, "memory.offsetof invalid path\n");
             return;
         }
         FfiLayoutField *field = ffi_layout_find_field(cur, path + start, seg_len);
         if (!field) {
-            fprintf(stderr, "ffi.offsetof unknown field in path\n");
+            fprintf(stderr, "memory.offsetof unknown field in path\n");
             return;
         }
         off += field->offset;
         cur = field->layout;
         if (end >= path_len) break;
         if (!cur || cur->kind != FFI_LAYOUT_STRUCT) {
-            fprintf(stderr, "ffi.offsetof path traverses non-struct field\n");
+            fprintf(stderr, "memory.offsetof path traverses non-struct field\n");
             return;
         }
         start = end + 1;
@@ -4818,7 +4818,7 @@ void native_ffi_buffer(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 1) {
-        fprintf(stderr, "ffi.buffer expects byte length\n");
+        fprintf(stderr, "memory.buffer expects byte length\n");
         return;
     }
     ObjEntry *len_entry = ffi_native_arg(stack, argc, 0);
@@ -4826,7 +4826,7 @@ void native_ffi_buffer(VM *vm, List *stack, List *global)
     Float fv = 0;
     int is_float = 0;
     if (!entry_number_scalar(len_entry, &iv, &fv, &is_float) || is_float || iv < 0) {
-        fprintf(stderr, "ffi.buffer expects non-negative integer length\n");
+        fprintf(stderr, "memory.buffer expects non-negative integer length\n");
         return;
     }
     size_t len = (size_t)iv;
@@ -4849,13 +4849,13 @@ void native_ffi_string(VM *vm, List *stack, List *global)
     (void)global;
     uint32_t argc = ffi_native_argc(vm);
     if (argc < 1) {
-        fprintf(stderr, "ffi.string expects ptr and optional len\n");
+        fprintf(stderr, "memory.string expects ptr and optional len\n");
         return;
     }
     ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
     uintptr_t ptr = 0;
     if (!ffi_entry_to_ptr(ptr_entry, &ptr)) {
-        fprintf(stderr, "ffi.string expects ptr\n");
+        fprintf(stderr, "memory.string expects ptr\n");
         return;
     }
     if (!ptr) {
@@ -4868,7 +4868,7 @@ void native_ffi_string(VM *vm, List *stack, List *global)
         Float fv = 0;
         int is_float = 0;
         if (!entry_number_scalar(len_entry, &iv, &fv, &is_float) || is_float || iv < 0) {
-            fprintf(stderr, "ffi.string len must be non-negative integer\n");
+            fprintf(stderr, "memory.string len must be non-negative integer\n");
             return;
         }
         ffi_push_entry(vm, vm_make_bytes_value(vm, (const char*)ptr, (size_t)iv));
@@ -4876,6 +4876,54 @@ void native_ffi_string(VM *vm, List *stack, List *global)
     }
     const char *s = (const char*)ptr;
     ffi_push_entry(vm, vm_make_bytes_value(vm, s, strlen(s)));
+}
+
+void native_memory_point(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "memory.point expects value\n");
+        return;
+    }
+
+    ObjEntry *value = ffi_native_arg(stack, argc, 0);
+    if (!value || !value->in_use || disturb_obj_type(value->obj) == DISTURB_T_NULL) {
+        ffi_push_entry(vm, vm_make_int_value(vm, 0));
+        return;
+    }
+
+    Int type = disturb_obj_type(value->obj);
+    if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
+        uintptr_t ptr = (uintptr_t)disturb_bytes_data(value->obj);
+        ffi_push_entry(vm, vm_make_int_value(vm, (Int)ptr));
+        return;
+    }
+
+    if (type == DISTURB_T_VIEW) {
+        ObjEntry *base = (ObjEntry*)value->obj->data[2].p;
+        if (!base || !base->in_use) {
+            ffi_push_entry(vm, vm_make_int_value(vm, 0));
+            return;
+        }
+        Int bt = disturb_obj_type(base->obj);
+        if (bt != DISTURB_T_INT && bt != DISTURB_T_FLOAT) {
+            ffi_push_entry(vm, vm_make_int_value(vm, 0));
+            return;
+        }
+        uintptr_t ptr = (uintptr_t)disturb_bytes_data(base->obj);
+        ffi_push_entry(vm, vm_make_int_value(vm, (Int)ptr));
+        return;
+    }
+
+    {
+        uintptr_t ptr = 0;
+        if (!ffi_entry_to_ptr(value, &ptr)) {
+            fprintf(stderr, "memory.point expects list/view/ptr\n");
+            return;
+        }
+        ffi_push_entry(vm, vm_make_int_value(vm, (Int)ptr));
+    }
 }
 
 static void ffi_add_module_fn(VM *vm, ObjEntry *ffi_entry, const char *name, NativeFn fn)
@@ -4895,16 +4943,22 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
     ffi_add_module_fn(vm, ffi_entry, "bind", native_ffi_bind);
     ffi_add_module_fn(vm, ffi_entry, "callback", native_ffi_callback);
 #endif
-    ffi_add_module_fn(vm, ffi_entry, "compile", native_ffi_compile);
-    ffi_add_module_fn(vm, ffi_entry, "new", native_ffi_new);
-    ffi_add_module_fn(vm, ffi_entry, "free", native_ffi_free);
-    ffi_add_module_fn(vm, ffi_entry, "sizeof", native_ffi_sizeof);
-    ffi_add_module_fn(vm, ffi_entry, "alignof", native_ffi_alignof);
-    ffi_add_module_fn(vm, ffi_entry, "view", native_ffi_view);
-    ffi_add_module_fn(vm, ffi_entry, "viewArray", native_ffi_view_array);
-    ffi_add_module_fn(vm, ffi_entry, "offsetof", native_ffi_offsetof);
-    ffi_add_module_fn(vm, ffi_entry, "buffer", native_ffi_buffer);
-    ffi_add_module_fn(vm, ffi_entry, "string", native_ffi_string);
+}
+
+void memory_module_install(VM *vm, ObjEntry *memory_entry)
+{
+    if (!vm || !memory_entry) return;
+    ffi_add_module_fn(vm, memory_entry, "compile", native_ffi_compile);
+    ffi_add_module_fn(vm, memory_entry, "new", native_ffi_new);
+    ffi_add_module_fn(vm, memory_entry, "free", native_ffi_free);
+    ffi_add_module_fn(vm, memory_entry, "sizeof", native_ffi_sizeof);
+    ffi_add_module_fn(vm, memory_entry, "alignof", native_ffi_alignof);
+    ffi_add_module_fn(vm, memory_entry, "view", native_ffi_view);
+    ffi_add_module_fn(vm, memory_entry, "viewArray", native_ffi_view_array);
+    ffi_add_module_fn(vm, memory_entry, "offsetof", native_ffi_offsetof);
+    ffi_add_module_fn(vm, memory_entry, "buffer", native_ffi_buffer);
+    ffi_add_module_fn(vm, memory_entry, "string", native_ffi_string);
+    ffi_add_module_fn(vm, memory_entry, "point", native_memory_point);
 }
 
 #endif

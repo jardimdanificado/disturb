@@ -203,6 +203,7 @@ int ffi_view_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value
 int ffi_native_index_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out, size_t pc);
 int ffi_native_index_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc);
 void ffi_module_install(VM *vm, ObjEntry *ffi_entry);
+void memory_module_install(VM *vm, ObjEntry *memory_entry);
 #endif
 
 NativeFn vm_lookup_native(const char *name);

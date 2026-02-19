@@ -43,8 +43,6 @@ typedef enum {
     TOK_DOT,
     TOK_COMMA,
     TOK_COLON,
-    /* ; is mapped to COMMA by the scanner so it never appears here */
-    TOK_SEMI,  /* retained for backwards compatibility, but unused */
     TOK_EQ,
     TOK_QEQ,
     TOK_PLUS,
@@ -755,10 +753,8 @@ static Token next_token(Parser *p)
     case ',': t.kind = TOK_COMMA; break;
     case ':': t.kind = TOK_COLON; break;
     case ';':
-        /* semicolon is treated as a comma in the new syntax – statements are
-           comma‑terminated.  Keep the token kind for old bytecode compatibility
-           but the parser never expects TOK_SEMI any more. */
-        t.kind = TOK_COMMA;
+        parser_error(p, "';' is no longer supported; use ',' to separate statements");
+        t.kind = TOK_EOF;
         break;
     case '+':
         if (peek_char(p) == '+') {
@@ -1066,15 +1062,12 @@ static Expr *expr_new(Parser *p, ExprKind kind)
 }
 
 static Expr *parse_expr(Parser *p);
-static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, int *out_is_float,
-                                  TokenKind closing, const char *close_msg);
 static int parse_statement(Parser *p, Bytecode *bc);
 static int parse_switch_statement(Parser *p, Bytecode *bc);
 static int parse_switch_case(Parser *p, Bytecode *bc, const char *tmp_name, size_t tmp_len);
 static Expr *parse_func_literal(Parser *p);
 UNUSED_FN static Expr *parse_func_literal_with_first_arg(Parser *p, char *name, size_t len);
 static int emit_expr(Bytecode *bc, Parser *p, Expr *e);
-static Expr *parse_cast_list(Parser *p, TokenKind closing, const char *close_msg);
 static void parser_error(Parser *p, const char *fmt, ...);
 static int patch_jump(Bytecode *bc, Parser *p, size_t pos, size_t target);
 
@@ -1178,6 +1171,11 @@ static Expr *parse_primary(Parser *p)
                 } else {
                     saw_int = 1;
                 }
+                if (p->strict_mode && saw_int && saw_float) {
+                    parser_error(p, "strict mode: mixed int/float list");
+                    free(vals);
+                    return NULL;
+                }
                 
                 advance(p);
                 
@@ -1234,8 +1232,8 @@ static Expr *parse_primary(Parser *p)
     }
 
     if (p->current.kind == TOK_LBRACKET) {
-        advance(p);
-        return parse_cast_list(p, TOK_RBRACKET, "expected ']' to end list");
+        parser_error(p, "list literal with '[' is no longer supported; use space-separated numeric lists like: 1 2 3");
+        return NULL;
     }
 
     if (p->current.kind == TOK_LPAREN) {
@@ -1252,160 +1250,6 @@ static Expr *parse_primary(Parser *p)
 
     parser_error(p, "unexpected token");
     return NULL;
-}
-
-static Expr *parse_cast_list(Parser *p, TokenKind closing, const char *close_msg)
-{
-    double *vals = NULL;
-    int count = 0;
-    int is_float = 0;
-    if (parse_number_list_fast(p, &vals, &count, &is_float, closing, close_msg)) {
-        Expr *e = expr_new(p, EXPR_LITERAL_NUMBER_LIST);
-        if (!e) {
-            free(vals);
-            return NULL;
-        }
-        if (vals && !arena_track(&p->arena, vals)) {
-            parser_error(p, "out of memory");
-            free(vals);
-            return NULL;
-        }
-        e->as.num_list.items = vals;
-        e->as.num_list.count = count;
-        e->as.num_list.is_float = is_float;
-        return e;
-    }
-
-    Expr *e = expr_new(p, EXPR_CAST_LIST);
-    if (!e) return NULL;
-    Expr **items = NULL;
-    int item_count = 0;
-    int cap = 0;
-
-    if (p->current.kind != closing) {
-        for (;;) {
-            Expr *item = parse_expr(p);
-            if (!item) return NULL;
-            if (item_count == cap) {
-                int next = cap == 0 ? 4 : cap * 2;
-                Expr **tmp = (Expr**)realloc(items, (size_t)next * sizeof(Expr*));
-                if (!tmp) {
-                    parser_error(p, "out of memory");
-                    return NULL;
-                }
-                items = tmp;
-                cap = next;
-            }
-            items[item_count++] = item;
-
-            if (match(p, TOK_COMMA)) continue;
-            break;
-        }
-    }
-
-    if (!expect(p, closing, close_msg)) return NULL;
-    if (items && !arena_track(&p->arena, items)) {
-        parser_error(p, "out of memory");
-        return NULL;
-    }
-    e->as.cast_list.items = items;
-    e->as.cast_list.count = item_count;
-    return e;
-}
-
-static int parse_number_list_fast(Parser *p, double **out_vals, int *out_count, int *out_is_float,
-                                  TokenKind closing, const char *close_msg)
-{
-    Parser probe = *p;
-    probe.current.str = NULL;
-    probe.current.str_len = 0;
-
-    double *vals = NULL;
-    int count = 0;
-    int cap = 0;
-    int is_float = 0;
-    int saw_int = 0;
-    int saw_float = 0;
-    Token tok = probe.current;
-
-    if (tok.kind == closing) {
-        *out_vals = NULL;
-        *out_count = 0;
-        if (out_is_float) *out_is_float = 0;
-        return 1;
-    }
-
-    for (;;) {
-        if (tok.kind != TOK_NUMBER) {
-            token_free(&probe.current);
-            free(vals);
-            return 0;
-        }
-        if (count == cap) {
-            int next = cap == 0 ? 16 : cap * 2;
-            double *tmp = (double*)realloc(vals, (size_t)next * sizeof(double));
-            if (!tmp) {
-                token_free(&probe.current);
-                free(vals);
-                return 0;
-            }
-            vals = tmp;
-            cap = next;
-        }
-        vals[count++] = tok.number;
-        if (tok.is_float) {
-            is_float = 1;
-            saw_float = 1;
-        } else {
-            saw_int = 1;
-        }
-        if (p->strict_mode && saw_int && saw_float) {
-            token_free(&probe.current);
-            free(vals);
-            parser_error(p, "strict mode: mixed int/float list");
-            return 0;
-        }
-        advance(&probe);
-        tok = probe.current;
-        if (tok.kind == TOK_COMMA) {
-            advance(&probe);
-            tok = probe.current;
-            continue;
-        }
-        if (tok.kind == closing) break;
-        token_free(&probe.current);
-        free(vals);
-        return 0;
-    }
-
-    if (p->current.kind == closing) {
-        if (!expect(p, closing, close_msg)) {
-            free(vals);
-            return 0;
-        }
-    } else {
-        for (int i = 0; i < count; i++) {
-            if (p->current.kind != TOK_NUMBER) {
-                free(vals);
-                return 0;
-            }
-            advance(p);
-            if (i + 1 < count && !match(p, TOK_COMMA)) {
-                parser_error(p, "expected ',' between list items");
-                free(vals);
-                return 0;
-            }
-        }
-        if (!expect(p, closing, close_msg)) {
-            free(vals);
-            return 0;
-        }
-    }
-
-    *out_vals = vals;
-    *out_count = count;
-    if (out_is_float) *out_is_float = is_float;
-    return 1;
 }
 
 static int parse_block(Parser *p, Bytecode *bc)

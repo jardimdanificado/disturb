@@ -29,7 +29,7 @@ println(o.has("b")),
 
 println(o.has("a")),
 
-n = [1, 2],
+n = 1 2,
 n.push(3),
 println(n),
 

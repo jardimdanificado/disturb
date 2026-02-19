@@ -94,14 +94,14 @@ if (lib == null) {
   return 0,
 }
 
-layout = ffi.compile(schema),
+layout = memory.compile(schema),
 
-if (ffi.sizeof(layout) != lib.outer_sizeof()) { fail++, }
-if (ffi.offsetof(layout, "a") != lib.outer_off_a()) { fail++, }
-if (ffi.offsetof(layout, "b") != lib.outer_off_b()) { fail++, }
-if (ffi.offsetof(layout, "d") != lib.outer_off_d()) { fail++, }
-if (ffi.offsetof(layout, "d.a") != lib.outer_off_d() + lib.inner_off_a()) { fail++, }
-if (ffi.offsetof(layout, "d.b") != lib.outer_off_d() + lib.inner_off_b()) { fail++, }
+if (memory.sizeof(layout) != lib.outer_sizeof()) { fail++, }
+if (memory.offsetof(layout, "a") != lib.outer_off_a()) { fail++, }
+if (memory.offsetof(layout, "b") != lib.outer_off_b()) { fail++, }
+if (memory.offsetof(layout, "d") != lib.outer_off_d()) { fail++, }
+if (memory.offsetof(layout, "d.a") != lib.outer_off_d() + lib.inner_off_a()) { fail++, }
+if (memory.offsetof(layout, "d.b") != lib.outer_off_d() + lib.inner_off_b()) { fail++, }
 
 arr_schema = {
   head = "int32",
@@ -109,15 +109,15 @@ arr_schema = {
   f32s = "float[3]"
 },
 
-if (ffi.sizeof(arr_schema) != lib.arr_outer_sizeof()) { fail++, }
-if (ffi.offsetof(arr_schema, "head") != lib.arr_outer_off_head()) { fail++, }
-if (ffi.offsetof(arr_schema, "vals") != lib.arr_outer_off_vals()) { fail++, }
-if (ffi.offsetof(arr_schema, "f32s") != lib.arr_outer_off_f32s()) { fail++, }
+if (memory.sizeof(arr_schema) != lib.arr_outer_sizeof()) { fail++, }
+if (memory.offsetof(arr_schema, "head") != lib.arr_outer_off_head()) { fail++, }
+if (memory.offsetof(arr_schema, "vals") != lib.arr_outer_off_vals()) { fail++, }
+if (memory.offsetof(arr_schema, "f32s") != lib.arr_outer_off_f32s()) { fail++, }
 
-if (ffi.sizeof({ p = "int32[]" }) != ffi.sizeof({ p = "ptr" })) { fail++, }
+if (memory.sizeof({ p = "int32[]" }) != memory.sizeof({ p = "ptr" })) { fail++, }
 
 ptr = lib.make_outer(),
-v = ffi.view(ptr, layout),
+v = memory.view(ptr, layout),
 
 if (v.a != 0) { fail++, }
 if (v.d.a != 0) { fail++, }
@@ -139,7 +139,7 @@ if (v.d.a != -128) { fail++, }
 lib.free_outer(ptr),
 
 arr_ptr = lib.make_arr_outer(),
-arr_v = ffi.view(arr_ptr, arr_schema),
+arr_v = memory.view(arr_ptr, arr_schema),
 arr_v.vals[2] = 77,
 arr_v.f32s[1] = 1.5,
 if (lib.arr_outer_get_val(arr_ptr, 2) != 77) { fail++, }
@@ -160,16 +160,16 @@ add_std_default = ffi.bind(stdcall_ptr, "abi(default) i32 add_std_default(i32, i
 if (add_std_default(20, 22) != 42) { fail++, }
 
 ptr2 = lib.make_outer(),
-v2 = ffi.view(ptr2, layout),
+v2 = memory.view(ptr2, layout),
 v2.a = 10,
 v2.d.a = 2,
 v2.d.b = 3,
 if (lib.sum_outer_value(v2) != 15) { fail++, }
 lib.free_outer(ptr2),
 
-ptr3 = ffi.new(layout),
+ptr3 = memory.new(layout),
 if (ptr3 == 0) { fail++, }
-v3 = ffi.view(ptr3, layout),
+v3 = memory.view(ptr3, layout),
 if (v3.a != 0) { fail++, }
 if (v3.d.a != 0) { fail++, }
 if (v3.d.b != 0) { fail++, }
@@ -177,7 +177,7 @@ v3.a = 20,
 v3.d.a = 3,
 v3.d.b = 4,
 if (lib.sum_outer_value(v3) != 27) { fail++, }
-ffi.free(ptr3),
+memory.free(ptr3),
 
 ret = lib.make_outer_value(7, 1.5, 2, 9),
 if (ret.a != 7) { fail++, }
@@ -197,7 +197,7 @@ if (name_ptr != null) {
   name_c = ffi.bind(name_ptr, "cstring ffi_test_name()"),
   raw_name = name_c(),
   if (raw_name == null) { fail++, }
-  if (ffi.string(raw_name) != "ffi-test") { fail++, } // cstring return stays as raw C pointer.
+  if (memory.string(raw_name) != "ffi-test") { fail++, } // cstring return stays as raw C pointer.
 }
 
 u_test = {
@@ -215,61 +215,61 @@ ptr_test = {
   next = "pointer(outer)"
 },
 
-u_ptr = ffi.new(u_test),
-u_view = ffi.view(u_ptr, u_test),
+u_ptr = memory.new(u_test),
+u_view = memory.view(u_ptr, u_test),
 u_view.i = 4660,
 if (u_view.s != 4660) { fail++, }
-ffi.free(u_ptr),
+memory.free(u_ptr),
 
-bf_ptr = ffi.new(bf_test),
-bf_view = ffi.view(bf_ptr, bf_test),
+bf_ptr = memory.new(bf_test),
+bf_view = memory.view(bf_ptr, bf_test),
 bf_view.a = 5,
 bf_view.b = 17,
 if (bf_view.a != 5) { fail++, }
 if (bf_view.b != 17) { fail++, }
-ffi.free(bf_ptr),
+memory.free(bf_ptr),
 
-p_ptr = ffi.new(ptr_test),
-p_view = ffi.view(p_ptr, ptr_test),
-target_ptr = ffi.new(outer),
-target_view = ffi.view(target_ptr, outer),
+p_ptr = memory.new(ptr_test),
+p_view = memory.view(p_ptr, ptr_test),
+target_ptr = memory.new(outer),
+target_view = memory.view(target_ptr, outer),
 target_view.a = 88,
 p_view.next = target_ptr,
 if (p_view.next.a != 88) { fail++, }
-ffi.free(target_ptr),
-ffi.free(p_ptr),
+memory.free(target_ptr),
+memory.free(p_ptr),
 
-arr_ptr = ffi.new({ buf = "int32[4]" }),
-arr_view = ffi.viewArray(arr_ptr, "int32", 4),
+arr_ptr = memory.new({ buf = "int32[4]" }),
+arr_view = memory.viewArray(arr_ptr, "int32", 4),
 arr_view[2] = 77,
 if (arr_view[2] != 77) { fail++, }
-ffi.free(arr_ptr),
+memory.free(arr_ptr),
 
 const_schema = {
   a = "const int32",
   b = "int32"
 },
-const_ptr = ffi.new(const_schema),
-const_view = ffi.view(const_ptr, const_schema),
+const_ptr = memory.new(const_schema),
+const_view = memory.view(const_ptr, const_schema),
 const_view.a = 99,
 const_view.b = 11,
 if (const_view.a != 0) { fail++, }
 if (const_view.b != 11) { fail++, }
-ffi.free(const_ptr),
+memory.free(const_ptr),
 
-const_arr = ffi.viewArray(ffi.buffer(8), "const int32", 2),
+const_arr = memory.viewArray(memory.buffer(8), "const int32", 2),
 const_arr[0] = 55,
 if (const_arr[0] != 0) { fail++, }
 
-buf = ffi.buffer(4),
-bv = ffi.viewArray(buf, "u8", 4),
+buf = memory.buffer(4),
+bv = memory.viewArray(buf, "u8", 4),
 bv[0] = 104,
 bv[1] = 105,
 bv[2] = 0,
 bv[3] = 33,
-if (ffi.string(buf) != "hi") { fail++, }
-if (ffi.string(buf, 2) != "hi") { fail++, }
-ffi.free(buf),
+if (memory.string(buf) != "hi") { fail++, }
+if (memory.string(buf, 2) != "hi") { fail++, }
+memory.free(buf),
 
 cb = ffi.callback("i32 cb(i32, i32)", (a, b){ return a + b, }),
 if (lib.call_cb_i32(cb, 9, 4) != 13) { fail++, }

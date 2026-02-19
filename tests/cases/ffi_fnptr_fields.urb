@@ -60,11 +60,11 @@ if (lib == null) {
   return 0,
 }
 
-if (ffi.sizeof(holder) != lib.fn_holder_sizeof()) { fail++, }
-if (ffi.offsetof(holder, "cb") != lib.fn_holder_off_cb()) { fail++, }
+if (memory.sizeof(holder) != lib.fn_holder_sizeof()) { fail++, }
+if (memory.offsetof(holder, "cb") != lib.fn_holder_off_cb()) { fail++, }
 
-p = ffi.new(holder),
-v = ffi.view(p, holder),
+p = memory.new(holder),
+v = memory.view(p, holder),
 
 lib.fn_holder_set_add(p),
 f0 = v.cb,
@@ -78,5 +78,5 @@ v.cb = lib.get_add_i32_ptr(),
 f1 = v.cb,
 if (f1(10, 5) != 15) { fail++, }
 
-ffi.free(p),
+memory.free(p),
 println(fail),

@@ -70,7 +70,7 @@ if (lib == null) {
 }
 
 ptr = lib.make_outer(),
-v = ffi.view(ptr, schema),
+v = memory.view(ptr, schema),
 v.a = 45,
 v.d.b = 123,
 

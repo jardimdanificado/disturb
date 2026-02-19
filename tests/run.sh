@@ -97,6 +97,7 @@ run_negative() {
 
 run_negative assign_invalid
 run_negative missing_comma
+run_negative semicolon_alias_removed
 run_negative char_len
 run_negative key_on_non_object
 run_negative oob_index
@@ -119,7 +120,7 @@ if [ "${SKIP_FFI:-0}" = "1" ]; then
     probe_file="$(mktemp)"
     cat > "$probe_file" <<'EOF'
 s = { a = "int32" };
-println(ffi.sizeof(s));
+  println(memory.sizeof(s));
 EOF
     if ! "$BIN" "$probe_file" >/dev/null 2>/dev/null; then
       echo "embedded ffi core probe failed" >&2

@@ -65,8 +65,8 @@ if (lib == null) {
   return 0,
 }
 
-ptr = ffi.new(bits),
-v = ffi.view(ptr, bits),
+ptr = memory.new(bits),
+v = memory.view(ptr, bits),
 
 v.i = 42,
 println(lib.bits_take_value_i(v)),
@@ -77,4 +77,4 @@ println(v.i),
 ret = lib.make_bits_value_i(77),
 println(ret.i),
 
-ffi.free(ptr),
+memory.free(ptr),

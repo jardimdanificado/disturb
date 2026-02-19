@@ -37,7 +37,7 @@ ffi_bind_all = (path, ...sigs){
 },
 
 // ffi_auto_compile_optional.urb
-// ffi.compile is optional: passing a schema table auto-compiles/caches layout.
+// memory.compile is optional: passing a schema table auto-compiles/caches layout.
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
 
 inner = { a = "int8", b = "int16" },
@@ -66,14 +66,14 @@ if (lib == null) {
 
 ptr = lib.make_outer(),
 
-v = ffi.view(ptr, outer), // schema path (auto compile)
+v = memory.view(ptr, outer), // schema path (auto compile)
 v.a = 45,
 v.d.b = 11,
 println(lib.outer_get_a(ptr)),
 println(lib.inner_get_b(ptr)),
 
-layout = ffi.compile(outer), // still available when you want explicit handle
-v2 = ffi.view(ptr, layout),
+layout = memory.compile(outer), // still available when you want explicit handle
+v2 = memory.view(ptr, layout),
 println(v2.a),
 println(v2.d.b),
 

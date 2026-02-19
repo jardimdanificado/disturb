@@ -69,12 +69,12 @@ if (lib == null) {
 
 schema = outer,
 
-layout = ffi.compile(schema),
-println("sizeof: " + ffi.sizeof(layout).string),
-println("offsetof(d.b): " + ffi.offsetof(layout, "d.b").string),
+layout = memory.compile(schema),
+println("sizeof: " + memory.sizeof(layout).string),
+println("offsetof(d.b): " + memory.offsetof(layout, "d.b").string),
 
 ptr = lib.make_outer(),
-v = ffi.view(ptr, layout),
+v = memory.view(ptr, layout),
 
 v.a = 45,
 v.d.b = 45,

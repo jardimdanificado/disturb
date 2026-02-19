@@ -63,21 +63,21 @@ adder = ffi.callback("i32 cb(i32, i32)", (a, b){ return a + b, }),
 println(lib.call_cb_i32(adder, 20, 22)), // 42
 
 // Owned raw buffer + byte view + C string round-trip.
-buf = ffi.buffer(8),
-bytes = ffi.viewArray(buf, "u8", 8),
+buf = memory.buffer(8),
+bytes = memory.viewArray(buf, "u8", 8),
 bytes[0] = 72, // H
 bytes[1] = 105, // i
 bytes[2] = 0,
-println(ffi.string(buf)),     // "Hi"
+println(memory.string(buf)),     // "Hi"
 println(lib.cstr_len(buf)),   // 2
-ffi.free(buf),
+memory.free(buf),
 
 // Qualifiers in schema strings.
 s = { a = "const int32", b = "volatile int32", c = "restrict int32" },
-p = ffi.new(s),
-v = ffi.view(p, s),
+p = memory.new(s),
+v = memory.view(p, s),
 v.a = 123, // ignored in non-strict mode
 v.b = 7,
 v.c = 9,
 println(v.a, v.b, v.c), // 0 7 9
-ffi.free(p),
+memory.free(p),

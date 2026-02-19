@@ -86,17 +86,17 @@ if (lib == null) {
   return 0,
 }
 
-if (ffi.sizeof(bits) != lib.bits_sizeof()) { fail++, }
-if (ffi.offsetof(bits, "i") != lib.bits_off_i()) { fail++, }
-if (ffi.offsetof(bits, "f") != lib.bits_off_f()) { fail++, }
-if (ffi.offsetof(bits, "p") != lib.bits_off_p()) { fail++, }
+if (memory.sizeof(bits) != lib.bits_sizeof()) { fail++, }
+if (memory.offsetof(bits, "i") != lib.bits_off_i()) { fail++, }
+if (memory.offsetof(bits, "f") != lib.bits_off_f()) { fail++, }
+if (memory.offsetof(bits, "p") != lib.bits_off_p()) { fail++, }
 
-if (ffi.sizeof(holder) != lib.holder_sizeof()) { fail++, }
-if (ffi.offsetof(holder, "tag") != lib.holder_off_tag()) { fail++, }
-if (ffi.offsetof(holder, "payload") != lib.holder_off_payload()) { fail++, }
+if (memory.sizeof(holder) != lib.holder_sizeof()) { fail++, }
+if (memory.offsetof(holder, "tag") != lib.holder_off_tag()) { fail++, }
+if (memory.offsetof(holder, "payload") != lib.holder_off_payload()) { fail++, }
 
-bp = ffi.new(bits),
-bv = ffi.view(bp, bits),
+bp = memory.new(bits),
+bv = memory.view(bp, bits),
 
 bv.i = 42,
 if (lib.bits_take_value_i(bv) != 42) { fail++, }
@@ -110,23 +110,23 @@ if (lib.bits_read_hi(bv) != 123) { fail++, }
 ret = lib.make_bits_value_i(99),
 if (ret.i != 99) { fail++, }
 
-hp = ffi.new(holder),
-hv = ffi.view(hp, holder),
+hp = memory.new(holder),
+hv = memory.view(hp, holder),
 
 hv.tag = 7,
 hv.payload.i = 77,
 if (lib.holder_take_payload_i(hv) != 77) { fail++, }
 
-hp2 = ffi.new(holder_ptr),
-hv2 = ffi.view(hp2, holder_ptr),
+hp2 = memory.new(holder_ptr),
+hv2 = memory.view(hp2, holder_ptr),
 hv2.ref = bp,
 if (hv2.ref.i != bv.i) { fail++, }
 
 hv2.ref.i = -12,
 if (bv.i != -12) { fail++, }
 
-ffi.free(hp),
-ffi.free(hp2),
-ffi.free(bp),
+memory.free(hp),
+memory.free(hp2),
+memory.free(bp),
 
 println(fail),

@@ -40,8 +40,8 @@ ffi_bind_all = (path, ...sigs){
 // Demonstrates:
 // - struct(schema) (by-value)
 // - pointer(schema) (typed pointer)
-// - ffi.new / ffi.free
-// - ffi.view on allocated memory
+// - memory.new / memory.free
+// - memory.view on allocated memory
 
 inner = {
   a = "int8",
@@ -73,25 +73,25 @@ if (lib == null) {
   return 0,
 }
 
-layout = ffi.compile(outer),
+layout = memory.compile(outer),
 
 // pointer(outer) from C
 ptr_c = lib.make_outer(),
-v_c = ffi.view(ptr_c, layout),
+v_c = memory.view(ptr_c, layout),
 v_c.a = 11,
 v_c.d.b = 22,
 println("c ptr -> a: " + lib.outer_get_a(ptr_c).string),
 println("c ptr -> d.b: " + lib.inner_get_b(ptr_c).string),
 lib.free_outer(ptr_c),
 
-// pointer from ffi.new + ffi.free
-ptr_new = ffi.new(layout),
-v_new = ffi.view(ptr_new, layout),
+// pointer from memory.new + memory.free
+ptr_new = memory.new(layout),
+v_new = memory.view(ptr_new, layout),
 v_new.a = 30,
 v_new.d.a = 4,
 v_new.d.b = 5,
 println("new ptr sum: " + lib.sum_outer_value(v_new).string),
-ffi.free(ptr_new),
+memory.free(ptr_new),
 
 // struct(outer) returned by value
 ret = lib.make_outer_value(7, 1.5, 2, 9),

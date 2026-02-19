@@ -66,21 +66,21 @@ if (lib == null) {
   return 0,
 }
 
-layout = ffi.compile(outer),
+layout = memory.compile(outer),
 
-if (ffi.sizeof(outer) != ffi.sizeof(layout)) { fail++, }
-if (ffi.alignof(outer) != ffi.alignof(layout)) { fail++, }
-if (ffi.offsetof(outer, "a") != ffi.offsetof(layout, "a")) { fail++, }
-if (ffi.offsetof(outer, "d.b") != ffi.offsetof(layout, "d.b")) { fail++, }
+if (memory.sizeof(outer) != memory.sizeof(layout)) { fail++, }
+if (memory.alignof(outer) != memory.alignof(layout)) { fail++, }
+if (memory.offsetof(outer, "a") != memory.offsetof(layout, "a")) { fail++, }
+if (memory.offsetof(outer, "d.b") != memory.offsetof(layout, "d.b")) { fail++, }
 
-if (ffi.sizeof(outer) != lib.outer_sizeof()) { fail++, }
-if (ffi.offsetof(outer, "a") != lib.outer_off_a()) { fail++, }
-if (ffi.offsetof(outer, "d") != lib.outer_off_d()) { fail++, }
-if (ffi.offsetof(outer, "d.b") != (lib.outer_off_d() + lib.inner_off_b())) { fail++, }
+if (memory.sizeof(outer) != lib.outer_sizeof()) { fail++, }
+if (memory.offsetof(outer, "a") != lib.outer_off_a()) { fail++, }
+if (memory.offsetof(outer, "d") != lib.outer_off_d()) { fail++, }
+if (memory.offsetof(outer, "d.b") != (lib.outer_off_d() + lib.inner_off_b())) { fail++, }
 
 ptr = lib.make_outer(),
-v_schema = ffi.view(ptr, outer),  // auto compile path
-v_layout = ffi.view(ptr, layout), // precompiled path
+v_schema = memory.view(ptr, outer),  // auto compile path
+v_layout = memory.view(ptr, layout), // precompiled path
 
 v_schema.a = 31,
 v_layout.d.b = 9,

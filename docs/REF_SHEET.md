@@ -27,7 +27,6 @@ make
 - char: `'a'` (single byte only)
 - string: `"abc"`
 - numeric list shorthand: `1 2 3`
-- list (general form): `[1, 2, 3]`
 - table: `{a = 1, b = "x"}`
 - special: `null`, `inf`
 
@@ -88,7 +87,7 @@ sum = (a, b = 1, ...rest){ return a + b, }
 
 - varargs must be last
 - missing non-default arg becomes `null`
-- `return;` returns `null`
+- `return,` returns `null`
 - `local` is available in lambda scope
 
 ## Access and Indexing
@@ -153,8 +152,8 @@ global.gc.strict = 0,
 ## Modules
 
 ```disturb
-m = import("tests/modules/math.urb");
-p = import("tests/modules/pkg"); // loads tests/modules/pkg/pkg.urb
+m = import("tests/modules/math.urb"),
+p = import("tests/modules/pkg"), // loads tests/modules/pkg/pkg.urb
 ```
 
 - module runs in isolated VM
@@ -191,35 +190,9 @@ Flags:
 Always available (core FFI is always enabled).
 
 Main API:
-- `ffi.open(path)`
-- `ffi.sym(lib, name)`
-- `ffi.close(lib)`
-- `ffi.bind(ptr, sig)`
-- `ffi.callback(sig, lambda)`
-- `ffi.compile(schema)`
-- `ffi.new(schemaOrLayout)` (allocates zeroed struct memory; returns owned pointer handle)
-- `ffi.free(ptr)`
-- `ffi.buffer(len)` (owned raw buffer)
-- `ffi.string(ptr[, len])`
-- `ffi.sizeof(...)`
-- `ffi.alignof(...)`
-- `ffi.offsetof(..., "field.path")`
-- `ffi.view(ptr, schemaOrLayout)`
-- `ffi.viewArray(ptr, elemSpec, len)`
-- `ffi.compile(schema)` is optional: schema tables are auto-compiled/cached when accepted.
-- signatures: `struct(schema)`, `union(schema)`, `pointer(schema)`, `void*` (raw), nested pointer depth via `pointer(pointer(...))`
-- `string` vs `cstring`/`cstr`:
+- `memory.point(value)`
   - `string`: marshals to/from Disturb string values
-  - `cstring`/`cstr`: raw C pointer behavior
-- optional ABI prefix in signature: `abi(name)` or bare ABI (`cdecl`, `stdcall`, `fastcall`, `thiscall`, `win64`, `unix64`, `sysv`)
-- schema fields support composition with strings: `"struct(name)"`, `"union(name)"`, `"pointer(name)"`
-- function pointer fields: `"function(signature)"` (example: `"function(i32 cb(i32, i32))"`; `"fn(...)"` alias accepted)
-- bitfield declaration: `"uint8:3"`, `"uint32:5"` (inside struct)
-- union declaration: `__meta = { union = 1 }`
-- qualifiers accepted: `const`, `volatile`, `restrict`
-- variadic signatures: `...` (in `ffi.bind`)
-- callbacks support scalars and by-value struct/union signatures (callback variadics remain unsupported)
-- `const` writes in views:
+  - `cstring`: raw C pointer behavior
   - strict off: warning + ignored write
   - strict on: panic/abort
 

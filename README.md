@@ -114,7 +114,6 @@ Supported literal forms:
 - char: `'a'` (must be exactly one byte)
 - string: `"abc"`
 - numeric list shorthand: `1 2 3`
-- list (general form): `[1, 2, 3]`
 - table: `{a = 1, b = "x"}`
 
 Special global:
@@ -213,7 +212,7 @@ Rules:
 ### Function/lambda definition
 
 ```disturb
-add = (a, b){ return a + b; };
+add = (a, b){ return a + b, }
 ```
 
 Parameters:
@@ -223,8 +222,8 @@ Parameters:
 - missing non-default params become `null`
 
 Returns:
-- `return expr;`
-- `return;` returns `null`
+- `return expr,`
+- `return,` returns `null`
 
 Calls:
 - regular call: `add(1, 2)`
@@ -254,10 +253,10 @@ Switch behavior:
 Assignment shares references:
 
 ```disturb
-a = {x = 1, y = {z = 2}};
-b = a;
-b.y.z = 9;
-println(a.y.z); // 9
+a = {x = 1, y = {z = 2}},
+b = a,
+b.y.z = 9,
+println(a.y.z), // 9
 ```
 
 Copy helpers:
@@ -265,8 +264,8 @@ Copy helpers:
 - `copy()` deep copy
 
 ```disturb
-c = a.clone();
-d = a.copy();
+c = a.clone(),
+d = a.copy(),
 ```
 
 ## Meta Properties
@@ -279,9 +278,9 @@ Each entry exposes metadata fields:
 - `.capacity`
 
 Common uses:
-- inspect runtime shape: `println(x.type);`
-- resize containers: `x.size = 10;`, `x.capacity = 32;`
-- replace value while keeping identity slot: `x.value = {...};`
+- inspect runtime shape: `println(x.type),`
+- resize containers: `x.size = 10,`, `x.capacity = 32,`
+- replace value while keeping identity slot: `x.value = {...},`
 
 Important constraints:
 - `.name` expects string or `null`
@@ -293,15 +292,15 @@ Important constraints:
 Strict directives:
 
 ```disturb
-use strict;
-use nostrict;
+use strict,
+use nostrict,
 ```
 
 Accepted forms:
-- `use strict;`
-- `use "strict";`
-- `use nostrict;`
-- `use "nostrict";`
+- `use strict,`
+- `use "strict",`
+- `use nostrict,`
+- `use "nostrict",`
 
 Effects:
 - parser strictness from directive point onward
@@ -318,8 +317,8 @@ Strict mode rules:
 Runtime toggle:
 
 ```disturb
-global.gc.strict = 1;
-global.gc.strict = 0;
+global.gc.strict = 1,
+global.gc.strict = 0,
 ```
 
 ## Built-in Functions and Methods
@@ -398,9 +397,9 @@ CLI arguments are exposed as globals:
 Example:
 
 ```disturb
-println(argc);
-println(args.pretty());
-println(arg_0);
+println(argc),
+println(args.pretty()),
+println(arg_0),
 ```
 
 ## Modules (`import`)
@@ -421,9 +420,9 @@ Examples:
 Compile and run from source text:
 
 ```disturb
-bc = parse("println(1 + 2);");
-println(emit(bc));
-evalBytecode(bc);
+bc = parse("println(1 + 2),"),
+println(emit(bc)),
+evalBytecode(bc),
 ```
 
 Assembler/disassembler example is provided in:
@@ -481,21 +480,23 @@ Main API:
 - `ffi.close(libHandle)`
 - `ffi.bind(ptr, "signature")`
 - `ffi.callback("signature", lambda)`
-- `ffi.compile(schema)`
-- `ffi.new(schemaOrLayout)`
-- `ffi.free(ptr)`
-- `ffi.buffer(len)`
-- `ffi.string(ptr)` / `ffi.string(ptr, len)`
-- `ffi.sizeof(schemaOrLayout)`
-- `ffi.alignof(schemaOrLayout)`
-- `ffi.offsetof(schemaOrLayout, "field.path")`
-- `ffi.view(ptr, schemaOrLayout)`
-- `ffi.viewArray(ptr, elemSpec, len)`
+- `memory.compile(schema)`
+- `memory.new(schemaOrLayout)`
+- `memory.free(ptr)`
+- `memory.buffer(len)`
+- `memory.string(ptr)` / `memory.string(ptr, len)`
+- `memory.point(value)`
+- `memory.sizeof(schemaOrLayout)`
+- `memory.alignof(schemaOrLayout)`
+- `memory.offsetof(schemaOrLayout, "field.path")`
+- `memory.view(ptr, schemaOrLayout)`
+- `memory.viewArray(ptr, elemSpec, len)`
 
 Notes:
 - Two-step loading is supported via `ffi.open` + `ffi.sym` + `ffi.bind`.
-- `ffi.compile(schema)` is optional for normal use.
-- `ffi.view/sizeof/alignof/offsetof/new` accept either a schema table or a compiled layout handle; schema tables are auto-compiled and cached internally.
+- `memory.compile(schema)` is optional for normal use.
+- `memory.view/sizeof/alignof/offsetof/new` accept either a schema table or a compiled layout handle; schema tables are auto-compiled and cached internally.
+- `memory.point(value)` returns a numeric pointer for list/view data or existing pointer-like FFI values (`null` maps to `0`).
 
 Signature struct typing:
 - by-value struct: `struct(schema)` (example: `i32 sum(struct(outer))`)
@@ -505,7 +506,7 @@ Signature struct typing:
 - pointer depth in signatures must use nested `pointer(...)` (example: `pointer(pointer(i32))`)
 - string-ish types:
   - `string`: marshals to/from Disturb strings
-  - `cstring`/`cstr`: raw C pointer semantics (use `ffi.string(ptr)` when needed)
+  - `cstring`: raw C pointer semantics (use `memory.string(ptr)` when needed)
 - optional ABI prefix in signatures: `abi(name)` or bare ABI name (`cdecl`, `stdcall`, `fastcall`, `thiscall`, `win64`, `unix64`, `sysv`)
 
 Schema composition:
@@ -522,8 +523,8 @@ Const behavior in views:
 - strict mode: aborts with panic
 
 Ownership:
-- `ffi.new` returns an owned pointer handle (GC releases memory if unreachable)
-- `ffi.free(ptr)` can free explicitely (works with owned handles and raw pointers)
+- `memory.new` returns an owned pointer handle (GC releases memory if unreachable)
+- `memory.free(ptr)` can free explicitely (works with owned handles and raw pointers)
 
 Supported workflow:
 - call C functions
@@ -542,45 +543,6 @@ Examples:
 - `example/ffi_callbacks_varargs_buffers.urb`
 - `example/ffi_fnptr_fields.urb`
 - `example/ffi_auto_compile_optional.urb`
-
-Raylib wrapper:
-- `lib/raylib.urb` exposes `raylib` core API via FFI (`raylib.load(path?)`)
-- Official raylib core ports:
-  - `example/raylib/core_basic_window.urb`
-  - `example/raylib/core_input_keys.urb`
-  - `example/raylib/core_input_mouse.urb`
-  - `example/raylib/core_input_mouse_wheel.urb`
-  - `example/raylib/core_random_values.urb`
-  - `example/raylib/core_basic_screen_manager.urb`
-  - `example/raylib/core_input_actions.urb`
-  - `example/raylib/core_scissor_test.urb`
-  - `example/raylib/core_render_texture.urb`
-  - `example/raylib/core_input_multitouch.urb`
-  - `example/raylib/core_2d_camera.urb`
-  - `example/raylib/core_2d_camera_mouse_zoom.urb`
-  - `example/raylib/core_input_gestures.urb`
-  - `example/raylib/core_monitor_detector.urb`
-  - `example/raylib/core_viewport_scaling.urb`
-  - `example/raylib/core_delta_time.urb`
-  - `example/raylib/core_window_should_close.urb`
-  - `example/raylib/core_window_flags.urb`
-  - `example/raylib/core_window_letterbox.urb`
-  - `example/raylib/shapes_basic_shapes.urb`
-  - `example/raylib/shapes_bouncing_ball.urb`
-  - `example/raylib/shapes_collision_area.urb`
-  - `example/raylib/shapes_rectangle_scaling.urb`
-  - `example/raylib/shapes_lines_bezier.urb`
-  - `example/raylib/shapes_lines_drawing.urb`
-  - `example/raylib/shapes_dashed_line.urb`
-  - `example/raylib/shapes_following_eyes.urb`
-  - `example/raylib/shapes_mouse_trail.urb`
-  - `example/raylib/shapes_logo_raylib.urb`
-  - `example/raylib/shapes_logo_raylib_anim.urb`
-  - `example/raylib/shapes_colors_palette.urb`
-- If auto-load fails, pass explicit shared library path:
-  - Linux: `raylib.load("../raylib/build/raylib/libraylib.so")`
-  - macOS: `raylib.load("./raylib/src/libraylib.dylib")`
-  - Windows: `raylib.load("./raylib/src/raylib.dll")`
 
 ## Tests
 

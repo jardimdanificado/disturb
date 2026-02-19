@@ -1,5 +1,5 @@
 // Meta fields are accessed via string keys.
-obj = {alpha = "test", beta = [1, 2, 3]},
+obj = {alpha = "test", beta = 1 2 3},
 
 // name/type/size/capacity come from meta.
 println(obj.name),

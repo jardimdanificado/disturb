@@ -2,8 +2,10 @@
 
 ## unreleased
 - add numeric list shorthand syntax without brackets: `a = 1 2 3,`.
-- keep bracket list syntax available, while documenting space-separated numeric list form as primary shorthand.
+- remove bracket list literals (`[1, 2, 3]`) from the language; use only space-separated numeric lists.
+- remove semicolon (`;`) compatibility alias for statement separation; only comma (`,`) is accepted.
 - numeric operators now work element-wise on numeric lists (arithmetic, bitwise, unary, and comparisons).
+- add `memory.point(value)` helper to expose numeric pointers for list/view data and pointer-like FFI values (`null` -> `0`).
 
 ## 1.5.0
 - language overhaul: statements separated by commas instead of terminating semicolons (`a = 1, b = 2`).  Semicolons are still lexed (mapped to commas) for compatibility but no longer required or emitted.
@@ -23,7 +25,7 @@
 - replace FFI by-value struct syntax `struct<schema>` with `struct(schema)` in signatures and schema composition strings.
 - add distinct string-pointer semantics in signatures:
   - `string`: marshals as Disturb string values
-  - `cstring`/`cstr`: raw C pointer behavior
+  - `cstring`: raw C pointer behavior
 - unify build profile flags into `DISABLE_IO`:
   - `DISABLE_IO=0` (default): IO natives + dynamic FFI calls enabled
   - `DISABLE_IO=1`: embedded profile (`DISTURB_EMBEDDED`), IO off, dynamic FFI calls off
@@ -44,8 +46,8 @@
 - update build option descriptions to reflect new dynamic-call API wording (`ffi.open`/`ffi.sym`/`ffi.bind`) in `CMakeLists.txt`.
 
 ## 1.2.1
-- add function pointer fields in schemas via `function(signature)` (example: `cb = "function(i32 cb(i32, i32))"`; `fn(...)` kept as alias), including read-as-bound-callable in `ffi.view` and assignment from C pointers or `ffi.callback(...)`.
-- make schema compilation automatic in FFI call sites that accept schema/layout (`ffi.view`, `ffi.new`, `ffi.sizeof`, `ffi.alignof`, `ffi.offsetof`); `ffi.compile` remains available as optional explicit step.
+- add function pointer fields in schemas via `function(signature)` (example: `cb = "function(i32 cb(i32, i32))"`; `fn(...)` kept as alias), including read-as-bound-callable in `memory.view` and assignment from C pointers or `ffi.callback(...)`.
+- make schema compilation automatic in FFI call sites that accept schema/layout (`memory.view`, `memory.new`, `memory.sizeof`, `memory.alignof`, `memory.offsetof`); `memory.compile` remains available as optional explicit step.
 - add dedicated FFI function-pointer-field test coverage: `ffi_fnptr_fields`.
 - add dedicated FFI auto-compile coverage: `ffi_auto_compile`.
 - skip `ffi_union` case on MinGW/MSYS CI targets due platform-specific by-value union ABI differences in libffi; keep coverage on Unix targets.
@@ -55,29 +57,29 @@
 - include `docs/` and `example/` directories in all release artifacts.
 - add function-pointer-field example: `example/ffi_fnptr_fields.urb`.
 - add optional compile example: `example/ffi_auto_compile_optional.urb`.
-- update docs to make `ffi.compile` optional in common flows and document `function(...)` (`fn(...)` alias accepted).
+- update docs to make `memory.compile` optional in common flows and document `function(...)` (`fn(...)` alias accepted).
 
 ## 1.2.0
 - change lambda vararg syntax from `name...` to `...name`; old trailing form now errors with guidance (`invalid vararg syntax: use '...name'`).
 - fix lambda callback resolution in calls: when calling `a()` inside a lambda, call target lookup now checks local scope before global scope, so callback args work without `local.a()`.
-- add `ffi.new(schemaOrLayout)` to allocate zeroed struct memory and return a numeric pointer for use with `ffi.view(...)`.
-- add `ffi.free(ptr)` to release memory allocated with `ffi.new`.
+- add `memory.new(schemaOrLayout)` to allocate zeroed struct memory and return a numeric pointer for use with `memory.view(...)`.
+- add `memory.free(ptr)` to release memory allocated with `memory.new`.
 - change FFI struct signature syntax to `struct(schema)` (by-value) and `pointer(schema)` (typed pointer); remove legacy `@schema`.
 - keep `void*` for raw/generic pointers in signatures.
 - require schema field declarations to be type strings; nested inline schema tables in field values are rejected.
 - add schema unions (`__meta = { union = 1 }`) and bitfields (`"type:bits"`).
-- add `ffi.viewArray(ptr, elemSpec, len)` for array views over raw/typed pointers.
+- add `memory.viewArray(ptr, elemSpec, len)` for array views over raw/typed pointers.
 - make pointer-submember access in views return nested views when field type is `pointer(schema)`.
-- make `ffi.new` allocations owned by GC (via pointer handles), with optional manual release via `ffi.free`.
+- make `memory.new` allocations owned by GC (via pointer handles), with optional manual release via `memory.free`.
 - add `ENABLE_EMBEDDED=1` build profile to disable features not suitable for Arduino-like targets (IO natives, dynamic FFI calls `ffi.load`/`ffi.bind`, and `import`) while keeping FFI core APIs.
 - add CMake build support and a Windows MSVC CI job (`windows-msvc`) validating build/tests with `ENABLE_FFI_CALLS=OFF`.
 - update manual release workflow to publish explicit Windows artifacts for both toolchains: `disturb-vX.Y.Z-windows-x64-mingw.zip` and `disturb-vX.Y.Z-windows-x64-msvc.zip`.
-- add/adjust tests for new vararg syntax, lambda callback behavior, new FFI signature forms, and `ffi.new`/`ffi.free` flow in FFI struct tests.
+- add/adjust tests for new vararg syntax, lambda callback behavior, new FFI signature forms, and `memory.new`/`memory.free` flow in FFI struct tests.
 - add FFI qualifiers support for signatures/schema type strings: `const`, `volatile`, `restrict` (with `const` write-protection on views).
 - enforce `const` writes in FFI views/array-views: strict mode now aborts, non-strict prints warning and ignores the write.
 - add FFI variadic call support (`...`) in `ffi.bind`/`ffi.load` signatures with runtime vararg type inference.
 - add `ffi.callback(signature, lambda)` to expose lambda callbacks as C function pointers via libffi closures.
-- add `ffi.buffer(len)` and `ffi.string(ptr[,len])` helpers for pointer/string/buffer ergonomics.
+- add `memory.buffer(len)` and `memory.string(ptr[,len])` helpers for pointer/string/buffer ergonomics.
 - add dedicated FFI regression coverage: `ffi_varargs`, `ffi_callbacks`, `ffi_buffers_strings`, `ffi_const_views`, and strict-mode negative test `ffi_const_write_strict`.
 - add new examples for advanced FFI flows: `example/ffi_callbacks_varargs_buffers.urb` and `example/guide/15_ffi_callbacks_varargs_buffers.urb`.
 - update docs/examples to reflect vararg, FFI signature, and memory APIs.
@@ -95,7 +97,7 @@
   - non-`.urb` paths load `path/<basename(path)>.urb`;
   - module code runs isolated and exports through top-level `return`;
   - imports are cached per resolved path.
-- add FFI struct view system with automatic C-like layout compiler (padding/alignment), nested schemas, and live pointer-backed field access (`ffi.compile`, `ffi.sizeof`, `ffi.alignof`, `ffi.view`, `ffi.offsetof`).
+- add FFI struct view system with automatic C-like layout compiler (padding/alignment), nested schemas, and live pointer-backed field access (`memory.compile`, `memory.sizeof`, `memory.alignof`, `memory.view`, `memory.offsetof`).
 - add string-based schema types for FFI struct views (e.g. `"int32"`, `"float64"`, `"ptr"`), with support for `__meta.packed`, `__meta.align`, and `__order`.
 - add string-based schema array syntax: `"int64[8]"` (fixed inline array) and `"int32[]"` (unsized/pointer-style).
 - add FFI struct integration test using a dedicated shared C fixture (`tests/ffi/ffi_view_struct.c`) plus runtime test-case wiring in `tests/run.sh`.

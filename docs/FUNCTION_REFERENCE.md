@@ -318,21 +318,22 @@ Primary APIs used by examples/tests:
 - `ffi.close(libHandle)`
 - `ffi.bind(ptr, sig)`
 - `ffi.callback(sig, lambda)` (builds C callback pointer from lambda)
-- `ffi.compile(schema)`
-- `ffi.new(schemaOrLayout)` (allocates zeroed struct memory and returns owned pointer handle)
-- `ffi.free(ptr)`
-- `ffi.buffer(len)` (owned raw byte buffer)
-- `ffi.string(ptr)` / `ffi.string(ptr, len)`
-- `ffi.sizeof(schemaOrLayout)`
-- `ffi.alignof(schemaOrLayout)`
-- `ffi.offsetof(schemaOrLayout, "field.path")`
-- `ffi.view(ptr, schemaOrLayout)`
-- `ffi.viewArray(ptr, elemSpec, len)`
-- `ffi.compile(schema)` is optional in common flows; schema tables are auto-compiled/cached when passed to `ffi.view`, `ffi.sizeof`, `ffi.alignof`, `ffi.offsetof`, and `ffi.new`.
+- `memory.compile(schema)`
+- `memory.new(schemaOrLayout)` (allocates zeroed struct memory and returns owned pointer handle)
+- `memory.free(ptr)`
+- `memory.buffer(len)` (owned raw byte buffer)
+- `memory.string(ptr)` / `memory.string(ptr, len)`
+- `memory.point(value)` (returns numeric pointer; supports numeric/string lists, numeric views, and pointer-like FFI values)
+- `memory.sizeof(schemaOrLayout)`
+- `memory.alignof(schemaOrLayout)`
+- `memory.offsetof(schemaOrLayout, "field.path")`
+- `memory.view(ptr, schemaOrLayout)`
+- `memory.viewArray(ptr, elemSpec, len)`
+- `memory.compile(schema)` is optional in common flows; schema tables are auto-compiled/cached when passed to `memory.view`, `memory.sizeof`, `memory.alignof`, `memory.offsetof`, and `memory.new`.
 - signatures support: `struct(schema)` (by-value struct), `union(schema)` (by-value union), `pointer(schema)` (typed pointer), `void*` (raw pointer), pointer depth via `pointer(pointer(...))`
 - string-like types in signatures:
   - `string`: marshaled as Disturb string
-  - `cstring`/`cstr`: raw C pointer value
+  - `cstring`: raw C pointer value
 - optional ABI prefix in signature: `abi(name)` or bare ABI keyword (`cdecl`, `stdcall`, `fastcall`, `thiscall`, `win64`, `unix64`, `sysv`)
 - schema field declarations are strings only; compose with `"struct(name)"`, `"union(name)"`, and `"pointer(name)"`
 - function pointer fields: `"function(signature)"` (example: `"function(i32 cb(i32, i32))"`; `"fn(...)"` alias accepted)

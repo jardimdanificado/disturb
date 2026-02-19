@@ -1,2 +1,2 @@
-numbers = [256],
+numbers = 256 0,
 numbers.toInt(),

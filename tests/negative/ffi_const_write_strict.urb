@@ -1,5 +1,5 @@
 use strict,
 s = { a = "const int32" },
-p = ffi.new(s),
-v = ffi.view(p, s),
+p = memory.new(s),
+v = memory.view(p, s),
 v.a = 1,

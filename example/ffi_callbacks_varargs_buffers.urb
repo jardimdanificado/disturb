@@ -57,19 +57,19 @@ println("sum variadic:", lib.sum_variadic_i32(4, 10, 20, 30, 40)),
 cb = ffi.callback("i32 cb(i32, i32)", (a, b){ return a + b, }),
 println("callback:", lib.call_cb_i32(cb, 7, 5)),
 
-buf = ffi.buffer(5),
-arr = ffi.viewArray(buf, "u8", 5),
+buf = memory.buffer(5),
+arr = memory.viewArray(buf, "u8", 5),
 arr[0] = 79, // 'O'
 arr[1] = 75, // 'K'
 arr[2] = 0,
-println("ffi.string:", ffi.string(buf)),
+println("memory.string:", memory.string(buf)),
 println("cstr_len:", lib.cstr_len(buf)),
-ffi.free(buf),
+memory.free(buf),
 
 schema = { a = "const int32", b = "int32" },
-p = ffi.new(schema),
-v = ffi.view(p, schema),
+p = memory.new(schema),
+v = memory.view(p, schema),
 v.a = 99, // ignored (non-strict warning)
 v.b = 11,
 println("const view:", v.a, v.b),
-ffi.free(p),
+memory.free(p),

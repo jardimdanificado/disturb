@@ -2774,6 +2774,12 @@ void vm_init(VM *vm)
     ObjEntry *ffi_entry = vm_reg_alloc(vm, ffi_obj);
     vm_global_add(vm, ffi_entry);
     ffi_module_install(vm, ffi_entry);
+
+    ObjEntry *memory_key = vm_make_key(vm, "memory");
+    List *memory_obj = vm_alloc_list(vm, DISTURB_T_TABLE, memory_key, 24);
+    ObjEntry *memory_entry = vm_reg_alloc(vm, memory_obj);
+    vm_global_add(vm, memory_entry);
+    memory_module_install(vm, memory_entry);
     #endif
 }
 

@@ -1,4 +1,4 @@
-obj = {alpha = "test", beta = [1, 2, 3]},
+obj = {alpha = "test", beta = 1 2 3},
 
 println(obj.name),
 println(obj.type),

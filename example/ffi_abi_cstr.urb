@@ -36,7 +36,7 @@ ffi_bind_all = (path, ...sigs){
   return api,
 },
 
-// Example: ABI prefix + explicit cstr.
+// Example: ABI prefix + explicit cstring.
 // Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
 
 load_fixture = (path){
@@ -74,5 +74,5 @@ name_ptr = ffi.sym(lib.__lib, "ffi_test_name"),
 if (name_ptr != null) {
   name_c = ffi.bind(name_ptr, "cstring ffi_test_name()"),
   raw = name_c(),
-  println("ffi_test_name() as cstring ptr -> ffi.string:", ffi.string(raw)),
+  println("ffi_test_name() as cstring ptr -> memory.string:", memory.string(raw)),
 }

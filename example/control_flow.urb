@@ -18,7 +18,7 @@ for (i = 1, i <= 3, i = i + 1) { sum2 = sum2 + i, }
 println(sum2),
 
 // each iterates in order, the entry key is available at n.name for tables.
-items = [1, 2, 3],
+items = 1 2 3,
 sum3 = 0,
 each(n in items) { sum3 = sum3 + n, }
 println(sum3),
