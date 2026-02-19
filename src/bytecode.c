@@ -110,7 +110,6 @@ const char *bc_opcode_name(uint8_t op)
     case BC_SET_THIS: return "SET_THIS";
     case BC_CALL: return "CALL";
     case BC_CALL_EX: return "CALL_EX";
-    case BC_STRICT: return "STRICT";
     case BC_JMP: return "JMP";
     case BC_JMP_IF_FALSE: return "JMP_IF_FALSE";
     case BC_RETURN: return "RETURN";
@@ -139,7 +138,6 @@ const char *bc_opcode_name(uint8_t op)
     case BC_OR: return "OR";
     case BC_PUSH_CHAR_RAW: return "PUSH_CHAR_RAW";
     case BC_PUSH_STRING_RAW: return "PUSH_STRING_RAW";
-    case BC_UNSTRICT: return "UNSTRICT";
     case BC_BITAND: return "BITAND";
     case BC_BITOR: return "BITOR";
     case BC_BITXOR: return "BITXOR";

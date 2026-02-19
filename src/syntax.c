@@ -118,6 +118,7 @@ typedef enum {
 typedef struct {
     char *name;
     size_t name_len;
+    int has_name;
     Expr *value;
 } ObjPair;
 
@@ -1081,15 +1082,21 @@ static Expr *parse_object_literal(Parser *p)
 
     if (p->current.kind != TOK_RBRACE) {
         for (;;) {
-            if (p->current.kind != TOK_IDENT) {
-                parser_error(p, "object key must be an identifier");
-                return NULL;
+            char *key = NULL;
+            size_t key_len = 0;
+            int has_name = 0;
+            Expr *value = NULL;
+
+            if (p->current.kind == TOK_IDENT && peek_kind(p, 1) == TOK_EQ) {
+                key = arena_strndup(&p->arena, p->current.start, p->current.len);
+                key_len = p->current.len;
+                has_name = 1;
+                advance(p);
+                if (!expect(p, TOK_EQ, "expected '=' after object key")) return NULL;
+                value = parse_expr(p);
+            } else {
+                value = parse_expr(p);
             }
-            char *key = arena_strndup(&p->arena, p->current.start, p->current.len);
-            size_t key_len = p->current.len;
-            advance(p);
-            if (!expect(p, TOK_EQ, "expected '=' after object key")) return NULL;
-            Expr *value = parse_expr(p);
             if (!value) return NULL;
 
             if (count == cap) {
@@ -1104,6 +1111,7 @@ static Expr *parse_object_literal(Parser *p)
             }
             pairs[count].name = key;
             pairs[count].name_len = key_len;
+            pairs[count].has_name = has_name;
             pairs[count].value = value;
             count++;
 
@@ -2418,7 +2426,11 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
     case EXPR_OBJECT_LITERAL: {
         int count = e->as.obj.count;
         for (int i = 0; i < count; i++) {
-            if (!emit_key(bc, p, e->as.obj.pairs[i].name, e->as.obj.pairs[i].name_len)) return 0;
+            if (e->as.obj.pairs[i].has_name) {
+                if (!emit_key(bc, p, e->as.obj.pairs[i].name, e->as.obj.pairs[i].name_len)) return 0;
+            } else {
+                if (!emit_load_global_name(bc, p, "null", 4)) return 0;
+            }
             if (!emit_expr(bc, p, e->as.obj.pairs[i].value)) return 0;
         }
         if (!bc_emit_u8(bc, BC_BUILD_OBJECT) || !bc_emit_u32(bc, (uint32_t)count)) {
@@ -2994,50 +3006,25 @@ static int parse_statement(Parser *p, Bytecode *bc)
         Parser probe = *p;
         Token next = next_token(&probe);
         Token after = next_token(&probe);
-        int mode = 0;
+        int removed_directive = 0;
         if (after.kind == TOK_COMMA) {
             if (next.kind == TOK_STRING) {
-                if (next.str_len == 6 && memcmp(next.str, "strict", 6) == 0) mode = 1;
-                else if (next.str_len == 8 && memcmp(next.str, "nostrict", 8) == 0) mode = -1;
+                if ((next.str_len == 6 && memcmp(next.str, "strict", 6) == 0) ||
+                    (next.str_len == 8 && memcmp(next.str, "nostrict", 8) == 0)) {
+                    removed_directive = 1;
+                }
             } else if (next.kind == TOK_IDENT) {
-                if (next.len == 6 && memcmp(next.start, "strict", 6) == 0) mode = 1;
-                else if (next.len == 8 && memcmp(next.start, "nostrict", 8) == 0) mode = -1;
+                if ((next.len == 6 && memcmp(next.start, "strict", 6) == 0) ||
+                    (next.len == 8 && memcmp(next.start, "nostrict", 8) == 0)) {
+                    removed_directive = 1;
+                }
             }
         }
         token_free(&next);
         token_free(&after);
-        if (mode != 0) {
-            advance(p);
-            if (p->current.kind == TOK_STRING) {
-                if ((mode > 0 && (p->current.str_len != 6 ||
-                                  memcmp(p->current.str, "strict", 6) != 0)) ||
-                    (mode < 0 && (p->current.str_len != 8 ||
-                                  memcmp(p->current.str, "nostrict", 8) != 0))) {
-                    parser_error(p, mode > 0 ? "expected \"strict\" after use"
-                                             : "expected \"nostrict\" after use");
-                    return 0;
-                }
-            } else if (p->current.kind == TOK_IDENT) {
-                if ((mode > 0 && (p->current.len != 6 ||
-                                  memcmp(p->current.start, "strict", 6) != 0)) ||
-                    (mode < 0 && (p->current.len != 8 ||
-                                  memcmp(p->current.start, "nostrict", 8) != 0))) {
-                    parser_error(p, mode > 0 ? "expected strict after use"
-                                             : "expected nostrict after use");
-                    return 0;
-                }
-            } else {
-                parser_error(p, mode > 0 ? "expected strict after use"
-                                         : "expected nostrict after use");
-                return 0;
-            }
-            advance(p);
-            if (!expect(p, TOK_COMMA, mode > 0 ? "expected ',' after use strict"
-                                              : "expected ',' after use nostrict")) {
-                return 0;
-            }
-            /* strict/nostrict kept only for backwards compatibility (no-op). */
-            return 1;
+        if (removed_directive) {
+            parser_error(p, "use strict/nostrict was removed");
+            return 0;
         }
     }
     if (p->current.kind == TOK_IDENT && peek_kind(p, 1) == TOK_COLON) {

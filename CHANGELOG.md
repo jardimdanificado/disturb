@@ -1,10 +1,13 @@
 # Changelog
 
-## unreleased
+## 1.6.0
 - add numeric list shorthand syntax without brackets: `a = 1 2 3,`.
 - remove bracket list literals (`[1, 2, 3]`) from the language; use only space-separated numeric lists.
 - remove semicolon (`;`) compatibility alias for statement separation; only comma (`,`) is accepted.
-- remove strict mode behavior; `use strict`/`use nostrict` and `gc.strict` are now compatibility no-ops.
+- remove strict mode support entirely: `use strict`/`use nostrict`, `gc.strict`, and STRICT/UNSTRICT bytecode op handling are removed.
+- remove legacy compatibility aliases in FFI typing: function pointers now accept only `function(...)` (no `fn(...)` alias), and `char*` no longer auto-maps to `cstring`.
+- remove `gc()` alias; use `gc.collect()`.
+- object literals now accept anonymous members and mixed forms (examples: `{1, 2, 3}`, `{a = 2, 4, d = 9}`, `{b, 4, 12}`).
 - numeric operators now work element-wise on numeric lists (arithmetic, bitwise, unary, and comparisons).
 - add `memory.point(value)` helper to expose numeric pointers for list/view data and pointer-like FFI values (`null` -> `0`).
 

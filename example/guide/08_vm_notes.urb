@@ -20,8 +20,8 @@ println({a = 1, b = {c = 2}}.pretty()),
 // __argc is updated for native/user calls.
 println(__argc),
 
-// gc() is an alias for gc.collect(), GC is manual only.
-gc(),
+// GC is manual only.
+gc.collect(),
 global.gc.collect(),
 
 // Manual reuse controls.

@@ -132,7 +132,7 @@ typedef struct {
     size_t name_len;
     size_t offset;
     FfiLayout *layout;
-    char *fn_sig; /* non-NULL => function pointer field (function(signature), fn(...) alias) */
+    char *fn_sig; /* non-NULL => function pointer field (function(signature)) */
     int is_const;
     int bit_width;   /* 0 => normal field, >0 => bitfield width */
     int bit_shift;   /* bit offset inside storage unit */
@@ -1310,17 +1310,12 @@ static int ffi_parse_schema_fnptr_string(const char *name, size_t len, int *out_
         name++;
         len--;
     }
-    size_t head_len = 0;
-    if (len >= 10 && memcmp(name, "function(", 9) == 0 && name[len - 1] == ')') {
-        head_len = 9;
-    } else if (len >= 5 && memcmp(name, "fn(", 3) == 0 && name[len - 1] == ')') {
-        head_len = 3; /* compatibility alias */
-    } else {
+    if (!(len >= 10 && memcmp(name, "function(", 9) == 0 && name[len - 1] == ')')) {
         return 0;
     }
-    size_t sig_len = len - (head_len + 1); /* function(...) or fn(...) */
+    size_t sig_len = len - 10; /* function(...) */
     if (sig_len == 0 || sig_len + 1 > out_sig_cap) return 0;
-    memcpy(out_sig, name + head_len, sig_len);
+    memcpy(out_sig, name + 9, sig_len);
     out_sig[sig_len] = 0;
     if (out_is_const) *out_is_const = saw_const ? 1 : 0;
     return 1;
@@ -2622,7 +2617,6 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
     int is_array = 0;
     int array_len = -1;
     int is_explicit_cstr = (strcmp(combined, "cstring") == 0);
-    int legacy_char_cstr = (strcmp(combined, "char") == 0 || strcmp(combined, "schar") == 0);
 
     sig_skip_ws(p);
     if (sig_match_char(p, '*')) {
@@ -2655,10 +2649,7 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
         ptr_depth = 1;
     }
 
-    if (base != FFI_BASE_CSTR && !is_explicit_cstr && legacy_char_cstr && ptr_depth == 1) {
-        base = FFI_BASE_CSTR;
-        is_explicit_cstr = 1; /* char* defaults to raw C pointer semantics */
-    } else if (base == FFI_BASE_CSTR && ptr_depth > 1) {
+    if (base == FFI_BASE_CSTR && ptr_depth > 1) {
         base = FFI_BASE_PTR;
     }
 

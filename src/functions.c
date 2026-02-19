@@ -512,18 +512,6 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 bc_free(out);
                 return 0;
             }
-        } else if (op_len == 6 && memcmp(op_name, "STRICT", 6) == 0) {
-            if (!bc_emit_u8(out, BC_STRICT)) {
-                ast_err(err, err_cap, "failed to emit STRICT");
-                bc_free(out);
-                return 0;
-            }
-        } else if (op_len == 8 && memcmp(op_name, "UNSTRICT", 8) == 0) {
-            if (!bc_emit_u8(out, BC_UNSTRICT)) {
-                ast_err(err, err_cap, "failed to emit UNSTRICT");
-                bc_free(out);
-                return 0;
-            }
         } else if (op_len == 4 && memcmp(op_name, "CALL", 4) == 0) {
             ObjEntry *name_entry = object_find_by_key(op_entry->obj, "name");
             ObjEntry *argc_entry = object_find_by_key(op_entry->obj, "argc");
@@ -1615,15 +1603,6 @@ static void native_eval_bytecode(VM *vm, List *stack, List *global)
     }
     vm_exec_bytecode(vm, (const unsigned char*)data, len);
     stack = push_entry(vm, stack, vm->null_entry);
-}
-
-static void native_gc(VM *vm, List *stack, List *global)
-{
-    (void)global;
-    if (vm) vm_gc(vm);
-    if (vm) {
-        stack = push_entry(vm, stack, vm->null_entry);
-    }
 }
 
 static void native_gc_collect(VM *vm, List *stack, List *global)
@@ -3313,7 +3292,6 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "bytecodeToAst") == 0) return native_bytecode_to_ast;
     if (strcmp(name, "astToSource") == 0) return native_ast_to_source;
     if (strcmp(name, "evalBytecode") == 0) return native_eval_bytecode;
-    if (strcmp(name, "gc") == 0) return native_gc;
     if (strcmp(name, "gcCollect") == 0) return native_gc_collect;
     if (strcmp(name, "gcFree") == 0) return native_gc_free;
     if (strcmp(name, "gcSweep") == 0) return native_gc_sweep;

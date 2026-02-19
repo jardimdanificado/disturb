@@ -1,0 +1,15 @@
+a = {1, 2, 3},
+println(a[0]),
+println(a[1]),
+println(a[2]),
+
+b = {a = 2, 4, d = 9},
+println(b.a),
+println(b[0]),
+println(b[1]),
+println(b.d),
+
+c = {b, 4, 12},
+println(c[0].type),
+println(c[1]),
+println(c[2]),

@@ -2650,8 +2650,6 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "toFloat", "toFloat");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
-    entry = vm_define_native(vm, "gc", "gc");
-    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     #ifdef DISTURB_ENABLE_IO
     entry = vm_define_native(vm, "read", "read");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
@@ -3596,9 +3594,6 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
             }
             break;
         }
-        case BC_STRICT:
-        case BC_UNSTRICT:
-            break;
         case BC_JMP:
         case BC_JMP_IF_FALSE: {
             uint32_t target = 0;
@@ -3877,9 +3872,6 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
 #endif
     if (vm && target == vm->gc_entry && vm_key_is(index, "rate")) {
         return vm_make_int_value(vm, (Int)vm->gc_rate);
-    }
-    if (vm && target == vm->gc_entry && vm_key_is(index, "strict")) {
-        return vm_make_int_value(vm, 0);
     }
     if (vm && target == vm->gc_entry && vm_key_is(index, "keyintern")) {
         return vm_make_int_value(vm, vm->keyintern_enabled ? 1 : 0);
@@ -4507,17 +4499,6 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             vm->gc_counter = 0;
             return 1;
         }
-        if (vm_key_is(index, "strict")) {
-            Int iv = 0;
-            Float fv = 0;
-            int is_float = 0;
-            if (!vm_entry_number(value, &iv, &fv, &is_float, "gc.strict", pc) || is_float) {
-                fprintf(stderr, "bytecode error at pc %zu: gc.strict expects int\n", pc);
-                return -1;
-            }
-            (void)iv;
-            return 1;
-        }
         if (vm_key_is(index, "keyintern")) {
             Int iv = 0;
             Float fv = 0;
@@ -4739,8 +4720,6 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         [BC_SET_THIS] = &&BC_L_SET_THIS,
         [BC_CALL] = &&BC_L_CALL,
         [BC_CALL_EX] = &&BC_L_CALL_EX,
-        [BC_STRICT] = &&BC_L_STRICT,
-        [BC_UNSTRICT] = &&BC_L_UNSTRICT,
         [BC_JMP] = &&BC_L_JMP,
         [BC_JMP_IF_FALSE] = &&BC_L_JMP_IF_FALSE,
         [BC_RETURN] = &&BC_L_RETURN,
@@ -5031,8 +5010,8 @@ BC_L_BUILD_OBJECT:
             for (uint32_t i = 0; i < count; i++) {
                 ObjEntry *val = vm_stack_pop_entry(vm, "BUILD_OBJECT", pc);
                 ObjEntry *key = vm_stack_pop_entry(vm, "BUILD_OBJECT", pc);
-                if (!key || !entry_is_string(key)) {
-                    fprintf(stderr, "bytecode error at pc %zu: BUILD_OBJECT expects string keys\n", pc);
+                if (!key || (!entry_is_string(key) && disturb_obj_type(key->obj) != DISTURB_T_NULL)) {
+                    fprintf(stderr, "bytecode error at pc %zu: BUILD_OBJECT expects string or null keys\n", pc);
                     free(keys);
                     free(vals);
                     return 0;
@@ -5041,9 +5020,12 @@ BC_L_BUILD_OBJECT:
                 vals[count - 1 - i] = val;
             }
             for (uint32_t i = 0; i < count; i++) {
-                ObjEntry *key_entry = vm_make_key_len(vm,
-                                                     disturb_bytes_data(keys[i]->obj),
-                                                     disturb_bytes_len(keys[i]->obj));
+                ObjEntry *key_entry = NULL;
+                if (entry_is_string(keys[i])) {
+                    key_entry = vm_make_key_len(vm,
+                                                disturb_bytes_data(keys[i]->obj),
+                                                disturb_bytes_len(keys[i]->obj));
+                }
                 ObjEntry *copy = vm_clone_entry_shallow(vm, vals[i], key_entry);
                 if (!copy) {
                     fprintf(stderr, "bytecode error at pc %zu: BUILD_OBJECT clone failed\n", pc);
@@ -5474,16 +5456,6 @@ BC_L_SET_THIS:
             vm->this_entry = value ? value : vm->null_entry;
             break;
         }
-        case BC_STRICT:
-#ifdef __GNUC__
-BC_L_STRICT:
-#endif
-            break;
-        case BC_UNSTRICT:
-#ifdef __GNUC__
-BC_L_UNSTRICT:
-#endif
-            break;
         case BC_CALL:
         case BC_CALL_EX:
 #ifdef __GNUC__

@@ -432,9 +432,6 @@ Manual GC helpers are under `global.gc`:
 Runtime flags:
 - `global.gc.keyintern = 0|1`
 
-Compatibility alias:
-- `gc()` is available and maps to collection behavior.
-
 ## FFI
 
 Dynamic foreign calls (`ffi.open`, `ffi.sym`, `ffi.bind`) require `DISABLE_IO=0` (default in desktop builds; disabled by `DISABLE_IO=1`).
@@ -477,7 +474,7 @@ Signature struct typing:
 Schema composition:
 - schema fields must be type strings
 - use `struct(otherSchema)`, `union(otherSchema)`, or `pointer(otherSchema)` inside field declarations
-- function pointer fields: `function(signature)` (example: `cb = "function(i32 cb(i32, i32))"`; `fn(...)` also accepted as alias)
+- function pointer fields: `function(signature)` (example: `cb = "function(i32 cb(i32, i32))"`)
 - unions: `__meta = { union = 1 }`
 - bitfields: use `"type:bits"` (example: `"uint8:3"`, `"uint32:5"`)
 - qualifiers accepted in schema/signatures: `const`, `volatile`, `restrict`

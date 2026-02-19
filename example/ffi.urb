@@ -40,8 +40,8 @@ ffi_bind_all = (path, ...sigs){
 // Tries common libc names across Linux/macOS/Windows.
 load_libc = (path){
   return ffi_bind_all(path,
-    "i32 puts(char*)",
-    "char* getenv(char*)"
+    "i32 puts(cstring)",
+    "cstring getenv(cstring)"
   ),
 },
 

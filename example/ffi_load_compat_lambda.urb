@@ -48,11 +48,11 @@ ffi_load_compat = (path, ...sigs){
 },
 
 lib = ffi_load_compat("libc.so.6",
-  "i32 puts(char*)",
-  "char* getenv(char*)"
+  "i32 puts(cstring)",
+  "cstring getenv(cstring)"
 ),
-if (lib == null) { lib = ffi_load_compat("libSystem.B.dylib", "i32 puts(char*)", "char* getenv(char*)"), }
-if (lib == null) { lib = ffi_load_compat("msvcrt.dll", "i32 puts(char*)", "char* getenv(char*)"), }
+if (lib == null) { lib = ffi_load_compat("libSystem.B.dylib", "i32 puts(cstring)", "cstring getenv(cstring)"), }
+if (lib == null) { lib = ffi_load_compat("msvcrt.dll", "i32 puts(cstring)", "cstring getenv(cstring)"), }
 if (lib == null) {
   println("libc not found"),
   return 0,

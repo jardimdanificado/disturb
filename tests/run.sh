@@ -30,6 +30,7 @@ run_case bytes
 run_case meta
 run_case null
 run_case object_keys
+run_case object_literal_mixed
 run_case operators
 run_case equality
 run_case switch
@@ -96,6 +97,7 @@ run_negative() {
 }
 
 run_negative assign_invalid
+run_negative strict_directive_removed
 run_negative missing_comma
 run_negative semicolon_alias_removed
 run_negative char_len
