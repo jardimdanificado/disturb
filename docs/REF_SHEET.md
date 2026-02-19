@@ -61,15 +61,25 @@ True:
 
 ## Control Flow
 
-- `if / else if / else`
-- `while`
-- `for (init, cond, step)`
-- `each(v in expr)`
-- `switch / case / default` (no fallthrough)
+- `if` / `else if` / `else` (parentheses optional: `if x > 0 { … }` or `if (x > 0) { … }`)
+- `while` (parentheses optional)
+- `for (init, cond, step)` or `for init, cond, step` (parentheses optional)
+- `each(v in expr)` or `each v in expr` (parentheses optional)
+- `switch` / `case` / `default` (no fallthrough; parentheses optional: `switch x { … }` or `switch (x) { … }`)
 - `break`, `continue`, `return`
 - `label:` + `goto label,`
 
-## Functions (lambdas)
+## Operators
+
+- arithmetic: `+ - * / %`
+- unary: `- ! ~`
+- compare: `< <= > >=`
+- equality: `== != === !==`
+- logical: `&& ||`
+- bitwise: `& | ^ << >>`
+- assign: `= += -= *= /= %= &= |= ^= <<= >>=`
+- default assign: `?=`
+- increments: `++ --` (prefix/postfix)
 
 ```disturb
 sum = (a, b = 1, ...rest){ return a + b, }

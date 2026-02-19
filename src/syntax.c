@@ -2748,10 +2748,11 @@ static int parse_switch_case(Parser *p, Bytecode *bc, const char *tmp_name, size
 
 static int parse_switch_statement(Parser *p, Bytecode *bc)
 {
-    if (!expect(p, TOK_LPAREN, "expected '(' after switch")) return 0;
+    int has_parens = (p->current.kind == TOK_LPAREN);
+    if (has_parens && !expect(p, TOK_LPAREN, "expected '(' after switch")) return 0;
     Expr *selector = parse_expr(p);
     if (!selector) return 0;
-    if (!expect(p, TOK_RPAREN, "expected ')' after switch expression")) return 0;
+    if (has_parens && !expect(p, TOK_RPAREN, "expected ')' after switch expression")) return 0;
     if (!expect(p, TOK_LBRACE, "expected '{' to start switch")) return 0;
 
     int id = p->temp_id++;
@@ -2815,10 +2816,11 @@ static int parse_switch_statement(Parser *p, Bytecode *bc)
 
 static int parse_if_statement(Parser *p, Bytecode *bc)
 {
-    if (!expect(p, TOK_LPAREN, "expected '(' after if")) return 0;
+    int has_parens = (p->current.kind == TOK_LPAREN);
+    if (has_parens && !expect(p, TOK_LPAREN, "expected '(' after if")) return 0;
     Expr *cond = parse_expr(p);
     if (!cond) return 0;
-    if (!expect(p, TOK_RPAREN, "expected ')' after condition")) return 0;
+    if (has_parens && !expect(p, TOK_RPAREN, "expected ')' after condition")) return 0;
     if (!emit_expr(bc, p, cond)) return 0;
 
     size_t jmp_false = emit_jump(bc, p, BC_JMP_IF_FALSE);
@@ -2844,7 +2846,8 @@ static int parse_if_statement(Parser *p, Bytecode *bc)
 
 static int parse_while_statement(Parser *p, Bytecode *bc)
 {
-    if (!expect(p, TOK_LPAREN, "expected '(' after while")) return 0;
+    int has_parens = (p->current.kind == TOK_LPAREN);
+    if (has_parens && !expect(p, TOK_LPAREN, "expected '(' after while")) return 0;
     if (!loop_push(p, 1)) {
         parser_error(p, "out of memory");
         return 0;
@@ -2852,7 +2855,7 @@ static int parse_while_statement(Parser *p, Bytecode *bc)
     size_t loop_start = bc->len;
     Expr *cond = parse_expr(p);
     if (!cond) { loop_pop(p); return 0; }
-    if (!expect(p, TOK_RPAREN, "expected ')' after condition")) { loop_pop(p); return 0; }
+    if (has_parens && !expect(p, TOK_RPAREN, "expected ')' after condition")) { loop_pop(p); return 0; }
     if (!emit_expr(bc, p, cond)) { loop_pop(p); return 0; }
     size_t jmp_out = emit_jump(bc, p, BC_JMP_IF_FALSE);
     if (!jmp_out) { loop_pop(p); return 0; }
@@ -2885,7 +2888,8 @@ static int parse_while_statement(Parser *p, Bytecode *bc)
 
 static int parse_for_statement(Parser *p, Bytecode *bc)
 {
-    if (!expect(p, TOK_LPAREN, "expected '(' after for")) return 0;
+    int has_parens = (p->current.kind == TOK_LPAREN);
+    if (has_parens && !expect(p, TOK_LPAREN, "expected '(' after for")) return 0;
     if (!loop_push(p, 1)) {
         parser_error(p, "out of memory");
         return 0;
@@ -2911,14 +2915,14 @@ static int parse_for_statement(Parser *p, Bytecode *bc)
 
     Bytecode step;
     bc_init(&step);
-    if (p->current.kind != TOK_RPAREN) {
+    if (p->current.kind != (has_parens ? TOK_RPAREN : TOK_LBRACE)) {
         if (!parse_simple_statement(p, &step, 0)) {
             bc_free(&step);
             loop_pop(p);
             return 0;
         }
     }
-    if (!expect(p, TOK_RPAREN, "expected ')' after for clauses")) {
+    if (has_parens && !expect(p, TOK_RPAREN, "expected ')' after for clauses")) {
         bc_free(&step);
         loop_pop(p);
         return 0;
@@ -2965,7 +2969,8 @@ static int parse_for_statement(Parser *p, Bytecode *bc)
 
 static int parse_each_statement(Parser *p, Bytecode *bc)
 {
-    if (!expect(p, TOK_LPAREN, "expected '(' after each")) return 0;
+    int has_parens = (p->current.kind == TOK_LPAREN);
+    if (has_parens && !expect(p, TOK_LPAREN, "expected '(' after each")) return 0;
     if (!loop_push(p, 1)) {
         parser_error(p, "out of memory");
         return 0;
@@ -2982,7 +2987,7 @@ static int parse_each_statement(Parser *p, Bytecode *bc)
 
     Expr *iter = parse_expr(p);
     if (!iter) { loop_pop(p); return 0; }
-    if (!expect(p, TOK_RPAREN, "expected ')' after each expression")) { loop_pop(p); return 0; }
+    if (has_parens && !expect(p, TOK_RPAREN, "expected ')' after each expression")) { loop_pop(p); return 0; }
 
     int id = p->temp_id++;
     char *iter_name = arena_format_temp(&p->arena, "__each_iter_", id);

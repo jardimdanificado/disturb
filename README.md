@@ -59,7 +59,7 @@ Notes:
 
 ```disturb
 msg = "hello",
-println(msg)
+if msg.size > 0 { println(msg) }
 ```
 
 Run:
@@ -224,14 +224,14 @@ Calls:
 ## Control Flow
 
 Supported:
-- `if (...) { ... }`
-- `if (...) { ... } else if (...) { ... } else { ... }`
-- `while (...) { ... }`
-- `for (init; cond; step) { ... }`
-- `each(v in expr) { ... }`
-- `break;`
-- `continue;`
-- `switch/case/default`
+- `if x { ... }` or `if (x) { ... }` (parentheses optional)
+- `if x { ... } else if y { ... } else { ... }`
+- `while x { ... }` (parentheses optional)
+- `for init, cond, step { ... }` or `for (init, cond, step) { ... }` (parentheses optional)
+- `each x in expr { ... }` or `each (x in expr) { ... }` (parentheses optional)
+- `switch x { ... }` or `switch (x) { ... }` (parentheses optional; use `case` and `default`)
+- `break,`
+- `continue,`
 - labels and `goto`
 
 Switch behavior:

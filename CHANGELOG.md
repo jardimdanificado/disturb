@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.0
+- language overhaul: statements separated by commas instead of terminating semicolons (`a = 1, b = 2`).  Semicolons are still lexed (mapped to commas) for compatibility but no longer required or emitted.
+- final comma in a statement sequence is optional (parser ignores trailing comma before `}` or EOF).
+- object literals support optional trailing comma (`{a=1, b=2,}` and `{a=1, b=2}` both valid).
+- allow dropping parentheses around control flow keywords: `if cond { … }`, `while cond { … }`, `for init, cond, step { … }`, `each x in expr { … }`, and `switch expr { … }` all work without parentheses, while parenthesized forms remain valid for explicitness.
+- parser and bytecode emitter updated accordingly; handled in `parse_simple_statement`, for-loops, control-flow parsing, and expression handling.
+- extensive update of examples/tests/documentation to use comma syntax; new negative test `missing_comma.urb` added.
+- update `tests/run.sh` messages and CI-friendly ports for new syntax.
+- documentation (README, REF_SHEET) revised with comma rules and optional parentheses examples.
+
 ## 1.4.1
 - unify FFI signature syntax: replace `pointer<schema>`, `union<schema>`, `function<signature>`, and `fn<...>` with parentheses-based syntax `pointer(schema)`, `union(schema)`, `function(signature)`, and `fn(...)`.
 - update all signatures in tests, examples, and documentation to use new parentheses-based syntax consistently.
