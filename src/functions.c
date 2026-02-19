@@ -2000,6 +2000,7 @@ static void native_max(VM *vm, List *stack, List *global)
     push_number(vm, stack, acc);
 }
 
+
 static int native_unary_number(VM *vm, List *stack, List *global, Float *out)
 {
     uint32_t argc = native_argc(vm, global);

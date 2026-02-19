@@ -113,7 +113,8 @@ Supported literal forms:
 - float suffix: `1f`
 - char: `'a'` (must be exactly one byte)
 - string: `"abc"`
-- list: `[1, 2, 3]`
+- numeric list shorthand: `1 2 3`
+- list (general form): `[1, 2, 3]`
 - table: `{a = 1, b = "x"}`
 
 Special global:
@@ -121,8 +122,17 @@ Special global:
 
 List behavior:
 - numeric lists are homogeneous (`int` list or `float` list)
-- mixed numeric literals like `[1, 2.5]` become float lists in non-strict mode
+- mixed numeric literals like `1 2.5` become float lists in non-strict mode
 - string values are byte lists with string semantics
+
+Numeric list shorthand example:
+
+```disturb
+a = 1 2 3,
+b = 4 5 6,
+println(a + b),
+println(-a),
+```
 
 ## Truthiness
 
@@ -302,7 +312,7 @@ Strict mode rules:
 - forbids mixed int/float numeric comparisons
 - forbids number/string comparisons
 - forbids `null` in numeric operations
-- forbids mixed int/float numeric list literals
+- forbids mixed int/float numeric list literals (for example, `1 2.5`)
 - string text output should use `.string`
 
 Runtime toggle:

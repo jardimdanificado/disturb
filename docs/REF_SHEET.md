@@ -26,7 +26,8 @@ make
 - float: `3.14`, `1f`
 - char: `'a'` (single byte only)
 - string: `"abc"`
-- list: `[1, 2, 3]`
+- numeric list shorthand: `1 2 3`
+- list (general form): `[1, 2, 3]`
 - table: `{a = 1, b = "x"}`
 - special: `null`, `inf`
 

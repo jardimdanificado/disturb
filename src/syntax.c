@@ -1141,13 +1141,74 @@ static Expr *parse_primary(Parser *p)
     }
 
     if (p->current.kind == TOK_NUMBER) {
-        Expr *e = expr_new(p, EXPR_LITERAL_NUM);
-        if (!e) return NULL;
-        e->as.lit_num.number = p->current.number;
-        e->as.lit_num.is_float = p->current.is_float;
-        e->as.lit_num.num_suffix = p->current.num_suffix;
-        advance(p);
-        return e;
+        /* Check if this is a space-separated number list like: 1 2 3 */
+        Parser probe = *p;
+        Token next = next_token(&probe);
+        int is_number_list = (next.kind == TOK_NUMBER);
+        token_free(&next);
+        
+        if (is_number_list) {
+            /* Parse space-separated number list */
+            double *vals = NULL;
+            int count = 0;
+            int cap = 0;
+            int is_float = 0;
+            int saw_int = 0;
+            int saw_float = 0;
+            
+            for (;;) {
+                if (p->current.kind != TOK_NUMBER) break;
+                
+                if (count == cap) {
+                    int next_cap = cap == 0 ? 16 : cap * 2;
+                    double *tmp = (double*)realloc(vals, (size_t)next_cap * sizeof(double));
+                    if (!tmp) {
+                        parser_error(p, "out of memory");
+                        free(vals);
+                        return NULL;
+                    }
+                    vals = tmp;
+                    cap = next_cap;
+                }
+                
+                vals[count++] = p->current.number;
+                if (p->current.is_float) {
+                    is_float = 1;
+                    saw_float = 1;
+                } else {
+                    saw_int = 1;
+                }
+                
+                advance(p);
+                
+                /* Stop if next token is not a number */
+                if (p->current.kind != TOK_NUMBER) break;
+            }
+            
+            Expr *e = expr_new(p, EXPR_LITERAL_NUMBER_LIST);
+            if (!e) {
+                free(vals);
+                return NULL;
+            }
+            if (vals && !arena_track(&p->arena, vals)) {
+                parser_error(p, "out of memory");
+                free(vals);
+                return NULL;
+            }
+            e->as.num_list.items = vals;
+            e->as.num_list.count = count;
+            e->as.num_list.is_float = is_float;
+            return e;
+        } else {
+            /* Single number literal */
+            Expr *e = expr_new(p, EXPR_LITERAL_NUM);
+            if (!e) return NULL;
+            e->as.lit_num.number = p->current.number;
+            e->as.lit_num.is_float = p->current.is_float;
+            e->as.lit_num.num_suffix = p->current.num_suffix;
+            advance(p);
+            return e;
+        }
     }
 
     if (p->current.kind == TOK_STRING || p->current.kind == TOK_CHAR) {

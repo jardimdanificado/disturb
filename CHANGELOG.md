@@ -1,5 +1,10 @@
 # Changelog
 
+## unreleased
+- add numeric list shorthand syntax without brackets: `a = 1 2 3,`.
+- keep bracket list syntax available, while documenting space-separated numeric list form as primary shorthand.
+- numeric operators now work element-wise on numeric lists (arithmetic, bitwise, unary, and comparisons).
+
 ## 1.5.0
 - language overhaul: statements separated by commas instead of terminating semicolons (`a = 1, b = 2`).  Semicolons are still lexed (mapped to commas) for compatibility but no longer required or emitted.
 - final comma in a statement sequence is optional (parser ignores trailing comma before `}` or EOF).

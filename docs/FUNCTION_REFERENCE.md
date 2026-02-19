@@ -27,6 +27,7 @@ Return conventions:
 - Strings: bytes length.
 - Numeric lists: element count.
 - Tables: entry count.
+- Numeric list shorthand is valid: `a = 1 2 3,` then `len(a)` returns `3`.
 
 ### `pretty(target)` / `target.pretty()`
 - Returns a formatted multiline representation.
