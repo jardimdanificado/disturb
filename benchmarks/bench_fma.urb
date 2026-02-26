@@ -1,0 +1,30 @@
+// bench_fma.urb — Stress fused multiply-add
+// Exercises: native_fma → parr_dispatch_fma / simd_float_fma
+
+N = 50000,
+
+// Build three Float[] arrays
+a = 0,
+a.size = N,
+b = 0,
+b.size = N,
+c = 0,
+c.size = N,
+for (i = 0, i < N, i++) {
+    a[i] = i + 1,
+    b[i] = N - i,
+    c[i] = i,
+}
+af = a.toFloat(),
+bf = b.toFloat(),
+cf = c.toFloat(),
+
+// FMA rounds (each allocates one result array)
+ROUNDS = 80,
+for (r = 0, r < ROUNDS, r++) {
+    result = af.fma(bf, cf),
+}
+
+println("bench_fma done"),
+println(result[0]),
+println(result[N - 1]),

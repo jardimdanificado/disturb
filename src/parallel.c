@@ -204,39 +204,42 @@ void parallel_shutdown(void)
 }
 
 /* ---- Barrier helper (reusable for 2A etc.) ---------------------------- */
+/* Uses atomic completion counter: workers increment when done,
+ * main thread spins until all workers finished. Safe to free after spin. */
 
 typedef struct {
-    pthread_mutex_t lock;
-    pthread_cond_t cond;
-    int count;
+    volatile int done;
     int target;
 } Barrier;
 
-static void barrier_init(Barrier *b, int target)
+static Barrier *barrier_create(int target)
 {
-    pthread_mutex_init(&b->lock, NULL);
-    pthread_cond_init(&b->cond, NULL);
-    b->count = 0;
+    Barrier *b = (Barrier *)malloc(sizeof(Barrier));
+    if (!b) return NULL;
+    b->done = 0;
     b->target = target;
+    return b;
 }
 
+/* Worker calls this when finished — atomic increment. */
 static void barrier_wait(Barrier *b)
 {
-    pthread_mutex_lock(&b->lock);
-    b->count++;
-    if (b->count >= b->target) {
-        pthread_cond_broadcast(&b->cond);
-    } else {
-        while (b->count < b->target)
-            pthread_cond_wait(&b->cond, &b->lock);
-    }
-    pthread_mutex_unlock(&b->lock);
+    __atomic_add_fetch(&b->done, 1, __ATOMIC_RELEASE);
 }
 
-static void barrier_destroy(Barrier *b)
+/* Main thread: spin-wait until all workers completed, then free. */
+static void barrier_wait_and_free(Barrier *b)
 {
-    pthread_mutex_destroy(&b->lock);
-    pthread_cond_destroy(&b->cond);
+    if (!b) return;
+    while (__atomic_load_n(&b->done, __ATOMIC_ACQUIRE) < b->target) {
+        /* busy-wait with yield to avoid burning CPU */
+#if defined(__x86_64__) || defined(__i386__)
+        __asm__ volatile("pause");
+#elif defined(__aarch64__)
+        __asm__ volatile("yield");
+#endif
+    }
+    free(b);
 }
 
 /* ===========================================================================
@@ -384,8 +387,7 @@ void parr_dispatch(const void *a, const void *b, void *out,
 
     ParrSlice *slices = (ParrSlice *)malloc((size_t)nw * sizeof(ParrSlice));
     if (!slices) return;
-    Barrier barrier;
-    barrier_init(&barrier, nw);
+    Barrier *barrier = barrier_create(nw);
 
     size_t chunk = count / (size_t)nw;
     size_t rem = count % (size_t)nw;
@@ -402,7 +404,7 @@ void parr_dispatch(const void *a, const void *b, void *out,
         slices[i].bb = bb;
         slices[i].op = op;
         slices[i].is_float = is_float;
-        slices[i].barrier = &barrier;
+        slices[i].barrier = barrier;
         off = end;
 
         if (i == nw - 1) {
@@ -414,9 +416,636 @@ void parr_dispatch(const void *a, const void *b, void *out,
     }
 
     /* Wait for all slices */
-    barrier_wait(&barrier);
-    barrier_destroy(&barrier);
+    barrier_wait_and_free(barrier);
     free(slices);
+}
+
+/* ===========================================================================
+ * 2A-ext — PARALLEL BITWISE / CMP / UNARY / FMA / REDUCE
+ * =========================================================================== */
+
+/* --- Bitwise slice worker ---------------------------------------------- */
+
+enum {
+    PARR_BIT_AND = 0,
+    PARR_BIT_OR,
+    PARR_BIT_XOR
+};
+
+typedef struct {
+    const void *a;
+    const void *b;
+    void *out;
+    size_t start;
+    size_t end;
+    int ba;
+    int bb;
+    int op;
+    Barrier *barrier;
+} ParrBitwiseSlice;
+
+static void parr_bitwise_slice_worker(void *arg)
+{
+    ParrBitwiseSlice *s = (ParrBitwiseSlice *)arg;
+    size_t n = s->end - s->start;
+
+#if INTPTR_MAX == INT64_MAX
+    const int64_t *a = (const int64_t *)s->a + (s->ba ? 0 : s->start);
+    const int64_t *b = (const int64_t *)s->b + (s->bb ? 0 : s->start);
+    int64_t *out = (int64_t *)s->out + s->start;
+#ifdef DISTURB_ENABLE_SIMD
+    switch (s->op) {
+    case PARR_BIT_AND: simd_int_and(a, b, out, n, s->ba, s->bb); break;
+    case PARR_BIT_OR:  simd_int_or(a, b, out, n, s->ba, s->bb);  break;
+    case PARR_BIT_XOR: simd_int_xor(a, b, out, n, s->ba, s->bb); break;
+    default: break;
+    }
+#else
+    for (size_t i = 0; i < n; i++) {
+        int64_t av = s->ba ? ((const int64_t *)s->a)[0] : a[i];
+        int64_t bv = s->bb ? ((const int64_t *)s->b)[0] : b[i];
+        switch (s->op) {
+        case PARR_BIT_AND: out[i] = av & bv; break;
+        case PARR_BIT_OR:  out[i] = av | bv; break;
+        case PARR_BIT_XOR: out[i] = av ^ bv; break;
+        default: break;
+        }
+    }
+#endif
+#else
+    const int32_t *a = (const int32_t *)s->a + (s->ba ? 0 : s->start);
+    const int32_t *b = (const int32_t *)s->b + (s->bb ? 0 : s->start);
+    int32_t *out = (int32_t *)s->out + s->start;
+    for (size_t i = 0; i < n; i++) {
+        int32_t av = s->ba ? ((const int32_t *)s->a)[0] : a[i];
+        int32_t bv = s->bb ? ((const int32_t *)s->b)[0] : b[i];
+        switch (s->op) {
+        case PARR_BIT_AND: out[i] = av & bv; break;
+        case PARR_BIT_OR:  out[i] = av | bv; break;
+        case PARR_BIT_XOR: out[i] = av ^ bv; break;
+        default: break;
+        }
+    }
+#endif
+    barrier_wait(s->barrier);
+}
+
+void parr_dispatch_bitwise(const void *a, const void *b, void *out,
+                           size_t count, int ba, int bb, int op)
+{
+    pool_ensure_init();
+    int nw = g_pool.num_workers;
+    if (nw < 1) nw = 1;
+    if ((size_t)nw > count / 1024) nw = (int)(count / 1024);
+    if (nw < 1) nw = 1;
+
+    ParrBitwiseSlice *slices = (ParrBitwiseSlice *)malloc((size_t)nw * sizeof(ParrBitwiseSlice));
+    if (!slices) return;
+    Barrier *barrier = barrier_create(nw);
+
+    size_t chunk = count / (size_t)nw;
+    size_t rem = count % (size_t)nw;
+    size_t off = 0;
+
+    for (int i = 0; i < nw; i++) {
+        size_t end = off + chunk + (i < (int)rem ? 1 : 0);
+        slices[i].a = a;
+        slices[i].b = b;
+        slices[i].out = out;
+        slices[i].start = off;
+        slices[i].end = end;
+        slices[i].ba = ba;
+        slices[i].bb = bb;
+        slices[i].op = op;
+        slices[i].barrier = barrier;
+        off = end;
+        if (i == nw - 1)
+            parr_bitwise_slice_worker(&slices[i]);
+        else
+            taskqueue_push(&g_pool.queue, parr_bitwise_slice_worker, &slices[i]);
+    }
+
+    barrier_wait_and_free(barrier);
+    free(slices);
+}
+
+/* --- Comparison slice worker ------------------------------------------- */
+
+typedef struct {
+    const void *a;
+    const void *b;
+    void *out;
+    size_t start;
+    size_t end;
+    int ba;
+    int bb;
+    int op;
+    int is_float;
+    Barrier *barrier;
+} ParrCmpSlice;
+
+static void parr_cmp_slice_worker(void *arg)
+{
+    ParrCmpSlice *s = (ParrCmpSlice *)arg;
+    size_t n = s->end - s->start;
+
+#if INTPTR_MAX == INT64_MAX
+    int64_t *out = (int64_t *)s->out + s->start;
+    if (s->is_float) {
+        const double *a = (const double *)s->a + (s->ba ? 0 : s->start);
+        const double *b = (const double *)s->b + (s->bb ? 0 : s->start);
+#ifdef DISTURB_ENABLE_SIMD
+        simd_float_cmp(a, b, out, n, s->ba, s->bb, s->op);
+#else
+        for (size_t i = 0; i < n; i++) {
+            double av = s->ba ? ((const double *)s->a)[0] : a[i];
+            double bv = s->bb ? ((const double *)s->b)[0] : b[i];
+            int res = 0;
+            switch (s->op) {
+            case 0: res = (av == bv); break;
+            case 1: res = (av != bv); break;
+            case 2: res = (av <  bv); break;
+            case 3: res = (av <= bv); break;
+            case 4: res = (av >  bv); break;
+            case 5: res = (av >= bv); break;
+            default: break;
+            }
+            out[i] = res;
+        }
+#endif
+    } else {
+        const int64_t *a = (const int64_t *)s->a + (s->ba ? 0 : s->start);
+        const int64_t *b = (const int64_t *)s->b + (s->bb ? 0 : s->start);
+#ifdef DISTURB_ENABLE_SIMD
+        simd_int_cmp(a, b, out, n, s->ba, s->bb, s->op);
+#else
+        for (size_t i = 0; i < n; i++) {
+            int64_t av = s->ba ? ((const int64_t *)s->a)[0] : a[i];
+            int64_t bv = s->bb ? ((const int64_t *)s->b)[0] : b[i];
+            int res = 0;
+            switch (s->op) {
+            case 0: res = (av == bv); break;
+            case 1: res = (av != bv); break;
+            case 2: res = (av <  bv); break;
+            case 3: res = (av <= bv); break;
+            case 4: res = (av >  bv); break;
+            case 5: res = (av >= bv); break;
+            default: break;
+            }
+            out[i] = res;
+        }
+#endif
+    }
+#else
+    int32_t *out = (int32_t *)s->out + s->start;
+    if (s->is_float) {
+        const float *a = (const float *)s->a + (s->ba ? 0 : s->start);
+        const float *b = (const float *)s->b + (s->bb ? 0 : s->start);
+        for (size_t i = 0; i < n; i++) {
+            float av = s->ba ? ((const float *)s->a)[0] : a[i];
+            float bv = s->bb ? ((const float *)s->b)[0] : b[i];
+            int res = 0;
+            switch (s->op) {
+            case 0: res = (av == bv); break;
+            case 1: res = (av != bv); break;
+            case 2: res = (av <  bv); break;
+            case 3: res = (av <= bv); break;
+            case 4: res = (av >  bv); break;
+            case 5: res = (av >= bv); break;
+            default: break;
+            }
+            out[i] = res;
+        }
+    } else {
+        const int32_t *a = (const int32_t *)s->a + (s->ba ? 0 : s->start);
+        const int32_t *b = (const int32_t *)s->b + (s->bb ? 0 : s->start);
+        for (size_t i = 0; i < n; i++) {
+            int32_t av = s->ba ? ((const int32_t *)s->a)[0] : a[i];
+            int32_t bv = s->bb ? ((const int32_t *)s->b)[0] : b[i];
+            int res = 0;
+            switch (s->op) {
+            case 0: res = (av == bv); break;
+            case 1: res = (av != bv); break;
+            case 2: res = (av <  bv); break;
+            case 3: res = (av <= bv); break;
+            case 4: res = (av >  bv); break;
+            case 5: res = (av >= bv); break;
+            default: break;
+            }
+            out[i] = res;
+        }
+    }
+#endif
+    barrier_wait(s->barrier);
+}
+
+void parr_dispatch_cmp(const void *a, const void *b, void *out,
+                       size_t count, int ba, int bb, int op, int is_float)
+{
+    pool_ensure_init();
+    int nw = g_pool.num_workers;
+    if (nw < 1) nw = 1;
+    if ((size_t)nw > count / 1024) nw = (int)(count / 1024);
+    if (nw < 1) nw = 1;
+
+    ParrCmpSlice *slices = (ParrCmpSlice *)malloc((size_t)nw * sizeof(ParrCmpSlice));
+    if (!slices) return;
+    Barrier *barrier = barrier_create(nw);
+
+    size_t chunk = count / (size_t)nw;
+    size_t rem = count % (size_t)nw;
+    size_t off = 0;
+
+    for (int i = 0; i < nw; i++) {
+        size_t end = off + chunk + (i < (int)rem ? 1 : 0);
+        slices[i].a = a;
+        slices[i].b = b;
+        slices[i].out = out;
+        slices[i].start = off;
+        slices[i].end = end;
+        slices[i].ba = ba;
+        slices[i].bb = bb;
+        slices[i].op = op;
+        slices[i].is_float = is_float;
+        slices[i].barrier = barrier;
+        off = end;
+        if (i == nw - 1)
+            parr_cmp_slice_worker(&slices[i]);
+        else
+            taskqueue_push(&g_pool.queue, parr_cmp_slice_worker, &slices[i]);
+    }
+
+    barrier_wait_and_free(barrier);
+    free(slices);
+}
+
+/* --- Unary slice worker ------------------------------------------------ */
+
+typedef struct {
+    const void *src;
+    void *dst;
+    size_t start;
+    size_t end;
+    int op;           /* 0=neg, 1=bnot */
+    int is_float;
+    Barrier *barrier;
+} ParrUnarySlice;
+
+static void parr_unary_slice_worker(void *arg)
+{
+    ParrUnarySlice *s = (ParrUnarySlice *)arg;
+    size_t n = s->end - s->start;
+
+#if INTPTR_MAX == INT64_MAX
+    if (s->op == 0 && s->is_float) {
+        /* float neg */
+        const double *src = (const double *)s->src + s->start;
+        double *dst = (double *)s->dst + s->start;
+#ifdef DISTURB_ENABLE_SIMD
+        simd_float_neg(src, dst, n);
+#else
+        for (size_t i = 0; i < n; i++) dst[i] = -src[i];
+#endif
+    } else if (s->op == 0) {
+        /* int neg */
+        const int64_t *src = (const int64_t *)s->src + s->start;
+        int64_t *dst = (int64_t *)s->dst + s->start;
+#ifdef DISTURB_ENABLE_SIMD
+        simd_int_neg(src, dst, n);
+#else
+        for (size_t i = 0; i < n; i++) dst[i] = -src[i];
+#endif
+    } else {
+        /* bnot (always int) */
+        const int64_t *src = (const int64_t *)s->src + s->start;
+        int64_t *dst = (int64_t *)s->dst + s->start;
+#ifdef DISTURB_ENABLE_SIMD
+        simd_int_not(src, dst, n);
+#else
+        for (size_t i = 0; i < n; i++) dst[i] = ~src[i];
+#endif
+    }
+#else
+    if (s->op == 0 && s->is_float) {
+        const float *src = (const float *)s->src + s->start;
+        float *dst = (float *)s->dst + s->start;
+        for (size_t i = 0; i < n; i++) dst[i] = -src[i];
+    } else if (s->op == 0) {
+        const int32_t *src = (const int32_t *)s->src + s->start;
+        int32_t *dst = (int32_t *)s->dst + s->start;
+        for (size_t i = 0; i < n; i++) dst[i] = -src[i];
+    } else {
+        const int32_t *src = (const int32_t *)s->src + s->start;
+        int32_t *dst = (int32_t *)s->dst + s->start;
+        for (size_t i = 0; i < n; i++) dst[i] = ~src[i];
+    }
+#endif
+    barrier_wait(s->barrier);
+}
+
+void parr_dispatch_unary(const void *src, void *dst, size_t count,
+                         int op, int is_float)
+{
+    pool_ensure_init();
+    int nw = g_pool.num_workers;
+    if (nw < 1) nw = 1;
+    if ((size_t)nw > count / 1024) nw = (int)(count / 1024);
+    if (nw < 1) nw = 1;
+
+    ParrUnarySlice *slices = (ParrUnarySlice *)malloc((size_t)nw * sizeof(ParrUnarySlice));
+    if (!slices) return;
+    Barrier *barrier = barrier_create(nw);
+
+    size_t chunk = count / (size_t)nw;
+    size_t rem = count % (size_t)nw;
+    size_t off = 0;
+
+    for (int i = 0; i < nw; i++) {
+        size_t end = off + chunk + (i < (int)rem ? 1 : 0);
+        slices[i].src = src;
+        slices[i].dst = dst;
+        slices[i].start = off;
+        slices[i].end = end;
+        slices[i].op = op;
+        slices[i].is_float = is_float;
+        slices[i].barrier = barrier;
+        off = end;
+        if (i == nw - 1)
+            parr_unary_slice_worker(&slices[i]);
+        else
+            taskqueue_push(&g_pool.queue, parr_unary_slice_worker, &slices[i]);
+    }
+
+    barrier_wait_and_free(barrier);
+    free(slices);
+}
+
+/* --- FMA slice worker -------------------------------------------------- */
+
+typedef struct {
+    const void *a;
+    const void *b;
+    const void *c;
+    void *out;
+    size_t start;
+    size_t end;
+    Barrier *barrier;
+} ParrFmaSlice;
+
+static void parr_fma_slice_worker(void *arg)
+{
+    ParrFmaSlice *s = (ParrFmaSlice *)arg;
+    size_t n = s->end - s->start;
+
+#if INTPTR_MAX == INT64_MAX
+    const double *a = (const double *)s->a + s->start;
+    const double *b = (const double *)s->b + s->start;
+    const double *c = (const double *)s->c + s->start;
+    double *out = (double *)s->out + s->start;
+#ifdef DISTURB_ENABLE_SIMD
+    simd_float_fma(a, b, c, out, n, 0, 0, 0);
+#else
+    for (size_t i = 0; i < n; i++) out[i] = a[i] * b[i] + c[i];
+#endif
+#else
+    const float *a = (const float *)s->a + s->start;
+    const float *b = (const float *)s->b + s->start;
+    const float *c = (const float *)s->c + s->start;
+    float *out = (float *)s->out + s->start;
+    for (size_t i = 0; i < n; i++) out[i] = a[i] * b[i] + c[i];
+#endif
+    barrier_wait(s->barrier);
+}
+
+void parr_dispatch_fma(const void *a, const void *b, const void *c,
+                       void *out, size_t count)
+{
+    pool_ensure_init();
+    int nw = g_pool.num_workers;
+    if (nw < 1) nw = 1;
+    if ((size_t)nw > count / 1024) nw = (int)(count / 1024);
+    if (nw < 1) nw = 1;
+
+    ParrFmaSlice *slices = (ParrFmaSlice *)malloc((size_t)nw * sizeof(ParrFmaSlice));
+    if (!slices) return;
+    Barrier *barrier = barrier_create(nw);
+
+    size_t chunk = count / (size_t)nw;
+    size_t rem = count % (size_t)nw;
+    size_t off = 0;
+
+    for (int i = 0; i < nw; i++) {
+        size_t end = off + chunk + (i < (int)rem ? 1 : 0);
+        slices[i].a = a;
+        slices[i].b = b;
+        slices[i].c = c;
+        slices[i].out = out;
+        slices[i].start = off;
+        slices[i].end = end;
+        slices[i].barrier = barrier;
+        off = end;
+        if (i == nw - 1)
+            parr_fma_slice_worker(&slices[i]);
+        else
+            taskqueue_push(&g_pool.queue, parr_fma_slice_worker, &slices[i]);
+    }
+
+    barrier_wait_and_free(barrier);
+    free(slices);
+}
+
+/* --- Parallel reduction: sum ------------------------------------------- */
+
+typedef struct {
+    const void *data;
+    size_t start;
+    size_t end;
+    int is_float;
+    double result;
+    Barrier *barrier;
+} ParrReduceSlice;
+
+static void parr_reduce_sum_worker(void *arg)
+{
+    ParrReduceSlice *s = (ParrReduceSlice *)arg;
+    size_t n = s->end - s->start;
+    double acc = 0.0;
+
+#if INTPTR_MAX == INT64_MAX
+    if (s->is_float) {
+        const double *data = (const double *)s->data + s->start;
+#ifdef DISTURB_ENABLE_SIMD
+        acc = simd_f64_sum(data, n);
+#else
+        for (size_t i = 0; i < n; i++) acc += data[i];
+#endif
+    } else {
+        const int64_t *data = (const int64_t *)s->data + s->start;
+        for (size_t i = 0; i < n; i++) acc += (double)data[i];
+    }
+#else
+    if (s->is_float) {
+        const float *data = (const float *)s->data + s->start;
+        for (size_t i = 0; i < n; i++) acc += (double)data[i];
+    } else {
+        const int32_t *data = (const int32_t *)s->data + s->start;
+        for (size_t i = 0; i < n; i++) acc += (double)data[i];
+    }
+#endif
+    s->result = acc;
+    barrier_wait(s->barrier);
+}
+
+double parr_reduce_sum(const void *data, size_t count, int is_float)
+{
+    pool_ensure_init();
+    int nw = g_pool.num_workers;
+    if (nw < 1) nw = 1;
+    if ((size_t)nw > count / 1024) nw = (int)(count / 1024);
+    if (nw < 1) nw = 1;
+
+    ParrReduceSlice *slices = (ParrReduceSlice *)malloc((size_t)nw * sizeof(ParrReduceSlice));
+    if (!slices) {
+        /* fallback: scalar */
+        double acc = 0.0;
+#if INTPTR_MAX == INT64_MAX
+        if (is_float) {
+            const double *d = (const double *)data;
+            for (size_t i = 0; i < count; i++) acc += d[i];
+        } else {
+            const int64_t *d = (const int64_t *)data;
+            for (size_t i = 0; i < count; i++) acc += (double)d[i];
+        }
+#endif
+        return acc;
+    }
+    Barrier *barrier = barrier_create(nw);
+
+    size_t chunk = count / (size_t)nw;
+    size_t rem = count % (size_t)nw;
+    size_t off = 0;
+
+    for (int i = 0; i < nw; i++) {
+        size_t end = off + chunk + (i < (int)rem ? 1 : 0);
+        slices[i].data = data;
+        slices[i].start = off;
+        slices[i].end = end;
+        slices[i].is_float = is_float;
+        slices[i].result = 0.0;
+        slices[i].barrier = barrier;
+        off = end;
+        if (i == nw - 1)
+            parr_reduce_sum_worker(&slices[i]);
+        else
+            taskqueue_push(&g_pool.queue, parr_reduce_sum_worker, &slices[i]);
+    }
+
+    barrier_wait_and_free(barrier);
+
+    double total = 0.0;
+    for (int i = 0; i < nw; i++) total += slices[i].result;
+    free(slices);
+    return total;
+}
+
+/* --- Parallel reduction: dot product ----------------------------------- */
+
+typedef struct {
+    const void *a;
+    const void *b;
+    size_t start;
+    size_t end;
+    int is_float;
+    double result;
+    Barrier *barrier;
+} ParrDotSlice;
+
+static void parr_reduce_dot_worker(void *arg)
+{
+    ParrDotSlice *s = (ParrDotSlice *)arg;
+    size_t n = s->end - s->start;
+    double acc = 0.0;
+
+#if INTPTR_MAX == INT64_MAX
+    if (s->is_float) {
+        const double *a = (const double *)s->a + s->start;
+        const double *b = (const double *)s->b + s->start;
+#ifdef DISTURB_ENABLE_SIMD
+        acc = simd_f64_dot(a, b, n);
+#else
+        for (size_t i = 0; i < n; i++) acc += a[i] * b[i];
+#endif
+    } else {
+        const int64_t *a = (const int64_t *)s->a + s->start;
+        const int64_t *b = (const int64_t *)s->b + s->start;
+        for (size_t i = 0; i < n; i++) acc += (double)a[i] * (double)b[i];
+    }
+#else
+    if (s->is_float) {
+        const float *a = (const float *)s->a + s->start;
+        const float *b = (const float *)s->b + s->start;
+        for (size_t i = 0; i < n; i++) acc += (double)a[i] * (double)b[i];
+    } else {
+        const int32_t *a = (const int32_t *)s->a + s->start;
+        const int32_t *b = (const int32_t *)s->b + s->start;
+        for (size_t i = 0; i < n; i++) acc += (double)a[i] * (double)b[i];
+    }
+#endif
+    s->result = acc;
+    barrier_wait(s->barrier);
+}
+
+double parr_reduce_dot(const void *a, const void *b, size_t count, int is_float)
+{
+    pool_ensure_init();
+    int nw = g_pool.num_workers;
+    if (nw < 1) nw = 1;
+    if ((size_t)nw > count / 1024) nw = (int)(count / 1024);
+    if (nw < 1) nw = 1;
+
+    ParrDotSlice *slices = (ParrDotSlice *)malloc((size_t)nw * sizeof(ParrDotSlice));
+    if (!slices) {
+        /* fallback scalar */
+        double acc = 0.0;
+#if INTPTR_MAX == INT64_MAX
+        if (is_float) {
+            const double *da = (const double *)a, *db = (const double *)b;
+            for (size_t i = 0; i < count; i++) acc += da[i] * db[i];
+        } else {
+            const int64_t *da = (const int64_t *)a, *db = (const int64_t *)b;
+            for (size_t i = 0; i < count; i++) acc += (double)da[i] * (double)db[i];
+        }
+#endif
+        return acc;
+    }
+    Barrier *barrier = barrier_create(nw);
+
+    size_t chunk = count / (size_t)nw;
+    size_t rem = count % (size_t)nw;
+    size_t off = 0;
+
+    for (int i = 0; i < nw; i++) {
+        size_t end = off + chunk + (i < (int)rem ? 1 : 0);
+        slices[i].a = a;
+        slices[i].b = b;
+        slices[i].start = off;
+        slices[i].end = end;
+        slices[i].is_float = is_float;
+        slices[i].result = 0.0;
+        slices[i].barrier = barrier;
+        off = end;
+        if (i == nw - 1)
+            parr_reduce_dot_worker(&slices[i]);
+        else
+            taskqueue_push(&g_pool.queue, parr_reduce_dot_worker, &slices[i]);
+    }
+
+    barrier_wait_and_free(barrier);
+
+    double total = 0.0;
+    for (int i = 0; i < nw; i++) total += slices[i].result;
+    free(slices);
+    return total;
 }
 
 /* ===========================================================================

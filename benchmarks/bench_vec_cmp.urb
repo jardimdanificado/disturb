@@ -1,0 +1,34 @@
+// bench_vec_cmp.urb — Stress vector comparison operations (parallel dispatch)
+// Exercises: vm_vec_cmp → parr_dispatch_cmp (both Int[] and Float[] paths)
+
+N = 50000,
+
+// Int arrays
+a = 0,
+a.size = N,
+b = 0,
+b.size = N,
+for (i = 0, i < N, i++) {
+    a[i] = i + 1,
+    b[i] = N - i,
+}
+
+// Float arrays
+af = a.toFloat(),
+bf = b.toFloat(),
+
+ROUNDS = 30,
+for (r = 0, r < ROUNDS, r++) {
+    // Int comparisons
+    ci = a < b,
+    di = a > b,
+    ei = a == b,
+    // Float comparisons
+    cf = af < bf,
+    df = af > bf,
+    ef = af == bf,
+}
+
+println("bench_vec_cmp done"),
+println(ci[0]),
+println(cf[N - 1]),

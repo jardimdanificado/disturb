@@ -20,6 +20,10 @@
 
 #ifdef DISTURB_ENABLE_GPU
 
+#ifndef CL_TARGET_OPENCL_VERSION
+#  define CL_TARGET_OPENCL_VERSION 120
+#endif
+
 #ifdef __APPLE__
 #  include <OpenCL/opencl.h>
 #else
@@ -510,21 +514,24 @@ static void native_gpu_read(VM *vm, List *stack, List *global)
         gpu_push_entry(vm, res_entry);
     } else {
         /* Original Int[] path */
-        size_t read_bytes = (size_t)count * sizeof(Int);
-        if (read_bytes > buf->size_bytes) read_bytes = buf->size_bytes;
+        size_t read_count = (size_t)count;
+        size_t read_bytes = read_count * sizeof(Int);
+        if (read_bytes > buf->size_bytes) {
+            read_bytes = buf->size_bytes;
+            read_count = read_bytes / sizeof(Int);
+        }
 
-        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, read_bytes);
-        if (!result) return;
+        ObjEntry *res_entry = vm_make_int_list(vm, (Int)read_count);
+        if (!res_entry) return;
 
         cl_int err = clEnqueueReadBuffer(buf->ctx->queue, buf->mem, CL_TRUE,
                                           0, read_bytes,
-                                          disturb_bytes_data(result),
+                                          disturb_bytes_data(res_entry->obj),
                                           0, NULL, NULL);
         if (err != CL_SUCCESS) {
             fprintf(stderr, "gpu.read: clEnqueueReadBuffer failed (err=%d)\n", err);
         }
 
-        ObjEntry *res_entry = vm_reg_alloc(vm, result);
         gpu_push_entry(vm, res_entry);
     }
 }
@@ -615,6 +622,238 @@ void gpu_module_install(VM *vm, ObjEntry *gpu_entry)
     gpu_add_module_fn(vm, gpu_entry, "read", native_gpu_read);
     gpu_add_module_fn(vm, gpu_entry, "run", native_gpu_run);
     gpu_add_module_fn(vm, gpu_entry, "info", native_gpu_info);
+}
+
+/* ===========================================================================
+ * AUTO-DISPATCH — Transparent GPU acceleration for large array operations.
+ *
+ * Lazily initializes an OpenCL context and pre-compiles arithmetic kernels.
+ * Called from vm_vec_arith when Float[] arrays exceed GPU_AUTO_THRESHOLD.
+ * Handles double↔float32 conversion transparently on 64-bit platforms.
+ * =========================================================================== */
+
+#include "gpu.h"       /* for GPU_AUTO_THRESHOLD */
+
+/* Pre-compiled kernel source for float arithmetic operations.
+ * Each __kernel operates on float arrays: out[i] = a[i] OP b[i].
+ * We use ba/bb broadcast flags encoded as kernel arg ints. */
+static const char *gpu_auto_kernel_src =
+    "__kernel void gpu_arith(__global const float *a,\n"
+    "                        __global const float *b,\n"
+    "                        __global float *out,\n"
+    "                        const int ba,\n"
+    "                        const int bb,\n"
+    "                        const int op) {\n"
+    "    int i = get_global_id(0);\n"
+    "    float av = ba ? a[0] : a[i];\n"
+    "    float bv = bb ? b[0] : b[i];\n"
+    "    float r = 0.0f;\n"
+    "    if (op == 0) r = av + bv;\n"
+    "    else if (op == 1) r = av - bv;\n"
+    "    else if (op == 2) r = av * bv;\n"
+    "    else if (op == 3) r = (bv != 0.0f) ? av / bv : 0.0f;\n"
+    "    else if (op == 4) r = fmod(av, bv);\n"
+    "    out[i] = r;\n"
+    "}\n";
+
+/* Singleton auto-dispatch context */
+typedef struct {
+    int initialized;
+    int failed;        /* set if init failed — never retry */
+    cl_context context;
+    cl_command_queue queue;
+    cl_device_id device;
+    cl_kernel arith_kernel;
+    cl_program arith_program;
+} GpuAutoCtx;
+
+static GpuAutoCtx g_gpu_auto = { .initialized = 0, .failed = 0 };
+
+static int gpu_auto_init(void)
+{
+    if (g_gpu_auto.initialized) return 1;
+    if (g_gpu_auto.failed) return 0;
+
+    cl_platform_id platform = NULL;
+    cl_uint num_platforms = 0;
+    if (clGetPlatformIDs(1, &platform, &num_platforms) != CL_SUCCESS || num_platforms == 0) {
+        g_gpu_auto.failed = 1;
+        return 0;
+    }
+
+    cl_device_id device = NULL;
+    cl_uint num_devices = 0;
+    if (clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, &num_devices) != CL_SUCCESS
+        || num_devices == 0) {
+        /* Fallback to any accelerator/CPU device */
+        if (clGetDeviceIDs(platform, CL_DEVICE_TYPE_ALL, 1, &device, &num_devices) != CL_SUCCESS
+            || num_devices == 0) {
+            g_gpu_auto.failed = 1;
+            return 0;
+        }
+    }
+
+    cl_int err;
+    cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
+    if (err != CL_SUCCESS) { g_gpu_auto.failed = 1; return 0; }
+
+#ifdef CL_VERSION_2_0
+    cl_command_queue queue = clCreateCommandQueueWithProperties(context, device, NULL, &err);
+#else
+    cl_command_queue queue = clCreateCommandQueue(context, device, 0, &err);
+#endif
+    if (err != CL_SUCCESS) {
+        clReleaseContext(context);
+        g_gpu_auto.failed = 1;
+        return 0;
+    }
+
+    /* Compile the arithmetic kernel */
+    size_t src_len = strlen(gpu_auto_kernel_src);
+    cl_program program = clCreateProgramWithSource(context, 1, &gpu_auto_kernel_src, &src_len, &err);
+    if (err != CL_SUCCESS) {
+        clReleaseCommandQueue(queue);
+        clReleaseContext(context);
+        g_gpu_auto.failed = 1;
+        return 0;
+    }
+
+    err = clBuildProgram(program, 1, &device, "-cl-fast-relaxed-math", NULL, NULL);
+    if (err != CL_SUCCESS) {
+        clReleaseProgram(program);
+        clReleaseCommandQueue(queue);
+        clReleaseContext(context);
+        g_gpu_auto.failed = 1;
+        return 0;
+    }
+
+    cl_kernel kernel = NULL;
+    clCreateKernelsInProgram(program, 1, &kernel, NULL);
+    if (!kernel) {
+        clReleaseProgram(program);
+        clReleaseCommandQueue(queue);
+        clReleaseContext(context);
+        g_gpu_auto.failed = 1;
+        return 0;
+    }
+
+    g_gpu_auto.context = context;
+    g_gpu_auto.queue = queue;
+    g_gpu_auto.device = device;
+    g_gpu_auto.arith_kernel = kernel;
+    g_gpu_auto.arith_program = program;
+    g_gpu_auto.initialized = 1;
+    return 1;
+}
+
+int gpu_auto_arith(const void *a, const void *b, void *out,
+                   size_t count, int ba, int bb, int op)
+{
+    if (!gpu_auto_init()) return 0;
+
+    /* Sizes: a needs ba?1:count elements, b needs bb?1:count elements */
+    size_t a_count = ba ? 1 : count;
+    size_t b_count = bb ? 1 : count;
+    size_t a_bytes = a_count * sizeof(float);
+    size_t b_bytes = b_count * sizeof(float);
+    size_t out_bytes = count * sizeof(float);
+
+    /* Convert double → float32 for GPU */
+    float *fa = (float *)malloc(a_bytes);
+    float *fb = (float *)malloc(b_bytes);
+    float *fout = (float *)malloc(out_bytes);
+    if (!fa || !fb || !fout) {
+        free(fa); free(fb); free(fout);
+        return 0;
+    }
+
+#if INTPTR_MAX == INT64_MAX
+    {
+        const double *da = (const double *)a;
+        const double *db = (const double *)b;
+        for (size_t i = 0; i < a_count; i++) fa[i] = (float)da[i];
+        for (size_t i = 0; i < b_count; i++) fb[i] = (float)db[i];
+    }
+#else
+    memcpy(fa, a, a_bytes);
+    memcpy(fb, b, b_bytes);
+#endif
+
+    cl_int err;
+    cl_mem buf_a = clCreateBuffer(g_gpu_auto.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   a_bytes, fa, &err);
+    if (err != CL_SUCCESS) { free(fa); free(fb); free(fout); return 0; }
+
+    cl_mem buf_b = clCreateBuffer(g_gpu_auto.context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                   b_bytes, fb, &err);
+    if (err != CL_SUCCESS) {
+        clReleaseMemObject(buf_a);
+        free(fa); free(fb); free(fout);
+        return 0;
+    }
+
+    cl_mem buf_out = clCreateBuffer(g_gpu_auto.context, CL_MEM_WRITE_ONLY,
+                                     out_bytes, NULL, &err);
+    if (err != CL_SUCCESS) {
+        clReleaseMemObject(buf_a); clReleaseMemObject(buf_b);
+        free(fa); free(fb); free(fout);
+        return 0;
+    }
+
+    /* Set kernel args */
+    cl_int ba_i = ba, bb_i = bb, op_i = op;
+    clSetKernelArg(g_gpu_auto.arith_kernel, 0, sizeof(cl_mem), &buf_a);
+    clSetKernelArg(g_gpu_auto.arith_kernel, 1, sizeof(cl_mem), &buf_b);
+    clSetKernelArg(g_gpu_auto.arith_kernel, 2, sizeof(cl_mem), &buf_out);
+    clSetKernelArg(g_gpu_auto.arith_kernel, 3, sizeof(cl_int), &ba_i);
+    clSetKernelArg(g_gpu_auto.arith_kernel, 4, sizeof(cl_int), &bb_i);
+    clSetKernelArg(g_gpu_auto.arith_kernel, 5, sizeof(cl_int), &op_i);
+
+    /* Enqueue */
+    size_t gws = count;
+    err = clEnqueueNDRangeKernel(g_gpu_auto.queue, g_gpu_auto.arith_kernel,
+                                  1, NULL, &gws, NULL, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        clReleaseMemObject(buf_a); clReleaseMemObject(buf_b); clReleaseMemObject(buf_out);
+        free(fa); free(fb); free(fout);
+        return 0;
+    }
+
+    /* Read back results */
+    err = clEnqueueReadBuffer(g_gpu_auto.queue, buf_out, CL_TRUE,
+                               0, out_bytes, fout, 0, NULL, NULL);
+    clReleaseMemObject(buf_a);
+    clReleaseMemObject(buf_b);
+    clReleaseMemObject(buf_out);
+
+    if (err != CL_SUCCESS) {
+        free(fa); free(fb); free(fout);
+        return 0;
+    }
+
+    /* Convert float32 → double back to output */
+#if INTPTR_MAX == INT64_MAX
+    {
+        double *dout = (double *)out;
+        for (size_t i = 0; i < count; i++) dout[i] = (double)fout[i];
+    }
+#else
+    memcpy(out, fout, out_bytes);
+#endif
+
+    free(fa); free(fb); free(fout);
+    return 1;
+}
+
+void gpu_auto_shutdown(void)
+{
+    if (!g_gpu_auto.initialized) return;
+    if (g_gpu_auto.arith_kernel) clReleaseKernel(g_gpu_auto.arith_kernel);
+    if (g_gpu_auto.arith_program) clReleaseProgram(g_gpu_auto.arith_program);
+    if (g_gpu_auto.queue) clReleaseCommandQueue(g_gpu_auto.queue);
+    if (g_gpu_auto.context) clReleaseContext(g_gpu_auto.context);
+    g_gpu_auto.initialized = 0;
+    g_gpu_auto.failed = 0;
 }
 
 #endif /* DISTURB_ENABLE_GPU */

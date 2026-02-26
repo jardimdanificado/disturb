@@ -1156,6 +1156,161 @@ simd_float_fma(const double *a, const double *b, const double *c, double *out,
         out[i] = (ba ? a[0] : a[i]) * (bb ? b[0] : b[i]) + (bc ? c[0] : c[i]);
 }
 
+/* --- i64 horizontal sum ------------------------------------------------ */
+static inline int64_t simd_int_sum(const int64_t *a, size_t n)
+{
+    int64_t sum = 0;
+    size_t i = 0;
+#if defined(DISTURB_SIMD_AVX2)
+    __m256i acc = _mm256_setzero_si256();
+    for (; i + 4 <= n; i += 4)
+        acc = _mm256_add_epi64(acc, _mm256_loadu_si256((const __m256i*)(a + i)));
+    /* horizontal reduce 4→1 */
+    __m128i lo = _mm256_castsi256_si128(acc);
+    __m128i hi = _mm256_extracti128_si256(acc, 1);
+    lo = _mm_add_epi64(lo, hi);
+    sum = _mm_extract_epi64(lo, 0) + _mm_extract_epi64(lo, 1);
+#elif defined(DISTURB_SIMD_SSE)
+    __m128i acc = _mm_setzero_si128();
+    for (; i + 2 <= n; i += 2)
+        acc = _mm_add_epi64(acc, _mm_loadu_si128((const __m128i*)(a + i)));
+    sum = _mm_extract_epi64(acc, 0) + _mm_extract_epi64(acc, 1);
+#elif defined(DISTURB_SIMD_NEON)
+    int64x2_t acc = vdupq_n_s64(0);
+    for (; i + 2 <= n; i += 2)
+        acc = vaddq_s64(acc, vld1q_s64(a + i));
+    sum = vgetq_lane_s64(acc, 0) + vgetq_lane_s64(acc, 1);
+#endif
+    for (; i < n; i++) sum += a[i];
+    return sum;
+}
+
+/* --- i64 dot product --------------------------------------------------- */
+static inline int64_t simd_int_dot(const int64_t *a, const int64_t *b, size_t n)
+{
+    int64_t dot = 0;
+    /* No native 64-bit multiply in AVX2/SSE, use scalar */
+    for (size_t i = 0; i < n; i++) dot += a[i] * b[i];
+    return dot;
+}
+
+/* --- f64 horizontal min ------------------------------------------------ */
+static inline double simd_f64_min(const double *a, size_t n)
+{
+    if (n == 0) return 0.0;
+    double mn = a[0];
+    size_t i = 1;
+#if defined(DISTURB_SIMD_AVX2)
+    if (n >= 4) {
+        __m256d acc = _mm256_loadu_pd(a);
+        for (i = 4; i + 4 <= n; i += 4)
+            acc = _mm256_min_pd(acc, _mm256_loadu_pd(a + i));
+        __m128d lo = _mm256_castpd256_pd128(acc);
+        __m128d hi = _mm256_extractf128_pd(acc, 1);
+        lo = _mm_min_pd(lo, hi);
+        __m128d t = _mm_unpackhi_pd(lo, lo);
+        lo = _mm_min_sd(lo, t);
+        mn = _mm_cvtsd_f64(lo);
+    }
+#elif defined(DISTURB_SIMD_SSE)
+    if (n >= 2) {
+        __m128d acc = _mm_loadu_pd(a);
+        for (i = 2; i + 2 <= n; i += 2)
+            acc = _mm_min_pd(acc, _mm_loadu_pd(a + i));
+        __m128d t = _mm_unpackhi_pd(acc, acc);
+        acc = _mm_min_sd(acc, t);
+        mn = _mm_cvtsd_f64(acc);
+    }
+#elif defined(DISTURB_SIMD_NEON)
+    if (n >= 2) {
+        float64x2_t acc = vld1q_f64(a);
+        for (i = 2; i + 2 <= n; i += 2)
+            acc = vminq_f64(acc, vld1q_f64(a + i));
+        mn = vgetq_lane_f64(acc, 0) < vgetq_lane_f64(acc, 1)
+           ? vgetq_lane_f64(acc, 0) : vgetq_lane_f64(acc, 1);
+    }
+#endif
+    for (; i < n; i++) if (a[i] < mn) mn = a[i];
+    return mn;
+}
+
+/* --- f64 horizontal max ------------------------------------------------ */
+static inline double simd_f64_max(const double *a, size_t n)
+{
+    if (n == 0) return 0.0;
+    double mx = a[0];
+    size_t i = 1;
+#if defined(DISTURB_SIMD_AVX2)
+    if (n >= 4) {
+        __m256d acc = _mm256_loadu_pd(a);
+        for (i = 4; i + 4 <= n; i += 4)
+            acc = _mm256_max_pd(acc, _mm256_loadu_pd(a + i));
+        __m128d lo = _mm256_castpd256_pd128(acc);
+        __m128d hi = _mm256_extractf128_pd(acc, 1);
+        lo = _mm_max_pd(lo, hi);
+        __m128d t = _mm_unpackhi_pd(lo, lo);
+        lo = _mm_max_sd(lo, t);
+        mx = _mm_cvtsd_f64(lo);
+    }
+#elif defined(DISTURB_SIMD_SSE)
+    if (n >= 2) {
+        __m128d acc = _mm_loadu_pd(a);
+        for (i = 2; i + 2 <= n; i += 2)
+            acc = _mm_max_pd(acc, _mm_loadu_pd(a + i));
+        __m128d t = _mm_unpackhi_pd(acc, acc);
+        acc = _mm_max_sd(acc, t);
+        mx = _mm_cvtsd_f64(acc);
+    }
+#elif defined(DISTURB_SIMD_NEON)
+    if (n >= 2) {
+        float64x2_t acc = vld1q_f64(a);
+        for (i = 2; i + 2 <= n; i += 2)
+            acc = vmaxq_f64(acc, vld1q_f64(a + i));
+        mx = vgetq_lane_f64(acc, 0) > vgetq_lane_f64(acc, 1)
+           ? vgetq_lane_f64(acc, 0) : vgetq_lane_f64(acc, 1);
+    }
+#endif
+    for (; i < n; i++) if (a[i] > mx) mx = a[i];
+    return mx;
+}
+
+/* --- f64 element-wise abs ---------------------------------------------- */
+static inline void simd_f64_abs(const double *a, double *out, size_t n)
+{
+    size_t i = 0;
+#if defined(DISTURB_SIMD_AVX2)
+    /* Clear sign bit: AND with ~(1<<63) */
+    __m256d mask = _mm256_castsi256_pd(_mm256_set1_epi64x(0x7FFFFFFFFFFFFFFFLL));
+    for (; i + 4 <= n; i += 4)
+        _mm256_storeu_pd(out + i, _mm256_and_pd(_mm256_loadu_pd(a + i), mask));
+#elif defined(DISTURB_SIMD_SSE)
+    __m128d mask = _mm_castsi128_pd(_mm_set1_epi64x(0x7FFFFFFFFFFFFFFFLL));
+    for (; i + 2 <= n; i += 2)
+        _mm_storeu_pd(out + i, _mm_and_pd(_mm_loadu_pd(a + i), mask));
+#elif defined(DISTURB_SIMD_NEON)
+    for (; i + 2 <= n; i += 2)
+        vst1q_f64(out + i, vabsq_f64(vld1q_f64(a + i)));
+#endif
+    for (; i < n; i++) out[i] = a[i] < 0 ? -a[i] : a[i];
+}
+
+/* --- f64 element-wise sqrt --------------------------------------------- */
+static inline void simd_f64_sqrt(const double *a, double *out, size_t n)
+{
+    size_t i = 0;
+#if defined(DISTURB_SIMD_AVX2)
+    for (; i + 4 <= n; i += 4)
+        _mm256_storeu_pd(out + i, _mm256_sqrt_pd(_mm256_loadu_pd(a + i)));
+#elif defined(DISTURB_SIMD_SSE)
+    for (; i + 2 <= n; i += 2)
+        _mm_storeu_pd(out + i, _mm_sqrt_pd(_mm_loadu_pd(a + i)));
+#elif defined(DISTURB_SIMD_NEON)
+    for (; i + 2 <= n; i += 2)
+        vst1q_f64(out + i, vsqrtq_f64(vld1q_f64(a + i)));
+#endif
+    for (; i < n; i++) out[i] = sqrt(a[i]);
+}
+
 #else /* 32-bit reductions */
 
 static inline float simd_f64_sum(const float *a, size_t n)

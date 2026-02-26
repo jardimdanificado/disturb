@@ -1,0 +1,33 @@
+// bench_vec_arith.urb — Stress vector arithmetic (SIMD + parallel)
+// Creates two large Float[] arrays and performs repeated element-wise operations.
+// Exercises: vm_vec_arith → GPU auto-dispatch / parr_dispatch / SIMD kernels
+
+N = 50000,
+
+// Build arrays
+a = 0,
+a.size = N,
+b = 0,
+b.size = N,
+for (i = 0, i < N, i++) {
+    a[i] = i + 1,
+    b[i] = N - i,
+}
+
+// Convert to float for SIMD paths
+af = a.toFloat(),
+bf = b.toFloat(),
+
+// Repeat element-wise ops
+ROUNDS = 50,
+for (r = 0, r < ROUNDS, r++) {
+    c = af + bf,
+    d = af * bf,
+    e = af - bf,
+    f = c + d,
+    g = f * e,
+}
+
+println("bench_vec_arith done"),
+println(g[0]),
+println(g[N - 1]),

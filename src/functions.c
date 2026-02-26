@@ -12,6 +12,10 @@
 #include "simd_ops.h"
 #endif
 
+#ifdef DISTURB_ENABLE_PARALLEL
+#include "parallel.h"
+#endif
+
 #ifdef DISTURB_ENABLE_FFI
 void native_ffi_open(VM *vm, List *stack, List *global);
 #endif
@@ -45,16 +49,6 @@ static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *o
         return 1;
     }
     return 0;
-}
-
-static void write_int_bytes(List *obj, Int index, Int value)
-{
-    memcpy(disturb_bytes_data(obj) + (size_t)index * sizeof(Int), &value, sizeof(Int));
-}
-
-static void write_float_bytes(List *obj, Int index, Float value)
-{
-    memcpy(disturb_bytes_data(obj) + (size_t)index * sizeof(Float), &value, sizeof(Float));
 }
 
 static uint32_t native_argc(VM *vm, List *global)
@@ -1380,12 +1374,9 @@ static void native_to_int(VM *vm, List *stack, List *global)
     Int count = vm_value_len_entry(target);
     ObjEntry *entry = vm_make_int_list(vm, count);
     if (!entry) return;
-    List *obj = entry->obj;
-    for (Int i = 0; i < count; i++) {
-        Float v = 0;
-        memcpy(&v, disturb_bytes_data(target->obj) + (size_t)i * sizeof(Float), sizeof(Float));
-        write_int_bytes(obj, i, (Int)v);
-    }
+    Float *src = (Float *)disturb_bytes_data(target->obj);
+    Int *dst = (Int *)disturb_bytes_data(entry->obj);
+    for (Int i = 0; i < count; i++) dst[i] = (Int)src[i];
     stack = push_entry(vm, stack, entry);
 }
 
@@ -1401,19 +1392,14 @@ static void native_to_float(VM *vm, List *stack, List *global)
     Int count = entry_is_string(target) ? (Int)bytes_len : (Int)(bytes_len / sizeof(Int));
     ObjEntry *entry = vm_make_float_list(vm, count);
     if (!entry) return;
-    List *obj = entry->obj;
     if (entry_is_string(target)) {
-        for (Int i = 0; i < count; i++) {
-            unsigned char b = (unsigned char)disturb_bytes_data(target->obj)[i];
-            Float v = (Float)b;
-            write_float_bytes(obj, i, v);
-        }
+        const unsigned char *src = (const unsigned char *)disturb_bytes_data(target->obj);
+        Float *dst = (Float *)disturb_bytes_data(entry->obj);
+        for (Int i = 0; i < count; i++) dst[i] = (Float)src[i];
     } else {
-        for (Int i = 0; i < count; i++) {
-            Int v = 0;
-            memcpy(&v, disturb_bytes_data(target->obj) + (size_t)i * sizeof(Int), sizeof(Int));
-            write_float_bytes(obj, i, (Float)v);
-        }
+        Int *src = (Int *)disturb_bytes_data(target->obj);
+        Float *dst = (Float *)disturb_bytes_data(entry->obj);
+        for (Int i = 0; i < count; i++) dst[i] = (Float)src[i];
     }
     stack = push_entry(vm, stack, entry);
 }
@@ -1937,6 +1923,12 @@ static void native_sum(VM *vm, List *stack, List *global)
     if (type == DISTURB_T_FLOAT) {
         size_t count = blen / sizeof(Float);
         Float *data = (Float *)disturb_bytes_data(arr->obj);
+#ifdef DISTURB_ENABLE_PARALLEL
+        if (count >= PARR_THRESHOLD) {
+            push_number(vm, stack, parr_reduce_sum(data, count, 1));
+            return;
+        }
+#endif
 #ifdef DISTURB_ENABLE_SIMD
         if (count >= DISTURB_SIMD_THRESHOLD) {
             push_number(vm, stack, (double)simd_f64_sum((const double *)data, count));
@@ -1949,6 +1941,12 @@ static void native_sum(VM *vm, List *stack, List *global)
     } else if (type == DISTURB_T_INT && !entry_is_string(arr)) {
         size_t count = blen / sizeof(Int);
         Int *data = (Int *)disturb_bytes_data(arr->obj);
+#ifdef DISTURB_ENABLE_PARALLEL
+        if (count >= PARR_THRESHOLD) {
+            push_number(vm, stack, parr_reduce_sum(data, count, 0));
+            return;
+        }
+#endif
         double acc = 0;
         for (size_t i = 0; i < count; i++) acc += (double)data[i];
         push_number(vm, stack, acc);
@@ -1987,6 +1985,12 @@ static void native_dot(VM *vm, List *stack, List *global)
         size_t count = ac < bc ? ac : bc;
         Float *ad = (Float *)disturb_bytes_data(a_entry->obj);
         Float *bd = (Float *)disturb_bytes_data(b_entry->obj);
+#ifdef DISTURB_ENABLE_PARALLEL
+        if (count >= PARR_THRESHOLD) {
+            push_number(vm, stack, parr_reduce_dot(ad, bd, count, 1));
+            return;
+        }
+#endif
 #ifdef DISTURB_ENABLE_SIMD
         if (count >= DISTURB_SIMD_THRESHOLD) {
             push_number(vm, stack, (double)simd_f64_dot((const double *)ad, (const double *)bd, count));
@@ -1998,12 +2002,18 @@ static void native_dot(VM *vm, List *stack, List *global)
         push_number(vm, stack, acc);
     } else if (at == DISTURB_T_INT && bt == DISTURB_T_INT &&
                !entry_is_string(a_entry) && !entry_is_string(b_entry)) {
-        /* Both Int[] — scalar (no SIMD i64 dot) */
+        /* Both Int[] — parallel for large arrays */
         size_t ac = alen / sizeof(Int);
         size_t bc = blen / sizeof(Int);
         size_t count = ac < bc ? ac : bc;
         Int *ad = (Int *)disturb_bytes_data(a_entry->obj);
         Int *bd = (Int *)disturb_bytes_data(b_entry->obj);
+#ifdef DISTURB_ENABLE_PARALLEL
+        if (count >= PARR_THRESHOLD) {
+            push_number(vm, stack, parr_reduce_dot(ad, bd, count, 0));
+            return;
+        }
+#endif
         double acc = 0;
         for (size_t i = 0; i < count; i++) acc += (double)ad[i] * (double)bd[i];
         push_number(vm, stack, acc);
@@ -2062,6 +2072,13 @@ static void native_fma(VM *vm, List *stack, List *global)
     Float *cd = (Float *)disturb_bytes_data(c_entry->obj);
     Float *out = (Float *)disturb_bytes_data(result->obj);
 
+#ifdef DISTURB_ENABLE_PARALLEL
+    if (count >= PARR_THRESHOLD) {
+        parr_dispatch_fma(ad, bd, cd, out, count);
+        push_entry(vm, stack, result);
+        return;
+    }
+#endif
 #ifdef DISTURB_ENABLE_SIMD
     if (count >= DISTURB_SIMD_THRESHOLD) {
         simd_float_fma((const double *)ad, (const double *)bd,

@@ -6,6 +6,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Branch-prediction hints for hot paths */
+#ifdef __GNUC__
+#  define LIKELY(x)   __builtin_expect(!!(x), 1)
+#  define UNLIKELY(x) __builtin_expect(!!(x), 0)
+#else
+#  define LIKELY(x)   (x)
+#  define UNLIKELY(x) (x)
+#endif
+
 #ifdef DISTURB_ENABLE_SIMD
 #include "simd_ops.h"
 #endif
@@ -431,6 +440,17 @@ static int vm_vec_arith(VM *vm, List *lobj, List *robj,
     }
 
     Float *fp_out = vm_float_ptr(result);
+#ifdef DISTURB_ENABLE_GPU
+    if ((size_t)out_count >= GPU_AUTO_THRESHOLD && op >= BC_ADD && op <= BC_MOD) {
+        if (gpu_auto_arith(fa, fb, fp_out, (size_t)out_count, ba, bb, op - BC_ADD)) {
+            if (fa_heap) free(fa);
+            if (fb_heap) free(fb);
+            *out_result = result;
+            return 1;
+        }
+        /* GPU unavailable/failed — fall through to parallel/SIMD/scalar */
+    }
+#endif
 #ifdef DISTURB_ENABLE_PARALLEL
     if ((size_t)out_count >= PARR_THRESHOLD && op >= BC_ADD && op <= BC_MOD) {
         parr_dispatch(fa, fb, fp_out, (size_t)out_count, ba, bb, op - BC_ADD, 1);
@@ -531,6 +551,24 @@ static int vm_vec_bitwise(VM *vm, List *lobj, List *robj,
             op_out[i] = (op == BC_SHL) ? (Int)(((uint64_t)lv) << shift) : (lv >> shift);
         }
     } else {
+#ifdef DISTURB_ENABLE_PARALLEL
+        if ((size_t)out_count >= PARR_THRESHOLD) {
+            int bop = -1;
+            switch (op) {
+            case BC_BITAND: bop = 0; break;
+            case BC_BITOR:  bop = 1; break;
+            case BC_BITXOR: bop = 2; break;
+            default: break;
+            }
+            if (bop >= 0) {
+                parr_dispatch_bitwise(ap, bp, op_out, (size_t)out_count, ba, bb, bop);
+                if (ap_heap) free(ap);
+                if (bp_heap) free(bp);
+                *out_result = result;
+                return 1;
+            }
+        }
+#endif
 #ifdef DISTURB_ENABLE_SIMD
         if ((size_t)out_count >= DISTURB_SIMD_THRESHOLD) {
             switch (op) {
@@ -576,6 +614,13 @@ static int vm_vec_unary(VM *vm, List *vobj, Int type, Int count,
         if (type == DISTURB_T_INT) {
             Int *src = vm_int_ptr(vobj);
             Int *dst = vm_int_ptr(result);
+#ifdef DISTURB_ENABLE_PARALLEL
+            if ((size_t)count >= PARR_THRESHOLD) {
+                parr_dispatch_unary(src, dst, (size_t)count, 1, 0);
+                *out_result = result;
+                return 1;
+            }
+#endif
 #ifdef DISTURB_ENABLE_SIMD
             if ((size_t)count >= DISTURB_SIMD_THRESHOLD) {
                 simd_int_not(src, dst, (size_t)count);
@@ -599,6 +644,13 @@ static int vm_vec_unary(VM *vm, List *vobj, Int type, Int count,
         if (!result) return 0;
         Int *src = vm_int_ptr(vobj);
         Int *dst = vm_int_ptr(result);
+#ifdef DISTURB_ENABLE_PARALLEL
+        if ((size_t)count >= PARR_THRESHOLD) {
+            parr_dispatch_unary(src, dst, (size_t)count, 0, 0);
+            *out_result = result;
+            return 1;
+        }
+#endif
 #ifdef DISTURB_ENABLE_SIMD
         if ((size_t)count >= DISTURB_SIMD_THRESHOLD) {
             simd_int_neg(src, dst, (size_t)count);
@@ -615,6 +667,13 @@ static int vm_vec_unary(VM *vm, List *vobj, Int type, Int count,
         if (!result) return 0;
         Float *src = vm_float_ptr(vobj);
         Float *dst = vm_float_ptr(result);
+#ifdef DISTURB_ENABLE_PARALLEL
+        if ((size_t)count >= PARR_THRESHOLD) {
+            parr_dispatch_unary(src, dst, (size_t)count, 0, 1);
+            *out_result = result;
+            return 1;
+        }
+#endif
 #ifdef DISTURB_ENABLE_SIMD
         if ((size_t)count >= DISTURB_SIMD_THRESHOLD) {
             simd_float_neg(src, dst, (size_t)count);
@@ -658,6 +717,13 @@ static int vm_vec_cmp(VM *vm, List *lobj, List *robj,
     if (lt == DISTURB_T_INT && rt == DISTURB_T_INT) {
         Int *ap = vm_int_ptr(lobj);
         Int *bp = vm_int_ptr(robj);
+#ifdef DISTURB_ENABLE_PARALLEL
+        if (cmp_op >= 0 && (size_t)out_count >= PARR_THRESHOLD) {
+            parr_dispatch_cmp(ap, bp, op_out, (size_t)out_count, ba, bb, cmp_op, 0);
+            *out_result = result;
+            return 1;
+        }
+#endif
 #ifdef DISTURB_ENABLE_SIMD
         if (cmp_op >= 0 && (size_t)out_count >= DISTURB_SIMD_THRESHOLD) {
             simd_int_cmp(ap, bp, op_out, (size_t)out_count, ba, bb, cmp_op);
@@ -703,6 +769,15 @@ static int vm_vec_cmp(VM *vm, List *lobj, List *robj,
             Int *ip = vm_int_ptr(robj);
             for (size_t j = 0; j < need; j++) fb[j] = (Float)ip[j];
         }
+#ifdef DISTURB_ENABLE_PARALLEL
+        if (cmp_op >= 0 && (size_t)out_count >= PARR_THRESHOLD) {
+            parr_dispatch_cmp(fa, fb, op_out, (size_t)out_count, ba, bb, cmp_op, 1);
+            if (fa_heap) free(fa);
+            if (fb_heap) free(fb);
+            *out_result = result;
+            return 1;
+        }
+#endif
 #ifdef DISTURB_ENABLE_SIMD
         if (cmp_op >= 0 && (size_t)out_count >= DISTURB_SIMD_THRESHOLD) {
             simd_float_cmp(fa, fb, op_out, (size_t)out_count, ba, bb, cmp_op);
@@ -3148,6 +3223,12 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "max", "max");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "sum", "sum");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "dot", "dot");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "fma", "fma");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "abs", "abs");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "floor", "floor");
@@ -3258,6 +3339,9 @@ void vm_free(VM *vm)
 {
 #ifdef DISTURB_ENABLE_PARALLEL
     parallel_shutdown();
+#endif
+#ifdef DISTURB_ENABLE_GPU
+    gpu_auto_shutdown();
 #endif
     for (Int i = 0; i < vm->reg_count; i++) {
         ObjEntry *entry = vm->reg[i];
@@ -5182,107 +5266,95 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
 {
     size_t pc = 0;
     uint8_t op = 0;
+
 #ifdef __GNUC__
-    static void *dispatch_table[256] = {
-        [BC_PUSH_INT] = &&BC_L_PUSH_INT,
-        [BC_PUSH_FLOAT] = &&BC_L_PUSH_FLOAT,
-        [BC_PUSH_CHAR] = &&BC_L_PUSH_CHAR,
-        [BC_PUSH_STRING] = &&BC_L_PUSH_STRING,
-        [BC_BUILD_INT] = &&BC_L_BUILD_INT,
-        [BC_BUILD_FLOAT] = &&BC_L_BUILD_FLOAT,
-        [BC_BUILD_OBJECT] = &&BC_L_BUILD_OBJECT,
-        [BC_BUILD_FUNCTION] = &&BC_L_BUILD_FUNCTION,
-        [BC_INDEX] = &&BC_L_INDEX,
-        [BC_STORE_INDEX] = &&BC_L_STORE_INDEX,
-        [BC_LOAD_ROOT] = &&BC_L_LOAD_ROOT,
-        [BC_LOAD_GLOBAL] = &&BC_L_LOAD_GLOBAL,
-        [BC_LOAD_THIS] = &&BC_L_LOAD_THIS,
-        [BC_STORE_GLOBAL] = &&BC_L_STORE_GLOBAL,
-        [BC_SET_THIS] = &&BC_L_SET_THIS,
-        [BC_CALL] = &&BC_L_CALL,
-        [BC_CALL_EX] = &&BC_L_CALL_EX,
-        [BC_JMP] = &&BC_L_JMP,
-        [BC_JMP_IF_FALSE] = &&BC_L_JMP_IF_FALSE,
-        [BC_RETURN] = &&BC_L_RETURN,
-        [BC_POP] = &&BC_L_POP,
-        [BC_DUP] = &&BC_L_DUP,
-        [BC_GC] = &&BC_L_GC,
-        [BC_DUMP] = &&BC_L_DUMP,
-        [BC_BUILD_INT_LIT] = &&BC_L_BUILD_INT_LIT,
-        [BC_BUILD_FLOAT_LIT] = &&BC_L_BUILD_FLOAT_LIT,
-        [BC_ADD] = &&BC_L_ADD,
-        [BC_SUB] = &&BC_L_SUB,
-        [BC_MUL] = &&BC_L_MUL,
-        [BC_DIV] = &&BC_L_DIV,
-        [BC_MOD] = &&BC_L_MOD,
-        [BC_NEG] = &&BC_L_NEG,
-        [BC_NOT] = &&BC_L_NOT,
-        [BC_EQ] = &&BC_L_EQ,
-        [BC_SEQ] = &&BC_L_SEQ,
-        [BC_SNEQ] = &&BC_L_SNEQ,
-        [BC_NEQ] = &&BC_L_NEQ,
-        [BC_LT] = &&BC_L_LT,
-        [BC_LTE] = &&BC_L_LTE,
-        [BC_GT] = &&BC_L_GT,
-        [BC_GTE] = &&BC_L_GTE,
-        [BC_AND] = &&BC_L_AND,
-        [BC_OR] = &&BC_L_OR,
-        [BC_PUSH_CHAR_RAW] = &&BC_L_PUSH_CHAR_RAW,
-        [BC_PUSH_STRING_RAW] = &&BC_L_PUSH_STRING_RAW,
-        [BC_BITAND] = &&BC_L_BITAND,
-        [BC_BITOR] = &&BC_L_BITOR,
-        [BC_BITXOR] = &&BC_L_BITXOR,
-        [BC_SHL] = &&BC_L_SHL,
-        [BC_SHR] = &&BC_L_SHR,
-        [BC_BNOT] = &&BC_L_BNOT
-    };
+    /* Fill all 256 entries with BC_L_UNKNOWN first, then overwrite known.
+     * Eliminates the NULL check on every dispatch. */
+    static void *dispatch_table[256];
+    static int table_init = 0;
+    if (UNLIKELY(!table_init)) {
+        for (int _i = 0; _i < 256; _i++) dispatch_table[_i] = &&BC_L_UNKNOWN;
+        dispatch_table[BC_PUSH_INT] = &&BC_L_PUSH_INT;
+        dispatch_table[BC_PUSH_FLOAT] = &&BC_L_PUSH_FLOAT;
+        dispatch_table[BC_PUSH_CHAR] = &&BC_L_PUSH_CHAR;
+        dispatch_table[BC_PUSH_STRING] = &&BC_L_PUSH_STRING;
+        dispatch_table[BC_BUILD_INT] = &&BC_L_BUILD_INT;
+        dispatch_table[BC_BUILD_FLOAT] = &&BC_L_BUILD_FLOAT;
+        dispatch_table[BC_BUILD_OBJECT] = &&BC_L_BUILD_OBJECT;
+        dispatch_table[BC_BUILD_FUNCTION] = &&BC_L_BUILD_FUNCTION;
+        dispatch_table[BC_INDEX] = &&BC_L_INDEX;
+        dispatch_table[BC_STORE_INDEX] = &&BC_L_STORE_INDEX;
+        dispatch_table[BC_LOAD_ROOT] = &&BC_L_LOAD_ROOT;
+        dispatch_table[BC_LOAD_GLOBAL] = &&BC_L_LOAD_GLOBAL;
+        dispatch_table[BC_LOAD_THIS] = &&BC_L_LOAD_THIS;
+        dispatch_table[BC_STORE_GLOBAL] = &&BC_L_STORE_GLOBAL;
+        dispatch_table[BC_SET_THIS] = &&BC_L_SET_THIS;
+        dispatch_table[BC_CALL] = &&BC_L_CALL;
+        dispatch_table[BC_CALL_EX] = &&BC_L_CALL_EX;
+        dispatch_table[BC_JMP] = &&BC_L_JMP;
+        dispatch_table[BC_JMP_IF_FALSE] = &&BC_L_JMP_IF_FALSE;
+        dispatch_table[BC_RETURN] = &&BC_L_RETURN;
+        dispatch_table[BC_POP] = &&BC_L_POP;
+        dispatch_table[BC_DUP] = &&BC_L_DUP;
+        dispatch_table[BC_GC] = &&BC_L_GC;
+        dispatch_table[BC_DUMP] = &&BC_L_DUMP;
+        dispatch_table[BC_BUILD_INT_LIT] = &&BC_L_BUILD_INT_LIT;
+        dispatch_table[BC_BUILD_FLOAT_LIT] = &&BC_L_BUILD_FLOAT_LIT;
+        dispatch_table[BC_ADD] = &&BC_L_ADD;
+        dispatch_table[BC_SUB] = &&BC_L_SUB;
+        dispatch_table[BC_MUL] = &&BC_L_MUL;
+        dispatch_table[BC_DIV] = &&BC_L_DIV;
+        dispatch_table[BC_MOD] = &&BC_L_MOD;
+        dispatch_table[BC_NEG] = &&BC_L_NEG;
+        dispatch_table[BC_NOT] = &&BC_L_NOT;
+        dispatch_table[BC_EQ] = &&BC_L_EQ;
+        dispatch_table[BC_SEQ] = &&BC_L_SEQ;
+        dispatch_table[BC_SNEQ] = &&BC_L_SNEQ;
+        dispatch_table[BC_NEQ] = &&BC_L_NEQ;
+        dispatch_table[BC_LT] = &&BC_L_LT;
+        dispatch_table[BC_LTE] = &&BC_L_LTE;
+        dispatch_table[BC_GT] = &&BC_L_GT;
+        dispatch_table[BC_GTE] = &&BC_L_GTE;
+        dispatch_table[BC_AND] = &&BC_L_AND;
+        dispatch_table[BC_OR] = &&BC_L_OR;
+        dispatch_table[BC_PUSH_CHAR_RAW] = &&BC_L_PUSH_CHAR_RAW;
+        dispatch_table[BC_PUSH_STRING_RAW] = &&BC_L_PUSH_STRING_RAW;
+        dispatch_table[BC_BITAND] = &&BC_L_BITAND;
+        dispatch_table[BC_BITOR] = &&BC_L_BITOR;
+        dispatch_table[BC_BITXOR] = &&BC_L_BITXOR;
+        dispatch_table[BC_SHL] = &&BC_L_SHL;
+        dispatch_table[BC_SHR] = &&BC_L_SHR;
+        dispatch_table[BC_BNOT] = &&BC_L_BNOT;
+        table_init = 1;
+    }
 #define DISPATCH() do { \
-        if (vm->gc_rate > 0) { \
-            vm->gc_counter++; \
-            if (vm->gc_counter >= vm->gc_rate) { \
+        if (UNLIKELY(vm->gc_rate > 0)) { \
+            if (UNLIKELY(++vm->gc_counter >= vm->gc_rate)) { \
                 vm->gc_counter = 0; \
                 vm_gc(vm); \
             } \
         } \
-        if (pc >= len) goto VM_DONE; \
-        if (!bc_read_u8(data, len, &pc, &op)) { \
-            fprintf(stderr, "bytecode error at pc %zu: truncated opcode\n", pc); \
-            return 0; \
-        } \
-        { \
-            void *target_ = dispatch_table[op]; \
-            if (!target_) goto BC_L_UNKNOWN; \
-            goto *target_; \
-        } \
+        if (UNLIKELY(pc >= len)) goto VM_DONE; \
+        op = data[pc++]; \
+        goto *dispatch_table[op]; \
     } while (0)
 #else
 #define DISPATCH() do { \
-        if (vm->gc_rate > 0) { \
-            vm->gc_counter++; \
-            if (vm->gc_counter >= vm->gc_rate) { \
+        if (UNLIKELY(vm->gc_rate > 0)) { \
+            if (UNLIKELY(++vm->gc_counter >= vm->gc_rate)) { \
                 vm->gc_counter = 0; \
                 vm_gc(vm); \
             } \
         } \
-        if (pc >= len) goto VM_DONE; \
-        if (!bc_read_u8(data, len, &pc, &op)) { \
-            fprintf(stderr, "bytecode error at pc %zu: truncated opcode\n", pc); \
-            return 0; \
-        } \
+        if (UNLIKELY(pc >= len)) goto VM_DONE; \
+        op = data[pc++]; \
         goto VM_EXEC_LOOP; \
     } while (0)
 #endif
-    if (pc >= len) goto VM_DONE;
-    if (!bc_read_u8(data, len, &pc, &op)) {
-        fprintf(stderr, "bytecode error at pc %zu: truncated opcode\n", pc);
-        return 0;
-    }
+    if (UNLIKELY(pc >= len)) goto VM_DONE;
+    op = data[pc++];
 #ifdef __GNUC__
-    {
-        void *target_ = dispatch_table[op];
-        if (!target_) goto BC_L_UNKNOWN;
-        goto *target_;
-    }
+    goto *dispatch_table[op];
 #endif
 
 #ifndef __GNUC__
@@ -6348,6 +6420,36 @@ BC_L_OR:
                                       lt, rt, lc, rc, op, &result))
                         return 0;
                     vm_stack_push_entry(vm, vm_reg_alloc(vm, result));
+                    break;
+                }
+            }
+            
+            /* Fast path: scalar int OP int — avoids double conversion */
+            if (LIKELY(!left_is_string && !right_is_string &&
+                       lt == DISTURB_T_INT && rt == DISTURB_T_INT &&
+                       disturb_bytes_len(left->obj) == sizeof(Int) &&
+                       disturb_bytes_len(right->obj) == sizeof(Int))) {
+                Int li, ri;
+                memcpy(&li, disturb_bytes_data(left->obj), sizeof(Int));
+                memcpy(&ri, disturb_bytes_data(right->obj), sizeof(Int));
+                Int out = 0;
+                int fast = 1;
+                switch (op) {
+                case BC_ADD: out = li + ri; break;
+                case BC_SUB: out = li - ri; break;
+                case BC_MUL: out = li * ri; break;
+                case BC_DIV:
+                    if (ri != 0 && li % ri == 0) { out = li / ri; }
+                    else fast = 0;
+                    break;
+                case BC_MOD:
+                    if (ri != 0) { out = li % ri; }
+                    else fast = 0;
+                    break;
+                default: fast = 0; break;
+                }
+                if (LIKELY(fast)) {
+                    vm_stack_push_entry(vm, vm_make_int_value(vm, out));
                     break;
                 }
             }

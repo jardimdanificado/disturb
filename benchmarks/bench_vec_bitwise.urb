@@ -1,0 +1,28 @@
+// bench_vec_bitwise.urb — Stress vector bitwise operations (parallel dispatch)
+// Exercises: vm_vec_bitwise → parr_dispatch_bitwise
+// Bitwise ops only work on Int[], no SIMD float path — purely parallel vs scalar
+
+N = 50000,
+
+a = 0,
+a.size = N,
+b = 0,
+b.size = N,
+for (i = 0, i < N, i++) {
+    a[i] = i + 1,
+    b[i] = N - i,
+}
+
+// Repeat bitwise ops
+ROUNDS = 50,
+for (r = 0, r < ROUNDS, r++) {
+    c = a & b,
+    d = a | b,
+    e = a ^ b,
+    f = c & d,
+    g = f ^ e,
+}
+
+println("bench_vec_bitwise done"),
+println(g[0]),
+println(g[N - 1]),

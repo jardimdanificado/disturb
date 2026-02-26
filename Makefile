@@ -3,17 +3,50 @@ DISABLE_IO ?= 0
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 IS_WINDOWS := $(findstring MINGW,$(UNAME_S))
 
-# --- Optimization feature flags (all optional, off by default) -----------
-# DISTURB_ENABLE_SIMD=1      → compile with SIMD intrinsics (AVX2/SSE/NEON)
-# DISTURB_ENABLE_PARALLEL=1  → compile thread pool / task module (requires pthreads)
-# DISTURB_ENABLE_GPU=1       → compile OpenCL compute module
+# --- Optimization feature flags ------------------------------------------
+# Set to 0 to explicitly disable. By default, each feature is auto-detected:
+#   SIMD     — enabled if the compiler supports AVX2, SSE4.2, or NEON
+#   PARALLEL — enabled if pthreads is available
+#   GPU      — enabled if OpenCL headers + library are available
+# Override: make DISTURB_ENABLE_SIMD=0  (force off)
+#           make DISTURB_ENABLE_GPU=1   (force on)
 # DISTURB_ENABLE_LTO=1       → link-time optimisation
 # DISTURB_ENABLE_PGO_GEN=1   → PGO: generate profile data  (-fprofile-generate)
 # DISTURB_ENABLE_PGO_USE=1   → PGO: use profile data       (-fprofile-use)
-DISTURB_ENABLE_SIMD     ?= 0
-DISTURB_ENABLE_PARALLEL ?= 0
-DISTURB_ENABLE_GPU      ?= 0
-DISTURB_ENABLE_LTO      ?= 0
+
+# --- Auto-detect SIMD ----------------------------------------------------
+ifndef DISTURB_ENABLE_SIMD
+  _HAS_AVX2  := $(shell $(CC) -mavx2 -mfma -x c -c /dev/null -o /dev/null 2>/dev/null && echo 1 || echo 0)
+  _HAS_SSE42 := $(shell $(CC) -msse4.2 -x c -c /dev/null -o /dev/null 2>/dev/null && echo 1 || echo 0)
+  _HAS_NEON  := $(shell $(CC) -x c -E -dM - < /dev/null 2>/dev/null | grep -c __ARM_NEON)
+  ifneq ($(_HAS_AVX2)$(_HAS_SSE42)$(_HAS_NEON),000)
+    DISTURB_ENABLE_SIMD := 1
+  else
+    DISTURB_ENABLE_SIMD := 0
+  endif
+endif
+
+# --- Auto-detect pthreads ------------------------------------------------
+ifndef DISTURB_ENABLE_PARALLEL
+  _HAS_PTHREAD := $(shell printf '\043include <pthread.h>\nint main(){return 0;}' | $(CC) -x c -c - -o /dev/null 2>/dev/null && echo 1 || echo 0)
+  ifeq ($(_HAS_PTHREAD),1)
+    DISTURB_ENABLE_PARALLEL := 1
+  else
+    DISTURB_ENABLE_PARALLEL := 0
+  endif
+endif
+
+# --- Auto-detect OpenCL --------------------------------------------------
+ifndef DISTURB_ENABLE_GPU
+  _HAS_OPENCL := $(shell printf '\043ifdef __APPLE__\n\043include <OpenCL/opencl.h>\n\043else\n\043include <CL/cl.h>\n\043endif\nint main(){return 0;}' | $(CC) -x c - -lOpenCL -o /dev/null 2>/dev/null && echo 1 || echo 0)
+  ifeq ($(_HAS_OPENCL),1)
+    DISTURB_ENABLE_GPU := 1
+  else
+    DISTURB_ENABLE_GPU := 0
+  endif
+endif
+
+DISTURB_ENABLE_LTO      ?= 1
 DISTURB_ENABLE_PGO_GEN  ?= 0
 DISTURB_ENABLE_PGO_USE  ?= 0
 
@@ -24,7 +57,15 @@ else
   BASE_OPT = -O3
 endif
 
-CFLAGS = $(BASE_OPT) -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp -Ilib/
+# Auto-detect -march=native support
+_HAS_MARCH_NATIVE := $(shell $(CC) -march=native -x c -c /dev/null -o /dev/null 2>/dev/null && echo 1 || echo 0)
+ifeq ($(_HAS_MARCH_NATIVE),1)
+  ARCH_FLAG = -march=native
+else
+  ARCH_FLAG =
+endif
+
+CFLAGS = $(BASE_OPT) $(ARCH_FLAG) -funroll-loops -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp -Ilib/
 LIBREGEXP_CFLAGS = -Wno-unused-parameter -Wno-sign-compare -Wno-pedantic
 LDFLAGS = -lm
 
@@ -103,10 +144,33 @@ endif
 
 OBJ = $(SRC:.c=.o)
 
-all: disturb
+all: disturb disturb-minimal
 
 disturb: $(OBJ)
 	$(CC) $(CFLAGS) -o $@ $(OBJ) $(LDFLAGS)
+
+# Minimal build: no SIMD, no parallel, no GPU — scalar baseline for benchmarks
+disturb-minimal:
+	@echo "=== Building disturb-minimal (no SIMD/parallel/GPU) ==="
+	$(MAKE) -f $(firstword $(MAKEFILE_LIST)) disturb-minimal-bin \
+		DISTURB_ENABLE_SIMD=0 \
+		DISTURB_ENABLE_PARALLEL=0 \
+		DISTURB_ENABLE_GPU=0 \
+		OBJDIR_SUFFIX=_minimal
+
+# Internal target: builds the minimal binary using a separate object directory
+OBJDIR_SUFFIX ?=
+MINIMAL_OBJ = $(SRC:.c=.minimal.o)
+
+disturb-minimal-bin: $(MINIMAL_OBJ)
+	$(CC) $(CFLAGS) -o disturb-minimal $(MINIMAL_OBJ) $(LDFLAGS)
+
+# Pattern rules for .minimal.o (separate object files for minimal build)
+lib/libregexp/%.minimal.o: lib/libregexp/%.c
+	$(CC) $(CFLAGS) $(LIBREGEXP_CFLAGS) -c $< -o $@
+
+src/%.minimal.o: src/%.c include/vm.h include/papagaio.h include/bytecode.h
+	$(CC) $(CFLAGS) -c $< -o $@
 
 test-raylib: disturb
 	sh tests/run_raylib_examples.sh
@@ -118,7 +182,7 @@ lib/libregexp/%.o: lib/libregexp/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) disturb
+	rm -f $(OBJ) $(MINIMAL_OBJ) disturb disturb-minimal
 
 # --- PGO targets ---------------------------------------------------------
 # Usage:
@@ -142,4 +206,4 @@ pgo-use:
 
 pgo: pgo-gen pgo-use
 
-.PHONY: all clean test-raylib pgo pgo-gen pgo-use
+.PHONY: all clean test-raylib pgo pgo-gen pgo-use disturb-minimal disturb-minimal-bin
