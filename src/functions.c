@@ -8,6 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef DISTURB_ENABLE_SIMD
+#include "simd_ops.h"
+#endif
+
 #ifdef DISTURB_ENABLE_FFI
 void native_ffi_open(VM *vm, List *stack, List *global);
 #endif
@@ -1916,6 +1920,162 @@ static void native_pow(VM *vm, List *stack, List *global)
     push_number(vm, stack, (Float)pow((double)base, (double)exp));
 }
 
+/* sum(arr) → Float — horizontal sum of Int[] or Float[] array.
+ * Uses SIMD reduction when available. */
+static void native_sum(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *self = native_this(vm);
+    ObjEntry *arr = self ? self : native_arg(stack, argc, 0);
+    if (!arr || !arr->obj) {
+        fprintf(stderr, "sum expects a numeric array\n");
+        return;
+    }
+    Int type = disturb_obj_type(arr->obj);
+    size_t blen = disturb_bytes_len(arr->obj);
+
+    if (type == DISTURB_T_FLOAT) {
+        size_t count = blen / sizeof(Float);
+        Float *data = (Float *)disturb_bytes_data(arr->obj);
+#ifdef DISTURB_ENABLE_SIMD
+        if (count >= DISTURB_SIMD_THRESHOLD) {
+            push_number(vm, stack, (double)simd_f64_sum((const double *)data, count));
+            return;
+        }
+#endif
+        double acc = 0;
+        for (size_t i = 0; i < count; i++) acc += (double)data[i];
+        push_number(vm, stack, acc);
+    } else if (type == DISTURB_T_INT && !entry_is_string(arr)) {
+        size_t count = blen / sizeof(Int);
+        Int *data = (Int *)disturb_bytes_data(arr->obj);
+        double acc = 0;
+        for (size_t i = 0; i < count; i++) acc += (double)data[i];
+        push_number(vm, stack, acc);
+    } else {
+        fprintf(stderr, "sum expects Int[] or Float[]\n");
+    }
+}
+
+/* dot(a, b) → Float — dot product of two numeric arrays.
+ * Uses SIMD FMA-based reduction when available. */
+static void native_dot(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *self = native_this(vm);
+    ObjEntry *a_entry, *b_entry;
+    if (self && self->obj) {
+        a_entry = self;
+        b_entry = native_arg(stack, argc, 0);
+    } else {
+        a_entry = native_arg(stack, argc, 0);
+        b_entry = native_arg(stack, argc, 1);
+    }
+    if (!a_entry || !a_entry->obj || !b_entry || !b_entry->obj) {
+        fprintf(stderr, "dot expects two numeric arrays\n");
+        return;
+    }
+    Int at = disturb_obj_type(a_entry->obj);
+    Int bt = disturb_obj_type(b_entry->obj);
+    size_t alen = disturb_bytes_len(a_entry->obj);
+    size_t blen = disturb_bytes_len(b_entry->obj);
+
+    /* Both Float[] */
+    if (at == DISTURB_T_FLOAT && bt == DISTURB_T_FLOAT) {
+        size_t ac = alen / sizeof(Float);
+        size_t bc = blen / sizeof(Float);
+        size_t count = ac < bc ? ac : bc;
+        Float *ad = (Float *)disturb_bytes_data(a_entry->obj);
+        Float *bd = (Float *)disturb_bytes_data(b_entry->obj);
+#ifdef DISTURB_ENABLE_SIMD
+        if (count >= DISTURB_SIMD_THRESHOLD) {
+            push_number(vm, stack, (double)simd_f64_dot((const double *)ad, (const double *)bd, count));
+            return;
+        }
+#endif
+        double acc = 0;
+        for (size_t i = 0; i < count; i++) acc += (double)ad[i] * (double)bd[i];
+        push_number(vm, stack, acc);
+    } else if (at == DISTURB_T_INT && bt == DISTURB_T_INT &&
+               !entry_is_string(a_entry) && !entry_is_string(b_entry)) {
+        /* Both Int[] — scalar (no SIMD i64 dot) */
+        size_t ac = alen / sizeof(Int);
+        size_t bc = blen / sizeof(Int);
+        size_t count = ac < bc ? ac : bc;
+        Int *ad = (Int *)disturb_bytes_data(a_entry->obj);
+        Int *bd = (Int *)disturb_bytes_data(b_entry->obj);
+        double acc = 0;
+        for (size_t i = 0; i < count; i++) acc += (double)ad[i] * (double)bd[i];
+        push_number(vm, stack, acc);
+    } else {
+        /* Mixed: promote to float */
+        size_t ac = (at == DISTURB_T_FLOAT) ? alen / sizeof(Float) : alen / sizeof(Int);
+        size_t bc = (bt == DISTURB_T_FLOAT) ? blen / sizeof(Float) : blen / sizeof(Int);
+        size_t count = ac < bc ? ac : bc;
+        double acc = 0;
+        for (size_t i = 0; i < count; i++) {
+            double av, bv;
+            if (at == DISTURB_T_FLOAT) { Float f; memcpy(&f, disturb_bytes_data(a_entry->obj) + i * sizeof(Float), sizeof(Float)); av = (double)f; }
+            else { Int iv; memcpy(&iv, disturb_bytes_data(a_entry->obj) + i * sizeof(Int), sizeof(Int)); av = (double)iv; }
+            if (bt == DISTURB_T_FLOAT) { Float f; memcpy(&f, disturb_bytes_data(b_entry->obj) + i * sizeof(Float), sizeof(Float)); bv = (double)f; }
+            else { Int iv; memcpy(&iv, disturb_bytes_data(b_entry->obj) + i * sizeof(Int), sizeof(Int)); bv = (double)iv; }
+            acc += av * bv;
+        }
+        push_number(vm, stack, acc);
+    }
+}
+
+/* fma(a, b, c) → Float[] — fused multiply-add: a[i]*b[i]+c[i].
+ * Uses SIMD FMA instruction when available. */
+static void native_fma(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *a_entry = native_arg(stack, argc, 0);
+    ObjEntry *b_entry = native_arg(stack, argc, 1);
+    ObjEntry *c_entry = native_arg(stack, argc, 2);
+    if (!a_entry || !a_entry->obj || !b_entry || !b_entry->obj || !c_entry || !c_entry->obj) {
+        fprintf(stderr, "fma expects three numeric arrays\n");
+        return;
+    }
+
+    Int at = disturb_obj_type(a_entry->obj);
+    Int bt = disturb_obj_type(b_entry->obj);
+    Int ct = disturb_obj_type(c_entry->obj);
+    if (at != DISTURB_T_FLOAT || bt != DISTURB_T_FLOAT || ct != DISTURB_T_FLOAT) {
+        /* Require all Float[] for FMA (SIMD operates on floats) */
+        fprintf(stderr, "fma expects three Float[] arrays\n");
+        return;
+    }
+
+    size_t alen = disturb_bytes_len(a_entry->obj) / sizeof(Float);
+    size_t blen = disturb_bytes_len(b_entry->obj) / sizeof(Float);
+    size_t clen = disturb_bytes_len(c_entry->obj) / sizeof(Float);
+    size_t count = alen;
+    if (blen < count) count = blen;
+    if (clen < count) count = clen;
+    if (count == 0) { push_entry(vm, stack, a_entry); return; }
+
+    ObjEntry *result = vm_make_float_list(vm, (Int)count);
+    if (!result) return;
+    Float *ad = (Float *)disturb_bytes_data(a_entry->obj);
+    Float *bd = (Float *)disturb_bytes_data(b_entry->obj);
+    Float *cd = (Float *)disturb_bytes_data(c_entry->obj);
+    Float *out = (Float *)disturb_bytes_data(result->obj);
+
+#ifdef DISTURB_ENABLE_SIMD
+    if (count >= DISTURB_SIMD_THRESHOLD) {
+        simd_float_fma((const double *)ad, (const double *)bd,
+                       (const double *)cd, (double *)out, count, 0, 0, 0);
+        push_entry(vm, stack, result);
+        return;
+    }
+#endif
+    for (size_t i = 0; i < count; i++) {
+        out[i] = ad[i] * bd[i] + cd[i];
+    }
+    push_entry(vm, stack, result);
+}
+
 static void native_min(VM *vm, List *stack, List *global)
 {
     Float acc = 0;
@@ -3117,6 +3277,9 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "pow") == 0) return native_pow;
     if (strcmp(name, "min") == 0) return native_min;
     if (strcmp(name, "max") == 0) return native_max;
+    if (strcmp(name, "sum") == 0) return native_sum;
+    if (strcmp(name, "dot") == 0) return native_dot;
+    if (strcmp(name, "fma") == 0) return native_fma;
     if (strcmp(name, "abs") == 0) return native_abs;
     if (strcmp(name, "floor") == 0) return native_floor;
     if (strcmp(name, "ceil") == 0) return native_ceil;

@@ -2,7 +2,13 @@ cmake_minimum_required(VERSION 3.16)
 
 project(disturb C)
 
-option(DISABLE_IO "Disable IO natives and dynamic FFI calls (embedded profile)" OFF)
+option(DISABLE_IO            "Disable IO natives and dynamic FFI calls (embedded profile)" OFF)
+option(DISTURB_ENABLE_SIMD     "Compile with SIMD intrinsics (AVX2/SSE/NEON)"             OFF)
+option(DISTURB_ENABLE_PARALLEL "Compile thread pool / task module (requires pthreads)"     OFF)
+option(DISTURB_ENABLE_GPU      "Compile OpenCL compute module"                             OFF)
+option(DISTURB_ENABLE_LTO      "Enable link-time optimisation"                             OFF)
+option(DISTURB_ENABLE_PGO_GEN  "PGO: generate profile data"                               OFF)
+option(DISTURB_ENABLE_PGO_USE  "PGO: use profile data"                                    OFF)
 
 set(DISTURB_SOURCES
   lib/libregexp/cutils.c
@@ -16,6 +22,13 @@ set(DISTURB_SOURCES
   src/cli.c
   src/ffi.c
 )
+
+if(DISTURB_ENABLE_PARALLEL)
+  list(APPEND DISTURB_SOURCES src/parallel.c)
+endif()
+if(DISTURB_ENABLE_GPU)
+  list(APPEND DISTURB_SOURCES src/gpu.c)
+endif()
 
 add_executable(disturb ${DISTURB_SOURCES})
 
@@ -34,7 +47,11 @@ if(MSVC)
   target_compile_options(disturb PRIVATE /W4 /O2)
   target_compile_definitions(disturb PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
-  target_compile_options(disturb PRIVATE -O2 -Wall -Wextra -pedantic)
+  if(DISABLE_IO)
+    target_compile_options(disturb PRIVATE -Os -Wall -Wextra -pedantic)
+  else()
+    target_compile_options(disturb PRIVATE -O3 -Wall -Wextra -pedantic)
+  endif()
   set_source_files_properties(
     lib/libregexp/cutils.c
     lib/libregexp/libunicode.c
@@ -51,6 +68,56 @@ target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_FFI)
 
 if(DISABLE_IO)
   target_compile_definitions(disturb PRIVATE DISTURB_EMBEDDED)
+endif()
+
+# ---- SIMD ---------------------------------------------------------------
+if(DISTURB_ENABLE_SIMD)
+  target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_SIMD)
+  if(NOT MSVC)
+    include(CheckCCompilerFlag)
+    check_c_compiler_flag(-mavx2 HAS_AVX2)
+    check_c_compiler_flag(-msse4.2 HAS_SSE42)
+    if(HAS_AVX2)
+      target_compile_options(disturb PRIVATE -mavx2 -mfma)
+    elseif(HAS_SSE42)
+      target_compile_options(disturb PRIVATE -msse4.2)
+    endif()
+  else()
+    target_compile_options(disturb PRIVATE /arch:AVX2)
+  endif()
+endif()
+
+# ---- Parallelism --------------------------------------------------------
+if(DISTURB_ENABLE_PARALLEL)
+  target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_PARALLEL)
+  find_package(Threads REQUIRED)
+  target_link_libraries(disturb PRIVATE Threads::Threads)
+endif()
+
+# ---- GPU (OpenCL) -------------------------------------------------------
+if(DISTURB_ENABLE_GPU)
+  target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_GPU)
+  find_package(OpenCL REQUIRED)
+  target_link_libraries(disturb PRIVATE OpenCL::OpenCL)
+endif()
+
+# ---- LTO ----------------------------------------------------------------
+if(DISTURB_ENABLE_LTO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT ipo_ok)
+  if(ipo_ok)
+    set_property(TARGET disturb PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+  endif()
+endif()
+
+# ---- PGO ----------------------------------------------------------------
+if(DISTURB_ENABLE_PGO_GEN AND NOT MSVC)
+  target_compile_options(disturb PRIVATE -fprofile-generate)
+  target_link_options(disturb PRIVATE -fprofile-generate)
+endif()
+if(DISTURB_ENABLE_PGO_USE AND NOT MSVC)
+  target_compile_options(disturb PRIVATE -fprofile-use -fprofile-correction)
+  target_link_options(disturb PRIVATE -fprofile-use)
 endif()
 
 if(NOT DISABLE_IO)

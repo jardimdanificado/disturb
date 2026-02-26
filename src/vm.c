@@ -6,6 +6,18 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef DISTURB_ENABLE_SIMD
+#include "simd_ops.h"
+#endif
+
+#ifdef DISTURB_ENABLE_PARALLEL
+#include "parallel.h"
+#endif
+
+#ifdef DISTURB_ENABLE_GPU
+#include "gpu.h"
+#endif
+
 typedef struct {
     unsigned char *code;
     size_t len;
@@ -276,6 +288,450 @@ static void vm_set_float_single(List *obj, Float value)
     if ((size_t)obj->capacity < len + 2) return;
     obj->size = (UHalf)(len + 2);
     memcpy(disturb_bytes_data(obj), &value, sizeof(Float));
+}
+
+/* ---- Direct-pointer helpers for SIMD-friendly vectorization ------------ */
+
+/* Aligned allocation for numeric buffers (improves cache-line behaviour).
+ * free() is safe for aligned_alloc on POSIX. On Windows use _aligned_free. */
+#ifdef DISTURB_ENABLE_SIMD
+#  define DISTURB_NUMERIC_ALIGN 32 /* AVX2: 256 bits = 32 bytes */
+/* Aligned allocation for numeric buffers — improves cache-line behaviour.
+ * On POSIX, free() is safe for aligned_alloc/posix_memalign pointers.
+ * On Windows, we skip alignment to avoid _aligned_malloc/_aligned_free pairing
+ * issues with the slab allocator's free-list that uses plain free(). */
+static inline void *disturb_aligned_alloc(size_t align, size_t size)
+{
+#if defined(_WIN32) || defined(_WIN64)
+    (void)align;
+    return malloc(size);
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L && !defined(__ANDROID__)
+    size_t aligned_size = (size + align - 1) & ~(align - 1);
+    return aligned_alloc(align, aligned_size);
+#else
+    void *ptr = NULL;
+    if (posix_memalign(&ptr, align, size) != 0) return NULL;
+    return ptr;
+#endif
+}
+#else
+#  define DISTURB_NUMERIC_ALIGN 1
+static inline void *disturb_aligned_alloc(size_t align, size_t size)
+{
+    (void)align;
+    return malloc(size);
+}
+#endif
+
+/* Forward declaration — vm_alloc_bytes is defined later in this file. */
+static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry,
+                            const char *s, size_t len);
+
+/* Returns direct pointer to the Int array inside a bytes object.
+ * The pointer is valid as long as the object is not relocated by GC. */
+static inline Int *vm_int_ptr(List *obj) {
+    return (Int *)disturb_bytes_data(obj);
+}
+
+/* Returns direct pointer to the Float array inside a bytes object. */
+static inline Float *vm_float_ptr(List *obj) {
+    return (Float *)disturb_bytes_data(obj);
+}
+
+/* Vectorized arithmetic: add/sub/mul/div/mod on Int[] or Float[] arrays.
+ * Uses SIMD kernels when available, otherwise scalar loops with direct
+ * pointer access (much faster than vm_read_int_at per-element). */
+static int vm_vec_arith(VM *vm, List *lobj, List *robj,
+                        Int lt, Int rt, Int lc, Int rc,
+                        uint8_t op, List **out_result)
+{
+    Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
+    int out_is_float = (lt == DISTURB_T_FLOAT || rt == DISTURB_T_FLOAT);
+    int ba = (lc == 1);  /* broadcast left */
+    int bb = (rc == 1);  /* broadcast right */
+
+    if (!out_is_float && lt == DISTURB_T_INT && rt == DISTURB_T_INT) {
+        /* --- Pure integer path (no double conversion) --- */
+        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL,
+                                       (size_t)out_count * sizeof(Int));
+        if (!result) return 0;
+        Int *ap = vm_int_ptr(lobj);
+        Int *bp = vm_int_ptr(robj);
+        Int *op_out = vm_int_ptr(result);
+#ifdef DISTURB_ENABLE_PARALLEL
+        if ((size_t)out_count >= PARR_THRESHOLD && op >= BC_ADD && op <= BC_MOD) {
+            parr_dispatch(ap, bp, op_out, (size_t)out_count, ba, bb, op - BC_ADD, 0);
+            *out_result = result;
+            return 1;
+        }
+#endif
+#ifdef DISTURB_ENABLE_SIMD
+        if ((size_t)out_count >= DISTURB_SIMD_THRESHOLD) {
+            switch (op) {
+            case BC_ADD: simd_int_add(ap, bp, op_out, (size_t)out_count, ba, bb); break;
+            case BC_SUB: simd_int_sub(ap, bp, op_out, (size_t)out_count, ba, bb); break;
+            case BC_MUL: simd_int_mul(ap, bp, op_out, (size_t)out_count, ba, bb); break;
+            default: goto int_scalar;
+            }
+            *out_result = result;
+            return 1;
+        }
+    int_scalar:
+#endif
+        for (Int i = 0; i < out_count; i++) {
+            Int lv = ba ? ap[0] : ap[i];
+            Int rv = bb ? bp[0] : bp[i];
+            Int res = 0;
+            switch (op) {
+            case BC_ADD: res = lv + rv; break;
+            case BC_SUB: res = lv - rv; break;
+            case BC_MUL: res = lv * rv; break;
+            case BC_DIV: res = rv != 0 ? lv / rv : 0; break;
+            case BC_MOD: res = rv != 0 ? lv % rv : 0; break;
+            default: break;
+            }
+            op_out[i] = res;
+        }
+        *out_result = result;
+        return 1;
+    }
+
+    /* --- Float path --- */
+    List *result = out_is_float
+        ? vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL, (size_t)out_count * sizeof(Float))
+        : vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
+    if (!result) return 0;
+
+    /* Build contiguous float arrays for the SIMD kernels.
+     * If one side is Int, we need to convert to Float first. */
+    Float *fa = NULL, *fb = NULL;
+    Float fa_stack[64], fb_stack[64];
+    int fa_heap = 0, fb_heap = 0;
+
+    /* Left operand */
+    if (lt == DISTURB_T_FLOAT) {
+        fa = vm_float_ptr(lobj);
+    } else {
+        size_t need = ba ? 1 : (size_t)out_count;
+        fa = (need <= 64) ? fa_stack : (Float *)malloc(need * sizeof(Float));
+        if (fa != fa_stack) fa_heap = 1;
+        Int *ip = vm_int_ptr(lobj);
+        for (size_t j = 0; j < need; j++) fa[j] = (Float)ip[j];
+    }
+
+    /* Right operand */
+    if (rt == DISTURB_T_FLOAT) {
+        fb = vm_float_ptr(robj);
+    } else {
+        size_t need = bb ? 1 : (size_t)out_count;
+        fb = (need <= 64) ? fb_stack : (Float *)malloc(need * sizeof(Float));
+        if (fb != fb_stack) fb_heap = 1;
+        Int *ip = vm_int_ptr(robj);
+        for (size_t j = 0; j < need; j++) fb[j] = (Float)ip[j];
+    }
+
+    Float *fp_out = vm_float_ptr(result);
+#ifdef DISTURB_ENABLE_PARALLEL
+    if ((size_t)out_count >= PARR_THRESHOLD && op >= BC_ADD && op <= BC_MOD) {
+        parr_dispatch(fa, fb, fp_out, (size_t)out_count, ba, bb, op - BC_ADD, 1);
+        if (fa_heap) free(fa);
+        if (fb_heap) free(fb);
+        *out_result = result;
+        return 1;
+    }
+#endif
+#ifdef DISTURB_ENABLE_SIMD
+    if ((size_t)out_count >= DISTURB_SIMD_THRESHOLD) {
+        switch (op) {
+        case BC_ADD: simd_float_add(fa, fb, fp_out, (size_t)out_count, ba, bb); break;
+        case BC_SUB: simd_float_sub(fa, fb, fp_out, (size_t)out_count, ba, bb); break;
+        case BC_MUL: simd_float_mul(fa, fb, fp_out, (size_t)out_count, ba, bb); break;
+        case BC_DIV: simd_float_div(fa, fb, fp_out, (size_t)out_count, ba, bb); break;
+        case BC_MOD: simd_float_mod(fa, fb, fp_out, (size_t)out_count, ba, bb); break;
+        default: goto float_scalar;
+        }
+        if (fa_heap) free(fa);
+        if (fb_heap) free(fb);
+        *out_result = result;
+        return 1;
+    }
+float_scalar:
+#endif
+    for (Int i = 0; i < out_count; i++) {
+        Float lv = ba ? fa[0] : fa[i];
+        Float rv = bb ? fb[0] : fb[i];
+        Float res = 0;
+        switch (op) {
+        case BC_ADD: res = lv + rv; break;
+        case BC_SUB: res = lv - rv; break;
+        case BC_MUL: res = lv * rv; break;
+        case BC_DIV: res = lv / rv; break;
+        case BC_MOD: res = (Float)fmod((double)lv, (double)rv); break;
+        default: break;
+        }
+        fp_out[i] = res;
+    }
+    if (fa_heap) free(fa);
+    if (fb_heap) free(fb);
+    *out_result = result;
+    return 1;
+}
+
+/* Vectorized bitwise: and/or/xor/shl/shr on Int[] arrays. */
+static int vm_vec_bitwise(VM *vm, List *lobj, List *robj,
+                          Int lt, Int rt, Int lc, Int rc,
+                          uint8_t op, size_t pc, List **out_result)
+{
+    Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
+    int ba = (lc == 1);
+    int bb = (rc == 1);
+    List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL,
+                                   (size_t)out_count * sizeof(Int));
+    if (!result) return 0;
+
+    /* Convert float operands to int if needed */
+    Int *ap = NULL, *bp = NULL;
+    Int ap_stack[64], bp_stack[64];
+    int ap_heap = 0, bp_heap = 0;
+
+    if (lt == DISTURB_T_INT) {
+        ap = vm_int_ptr(lobj);
+    } else {
+        size_t need = ba ? 1 : (size_t)out_count;
+        ap = (need <= 64) ? ap_stack : (Int *)malloc(need * sizeof(Int));
+        if (ap != ap_stack) ap_heap = 1;
+        Float *fp = vm_float_ptr(lobj);
+        for (size_t j = 0; j < need; j++) ap[j] = (Int)fp[j];
+    }
+    if (rt == DISTURB_T_INT) {
+        bp = vm_int_ptr(robj);
+    } else {
+        size_t need = bb ? 1 : (size_t)out_count;
+        bp = (need <= 64) ? bp_stack : (Int *)malloc(need * sizeof(Int));
+        if (bp != bp_stack) bp_heap = 1;
+        Float *fp = vm_float_ptr(robj);
+        for (size_t j = 0; j < need; j++) bp[j] = (Int)fp[j];
+    }
+
+    Int *op_out = vm_int_ptr(result);
+
+    /* SHL/SHR need range validation — no SIMD for those */
+    if (op == BC_SHL || op == BC_SHR) {
+        for (Int i = 0; i < out_count; i++) {
+            Int lv = ba ? ap[0] : ap[i];
+            Int rv = bb ? bp[0] : bp[i];
+            if (rv < 0 || rv >= (Int)(sizeof(Int) * 8u)) {
+                fprintf(stderr, "bytecode error at pc %zu: shift expects range 0..%u\n",
+                        pc, (unsigned)((sizeof(Int) * 8u) - 1u));
+                if (ap_heap) free(ap);
+                if (bp_heap) free(bp);
+                return 0;
+            }
+            unsigned int shift = (unsigned int)rv;
+            op_out[i] = (op == BC_SHL) ? (Int)(((uint64_t)lv) << shift) : (lv >> shift);
+        }
+    } else {
+#ifdef DISTURB_ENABLE_SIMD
+        if ((size_t)out_count >= DISTURB_SIMD_THRESHOLD) {
+            switch (op) {
+            case BC_BITAND: simd_int_and(ap, bp, op_out, (size_t)out_count, ba, bb); break;
+            case BC_BITOR:  simd_int_or(ap, bp, op_out, (size_t)out_count, ba, bb);  break;
+            case BC_BITXOR: simd_int_xor(ap, bp, op_out, (size_t)out_count, ba, bb); break;
+            default: goto bw_scalar;
+            }
+            if (ap_heap) free(ap);
+            if (bp_heap) free(bp);
+            *out_result = result;
+            return 1;
+        }
+    bw_scalar:
+#endif
+        for (Int i = 0; i < out_count; i++) {
+            Int lv = ba ? ap[0] : ap[i];
+            Int rv = bb ? bp[0] : bp[i];
+            Int res = 0;
+            switch (op) {
+            case BC_BITAND: res = lv & rv; break;
+            case BC_BITOR:  res = lv | rv; break;
+            case BC_BITXOR: res = lv ^ rv; break;
+            default: break;
+            }
+            op_out[i] = res;
+        }
+    }
+    if (ap_heap) free(ap);
+    if (bp_heap) free(bp);
+    *out_result = result;
+    return 1;
+}
+
+/* Vectorized unary: neg/bnot on Int[] or Float[] arrays. */
+static int vm_vec_unary(VM *vm, List *vobj, Int type, Int count,
+                        uint8_t op, List **out_result)
+{
+    if (op == BC_BNOT) {
+        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL,
+                                       (size_t)count * sizeof(Int));
+        if (!result) return 0;
+        if (type == DISTURB_T_INT) {
+            Int *src = vm_int_ptr(vobj);
+            Int *dst = vm_int_ptr(result);
+#ifdef DISTURB_ENABLE_SIMD
+            if ((size_t)count >= DISTURB_SIMD_THRESHOLD) {
+                simd_int_not(src, dst, (size_t)count);
+                *out_result = result;
+                return 1;
+            }
+#endif
+            for (Int i = 0; i < count; i++) dst[i] = ~src[i];
+        } else {
+            Float *fp = vm_float_ptr(vobj);
+            Int *dst = vm_int_ptr(result);
+            for (Int i = 0; i < count; i++) dst[i] = ~((Int)fp[i]);
+        }
+        *out_result = result;
+        return 1;
+    }
+    /* NEG */
+    if (type == DISTURB_T_INT) {
+        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL,
+                                       (size_t)count * sizeof(Int));
+        if (!result) return 0;
+        Int *src = vm_int_ptr(vobj);
+        Int *dst = vm_int_ptr(result);
+#ifdef DISTURB_ENABLE_SIMD
+        if ((size_t)count >= DISTURB_SIMD_THRESHOLD) {
+            simd_int_neg(src, dst, (size_t)count);
+            *out_result = result;
+            return 1;
+        }
+#endif
+        for (Int i = 0; i < count; i++) dst[i] = -src[i];
+        *out_result = result;
+        return 1;
+    } else {
+        List *result = vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL,
+                                       (size_t)count * sizeof(Float));
+        if (!result) return 0;
+        Float *src = vm_float_ptr(vobj);
+        Float *dst = vm_float_ptr(result);
+#ifdef DISTURB_ENABLE_SIMD
+        if ((size_t)count >= DISTURB_SIMD_THRESHOLD) {
+            simd_float_neg(src, dst, (size_t)count);
+            *out_result = result;
+            return 1;
+        }
+#endif
+        for (Int i = 0; i < count; i++) dst[i] = -src[i];
+        *out_result = result;
+        return 1;
+    }
+}
+
+/* Vectorized comparison: eq/neq/lt/lte/gt/gte on numeric arrays.
+ * Output is always Int[0|1]. Uses direct pointer access + SIMD. */
+static int vm_vec_cmp(VM *vm, List *lobj, List *robj,
+                      Int lt, Int rt, Int lc, Int rc,
+                      uint8_t op, List **out_result)
+{
+    Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
+    int ba = (lc == 1);
+    int bb = (rc == 1);
+    List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL,
+                                   (size_t)out_count * sizeof(Int));
+    if (!result) return 0;
+    Int *op_out = vm_int_ptr(result);
+
+    /* Map bytecode op to SIMD_CMP_* constant */
+    int cmp_op = -1;
+    switch (op) {
+    case BC_EQ:  cmp_op = 0; break; /* SIMD_CMP_EQ */
+    case BC_NEQ: cmp_op = 1; break; /* SIMD_CMP_NEQ */
+    case BC_LT:  cmp_op = 2; break; /* SIMD_CMP_LT */
+    case BC_LTE: cmp_op = 3; break; /* SIMD_CMP_LTE */
+    case BC_GT:  cmp_op = 4; break; /* SIMD_CMP_GT */
+    case BC_GTE: cmp_op = 5; break; /* SIMD_CMP_GTE */
+    default: break;
+    }
+
+    /* If both Int, fast pure-int comparison */
+    if (lt == DISTURB_T_INT && rt == DISTURB_T_INT) {
+        Int *ap = vm_int_ptr(lobj);
+        Int *bp = vm_int_ptr(robj);
+#ifdef DISTURB_ENABLE_SIMD
+        if (cmp_op >= 0 && (size_t)out_count >= DISTURB_SIMD_THRESHOLD) {
+            simd_int_cmp(ap, bp, op_out, (size_t)out_count, ba, bb, cmp_op);
+            *out_result = result;
+            return 1;
+        }
+#endif
+        for (Int i = 0; i < out_count; i++) {
+            Int lv = ba ? ap[0] : ap[i];
+            Int rv = bb ? bp[0] : bp[i];
+            int res = 0;
+            switch (op) {
+            case BC_EQ:  res = (lv == rv); break;
+            case BC_NEQ: res = (lv != rv); break;
+            case BC_LT:  res = (lv <  rv); break;
+            case BC_LTE: res = (lv <= rv); break;
+            case BC_GT:  res = (lv >  rv); break;
+            case BC_GTE: res = (lv >= rv); break;
+            default: break;
+            }
+            op_out[i] = res;
+        }
+    } else {
+        /* Mixed types — promote to float for comparison */
+        Float *fa = NULL, *fb = NULL;
+        Float fa_stack[64], fb_stack[64];
+        int fa_heap = 0, fb_heap = 0;
+        if (lt == DISTURB_T_FLOAT) {
+            fa = vm_float_ptr(lobj);
+        } else {
+            size_t need = ba ? 1 : (size_t)out_count;
+            fa = (need <= 64) ? fa_stack : (Float *)malloc(need * sizeof(Float));
+            if (fa != fa_stack) fa_heap = 1;
+            Int *ip = vm_int_ptr(lobj);
+            for (size_t j = 0; j < need; j++) fa[j] = (Float)ip[j];
+        }
+        if (rt == DISTURB_T_FLOAT) {
+            fb = vm_float_ptr(robj);
+        } else {
+            size_t need = bb ? 1 : (size_t)out_count;
+            fb = (need <= 64) ? fb_stack : (Float *)malloc(need * sizeof(Float));
+            if (fb != fb_stack) fb_heap = 1;
+            Int *ip = vm_int_ptr(robj);
+            for (size_t j = 0; j < need; j++) fb[j] = (Float)ip[j];
+        }
+#ifdef DISTURB_ENABLE_SIMD
+        if (cmp_op >= 0 && (size_t)out_count >= DISTURB_SIMD_THRESHOLD) {
+            simd_float_cmp(fa, fb, op_out, (size_t)out_count, ba, bb, cmp_op);
+            if (fa_heap) free(fa);
+            if (fb_heap) free(fb);
+            *out_result = result;
+            return 1;
+        }
+#endif
+        for (Int i = 0; i < out_count; i++) {
+            double lv = (double)(ba ? fa[0] : fa[i]);
+            double rv = (double)(bb ? fb[0] : fb[i]);
+            int res = 0;
+            switch (op) {
+            case BC_EQ:  res = (lv == rv); break;
+            case BC_NEQ: res = (lv != rv); break;
+            case BC_LT:  res = (lv <  rv); break;
+            case BC_LTE: res = (lv <= rv); break;
+            case BC_GT:  res = (lv >  rv); break;
+            case BC_GTE: res = (lv >= rv); break;
+            default: break;
+            }
+            op_out[i] = res;
+        }
+        if (fa_heap) free(fa);
+        if (fb_heap) free(fb);
+    }
+    *out_result = result;
+    return 1;
 }
 
 static int vm_view_from_name(const char *name, size_t len, ViewType *out)
@@ -623,7 +1079,13 @@ static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s
         }
     }
     if (!data) {
-        data = (Value*)malloc(need_bytes);
+        /* Use aligned allocation for numeric arrays when SIMD is enabled */
+        if (DISTURB_NUMERIC_ALIGN > 1 &&
+            (type == DISTURB_T_INT || type == DISTURB_T_FLOAT)) {
+            data = (Value*)disturb_aligned_alloc(DISTURB_NUMERIC_ALIGN, need_bytes);
+        } else {
+            data = (Value*)malloc(need_bytes);
+        }
         cap_bytes = need_bytes;
     }
     if (!data) {
@@ -2770,10 +3232,33 @@ void vm_init(VM *vm)
     vm_global_add(vm, memory_entry);
     memory_module_install(vm, memory_entry);
     #endif
+
+    #ifdef DISTURB_ENABLE_PARALLEL
+    {
+        ObjEntry *par_key = vm_make_key(vm, "parallel");
+        List *par_obj = vm_alloc_list(vm, DISTURB_T_TABLE, par_key, 8);
+        ObjEntry *par_entry = vm_reg_alloc(vm, par_obj);
+        vm_global_add(vm, par_entry);
+        parallel_module_install(vm, par_entry);
+    }
+    #endif
+
+    #ifdef DISTURB_ENABLE_GPU
+    {
+        ObjEntry *gpu_key = vm_make_key(vm, "gpu");
+        List *gpu_obj = vm_alloc_list(vm, DISTURB_T_TABLE, gpu_key, 16);
+        ObjEntry *gpu_entry = vm_reg_alloc(vm, gpu_obj);
+        vm_global_add(vm, gpu_entry);
+        gpu_module_install(vm, gpu_entry);
+    }
+    #endif
 }
 
 void vm_free(VM *vm)
 {
+#ifdef DISTURB_ENABLE_PARALLEL
+    parallel_shutdown();
+#endif
     for (Int i = 0; i < vm->reg_count; i++) {
         ObjEntry *entry = vm->reg[i];
         if (!entry) continue;
@@ -5714,79 +6199,10 @@ BC_L_OR:
                     
                     /* Handle vectorization */
                     if (lc > 1 || rc > 1) {
-                        Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
-                        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
-                        
-                        if (!result) return 0;
-                        
-                        for (Int i = 0; i < out_count; i++) {
-                            Int lv = 0, rv = 0;
-                            
-                            /* Get left value */
-                            if (lc == 1) {
-                                if (lt == DISTURB_T_INT) {
-                                    vm_read_int_at(left->obj, 0, &lv);
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(left->obj, 0, &v);
-                                    lv = (Int)v;
-                                }
-                            } else {
-                                if (lt == DISTURB_T_INT) {
-                                    vm_read_int_at(left->obj, i, &lv);
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(left->obj, i, &v);
-                                    lv = (Int)v;
-                                }
-                            }
-                            
-                            /* Get right value */
-                            if (rc == 1) {
-                                if (rt == DISTURB_T_INT) {
-                                    vm_read_int_at(right->obj, 0, &rv);
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(right->obj, 0, &v);
-                                    rv = (Int)v;
-                                }
-                            } else {
-                                if (rt == DISTURB_T_INT) {
-                                    vm_read_int_at(right->obj, i, &rv);
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(right->obj, i, &v);
-                                    rv = (Int)v;
-                                }
-                            }
-                            
-                            /* Compute bitwise operation */
-                            Int res = 0;
-                            switch (op) {
-                            case BC_BITAND: res = lv & rv; break;
-                            case BC_BITOR: res = lv | rv; break;
-                            case BC_BITXOR: res = lv ^ rv; break;
-                            case BC_SHL:
-                            case BC_SHR: {
-                                if (rv < 0 || rv >= (Int)(sizeof(Int) * 8u)) {
-                                    fprintf(stderr, "bytecode error at pc %zu: shift expects range 0..%u\n",
-                                            pc, (unsigned)((sizeof(Int) * 8u) - 1u));
-                                    return 0;
-                                }
-                                unsigned int shift = (unsigned int)rv;
-                                if (op == BC_SHL) {
-                                    res = (Int)(((uint64_t)lv) << shift);
-                                } else {
-                                    res = lv >> shift;
-                                }
-                                break;
-                            }
-                            default: break;
-                            }
-                            
-                            vm_write_int_at(result, i, res);
-                        }
-                        
+                        List *result = NULL;
+                        if (!vm_vec_bitwise(vm, left->obj, right->obj,
+                                            lt, rt, lc, rc, op, pc, &result))
+                            return 0;
                         vm_stack_push_entry(vm, vm_reg_alloc(vm, result));
                         break;
                     }
@@ -5849,68 +6265,10 @@ BC_L_OR:
                     
                     /* Handle vectorization */
                     if (lc > 1 || rc > 1) {
-                        Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
-                        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
-                        
-                        if (!result) return 0;
-                        
-                        for (Int i = 0; i < out_count; i++) {
-                            double lv = 0.0, rv = 0.0;
-                            
-                            /* Get left value */
-                            if (lc == 1) {
-                                if (lt == DISTURB_T_INT) {
-                                    Int v = 0;
-                                    vm_read_int_at(left->obj, 0, &v);
-                                    lv = (double)v;
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(left->obj, 0, &v);
-                                    lv = (double)v;
-                                }
-                            } else {
-                                if (lt == DISTURB_T_INT) {
-                                    Int v = 0;
-                                    vm_read_int_at(left->obj, i, &v);
-                                    lv = (double)v;
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(left->obj, i, &v);
-                                    lv = (double)v;
-                                }
-                            }
-                            
-                            /* Get right value */
-                            if (rc == 1) {
-                                if (rt == DISTURB_T_INT) {
-                                    Int v = 0;
-                                    vm_read_int_at(right->obj, 0, &v);
-                                    rv = (double)v;
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(right->obj, 0, &v);
-                                    rv = (double)v;
-                                }
-                            } else {
-                                if (rt == DISTURB_T_INT) {
-                                    Int v = 0;
-                                    vm_read_int_at(right->obj, i, &v);
-                                    rv = (double)v;
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(right->obj, i, &v);
-                                    rv = (double)v;
-                                }
-                            }
-                            
-                            /* Compute comparison */
-                            int res = 0;
-                            if (op == BC_EQ) res = lv == rv ? 1 : 0;
-                            else if (op == BC_NEQ) res = lv != rv ? 1 : 0;
-                            
-                            vm_write_int_at(result, i, res);
-                        }
-                        
+                        List *result = NULL;
+                        if (!vm_vec_cmp(vm, left->obj, right->obj,
+                                        lt, rt, lc, rc, op, &result))
+                            return 0;
                         vm_stack_push_entry(vm, vm_reg_alloc(vm, result));
                         break;
                     }
@@ -5943,70 +6301,10 @@ BC_L_OR:
                     
                     /* Handle vectorization */
                     if (lc > 1 || rc > 1) {
-                        Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
-                        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
-                        
-                        if (!result) return 0;
-                        
-                        for (Int i = 0; i < out_count; i++) {
-                            double lv = 0.0, rv = 0.0;
-                            
-                            /* Get left value */
-                            if (lc == 1) {
-                                if (lt == DISTURB_T_INT) {
-                                    Int v = 0;
-                                    vm_read_int_at(left->obj, 0, &v);
-                                    lv = (double)v;
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(left->obj, 0, &v);
-                                    lv = (double)v;
-                                }
-                            } else {
-                                if (lt == DISTURB_T_INT) {
-                                    Int v = 0;
-                                    vm_read_int_at(left->obj, i, &v);
-                                    lv = (double)v;
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(left->obj, i, &v);
-                                    lv = (double)v;
-                                }
-                            }
-                            
-                            /* Get right value */
-                            if (rc == 1) {
-                                if (rt == DISTURB_T_INT) {
-                                    Int v = 0;
-                                    vm_read_int_at(right->obj, 0, &v);
-                                    rv = (double)v;
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(right->obj, 0, &v);
-                                    rv = (double)v;
-                                }
-                            } else {
-                                if (rt == DISTURB_T_INT) {
-                                    Int v = 0;
-                                    vm_read_int_at(right->obj, i, &v);
-                                    rv = (double)v;
-                                } else {
-                                    Float v = 0;
-                                    vm_read_float_at(right->obj, i, &v);
-                                    rv = (double)v;
-                                }
-                            }
-                            
-                            /* Compute relational comparison */
-                            int res = 0;
-                            if (op == BC_LT) res = lv < rv ? 1 : 0;
-                            else if (op == BC_LTE) res = lv <= rv ? 1 : 0;
-                            else if (op == BC_GT) res = lv > rv ? 1 : 0;
-                            else if (op == BC_GTE) res = lv >= rv ? 1 : 0;
-                            
-                            vm_write_int_at(result, i, res);
-                        }
-                        
+                        List *result = NULL;
+                        if (!vm_vec_cmp(vm, left->obj, right->obj,
+                                        lt, rt, lc, rc, op, &result))
+                            return 0;
                         vm_stack_push_entry(vm, vm_reg_alloc(vm, result));
                         break;
                     }
@@ -6045,84 +6343,10 @@ BC_L_OR:
                 
                 /* Handle vectorization if either has multiple elements */
                 if (lc > 1 || rc > 1) {
-                    Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
-                    int out_is_float = (lt == DISTURB_T_FLOAT || rt == DISTURB_T_FLOAT);
-                    
-                    List *result = out_is_float 
-                        ? vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL, (size_t)out_count * sizeof(Float))
-                        : vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
-                    
-                    if (!result) return 0;
-                    
-                    for (Int i = 0; i < out_count; i++) {
-                        double lv = 0.0;
-                        double rv = 0.0;
-                        
-                        /* Get left value */
-                        if (lc == 1) {
-                            if (lt == DISTURB_T_INT) {
-                                Int v = 0;
-                                vm_read_int_at(left->obj, 0, &v);
-                                lv = (double)v;
-                            } else {
-                                Float v = 0;
-                                vm_read_float_at(left->obj, 0, &v);
-                                lv = (double)v;
-                            }
-                        } else {
-                            if (lt == DISTURB_T_INT) {
-                                Int v = 0;
-                                vm_read_int_at(left->obj, i, &v);
-                                lv = (double)v;
-                            } else {
-                                Float v = 0;
-                                vm_read_float_at(left->obj, i, &v);
-                                lv = (double)v;
-                            }
-                        }
-                        
-                        /* Get right value */
-                        if (rc == 1) {
-                            if (rt == DISTURB_T_INT) {
-                                Int v = 0;
-                                vm_read_int_at(right->obj, 0, &v);
-                                rv = (double)v;
-                            } else {
-                                Float v = 0;
-                                vm_read_float_at(right->obj, 0, &v);
-                                rv = (double)v;
-                            }
-                        } else {
-                            if (rt == DISTURB_T_INT) {
-                                Int v = 0;
-                                vm_read_int_at(right->obj, i, &v);
-                                rv = (double)v;
-                            } else {
-                                Float v = 0;
-                                vm_read_float_at(right->obj, i, &v);
-                                rv = (double)v;
-                            }
-                        }
-                        
-                        /* Compute result */
-                        double res = 0.0;
-                        switch (op) {
-                        case BC_ADD: res = lv + rv; break;
-                        case BC_SUB: res = lv - rv; break;
-                        case BC_MUL: res = lv * rv; break;
-                        case BC_DIV: res = lv / rv; break;
-                        case BC_MOD: res = fmod(lv, rv); break;
-                        default: break;
-                        }
-                        
-                        /* Write result */
-                        if (out_is_float) {
-                            vm_write_float_at(result, i, (Float)res);
-                        } else {
-                            vm_write_int_at(result, i, (Int)res);
-                        }
-                    }
-                    
+                    List *result = NULL;
+                    if (!vm_vec_arith(vm, left->obj, right->obj,
+                                      lt, rt, lc, rc, op, &result))
+                        return 0;
                     vm_stack_push_entry(vm, vm_reg_alloc(vm, result));
                     break;
                 }
@@ -6173,45 +6397,8 @@ BC_L_BNOT:
                 /* Vectorization for unary ops */
                 if (count > 1) {
                     List *result = NULL;
-                    if (op == BC_BNOT) {
-                        result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
-                        for (Int i = 0; i < count; i++) {
-                            Int v = 0;
-                            if (type == DISTURB_T_INT) {
-                                vm_read_int_at(value->obj, i, &v);
-                            } else {
-                                Float fv = 0;
-                                vm_read_float_at(value->obj, i, &fv);
-                                v = (Int)fv;
-                            }
-                            vm_write_int_at(result, i, ~v);
-                        }
-                    } else {  /* NEG */
-                        int out_is_float = (type == DISTURB_T_FLOAT);
-                        result = out_is_float
-                            ? vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float))
-                            : vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
-                        
-                        for (Int i = 0; i < count; i++) {
-                            double v = 0.0;
-                            if (type == DISTURB_T_INT) {
-                                Int iv = 0;
-                                vm_read_int_at(value->obj, i, &iv);
-                                v = (double)iv;
-                            } else {
-                                Float fv = 0;
-                                vm_read_float_at(value->obj, i, &fv);
-                                v = (double)fv;
-                            }
-                            
-                            if (out_is_float) {
-                                vm_write_float_at(result, i, (Float)(-v));
-                            } else {
-                                vm_write_int_at(result, i, (Int)(-v));
-                            }
-                        }
-                    }
-                    
+                    if (!vm_vec_unary(vm, value->obj, type, count, op, &result))
+                        return 0;
                     if (result) {
                         vm_stack_push_entry(vm, vm_reg_alloc(vm, result));
                         break;
