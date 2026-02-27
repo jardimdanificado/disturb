@@ -22,6 +22,14 @@
 #define UNUSED_FN
 #endif
 
+#if defined(_MSC_VER)
+#define DISTURB_ALIGNOF(T) __alignof(T)
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+#define DISTURB_ALIGNOF(T) _Alignof(T)
+#else
+#define DISTURB_ALIGNOF(T) __alignof__(T)
+#endif
+
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -1112,11 +1120,26 @@ static int ffi_call_abi_resolve(FfiCallAbi abi, ffi_abi *out_abi, char *err, siz
 
 static ffi_type *ffi_type_for_base(FfiBase base)
 {
-    /* Static libffi struct types for _Complex float/double */
-    static ffi_type *complex_float_elems[3] = { &ffi_type_float, &ffi_type_float, NULL };
-    static ffi_type complex_float_type = { 0, 0, FFI_TYPE_STRUCT, complex_float_elems };
-    static ffi_type *complex_double_elems[3] = { &ffi_type_double, &ffi_type_double, NULL };
-    static ffi_type complex_double_type = { 0, 0, FFI_TYPE_STRUCT, complex_double_elems };
+    /* Static libffi struct types for _Complex float/double.
+       Keep initialization runtime/lazy for MSVC compatibility. */
+    static ffi_type *complex_float_elems[3] = { NULL, NULL, NULL };
+    static ffi_type complex_float_type = { 0, 0, FFI_TYPE_STRUCT, NULL };
+    static ffi_type *complex_double_elems[3] = { NULL, NULL, NULL };
+    static ffi_type complex_double_type = { 0, 0, FFI_TYPE_STRUCT, NULL };
+    static int complex_types_init = 0;
+    if (!complex_types_init) {
+        complex_float_elems[0] = &ffi_type_float;
+        complex_float_elems[1] = &ffi_type_float;
+        complex_float_elems[2] = NULL;
+        complex_float_type.elements = complex_float_elems;
+
+        complex_double_elems[0] = &ffi_type_double;
+        complex_double_elems[1] = &ffi_type_double;
+        complex_double_elems[2] = NULL;
+        complex_double_type.elements = complex_double_elems;
+
+        complex_types_init = 1;
+    }
 
     switch (base) {
     case FFI_BASE_I8: return &ffi_type_sint8;
@@ -1835,14 +1858,14 @@ static int ffi_prim_size_align(FfiBase base, size_t *out_size, size_t *out_align
         *out_size = 8; *out_align = 8; return 1;
     case FFI_BASE_LDOUBLE:
         *out_size = sizeof(long double);
-        *out_align = __alignof__(long double);
+        *out_align = DISTURB_ALIGNOF(long double);
         return 1;
     case FFI_BASE_BOOL:
         *out_size = 1; *out_align = 1; return 1;
     case FFI_BASE_COMPLEX_FLOAT:
-        *out_size = 2 * sizeof(float); *out_align = __alignof__(float); return 1;
+        *out_size = 2 * sizeof(float); *out_align = DISTURB_ALIGNOF(float); return 1;
     case FFI_BASE_COMPLEX_DOUBLE:
-        *out_size = 2 * sizeof(double); *out_align = __alignof__(double); return 1;
+        *out_size = 2 * sizeof(double); *out_align = DISTURB_ALIGNOF(double); return 1;
     case FFI_BASE_INT128:
     case FFI_BASE_UINT128:
         *out_size = 16; *out_align = 16; return 1;

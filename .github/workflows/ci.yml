@@ -117,6 +117,14 @@ jobs:
         run: |
           cmake --build build-msvc --config Release -j2
 
+      - name: Configure + Build (Release, DISABLE_IO=ON)
+        run: |
+          cmake -S . -B build-msvc-embedded -A x64 `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DDISABLE_IO=ON
+          cmake --build build-msvc-embedded --config Release -j2
+
       - name: Probe C.ffi.bind availability
         shell: powershell
         run: |
