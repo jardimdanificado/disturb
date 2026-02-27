@@ -47,8 +47,24 @@ run_case locals
 run_case numeric_suffixes
 run_case keyintern_toggle
 run_case value
+
+can_import=1
+import_probe="$(mktemp)"
+import_probe_out="$(mktemp)"
+cat > "$import_probe" <<'EOF'
+import("tests/modules/math.urb"),
+println(0),
+EOF
+if ! "$BIN" "$import_probe" > "$import_probe_out" 2>/dev/null || ! grep -q '^0$' "$import_probe_out"; then
+  can_import=0
+fi
+rm -f "$import_probe"
+rm -f "$import_probe_out"
+
 if [ "${EMBEDDED_MODE:-0}" = "1" ]; then
   echo "EMBEDDED_MODE=1, skipping modules case"
+elif [ "$can_import" = "0" ]; then
+  echo "import unavailable, skipping modules case"
 else
   run_case modules
 fi

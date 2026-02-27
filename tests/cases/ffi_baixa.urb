@@ -21,6 +21,9 @@ if (lib == null) {
   lib = C.ffi.open("./tests/ffi/libffi_baixa.dylib"),
 }
 if (lib == null) {
+  lib = C.ffi.open("./tests/ffi/libffi_baixa.dll"),
+}
+if (lib == null) {
   println(1),
   return 0,
 }
