@@ -289,26 +289,41 @@ All below support global and method form when applicable.
 
 ## FFI
 
-FFI appears under global `ffi` in all builds.
+Runtime C integration is exposed under global `C`.
 
 Primary APIs used by examples/tests:
-- `ffi.open(libPath)`
-- `ffi.sym(libHandle, symbolName)`
-- `ffi.close(libHandle)`
-- `ffi.bind(ptr, sig)`
-- `ffi.callback(sig, lambda)` (builds C callback pointer from lambda)
-- `memory.compile(schema)`
-- `memory.new(schemaOrLayout)` (allocates zeroed struct memory and returns owned pointer handle)
-- `memory.free(ptr)`
-- `memory.buffer(len)` (owned raw byte buffer)
-- `memory.string(ptr)` / `memory.string(ptr, len)`
-- `memory.point(value)` (returns numeric pointer; supports numeric/string lists, numeric views, and pointer-like FFI values)
-- `memory.sizeof(schemaOrLayout)`
-- `memory.alignof(schemaOrLayout)`
-- `memory.offsetof(schemaOrLayout, "field.path")`
-- `memory.view(ptr, schemaOrLayout)`
-- `memory.viewArray(ptr, elemSpec, len)`
-- `memory.compile(schema)` is optional in common flows; schema tables are auto-compiled/cached when passed to `memory.view`, `memory.sizeof`, `memory.alignof`, `memory.offsetof`, and `memory.new`.
+- `C.info()`
+- `C.typedef(name, type)`
+- `C.enum(name, fields)`
+- `C.define(name, value)`
+- `C.struct(name, schema)`
+- `C.ffi.open(libPath)`
+- `C.ffi.sym(libHandle, symbolName)`
+- `C.ffi.close(libHandle)`
+- `C.ffi.bind(ptr, sig)`
+- `C.ffi.callback(sig, lambda)` (builds C callback pointer from lambda)
+- `C.ffi.auto(libOrProxy, sig)` / `C.ffi.lib(path)`
+- `C.ffi.global(lib, name, typeOrSchema)`
+- `C.ffi.trace()` / `C.ffi.trace(0|1)`
+- `C.ffi.cdef(cSource)` / `C.ffi.compile(cSource)` / `C.ffi.header(path)` / `C.ffi.eval(expr)` (require `ENABLE_TCC=1`)
+- `C.memory.compile(schema)`
+- `C.memory.new(schemaOrLayout)` (allocates zeroed struct memory and returns owned pointer handle)
+- `C.memory.struct(schemaOrLayout[, init])`
+- `C.memory.free(ptr)`
+- `C.memory.buffer(len)` (owned raw byte buffer)
+- `C.memory.string(ptr)` / `C.memory.string(ptr, len)`
+- `C.memory.point(value)` (returns numeric pointer; supports numeric/string lists, numeric views, and pointer-like FFI values)
+- `C.memory.valid(ptr)`
+- `C.memory.read(ptr, type[, len])` / `C.memory.write(ptr, type, value)`
+- `C.memory.copy(dst, src, len)` / `C.memory.move(dst, src, len)` / `C.memory.zero(ptr, len)`
+- `C.memory.offset(ptr, byteOffset)` / `C.memory.offset(ptr, index, elemTypeOrSchema)`
+- `C.memory.cast(ptr, schemaOrLayout)` / `C.memory.deref(ptr[, schemaOrType])`
+- `C.memory.sizeof(schemaOrLayout)`
+- `C.memory.alignof(schemaOrLayout)`
+- `C.memory.offsetof(schemaOrLayout, "field.path")`
+- `C.memory.view(ptr, schemaOrLayout[, totalSize])`
+- `C.memory.viewArray(ptr, elemSpec, len)`
+- `C.memory.compile(schema)` is optional in common flows; schema tables are auto-compiled/cached when passed to `C.memory.view`, `C.memory.sizeof`, `C.memory.alignof`, `C.memory.offsetof`, and `C.memory.new`.
 - signatures support: `struct(schema)` (by-value struct), `union(schema)` (by-value union), `pointer(schema)` (typed pointer), `void*` (raw pointer), pointer depth via `pointer(pointer(...))`
 - string-like types in signatures:
   - `string`: marshaled as Disturb string
@@ -321,7 +336,7 @@ Primary APIs used by examples/tests:
 - qualifiers accepted in signatures/schema strings: `const`, `volatile`, `restrict`
 - view write behavior on `const` fields/elements:
   - warns and ignores write
-- variadic signatures are supported with `...` (for `ffi.bind`)
+- variadic signatures are supported with `...` (for `C.ffi.bind`)
 - callbacks support scalar and by-value struct/union signatures (callback variadics still unsupported)
 
 See:

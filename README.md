@@ -12,7 +12,8 @@ Disturb is a stack-based VM and language with C-like syntax that compiles to com
 Requirements:
 - `gcc` (or compatible C compiler)
 - `make`
-- `libffi` headers/libs for desktop/default builds (`DISABLE_IO=0`, default)
+- `libffi` headers/libs for desktop/default builds with FFI calls (`ENABLE_FFI=1` and `DISABLE_IO=0`)
+- optional: `libtcc` (or vendored TinyCC in `third_party/tinycc`) for TCC-backed APIs (`ENABLE_TCC=1`)
 
 Build:
 
@@ -25,9 +26,14 @@ Optional flags:
 
 ```bash
 make DISABLE_IO=1
+make ENABLE_FFI=0
+make ENABLE_TCC=1
 ```
 
-`DISABLE_IO=1` enables embedded profile behavior by disabling IO natives, dynamic FFI calls (`ffi.open`/`ffi.sym`/`ffi.bind`), and `import` while keeping FFI core layout/view/memory APIs.
+Flag behavior summary:
+- `DISABLE_IO=1`: embedded profile; disables IO natives, dynamic calls, and `import` (also forces `ENABLE_FFI=0`, `ENABLE_TCC=0`)
+- `ENABLE_FFI=0`: disables `C.ffi` and `C.memory` modules entirely
+- `ENABLE_TCC=1`: enables TCC-backed APIs (`C.ffi.cdef`, `C.ffi.compile`, `C.ffi.header`, `C.ffi.eval`)
 
 MSVC build (Windows):
 
@@ -39,7 +45,7 @@ cmake --build build-msvc --config Release
 
 Notes:
 - The MSVC embedded profile can be validated with `DISABLE_IO=1` (FFI core remains enabled).
-- To enable dynamic calls (`ffi.open`/`ffi.sym`/`ffi.bind`) under MSVC, provide a `libffi` build (headers + `.lib`/`.dll`) and configure CMake paths accordingly.
+- To enable dynamic calls (`C.ffi.open`/`C.ffi.sym`/`C.ffi.bind`) under MSVC, provide a `libffi` build (headers + `.lib`/`.dll`) and configure CMake paths accordingly.
 
 ## CLI
 
@@ -432,31 +438,58 @@ Runtime flags:
 
 ## FFI
 
-Dynamic foreign calls (`ffi.open`, `ffi.sym`, `ffi.bind`) require `DISABLE_IO=0` (default in desktop builds; disabled by `DISABLE_IO=1`).
+Runtime C integration is exposed under global `C`:
+- runtime-only type helpers: `C.typedef`, `C.enum`, `C.define`, `C.struct`
+- FFI calls/integration: `C.ffi.*`
+- memory/layout/view APIs: `C.memory.*`
+- runtime/platform info: `C.info()`
+
+Dynamic foreign calls (`C.ffi.open`, `C.ffi.sym`, `C.ffi.bind`) require `ENABLE_FFI=1` and `DISABLE_IO=0`.
 
 Main API:
-- `ffi.open(libPath)`
-- `ffi.sym(libHandle, symbolName)`
-- `ffi.close(libHandle)`
-- `ffi.bind(ptr, "signature")`
-- `ffi.callback("signature", lambda)`
-- `memory.compile(schema)`
-- `memory.new(schemaOrLayout)`
-- `memory.free(ptr)`
-- `memory.buffer(len)`
-- `memory.string(ptr)` / `memory.string(ptr, len)`
-- `memory.point(value)`
-- `memory.sizeof(schemaOrLayout)`
-- `memory.alignof(schemaOrLayout)`
-- `memory.offsetof(schemaOrLayout, "field.path")`
-- `memory.view(ptr, schemaOrLayout)`
-- `memory.viewArray(ptr, elemSpec, len)`
+- `C.info()`
+- `C.typedef(name, type)`
+- `C.enum(name, fields)`
+- `C.define(name, value)`
+- `C.struct(name, schema)`
+- `C.defines` (constants table)
+- `C.ffi.open(libPath)`
+- `C.ffi.sym(libHandle, symbolName)`
+- `C.ffi.close(libHandle)`
+- `C.ffi.bind(ptr, "signature")`
+- `C.ffi.callback("signature", lambda)`
+- `C.ffi.auto(libOrProxy, sig)`
+- `C.ffi.lib(path)`
+- `C.ffi.global(lib, name, typeOrSchema)`
+- `C.ffi.trace()` / `C.ffi.trace(0|1)`
+- `C.ffi.cdef(cSource)` / `C.ffi.compile(cSource)` / `C.ffi.header(path)` / `C.ffi.eval(expr)` (require `ENABLE_TCC=1`)
+- `C.memory.compile(schema)`
+- `C.memory.new(schemaOrLayout)`
+- `C.memory.struct(schemaOrLayout[, init])`
+- `C.memory.free(ptr)`
+- `C.memory.buffer(len)`
+- `C.memory.string(ptr)` / `C.memory.string(ptr, len)`
+- `C.memory.point(value)`
+- `C.memory.valid(ptr)`
+- `C.memory.read(ptr, type[, len])`
+- `C.memory.write(ptr, type, value)`
+- `C.memory.copy(dst, src, len)` / `C.memory.move(dst, src, len)` / `C.memory.zero(ptr, len)`
+- `C.memory.offset(ptr, byteOffset)` / `C.memory.offset(ptr, index, elemTypeOrSchema)`
+- `C.memory.cast(ptr, schemaOrLayout)`
+- `C.memory.deref(ptr[, schemaOrType])`
+- `C.memory.sizeof(schemaOrLayout)`
+- `C.memory.alignof(schemaOrLayout)`
+- `C.memory.offsetof(schemaOrLayout, "field.path")`
+- `C.memory.view(ptr, schemaOrLayout[, totalSize])`
+- `C.memory.viewArray(ptr, elemSpec, len)`
 
 Notes:
-- Two-step loading is supported via `ffi.open` + `ffi.sym` + `ffi.bind`.
-- `memory.compile(schema)` is optional for normal use.
-- `memory.view/sizeof/alignof/offsetof/new` accept either a schema table or a compiled layout handle; schema tables are auto-compiled and cached internally.
-- `memory.point(value)` returns a numeric pointer for list/view data or existing pointer-like FFI values (`null` maps to `0`).
+- Two-step loading is supported via `C.ffi.open` + `C.ffi.sym` + `C.ffi.bind`.
+- `C.memory.compile(schema)` is optional for normal use.
+- `C.memory.view/sizeof/alignof/offsetof/new` accept either a schema table or a compiled layout handle; schema tables are auto-compiled and cached internally.
+- `C.memory.point(value)` returns a numeric pointer for list/view data or existing pointer-like FFI values (`null` maps to `0`).
+- `C.memory.view` and `C.memory.viewArray` expose `.byteSize`; array views also expose `.len`.
+- packed/forced-align structs remain pointer-only for calls (by-value ABI limitation).
 
 Signature struct typing:
 - by-value struct: `struct(schema)` (example: `i32 sum(struct(outer))`)
@@ -466,7 +499,7 @@ Signature struct typing:
 - pointer depth in signatures must use nested `pointer(...)` (example: `pointer(pointer(i32))`)
 - string-ish types:
   - `string`: marshals to/from Disturb strings
-  - `cstring`: raw C pointer semantics (use `memory.string(ptr)` when needed)
+  - `cstring`: raw C pointer semantics (use `C.memory.string(ptr)` when needed)
 - optional ABI prefix in signatures: `abi(name)` or bare ABI name (`cdecl`, `stdcall`, `fastcall`, `thiscall`, `win64`, `unix64`, `sysv`)
 
 Schema composition:
@@ -476,14 +509,14 @@ Schema composition:
 - unions: `__meta = { union = 1 }`
 - bitfields: use `"type:bits"` (example: `"uint8:3"`, `"uint32:5"`)
 - qualifiers accepted in schema/signatures: `const`, `volatile`, `restrict`
-- variadic signatures accepted via `...` in `ffi.bind`
+- variadic signatures accepted via `...` in `C.ffi.bind`
 
 Const behavior in views:
 - warns and ignores write
 
 Ownership:
-- `memory.new` returns an owned pointer handle (GC releases memory if unreachable)
-- `memory.free(ptr)` can free explicitely (works with owned handles and raw pointers)
+- `C.memory.new` returns an owned pointer handle (GC releases memory if unreachable)
+- `C.memory.free(ptr)` can free explicitely (works with owned handles and raw pointers)
 
 Supported workflow:
 - call C functions

@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.7.0
+- unify C runtime/FFI surface under global `C`:
+  - runtime-only helpers moved to `C.typedef`, `C.enum`, `C.define`, `C.struct`
+  - dynamic integrations under `C.ffi.*`
+  - layout/memory APIs under `C.memory.*`
+  - platform/runtime capabilities via `C.info()`
+- fix constant registry path for `define` to `C.defines` (instead of legacy `ffi.defines`).
+- add build toggles for C integration:
+  - `ENABLE_FFI` (master switch for `C.ffi`/`C.memory` modules)
+  - `ENABLE_TCC` (optional libtcc integration)
+  - `DISABLE_IO=1` now forces embedded profile (`ENABLE_FFI=0`, `ENABLE_TCC=0`).
+- add optional TCC-backed APIs in `C.ffi` with graceful fallback when unavailable:
+  - `C.ffi.cdef`, `C.ffi.compile`, `C.ffi.header`, `C.ffi.eval`.
+- expand `C.memory` capabilities:
+  - typed read/write (`C.memory.read`, `C.memory.write`)
+  - raw operations (`C.memory.copy`, `C.memory.move`, `C.memory.zero`)
+  - pointer operations (`C.memory.offset`, `C.memory.cast`, `C.memory.deref`)
+  - pointer validation (`C.memory.valid`)
+  - `C.memory.view(ptr, schema, totalSize)` for flexible array scenarios
+  - view metadata (`.byteSize`; array views also expose `.len`).
+- improve FFI type and ABI support:
+  - `long_double`, `_Bool` semantic normalization, `__int128`/`__uint128`, `complex_float`, `complex_double`
+  - explicit packed/forced-align by-value ABI limitation error guidance
+  - `struct(Name)[N]` signature array decay support
+  - callback guard for non-main-thread invocation.
+- add/expand safety/debug features:
+  - broader null-pointer guards in memory/view paths
+  - `C.ffi.trace` control and tracing consistency
+  - clearer callback variadic limitation messages.
+- extend FFI test coverage and harness:
+  - new/updated cases for namespace migration, ergonomics, safety, media/low-priority items, and TCC availability/fallback
+  - new fixtures: `tests/ffi/ffi_media.c`, `tests/ffi/ffi_baixa.c`
+  - `tests/run.sh` updated probes/build steps for `C.*` and new cases.
+- refresh docs to reflect the new `C` namespace contract and current build/runtime capabilities.
+
 ## 1.6.0
 - add numeric list shorthand syntax without brackets: `a = 1 2 3,`.
 - remove bracket list literals (`[1, 2, 3]`) from the language; use only space-separated numeric lists.
