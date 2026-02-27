@@ -78,7 +78,7 @@
 - standardize dynamic loading on `ffi.open(path)` + `ffi.sym(lib, name)` + `ffi.bind(ptr, sig)` + `ffi.close(lib)`.
 - fix `ffi.sym` symbol-name handling for derived strings (e.g. `split`/`trim` results) by passing a null-terminated copy to the platform loader.
 - migrate all FFI-facing scripts from `ffi.load(...)` to the new flow:
-  - libraries: `lib/raylib.urb`, `lib/tcc.urb`
+  - libraries: `libs/raylib.urb`, `libs/tcc.urb`
   - tests: `tests/cases/ffi_*` loaders
   - examples and guide examples: `example/ffi*.urb`, `example/guide/11_ffi_system.urb`, `example/guide/14_ffi_struct_views_bind.urb`, `example/guide/15_ffi_callbacks_varargs_buffers.urb`, `example/guide/16_ffi_unions.urb`
 - update FFI documentation to remove `ffi.load` references and describe the new call flow in `README.md`, `docs/FUNCTION_REFERENCE.md`, and `docs/REF_SHEET.md`.

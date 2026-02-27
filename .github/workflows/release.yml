@@ -117,7 +117,8 @@ jobs:
           cp disturb dist/
           cp README.md CHANGELOG.md dist/
           cp -r docs example dist/
-          tar -czf "dist/disturb-v${{ inputs.version }}-linux-x64.tar.gz" -C dist disturb README.md CHANGELOG.md docs example
+          cp -r docs/release-legal dist/release-legal
+          tar -czf "dist/disturb-v${{ inputs.version }}-linux-x64.tar.gz" -C dist disturb README.md CHANGELOG.md docs example release-legal
 
       - name: Package artifact (macOS)
         if: matrix.target == 'macos'
@@ -127,7 +128,8 @@ jobs:
           cp disturb dist/
           cp README.md CHANGELOG.md dist/
           cp -r docs example dist/
-          tar -czf "dist/disturb-v${{ inputs.version }}-macos-x64.tar.gz" -C dist disturb README.md CHANGELOG.md docs example
+          cp -r docs/release-legal dist/release-legal
+          tar -czf "dist/disturb-v${{ inputs.version }}-macos-x64.tar.gz" -C dist disturb README.md CHANGELOG.md docs example release-legal
 
       - name: Package artifact (Windows MinGW)
         if: matrix.target == 'windows-mingw'
@@ -137,7 +139,8 @@ jobs:
           cp disturb.exe dist/
           cp README.md CHANGELOG.md dist/
           cp -r docs example dist/
-          powershell -NoProfile -Command "Compress-Archive -Path dist\\disturb.exe,dist\\README.md,dist\\CHANGELOG.md,dist\\docs,dist\\example -DestinationPath dist\\disturb-v${{ inputs.version }}-windows-x64-mingw.zip -Force"
+          cp -r docs/release-legal dist/release-legal
+          powershell -NoProfile -Command "Compress-Archive -Path dist\\disturb.exe,dist\\README.md,dist\\CHANGELOG.md,dist\\docs,dist\\example,dist\\release-legal -DestinationPath dist\\disturb-v${{ inputs.version }}-windows-x64-mingw.zip -Force"
 
       - name: Package artifact (Windows MSVC)
         if: matrix.target == 'windows-msvc'
@@ -147,7 +150,8 @@ jobs:
           Copy-Item build-msvc/Release/disturb.exe dist/
           Copy-Item README.md,CHANGELOG.md dist/
           Copy-Item -Recurse docs,example dist/
-          Compress-Archive -Path dist/disturb.exe,dist/README.md,dist/CHANGELOG.md,dist/docs,dist/example -DestinationPath dist/disturb-v${{ inputs.version }}-windows-x64-msvc.zip -Force
+          Copy-Item -Recurse docs/release-legal dist/release-legal
+          Compress-Archive -Path dist/disturb.exe,dist/README.md,dist/CHANGELOG.md,dist/docs,dist/example,dist/release-legal -DestinationPath dist/disturb-v${{ inputs.version }}-windows-x64-msvc.zip -Force
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

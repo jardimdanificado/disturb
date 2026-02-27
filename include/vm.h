@@ -9,7 +9,7 @@
 #include <stdbool.h>
 #include <ctype.h>
 
-#include "../lib/urb.h"
+#include "../libs/urb.h"
 
 #undef PANIC
 

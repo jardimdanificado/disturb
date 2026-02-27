@@ -289,8 +289,8 @@ static void ffi_tcc_configure_state(TCCState *s)
 {
     if (!s) return;
     /* Vendored TinyCC build artifacts (used in this project). */
-    tcc_set_lib_path(s, "third_party/tinycc");
-    tcc_add_sysinclude_path(s, "third_party/tinycc/include");
+    tcc_set_lib_path(s, "libs/tinycc");
+    tcc_add_sysinclude_path(s, "libs/tinycc/include");
 }
 #endif
 

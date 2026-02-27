@@ -7,9 +7,9 @@ option(ENABLE_FFI "Enable Disturb ffi/memory modules" ON)
 option(ENABLE_TCC "Enable libtcc integration for TCC-dependent ffi APIs" OFF)
 
 set(DISTURB_SOURCES
-  lib/libregexp/cutils.c
-  lib/libregexp/libunicode.c
-  lib/libregexp/libregexp.c
+  libs/libregexp/cutils.c
+  libs/libregexp/libunicode.c
+  libs/libregexp/libregexp.c
   src/vm.c
   src/bytecode.c
   src/syntax.c
@@ -23,8 +23,8 @@ add_executable(disturb ${DISTURB_SOURCES})
 
 target_include_directories(disturb PRIVATE
   include
-  lib/libregexp
-  lib
+  libs/libregexp
+  libs
 )
 
 set_property(TARGET disturb PROPERTY C_STANDARD 11)
@@ -38,9 +38,9 @@ if(MSVC)
 else()
   target_compile_options(disturb PRIVATE -O2 -Wall -Wextra -pedantic)
   set_source_files_properties(
-    lib/libregexp/cutils.c
-    lib/libregexp/libunicode.c
-    lib/libregexp/libregexp.c
+    libs/libregexp/cutils.c
+    libs/libregexp/libunicode.c
+    libs/libregexp/libregexp.c
     PROPERTIES COMPILE_OPTIONS "-Wno-unused-parameter;-Wno-sign-compare;-Wno-pedantic"
   )
 endif()
@@ -102,7 +102,7 @@ if(ENABLE_FFI)
   endif()
 
   if(ENABLE_TCC)
-    set(TCC_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/tinycc")
+    set(TCC_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libs/tinycc")
     find_path(TCC_INCLUDE_DIR libtcc.h
       HINTS "${TCC_VENDOR_DIR}"
     )

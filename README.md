@@ -13,7 +13,7 @@ Requirements:
 - `gcc` (or compatible C compiler)
 - `make`
 - `libffi` headers/libs for desktop/default builds with FFI calls (`ENABLE_FFI=1` and `DISABLE_IO=0`)
-- optional: `libtcc` (or vendored TinyCC in `third_party/tinycc`) for TCC-backed APIs (`ENABLE_TCC=1`)
+- optional: `libtcc` (or vendored TinyCC in `libs/tinycc`) for TCC-backed APIs (`ENABLE_TCC=1`)
 
 Build:
 

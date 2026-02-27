@@ -117,13 +117,12 @@ jobs:
         run: |
           cmake --build build-msvc --config Release -j2
 
-      - name: Probe ffi.load/ffi.bind availability
+      - name: Probe C.ffi.bind availability
         shell: powershell
         run: |
           $probe = Join-Path $env:TEMP "msvc_ffi_probe.urb"
           @"
-          println(ffi.load.type);
-          println(ffi.bind.type);
+          println(C.ffi.bind.type);
           "@ | Set-Content -Encoding ASCII $probe
           $out = & .\build-msvc\Release\disturb.exe $probe
           if ($out -notmatch "native") {

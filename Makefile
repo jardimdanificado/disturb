@@ -2,11 +2,11 @@ CC = gcc
 DISABLE_IO ?= 0
 ENABLE_FFI ?= 1
 ENABLE_TCC ?= 0
-TCC_VENDOR_DIR := third_party/tinycc
+TCC_VENDOR_DIR := libs/tinycc
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 IS_WINDOWS := $(findstring MINGW,$(UNAME_S))
 
-CFLAGS = -O2 -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilib/libregexp -Ilib/
+CFLAGS = -O2 -std=c99 -Wall -Wextra -pedantic -Iinclude -Ilibs/libregexp -Ilibs/
 LIBREGEXP_CFLAGS = -Wno-unused-parameter -Wno-sign-compare -Wno-pedantic
 LDFLAGS = -lm
 
@@ -46,7 +46,7 @@ endif
 endif
 endif
 
-SRC = lib/libregexp/cutils.c lib/libregexp/libunicode.c lib/libregexp/libregexp.c \
+SRC = libs/libregexp/cutils.c libs/libregexp/libunicode.c libs/libregexp/libregexp.c \
       src/vm.c src/bytecode.c src/syntax.c src/functions.c src/papagaio.c src/cli.c src/ffi.c
 OBJ = $(SRC:.c=.o)
 
@@ -58,7 +58,7 @@ disturb: $(OBJ)
 test-raylib: disturb
 	sh tests/run_raylib_examples.sh
 
-lib/libregexp/%.o: lib/libregexp/%.c
+libs/libregexp/%.o: libs/libregexp/%.c
 	$(CC) $(CFLAGS) $(LIBREGEXP_CFLAGS) -c $< -o $@
 
 %.o: %.c include/vm.h include/papagaio.h include/bytecode.h
