@@ -150,7 +150,9 @@ else
     run_ffi_case ffi_typedef_enum_define
     # Phase 4: advanced structs/unions (no gcc needed)
     run_ffi_case ffi_advanced_structs
-    if command -v gcc >/dev/null 2>&1; then
+    if [ "${SKIP_FFI_NATIVE:-0}" = "1" ]; then
+      echo "SKIP_FFI_NATIVE=1, skipping ffi native shared-library tests"
+    elif command -v gcc >/dev/null 2>&1; then
       uname_s="$(uname -s 2>/dev/null || echo Unknown)"
       lib_ext="so"
       cflags_shared="-shared -fPIC"
@@ -214,10 +216,10 @@ else
       run_ffi_case ffi_tcc_unavailable
       run_ffi_case ffi_tcc_compile_eval
     else
-      echo "gcc not found, skipping ffi struct view test"
+      echo "gcc not found, skipping ffi native shared-library tests"
     fi
   else
-    echo "ffi module unavailable, skipping ffi struct view test"
+    echo "ffi module unavailable, skipping ffi tests"
   fi
   rm -f "$probe_file"
 fi

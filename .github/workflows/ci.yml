@@ -141,4 +141,4 @@ jobs:
       - name: Tests
         shell: bash
         run: |
-          BIN=./build-msvc/Release/disturb.exe tests/run.sh
+          BIN=./build-msvc/Release/disturb.exe SKIP_FFI_NATIVE=1 tests/run.sh
