@@ -1,0 +1,129 @@
+fail = 0,
+
+/* ========== 10.2: C.info() ========== */
+
+info = C.info(),
+if (info == null) { fail++, println("info null"), }
+
+if (info.os == null) { fail++, println("info os null"), }
+if (info.arch == null) { fail++, println("info arch null"), }
+if (info.sizeof_ptr < 1) { fail++, println("info sizeof_ptr"), }
+if (info.sizeof_long < 1) { fail++, println("info sizeof_long"), }
+if (info.sizeof_long_double < 1) { fail++, println("info sizeof_long_double"), }
+
+if (info.endian != "little") {
+  if (info.endian != "big") { fail++, println("info endian"), }
+}
+
+if (info.ffi_calls != 0) {
+  if (info.ffi_calls != 1) { fail++, println("info ffi_calls"), }
+}
+
+/* ========== Load library ========== */
+
+load_lib = (path){ return C.ffi.open(path), },
+lib = load_lib("./tests/ffi/libffi_media.so"),
+if (lib == null) { lib = load_lib("./tests/ffi/libffi_media.dylib"), }
+if (lib == null) { lib = load_lib("./tests/ffi/libffi_media.dll"), }
+if (lib == null) {
+  println(1),
+  return 0,
+}
+
+/* ========== 1.1: long double ========== */
+
+ld_add = C.ffi.auto(lib, "long_double ld_add(long_double, long_double)"),
+r1 = ld_add(1.5, 2.5),
+if (r1 != 4.0) { fail++, println("ld_add " + r1), }
+
+ld_get_pi = C.ffi.auto(lib, "long_double ld_get_pi()"),
+pi = ld_get_pi(),
+if (pi < 3.14) { fail++, println("ld_get_pi low " + pi), }
+if (pi > 3.15) { fail++, println("ld_get_pi high " + pi), }
+
+ld_to_double = C.ffi.auto(lib, "double ld_to_double(long_double)"),
+d = ld_to_double(2.718),
+if (d < 2.71) { fail++, println("ld_to_double low " + d), }
+if (d > 2.72) { fail++, println("ld_to_double high " + d), }
+
+/* ========== 1.2: _Bool semantics ========== */
+
+bool_negate = C.ffi.auto(lib, "_Bool bool_negate(_Bool)"),
+b1 = bool_negate(1),
+if (b1 != 0) { fail++, println("bool_negate 1: " + b1), }
+b2 = bool_negate(0),
+if (b2 != 1) { fail++, println("bool_negate 0: " + b2), }
+
+bool_and = C.ffi.auto(lib, "_Bool bool_and(_Bool, _Bool)"),
+b3 = bool_and(1, 1),
+if (b3 != 1) { fail++, println("bool_and 1,1: " + b3), }
+b4 = bool_and(1, 0),
+if (b4 != 0) { fail++, println("bool_and 1,0: " + b4), }
+
+bool_from_int = C.ffi.auto(lib, "_Bool bool_from_int(int)"),
+b5 = bool_from_int(42),
+if (b5 != 1) { fail++, println("bool_from_int 42: " + b5), }
+b6 = bool_from_int(0),
+if (b6 != 0) { fail++, println("bool_from_int 0: " + b6), }
+
+bool_to_int = C.ffi.auto(lib, "int32_t bool_to_int(_Bool)"),
+i1 = bool_to_int(1),
+if (i1 != 1) { fail++, println("bool_to_int 1: " + i1), }
+i2 = bool_to_int(0),
+if (i2 != 0) { fail++, println("bool_to_int 0: " + i2), }
+
+/* Bool in struct view */
+boolStructSchema = { id = "int32", active = "_Bool", value = "int32" },
+bool_struct_get = C.ffi.auto(lib, "void* bool_struct_get()"),
+bsp = bool_struct_get(),
+bsv = C.memory.view(bsp, boolStructSchema),
+if (bsv.id != 42) { fail++, println("bool struct id: " + bsv.id), }
+if (bsv.active != 1) { fail++, println("bool struct active: " + bsv.active), }
+if (bsv.value != 100) { fail++, println("bool struct value: " + bsv.value), }
+
+/* ========== 3.3: Flexible array members ========== */
+
+flexSchema = { count = "int32", data = "int32[]" },
+
+flex_create = C.ffi.auto(lib, "void* flex_create(int)"),
+flex_free_fn = C.ffi.auto(lib, "void flex_free(void*)"),
+flex_sum = C.ffi.auto(lib, "int32_t flex_sum(void*)"),
+
+fp = flex_create(5),
+if (fp == null) { fail++, println("flex_create null"), }
+
+s = flex_sum(fp),
+if (s != 150) { fail++, println("flex_sum: " + s), }
+
+totalSize = 4 + 5 * 4,
+fv = C.memory.view(fp, flexSchema, totalSize),
+if (fv.count != 5) { fail++, println("flex count: " + fv.count), }
+
+dataPtr = C.memory.offset(fp, 4),
+arrflex = C.memory.viewArray(dataPtr, "int32", 5),
+if (arrflex[0] != 10) { fail++, println("flex data[0]: " + arrflex[0]), }
+if (arrflex[4] != 50) { fail++, println("flex data[4]: " + arrflex[4]), }
+
+flex_free_fn(fp),
+
+/* ========== 7.1: Bounds checking -- .byteSize ========== */
+
+schema71 = { x = "int32", y = "int32" },
+ptr71 = C.memory.new(schema71),
+v71 = C.memory.view(ptr71, schema71),
+
+bs = v71.byteSize,
+if (bs != 8) { fail++, println("byteSize struct: " + bs), }
+
+data71 = C.memory.buffer(20),
+arr71 = C.memory.viewArray(data71, "int32", 5),
+aLen = arr71.len,
+if (aLen != 5) { fail++, println("arr len: " + aLen), }
+aBs = arr71.byteSize,
+if (aBs != 20) { fail++, println("arr byteSize: " + aBs), }
+
+C.memory.free(ptr71),
+C.memory.free(data71),
+
+C.ffi.close(lib),
+println(fail),

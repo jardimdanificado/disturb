@@ -14,8 +14,8 @@ schema = {
   f = "const int32[2]"
 },
 
-ptr = memory.new(schema),
-v = memory.view(ptr, schema),
+ptr = C.memory.new(schema),
+v = C.memory.view(ptr, schema),
 
 v.a = 100,
 if (v.a != 0) { fail++, }
@@ -36,5 +36,5 @@ if (v.e[1] != 22) { fail++, }
 v.f[0] = 33,
 if (v.f[0] != 0) { fail++, }
 
-memory.free(ptr),
+C.memory.free(ptr),
 println(fail),

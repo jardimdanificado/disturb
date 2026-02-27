@@ -15,6 +15,6 @@ println(global.name),
 println(global.name[0]),
 
 s = "ab",
-c = 'x',
+ch = 'x',
 println(s.type),
-println(c.type),
+println(ch.type),

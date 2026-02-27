@@ -2,7 +2,7 @@ fail = 0,
 
 /* ---- Load test library ---- */
 load_lib = (path){
-  return ffi.open(path),
+  return C.ffi.open(path),
 },
 
 lib = load_lib("./tests/ffi/libffi_fnptr_sig.so"),
@@ -14,9 +14,9 @@ if (lib == null) {
 }
 
 bind = (name, sig){
-  ptr = ffi.sym(lib, name),
+  ptr = C.ffi.sym(lib, name),
   if (ptr == null) { fail++, return null, }
-  return ffi.bind(ptr, sig),
+  return C.ffi.bind(ptr, sig),
 },
 
 /* ---- 5.1a: function(sig) as argument — lambda auto-wrap ---- */
@@ -63,7 +63,7 @@ r6 = get_action_result(),
 if (r6 != 70) { fail++, println("run_action"), }
 
 /* ---- 5.1e: pass existing callback (not lambda) through function(sig) ---- */
-cb = ffi.callback("int32 op(int32, int32)", (a, b){ return a - b, }),
+cb = C.ffi.callback("int32 op(int32, int32)", (a, b){ return a - b, }),
 r7 = apply_binop(cb, 10, 3),
 if (r7 != 7) { fail++, println("apply_binop callback"), }
 

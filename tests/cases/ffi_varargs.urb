@@ -24,14 +24,14 @@ ffi_sig_name = (sig){
 },
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path),
+  h = C.ffi.open(path),
   if (h == null) { return null, }
   api = { __lib = h },
   each(sig in sigs) {
     name = ffi_sig_name(sig),
-    ptr = ffi.sym(h, name),
+    ptr = C.ffi.sym(h, name),
     if (ptr == null) { return null, }
-    api[name] = ffi.bind(ptr, sig),
+    api[name] = C.ffi.bind(ptr, sig),
   }
   return api,
 },
@@ -61,7 +61,7 @@ f = lib.sum_variadic_f64(4, 1.5, 2.5, 3.0, 4.0),
 if (f != 11.0) { fail++, }
 
 ptr = lib.get_sum_variadic_i32_ptr(),
-sum = ffi.bind(ptr, "const i32 sum(const i32, ...)"),
+sum = C.ffi.bind(ptr, "const i32 sum(const i32, ...)"),
 if (sum(4, 10, 20, 30, 40) != 100) { fail++, }
 
 println(fail),

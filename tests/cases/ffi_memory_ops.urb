@@ -2,7 +2,7 @@ fail = 0,
 
 /* ---- Load test library ---- */
 load_lib = (path){
-  return ffi.open(path),
+  return C.ffi.open(path),
 },
 
 lib = load_lib("./tests/ffi/libffi_memory_ops.so"),
@@ -14,9 +14,9 @@ if (lib == null) {
 }
 
 bind = (name, sig){
-  ptr = ffi.sym(lib, name),
+  ptr = C.ffi.sym(lib, name),
   if (ptr == null) { fail++, return null, }
-  return ffi.bind(ptr, sig),
+  return C.ffi.bind(ptr, sig),
 },
 
 make_int_array = bind("make_int_array", "ptr make_int_array(i32)"),
@@ -31,71 +31,71 @@ point_get_y = bind("point_get_y", "i32 point_get_y(ptr)"),
 point_sizeof = bind("point_sizeof", "i32 point_sizeof()"),
 make_two_points = bind("make_two_points", "ptr make_two_points()"),
 
-/* ---- 3.2: memory.read / memory.write ---- */
+/* ---- 3.2: C.memory.read / C.memory.write ---- */
 arr = make_int_array(4),
-v = memory.read(arr, "int32"),
+v = C.memory.read(arr, "int32"),
 if (v != 10) { fail++, println("read single"), }
 
-memory.write(arr, "int32", 99),
-v2 = memory.read(arr, "int32"),
+C.memory.write(arr, "int32", 99),
+v2 = C.memory.read(arr, "int32"),
 if (v2 != 99) { fail++, println("write+read"), }
 
 /* read array of values */
-memory.write(arr, "int32", 10), /* restore */
-vals = memory.read(arr, "int32", 4),
+C.memory.write(arr, "int32", 10), /* restore */
+vals = C.memory.read(arr, "int32", 4),
 if (vals.size != 4) { fail++, println("read array size"), }
 if (vals[0] != 10) { fail++, println("read arr[0]"), }
 if (vals[1] != 20) { fail++, println("read arr[1]"), }
 if (vals[2] != 30) { fail++, println("read arr[2]"), }
 if (vals[3] != 40) { fail++, println("read arr[3]"), }
 
-/* ---- 3.6: memory.zero ---- */
-memory.zero(arr, 16), // 4 * sizeof(int32)
-z = memory.read(arr, "int32"),
+/* ---- 3.6: C.memory.zero ---- */
+C.memory.zero(arr, 16), // 4 * sizeof(int32)
+z = C.memory.read(arr, "int32"),
 if (z != 0) { fail++, println("zero"), }
 
-/* ---- 3.5: memory.copy ---- */
+/* ---- 3.5: C.memory.copy ---- */
 src = make_int_array(3), // [10, 20, 30]
-memory.copy(arr, src, 12), // copy 3 int32s
-c1 = memory.read(arr, "int32"),
+C.memory.copy(arr, src, 12), // copy 3 int32s
+c1 = C.memory.read(arr, "int32"),
 if (c1 != 10) { fail++, println("copy"), }
 
-/* ---- 3.5: memory.move (overlapping safe) ---- */
-memory.move(arr, arr, 12), // move over itself
-m1 = memory.read(arr, "int32"),
+/* ---- 3.5: C.memory.move (overlapping safe) ---- */
+C.memory.move(arr, arr, 12), // move over itself
+m1 = C.memory.read(arr, "int32"),
 if (m1 != 10) { fail++, println("move"), }
 
 free_buf(src),
 
-/* ---- 3.7: memory.offset ---- */
+/* ---- 3.7: C.memory.offset ---- */
 /* raw byte offset */
-p2 = memory.offset(arr, 4), // advance 4 bytes (to second int32)
-v3 = memory.read(p2, "int32"),
+p2 = C.memory.offset(arr, 4), // advance 4 bytes (to second int32)
+v3 = C.memory.read(p2, "int32"),
 if (v3 != 20) { fail++, println("offset raw"), }
 
 /* typed offset */
-p3 = memory.offset(arr, 2, "int32"), // advance 2 * sizeof(int32) = 8 bytes
-v4 = memory.read(p3, "int32"),
+p3 = C.memory.offset(arr, 2, "int32"), // advance 2 * sizeof(int32) = 8 bytes
+v4 = C.memory.read(p3, "int32"),
 if (v4 != 30) { fail++, println("offset typed"), }
 
 free_buf(arr),
 
-/* ---- 3.1: memory.deref (pointer to pointer) ---- */
+/* ---- 3.1: C.memory.deref (pointer to pointer) ---- */
 pp = make_ptr_to_int(),
-inner_val = memory.deref(pp, "int32"),
+inner_val = C.memory.deref(pp, "int32"),
 if (inner_val != 42) { fail++, println("deref prim"), }
 
 /* deref without schema returns a ptr handle */
-inner_ptr = memory.deref(pp),
-v5 = memory.read(inner_ptr, "int32"),
+inner_ptr = C.memory.deref(pp),
+v5 = C.memory.read(inner_ptr, "int32"),
 if (v5 != 42) { fail++, println("deref raw"), }
 
 free_ptr_to_int(pp),
 
-/* ---- 3.4: memory.cast ---- */
+/* ---- 3.4: C.memory.cast ---- */
 PointSchema = { x = "int32", y = "int32" },
 pt = make_point(100, 200),
-view = memory.cast(pt, PointSchema),
+view = C.memory.cast(pt, PointSchema),
 if (view.x != 100) { fail++, println("cast x"), }
 if (view.y != 200) { fail++, println("cast y"), }
 
@@ -104,14 +104,14 @@ view.x = 999,
 if (point_get_x(pt) != 999) { fail++, println("cast write"), }
 free_point(pt),
 
-/* ---- 3.7: memory.offset with schema stride ---- */
+/* ---- 3.7: C.memory.offset with schema stride ---- */
 pts = make_two_points(),
 pt_size = point_sizeof(),
-pt2 = memory.offset(pts, 1, PointSchema),
-view2 = memory.cast(pt2, PointSchema),
+pt2 = C.memory.offset(pts, 1, PointSchema),
+view2 = C.memory.cast(pt2, PointSchema),
 if (view2.x != 3) { fail++, println("offset schema x"), }
 if (view2.y != 4) { fail++, println("offset schema y"), }
 free_buf(pts),
 
-ffi.close(lib),
+C.ffi.close(lib),
 println(fail),

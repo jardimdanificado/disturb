@@ -24,14 +24,14 @@ ffi_sig_name = (sig){
 },
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path),
+  h = C.ffi.open(path),
   if (h == null) { return null, }
   api = { __lib = h },
   each(sig in sigs) {
     name = ffi_sig_name(sig),
-    ptr = ffi.sym(h, name),
+    ptr = C.ffi.sym(h, name),
     if (ptr == null) { return null, }
-    api[name] = ffi.bind(ptr, sig),
+    api[name] = C.ffi.bind(ptr, sig),
   }
   return api,
 },
@@ -86,17 +86,17 @@ if (lib == null) {
   return 0,
 }
 
-if (memory.sizeof(bits) != lib.bits_sizeof()) { fail++, }
-if (memory.offsetof(bits, "i") != lib.bits_off_i()) { fail++, }
-if (memory.offsetof(bits, "f") != lib.bits_off_f()) { fail++, }
-if (memory.offsetof(bits, "p") != lib.bits_off_p()) { fail++, }
+if (C.memory.sizeof(bits) != lib.bits_sizeof()) { fail++, }
+if (C.memory.offsetof(bits, "i") != lib.bits_off_i()) { fail++, }
+if (C.memory.offsetof(bits, "f") != lib.bits_off_f()) { fail++, }
+if (C.memory.offsetof(bits, "p") != lib.bits_off_p()) { fail++, }
 
-if (memory.sizeof(holder) != lib.holder_sizeof()) { fail++, }
-if (memory.offsetof(holder, "tag") != lib.holder_off_tag()) { fail++, }
-if (memory.offsetof(holder, "payload") != lib.holder_off_payload()) { fail++, }
+if (C.memory.sizeof(holder) != lib.holder_sizeof()) { fail++, }
+if (C.memory.offsetof(holder, "tag") != lib.holder_off_tag()) { fail++, }
+if (C.memory.offsetof(holder, "payload") != lib.holder_off_payload()) { fail++, }
 
-bp = memory.new(bits),
-bv = memory.view(bp, bits),
+bp = C.memory.new(bits),
+bv = C.memory.view(bp, bits),
 
 bv.i = 42,
 if (lib.bits_take_value_i(bv) != 42) { fail++, }
@@ -110,23 +110,23 @@ if (lib.bits_read_hi(bv) != 123) { fail++, }
 ret = lib.make_bits_value_i(99),
 if (ret.i != 99) { fail++, }
 
-hp = memory.new(holder),
-hv = memory.view(hp, holder),
+hp = C.memory.new(holder),
+hv = C.memory.view(hp, holder),
 
 hv.tag = 7,
 hv.payload.i = 77,
 if (lib.holder_take_payload_i(hv) != 77) { fail++, }
 
-hp2 = memory.new(holder_ptr),
-hv2 = memory.view(hp2, holder_ptr),
+hp2 = C.memory.new(holder_ptr),
+hv2 = C.memory.view(hp2, holder_ptr),
 hv2.ref = bp,
 if (hv2.ref.i != bv.i) { fail++, }
 
 hv2.ref.i = -12,
 if (bv.i != -12) { fail++, }
 
-memory.free(hp),
-memory.free(hp2),
-memory.free(bp),
+C.memory.free(hp),
+C.memory.free(hp2),
+C.memory.free(bp),
 
 println(fail),

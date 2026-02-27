@@ -1,46 +1,46 @@
 fail = 0,
 
-/* ========== 6.1: ffi.struct ========== */
+/* ========== 6.1: C.ffi.struct ========== */
 
 /* Register Vec2 as a named struct */
-Vec2Layout = ffi.struct("Vec2", { x = "float", y = "float" }),
-if (Vec2Layout == null) { fail++, println("ffi.struct returned null"), }
+Vec2Layout = C.struct("Vec2", { x = "float", y = "float" }),
+if (Vec2Layout == null) { fail++, println("C.ffi.struct returned null"), }
 
-/* Verify it's usable with memory.sizeof */
-sz = memory.sizeof(Vec2Layout),
+/* Verify it's usable with C.memory.sizeof */
+sz = C.memory.sizeof(Vec2Layout),
 if (sz != 8) { fail++, println("sizeof Vec2"), }
 
 /* Verify the schema is registered globally — compile again by name should work */
-ptr = memory.new({ x = "float", y = "float" }),
-if (ptr == null) { fail++, println("memory.new with schema"), }
-memory.free(ptr),
+ptr = C.memory.new({ x = "float", y = "float" }),
+if (ptr == null) { fail++, println("C.memory.new with schema"), }
+C.memory.free(ptr),
 
-/* ========== 6.5: memory.struct — alloc + init + view ========== */
+/* ========== 6.5: C.memory.struct — alloc + init + view ========== */
 
-view = memory.struct(Vec2Layout, { x = 3.5, y = 7.25 }),
-if (view == null) { fail++, println("memory.struct null"), }
-if (view.x != 3.5) { fail++, println("memory.struct x"), }
-if (view.y != 7.25) { fail++, println("memory.struct y"), }
+view = C.memory.struct(Vec2Layout, { x = 3.5, y = 7.25 }),
+if (view == null) { fail++, println("C.memory.struct null"), }
+if (view.x != 3.5) { fail++, println("C.memory.struct x"), }
+if (view.y != 7.25) { fail++, println("C.memory.struct y"), }
 
-/* memory.struct with just schema (no init) should zero-init */
-view2 = memory.struct({ x = "int32", y = "int32" }),
-if (view2 == null) { fail++, println("memory.struct no-init null"), }
-if (view2.x != 0) { fail++, println("memory.struct no-init x"), }
-if (view2.y != 0) { fail++, println("memory.struct no-init y"), }
+/* C.memory.struct with just schema (no init) should zero-init */
+view2 = C.memory.struct({ x = "int32", y = "int32" }),
+if (view2 == null) { fail++, println("C.memory.struct no-init null"), }
+if (view2.x != 0) { fail++, println("C.memory.struct no-init x"), }
+if (view2.y != 0) { fail++, println("C.memory.struct no-init y"), }
 
-/* memory.struct with init on int schema */
-view3 = memory.struct({ a = "int32", b = "int32" }, { a = 42, b = -7 }),
-if (view3.a != 42) { fail++, println("memory.struct int a"), }
-if (view3.b != -7) { fail++, println("memory.struct int b"), }
+/* C.memory.struct with init on int schema */
+view3 = C.memory.struct({ a = "int32", b = "int32" }, { a = 42, b = -7 }),
+if (view3.a != 42) { fail++, println("C.memory.struct int a"), }
+if (view3.b != -7) { fail++, println("C.memory.struct int b"), }
 
-/* Write through the view returned by memory.struct */
+/* Write through the view returned by C.memory.struct */
 view.x = 100.0,
-if (view.x != 100.0) { fail++, println("memory.struct write-back"), }
+if (view.x != 100.0) { fail++, println("C.memory.struct write-back"), }
 
-/* ========== 6.3 & 6.4: ffi.lib, ffi.auto, lib.call ========== */
+/* ========== 6.3 & 6.4: C.ffi.lib, C.ffi.auto, lib.call ========== */
 
 load_lib = (path){
-  return ffi.open(path),
+  return C.ffi.open(path),
 },
 
 lib = load_lib("./tests/ffi/libffi_ergo.so"),
@@ -51,24 +51,24 @@ if (lib == null) {
   return 0,
 }
 
-/* 6.4: ffi.auto — symbol + bind in one call */
-add = ffi.auto(lib, "int32 ergo_add(int32, int32)"),
-if (add == null) { fail++, println("ffi.auto null"), }
+/* 6.4: C.ffi.auto — symbol + bind in one call */
+add = C.ffi.auto(lib, "int32 ergo_add(int32, int32)"),
+if (add == null) { fail++, println("C.ffi.auto null"), }
 r1 = add(10, 20),
-if (r1 != 30) { fail++, println("ffi.auto add"), }
+if (r1 != 30) { fail++, println("C.ffi.auto add"), }
 
-mul = ffi.auto(lib, "int32 ergo_mul(int32, int32)"),
+mul = C.ffi.auto(lib, "int32 ergo_mul(int32, int32)"),
 r2 = mul(6, 7),
-if (r2 != 42) { fail++, println("ffi.auto mul"), }
+if (r2 != 42) { fail++, println("C.ffi.auto mul"), }
 
-half = ffi.auto(lib, "double ergo_half(double)"),
+half = C.ffi.auto(lib, "double ergo_half(double)"),
 r3 = half(10.0),
-if (r3 != 5.0) { fail++, println("ffi.auto half"), }
+if (r3 != 5.0) { fail++, println("C.ffi.auto half"), }
 
-/* 6.3: ffi.lib — proxy with .call */
-proxy = ffi.lib("./tests/ffi/libffi_ergo.so"),
-if (proxy == null) { proxy = ffi.lib("./tests/ffi/libffi_ergo.dylib"), }
-if (proxy == null) { proxy = ffi.lib("./tests/ffi/libffi_ergo.dll"), }
+/* 6.3: C.ffi.lib — proxy with .call */
+proxy = C.ffi.lib("./tests/ffi/libffi_ergo.so"),
+if (proxy == null) { proxy = C.ffi.lib("./tests/ffi/libffi_ergo.dylib"), }
+if (proxy == null) { proxy = C.ffi.lib("./tests/ffi/libffi_ergo.dll"), }
 if (proxy == null) {
   println(1),
   return 0,
@@ -83,16 +83,16 @@ if (r5 != 45) { fail++, println("lib.call mul"), }
 r6 = proxy.call("double ergo_half(double)", 42.0),
 if (r6 != 21.0) { fail++, println("lib.call half"), }
 
-/* 6.4 with ffi.lib proxy: ffi.auto accepts the proxy table too */
-auto_from_proxy = ffi.auto(proxy, "int32 ergo_add(int32, int32)"),
+/* 6.4 with C.ffi.lib proxy: C.ffi.auto accepts the proxy table too */
+auto_from_proxy = C.ffi.auto(proxy, "int32 ergo_add(int32, int32)"),
 r7 = auto_from_proxy(7, 8),
-if (r7 != 15) { fail++, println("ffi.auto with proxy"), }
+if (r7 != 15) { fail++, println("C.ffi.auto with proxy"), }
 
 /* 6.1 + 6.4: use registered struct in a signature */
-dot = ffi.auto(lib, "float ergo_vec2_dot(struct(Vec2), struct(Vec2))"),
-v1 = memory.struct(Vec2Layout, { x = 3.0, y = 4.0 }),
-v2 = memory.struct(Vec2Layout, { x = 1.0, y = 2.0 }),
+dot = C.ffi.auto(lib, "float ergo_vec2_dot(struct(Vec2), struct(Vec2))"),
+v1 = C.memory.struct(Vec2Layout, { x = 3.0, y = 4.0 }),
+v2 = C.memory.struct(Vec2Layout, { x = 1.0, y = 2.0 }),
 r8 = dot(v1, v2),
-if (r8 != 11.0) { fail++, println("ffi.auto struct(Vec2) dot"), }
+if (r8 != 11.0) { fail++, println("C.ffi.auto struct(Vec2) dot"), }
 
 println(fail),

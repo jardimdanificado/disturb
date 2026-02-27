@@ -24,14 +24,14 @@ ffi_sig_name = (sig){
 },
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path),
+  h = C.ffi.open(path),
   if (h == null) { return null, }
   api = { __lib = h },
   each(sig in sigs) {
     name = ffi_sig_name(sig),
-    ptr = ffi.sym(h, name),
+    ptr = C.ffi.sym(h, name),
     if (ptr == null) { return null, }
-    api[name] = ffi.bind(ptr, sig),
+    api[name] = C.ffi.bind(ptr, sig),
   }
   return api,
 },
@@ -54,15 +54,15 @@ if (lib == null) {
   return 0,
 }
 
-buf = memory.buffer(8),
-arr = memory.viewArray(buf, "u8", 8),
+buf = C.memory.buffer(8),
+arr = C.memory.viewArray(buf, "u8", 8),
 
 arr[0] = 65,
 arr[1] = 66,
 arr[2] = 67,
 arr[3] = 0,
-if (memory.string(buf) != "ABC") { fail++, }
-if (memory.string(buf, 3) != "ABC") { fail++, }
+if (C.memory.string(buf) != "ABC") { fail++, }
+if (C.memory.string(buf, 3) != "ABC") { fail++, }
 if (lib.cstr_len(buf) != 3) { fail++, }
 
 if (lib.write_seq_u8(buf, 5, 10) != 5) { fail++, }
@@ -70,5 +70,5 @@ if (arr[0] != 10) { fail++, }
 if (arr[4] != 14) { fail++, }
 if (lib.read_u8(buf, 2) != 12) { fail++, }
 
-memory.free(buf),
+C.memory.free(buf),
 println(fail),

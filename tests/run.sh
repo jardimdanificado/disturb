@@ -116,7 +116,7 @@ if [ "${SKIP_FFI:-0}" = "1" ]; then
     probe_file="$(mktemp)"
     cat > "$probe_file" <<'EOF'
 s = { a = "int32" };
-  println(memory.sizeof(s));
+  println(C.memory.sizeof(s));
 EOF
     if ! "$BIN" "$probe_file" >/dev/null 2>/dev/null; then
       echo "embedded ffi core probe failed" >&2
@@ -128,7 +128,7 @@ EOF
   fi
 else
   probe_file="$(mktemp)"
-  echo 'println(ffi.bind.type);' > "$probe_file"
+  echo 'println(C.ffi.bind.type);' > "$probe_file"
   if "$BIN" "$probe_file" >/dev/null 2>/dev/null; then
     # Phase 2: typedef/enum/define (no gcc needed)
     run_ffi_case ffi_typedef_enum_define
@@ -166,6 +166,12 @@ else
       echo "building ffi global test library"
       rm -f tests/ffi/libffi_global.so tests/ffi/libffi_global.dylib tests/ffi/libffi_global.dll
       gcc $cflags_shared tests/ffi/ffi_global.c -o "tests/ffi/libffi_global.$lib_ext"
+      echo "building ffi media test library"
+      rm -f tests/ffi/libffi_media.so tests/ffi/libffi_media.dylib tests/ffi/libffi_media.dll
+      gcc $cflags_shared tests/ffi/ffi_media.c -o "tests/ffi/libffi_media.$lib_ext"
+      echo "building ffi baixa test library"
+      rm -f tests/ffi/libffi_baixa.so tests/ffi/libffi_baixa.dylib tests/ffi/libffi_baixa.dll
+      gcc $cflags_shared tests/ffi/ffi_baixa.c -o "tests/ffi/libffi_baixa.$lib_ext"
       run_ffi_case ffi_view_struct
       case "$uname_s" in
         MINGW*|MSYS*|CYGWIN*)
@@ -187,6 +193,10 @@ else
       run_ffi_case ffi_ergo
       run_ffi_case ffi_safety
       run_ffi_case ffi_global
+      run_ffi_case ffi_media
+      run_ffi_case ffi_baixa
+      run_ffi_case ffi_tcc_unavailable
+      run_ffi_case ffi_tcc_compile_eval
     else
       echo "gcc not found, skipping ffi struct view test"
     fi

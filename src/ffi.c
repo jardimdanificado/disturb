@@ -12,6 +12,10 @@
 #include <wchar.h>
 #include <stdarg.h>
 
+#ifdef DISTURB_ENABLE_TCC
+#include <libtcc.h>
+#endif
+
 #if defined(__GNUC__) || defined(__clang__)
 #define UNUSED_FN __attribute__((unused))
 #else
@@ -22,6 +26,34 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <pthread.h>
+#endif
+
+/* 5.3: Thread-safe callback detection */
+#ifdef _WIN32
+static DWORD ffi_main_thread_id = 0;
+static int ffi_main_thread_set = 0;
+static void ffi_set_main_thread(void) {
+    if (!ffi_main_thread_set) {
+        ffi_main_thread_id = GetCurrentThreadId();
+        ffi_main_thread_set = 1;
+    }
+}
+static int ffi_is_main_thread(void) {
+    return !ffi_main_thread_set || GetCurrentThreadId() == ffi_main_thread_id;
+}
+#else
+static pthread_t ffi_main_thread_id;
+static int ffi_main_thread_set = 0;
+static void ffi_set_main_thread(void) {
+    if (!ffi_main_thread_set) {
+        ffi_main_thread_id = pthread_self();
+        ffi_main_thread_set = 1;
+    }
+}
+static int ffi_is_main_thread(void) {
+    return !ffi_main_thread_set || pthread_equal(pthread_self(), ffi_main_thread_id);
+}
 #endif
 
 typedef enum {
@@ -36,6 +68,12 @@ typedef enum {
     FFI_BASE_U64,
     FFI_BASE_F32,
     FFI_BASE_F64,
+    FFI_BASE_LDOUBLE, /* 1.1: long double */
+    FFI_BASE_BOOL,    /* 1.2: _Bool semantic (u8 with !!val normalization) */
+    FFI_BASE_COMPLEX_FLOAT,  /* 1.4: _Complex float (2 × float) */
+    FFI_BASE_COMPLEX_DOUBLE, /* 1.4: _Complex double (2 × double) */
+    FFI_BASE_INT128,         /* 1.3: __int128 (2 × i64: [hi, lo]) */
+    FFI_BASE_UINT128,        /* 1.3: unsigned __int128 (2 × u64: [hi, lo]) */
     FFI_BASE_CSTR,
     FFI_BASE_PTR
 } FfiBase;
@@ -117,6 +155,7 @@ typedef union {
     uint64_t u;
     double f;
     float f32;
+    long double ld;
     void *p;
 } FfiValue;
 #endif
@@ -150,6 +189,7 @@ struct FfiLayout {
     int packed;
     int forced_align;
     int is_union;
+    int has_flex; /* 1 if last field is a flexible array member (type[]) */
     int bit_width; /* only for primitive bitfield declarations */
     int field_count;
     FfiLayoutField *fields;
@@ -192,6 +232,7 @@ typedef struct {
     FfiLayout *layout;
     void *owned_mem;
     int readonly;
+    size_t byte_size; /* optional: total allocation size (0 = unknown) */
 } FfiViewHandle;
 
 typedef struct {
@@ -223,7 +264,11 @@ enum {
 typedef struct {
     uint32_t magic;
     int refcount;
+    int kind; /* 0 = dlopen handle, 1 = TCC in-memory module */
     void *handle;
+#ifdef DISTURB_ENABLE_TCC
+    TCCState *tcc_state;
+#endif
 } FfiLibHandle;
 #endif
 
@@ -235,6 +280,19 @@ static int g_ffi_callback_seq = 1;
 #endif
 
 static FfiLayoutCacheNode *g_ffi_layout_cache = NULL;
+
+#ifdef DISTURB_ENABLE_TCC
+static char *g_ffi_tcc_prelude = NULL;
+static size_t g_ffi_tcc_prelude_len = 0;
+
+static void ffi_tcc_configure_state(TCCState *s)
+{
+    if (!s) return;
+    /* Vendored TinyCC build artifacts (used in this project). */
+    tcc_set_lib_path(s, "third_party/tinycc");
+    tcc_add_sysinclude_path(s, "third_party/tinycc/include");
+}
+#endif
 
 static char *ffi_strdup(const char *s); /* forward decl for typedef registry */
 
@@ -672,6 +730,55 @@ static ObjEntry *ffi_callback_arg_to_entry(VM *vm, const FfiType *t, void *argp)
         memcpy(&v, argp, sizeof(v));
         return vm_make_float_value(vm, (Float)v);
     }
+    case FFI_BASE_LDOUBLE: {
+        long double v = 0.0L;
+        memcpy(&v, argp, sizeof(v));
+        return vm_make_float_value(vm, (Float)(double)v);
+    }
+    case FFI_BASE_BOOL: {
+        uint8_t v = 0;
+        memcpy(&v, argp, sizeof(v));
+        return vm_make_int_value(vm, (Int)(!!v));
+    }
+    case FFI_BASE_COMPLEX_FLOAT: {
+        float parts[2] = {0.0f, 0.0f};
+        memcpy(parts, argp, sizeof(parts));
+        ObjEntry *list = vm_make_float_list(vm, 2);
+        if (list) {
+            Float re = (Float)parts[0], im = (Float)parts[1];
+            char *dst = disturb_bytes_data(list->obj);
+            memcpy(dst, &re, sizeof(Float));
+            memcpy(dst + sizeof(Float), &im, sizeof(Float));
+        }
+        return list;
+    }
+    case FFI_BASE_COMPLEX_DOUBLE: {
+        double parts[2] = {0.0, 0.0};
+        memcpy(parts, argp, sizeof(parts));
+        ObjEntry *list = vm_make_float_list(vm, 2);
+        if (list) {
+            Float re = (Float)parts[0], im = (Float)parts[1];
+            char *dst = disturb_bytes_data(list->obj);
+            memcpy(dst, &re, sizeof(Float));
+            memcpy(dst + sizeof(Float), &im, sizeof(Float));
+        }
+        return list;
+    }
+    case FFI_BASE_INT128:
+    case FFI_BASE_UINT128: {
+        int64_t hi = 0;
+        uint64_t lo = 0;
+        memcpy(&lo, argp, 8);
+        memcpy(&hi, (const char*)argp + 8, 8);
+        ObjEntry *list = vm_make_int_list(vm, 2);
+        if (list) {
+            char *dst = disturb_bytes_data(list->obj);
+            Int hi_v = (Int)hi, lo_v = (Int)lo;
+            memcpy(dst, &hi_v, sizeof(Int));
+            memcpy(dst + sizeof(Int), &lo_v, sizeof(Int));
+        }
+        return list;
+    }
     case FFI_BASE_I8: {
         int8_t v = 0;
         memcpy(&v, argp, sizeof(v));
@@ -759,6 +866,16 @@ static void ffi_callback_write_ret(VM *vm, const FfiType *t, ObjEntry *ret_entry
         memcpy(ret_out, &v, sizeof(v));
         break;
     }
+    case FFI_BASE_LDOUBLE: {
+        long double v = is_float ? (long double)fv : (long double)iv;
+        memcpy(ret_out, &v, sizeof(v));
+        break;
+    }
+    case FFI_BASE_BOOL: {
+        uint8_t v = (uint8_t)(!!(is_float ? (int)fv : (int)iv));
+        memcpy(ret_out, &v, sizeof(v));
+        break;
+    }
     case FFI_BASE_I8: {
         int8_t v = (int8_t)(is_float ? fv : iv);
         memcpy(ret_out, &v, sizeof(v));
@@ -808,6 +925,14 @@ static void ffi_callback_dispatch(ffi_cif *cif, void *ret, void **args, void *us
     (void)cif;
     FfiCallback *cb = (FfiCallback*)userdata;
     if (!cb || cb->magic != FFI_CALLBACK_MAGIC || !cb->vm) return;
+
+    /* 5.3: Detect non-main-thread callback invocation */
+    if (!ffi_is_main_thread()) {
+        fprintf(stderr, "ffi.callback: called from non-main thread (VM is not thread-safe); returning default value\n");
+        if (ret) memset(ret, 0, cif->rtype->size);
+        return;
+    }
+
     VM *vm = cb->vm;
     ObjEntry *lambda = vm_global_find_by_key(vm->global_entry->obj, cb->lambda_key);
     if (!lambda || lambda == vm->null_entry) {
@@ -987,6 +1112,12 @@ static int ffi_call_abi_resolve(FfiCallAbi abi, ffi_abi *out_abi, char *err, siz
 
 static ffi_type *ffi_type_for_base(FfiBase base)
 {
+    /* Static libffi struct types for _Complex float/double */
+    static ffi_type *complex_float_elems[3] = { &ffi_type_float, &ffi_type_float, NULL };
+    static ffi_type complex_float_type = { 0, 0, FFI_TYPE_STRUCT, complex_float_elems };
+    static ffi_type *complex_double_elems[3] = { &ffi_type_double, &ffi_type_double, NULL };
+    static ffi_type complex_double_type = { 0, 0, FFI_TYPE_STRUCT, complex_double_elems };
+
     switch (base) {
     case FFI_BASE_I8: return &ffi_type_sint8;
     case FFI_BASE_U8: return &ffi_type_uint8;
@@ -998,6 +1129,10 @@ static ffi_type *ffi_type_for_base(FfiBase base)
     case FFI_BASE_U64: return &ffi_type_uint64;
     case FFI_BASE_F32: return &ffi_type_float;
     case FFI_BASE_F64: return &ffi_type_double;
+    case FFI_BASE_LDOUBLE: return &ffi_type_longdouble;
+    case FFI_BASE_BOOL: return &ffi_type_uint8;
+    case FFI_BASE_COMPLEX_FLOAT: return &complex_float_type;
+    case FFI_BASE_COMPLEX_DOUBLE: return &complex_double_type;
     case FFI_BASE_CSTR: return &ffi_type_pointer;
     case FFI_BASE_PTR: return &ffi_type_pointer;
     case FFI_BASE_VOID: return &ffi_type_void;
@@ -1130,7 +1265,8 @@ static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_l
     memcpy(q, name, name_len);
     q[name_len] = 0;
     ObjEntry *global_hit = vm_global_find_by_key(vm->global_entry ? vm->global_entry->obj : NULL, q);
-    if (!global_hit || disturb_obj_type(global_hit->obj) == DISTURB_T_NULL) {
+    if (!global_hit || disturb_obj_type(global_hit->obj) == DISTURB_T_NULL ||
+        disturb_obj_type(global_hit->obj) != DISTURB_T_TABLE) {
         /* Fase 2: try typedef -> schema resolution */
         ObjEntry *typedef_schema = ffi_typedef_resolve_schema(q);
         if (typedef_schema) {
@@ -1154,6 +1290,7 @@ typedef struct {
     int has_align;
     int align;
     int is_union;
+    int bf_gcc; /* 1 = GCC bitfield packing (cross-type), 0 = MSVC (default) */
 } FfiSchemaMeta;
 
 static int ffi_parse_schema_meta(ObjEntry *schema, FfiSchemaMeta *meta, char *err, size_t err_cap)
@@ -1162,6 +1299,7 @@ static int ffi_parse_schema_meta(ObjEntry *schema, FfiSchemaMeta *meta, char *er
     meta->has_align = 0;
     meta->align = 0;
     meta->is_union = 0;
+    meta->bf_gcc = 0;
     if (!schema || disturb_obj_type(schema->obj) != DISTURB_T_TABLE) return 1;
     ObjEntry *meta_entry = ffi_table_find_field(schema->obj, "__meta", 6);
     if (!meta_entry || disturb_obj_type(meta_entry->obj) == DISTURB_T_NULL) return 1;
@@ -1222,6 +1360,14 @@ static int ffi_parse_schema_meta(ObjEntry *schema, FfiSchemaMeta *meta, char *er
         if (entry_as_cstr(type_entry, &type_str)) {
             if (strcmp(type_str, "union") == 0) meta->is_union = 1;
             else if (strcmp(type_str, "struct") == 0) meta->is_union = 0;
+        }
+    }
+    /* __meta.bitfield_pack = "gcc" (cross-type packing) or "msvc" (default) */
+    ObjEntry *bf_entry = ffi_table_find_field(meta_entry->obj, "bitfield_pack", 13);
+    if (bf_entry) {
+        const char *bf_str = NULL;
+        if (entry_as_cstr(bf_entry, &bf_str)) {
+            if (strcmp(bf_str, "gcc") == 0) meta->bf_gcc = 1;
         }
     }
     return 1;
@@ -1342,7 +1488,7 @@ static int ffi_schema_collect_fields(ObjEntry *schema, FfiSchemaFieldRef **out_f
 
 static int ffi_parse_schema_type_string(const char *name, size_t len,
                                         FfiBase *out_base, int *out_is_array, int *out_len, int *out_bits,
-                                        int *out_is_const)
+                                        int *out_is_const, int *out_alignas)
 {
     if (!name || len == 0 || len >= 64) return 0;
     char buf[64];
@@ -1350,9 +1496,11 @@ static int ffi_parse_schema_type_string(const char *name, size_t len,
     buf[len] = 0;
     if (out_bits) *out_bits = 0;
     if (out_is_const) *out_is_const = 0;
+    if (out_alignas) *out_alignas = 0;
 
     char *cursor = buf;
     int saw_const = 0;
+    int saw_alignas = 0;
     for (;;) {
         while (*cursor == ' ' || *cursor == '\t' || *cursor == '\n' || *cursor == '\r') cursor++;
         if (strncmp(cursor, "const", 5) == 0 &&
@@ -1371,6 +1519,24 @@ static int ffi_parse_schema_type_string(const char *name, size_t len,
             cursor += 8;
             continue;
         }
+        /* alignas(N) / _Alignas(N) */
+        {
+            int prefix_len = 0;
+            if (strncmp(cursor, "alignas(", 8) == 0) prefix_len = 8;
+            else if (strncmp(cursor, "_Alignas(", 9) == 0) prefix_len = 9;
+            if (prefix_len > 0) {
+                char *rp = strchr(cursor + prefix_len, ')');
+                if (rp) {
+                    char *end = NULL;
+                    long av = strtol(cursor + prefix_len, &end, 10);
+                    if (end == rp && av > 0 && av <= 4096) {
+                        saw_alignas = (int)av;
+                        cursor = rp + 1;
+                        continue;
+                    }
+                }
+            }
+        }
         break;
     }
     if (cursor != buf) {
@@ -1388,7 +1554,7 @@ static int ffi_parse_schema_type_string(const char *name, size_t len,
         *rb = 0;
         if (lb[1] == 0) {
             is_array = 1;
-            array_len = -1; /* unsized pointer-style */
+            array_len = -1; /* unsized array → treated as pointer */
         } else {
             char *end = NULL;
             long n = strtol(lb + 1, &end, 10);
@@ -1428,6 +1594,7 @@ static int ffi_parse_schema_type_string(const char *name, size_t len,
     if (out_is_array) *out_is_array = is_array;
     if (out_len) *out_len = array_len;
     if (out_is_const) *out_is_const = saw_const;
+    if (out_alignas) *out_alignas = saw_alignas;
     return 1;
 }
 
@@ -1614,7 +1781,7 @@ static int ffi_type_spec_from_entry(ObjEntry *entry, FfiBase *out_base, int *out
     const char *name = NULL;
     if (!entry_as_cstr(entry, &name)) return 0;
     return ffi_parse_schema_type_string(name, disturb_bytes_len(entry->obj),
-                                        out_base, out_is_array, out_len, NULL, out_is_const);
+                                        out_base, out_is_array, out_len, NULL, out_is_const, NULL);
 }
 
 static int ffi_schema_ref_spec_from_entry(ObjEntry *entry, int *out_is_pointer,
@@ -1666,6 +1833,19 @@ static int ffi_prim_size_align(FfiBase base, size_t *out_size, size_t *out_align
     case FFI_BASE_U64:
     case FFI_BASE_F64:
         *out_size = 8; *out_align = 8; return 1;
+    case FFI_BASE_LDOUBLE:
+        *out_size = sizeof(long double);
+        *out_align = __alignof__(long double);
+        return 1;
+    case FFI_BASE_BOOL:
+        *out_size = 1; *out_align = 1; return 1;
+    case FFI_BASE_COMPLEX_FLOAT:
+        *out_size = 2 * sizeof(float); *out_align = __alignof__(float); return 1;
+    case FFI_BASE_COMPLEX_DOUBLE:
+        *out_size = 2 * sizeof(double); *out_align = __alignof__(double); return 1;
+    case FFI_BASE_INT128:
+    case FFI_BASE_UINT128:
+        *out_size = 16; *out_align = 16; return 1;
     case FFI_BASE_PTR:
         *out_size = sizeof(void*);
         *out_align = sizeof(void*);
@@ -1828,10 +2008,11 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
         int array_len = 0;
         int bit_width = 0;
         int is_const = 0;
+        int field_alignas = 0;
         const char *type_name = NULL;
         if (entry_as_cstr(schema, &type_name) &&
             ffi_parse_schema_type_string(type_name, disturb_bytes_len(schema->obj),
-                                         &base, &is_array, &array_len, &bit_width, &is_const)) {
+                                         &base, &is_array, &array_len, &bit_width, &is_const, &field_alignas)) {
             if (!is_array || array_len < 0) {
                 FfiBase out_base = (!is_array) ? base : FFI_BASE_PTR;
                 size_t size = 0;
@@ -1849,7 +2030,8 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
                 layout->base = out_base;
                 layout->is_const = is_const ? 1 : 0;
                 layout->size = size;
-                layout->align = align;
+                layout->align = (field_alignas > 0 && (size_t)field_alignas > align) ? (size_t)field_alignas : align;
+                layout->forced_align = field_alignas;
                 layout->bit_width = bit_width;
                 return layout;
             }
@@ -1874,7 +2056,8 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
             arr->is_const = is_const ? 1 : 0;
             arr->elem = elem;
             arr->array_len = array_len;
-            arr->align = elem_align;
+            arr->align = (field_alignas > 0 && (size_t)field_alignas > elem_align) ? (size_t)field_alignas : elem_align;
+            arr->forced_align = field_alignas;
             arr->size = elem_size * (size_t)array_len;
             return arr;
         }
@@ -2026,21 +2209,38 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
                 /* In unions, all bitfields share offset 0 */
                 bit_shift = 0;
                 if (child->size > union_size) union_size = child->size;
-            } else if (!bf_open || bf_base != child->base ||
-                (size_t)(bf_used + bit_width) > container_bits) {
-                if (bf_open) offset = bf_offset + bf_container_size;
-                bf_open = 1;
-                bf_base = child->base;
-                bf_container_size = child->size;
-                bf_container_align = field_align;
-                offset = ffi_align_up(offset, bf_container_align);
-                bf_offset = offset;
-                bf_used = 0;
+            } else {
+                /* Decide whether to open a new container */
+                int need_new = !bf_open;
+                if (bf_open && !meta.bf_gcc && bf_base != child->base) {
+                    need_new = 1; /* MSVC: different base type → new container */
+                }
+                if (bf_open && !need_new) {
+                    /* Check if bits fit in current (possibly grown) container */
+                    size_t effective_size = meta.bf_gcc && child->size > bf_container_size ? child->size : bf_container_size;
+                    if ((size_t)(bf_used + bit_width) > effective_size * 8) {
+                        need_new = 1;
+                    }
+                }
+                if (need_new) {
+                    if (bf_open) offset = bf_offset + bf_container_size;
+                    bf_open = 1;
+                    bf_base = child->base;
+                    bf_container_size = child->size;
+                    bf_container_align = field_align;
+                    offset = ffi_align_up(offset, bf_container_align);
+                    bf_offset = offset;
+                    bf_used = 0;
+                } else if (meta.bf_gcc && child->size > bf_container_size) {
+                    /* GCC: grow container to fit larger type */
+                    bf_container_size = child->size;
+                    if (field_align > bf_container_align) bf_container_align = field_align;
+                }
             }
             if (!meta.is_union) {
                 bit_shift = bf_used;
                 bf_used += bit_width;
-                if ((size_t)bf_used == container_bits) {
+                if ((size_t)bf_used == bf_container_size * 8) {
                     offset = bf_offset + bf_container_size;
                     bf_open = 0;
                     bf_used = 0;
@@ -2050,6 +2250,32 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
             offset = bf_offset + bf_container_size;
             bf_open = 0;
             bf_used = 0;
+        }
+
+        /* Flexible array member: type[] as last field */
+        int is_flex = 0;
+        if (field_decl) {
+            FfiBase fb; int ia = 0, al = 0, bw = 0, ic = 0;
+            if (ffi_parse_schema_type_string(field_decl, strlen(field_decl),
+                                             &fb, &ia, &al, &bw, &ic, NULL)) {
+                if (ia && al < 0) is_flex = 1;
+            }
+        }
+        if (is_flex && i != field_count - 1) {
+            snprintf(err, err_cap, "ffi: flexible array member '%s' must be last field", name);
+            free(name);
+            free(fields_ref);
+            ffi_layout_free(child);
+            ffi_layout_free(layout);
+            return NULL;
+        }
+        if (is_flex && meta.is_union) {
+            snprintf(err, err_cap, "ffi: flexible array member '%s' not allowed in union", name);
+            free(name);
+            free(fields_ref);
+            ffi_layout_free(child);
+            ffi_layout_free(layout);
+            return NULL;
         }
 
         size_t field_offset = 0;
@@ -2063,6 +2289,7 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
             field_offset = offset;
             offset += child->size;
         }
+        if (is_flex) layout->has_flex = 1;
         layout->fields[i].name = name;
         layout->fields[i].name_len = fields_ref[i].name_len;
         layout->fields[i].offset = field_offset;
@@ -2298,8 +2525,61 @@ static FfiLibHandle *ffi_lib_handle_new(void *handle)
     if (!h) return NULL;
     h->magic = FFI_LIB_HANDLE_MAGIC;
     h->refcount = 1;
+    h->kind = 0;
     h->handle = handle;
     return h;
+}
+
+#ifdef DISTURB_ENABLE_TCC
+static FfiLibHandle *ffi_lib_handle_new_tcc(TCCState *state)
+{
+    FfiLibHandle *h = (FfiLibHandle*)calloc(1, sizeof(FfiLibHandle));
+    if (!h) return NULL;
+    h->magic = FFI_LIB_HANDLE_MAGIC;
+    h->refcount = 1;
+    h->kind = 1;
+    h->handle = NULL;
+    h->tcc_state = state;
+    return h;
+}
+#endif
+
+static int ffi_lib_handle_close(FfiLibHandle *h)
+{
+    if (!h || h->magic != FFI_LIB_HANDLE_MAGIC) return 0;
+    if (h->kind == 0) {
+        if (h->handle) {
+            if (!ffi_dlclose(h->handle)) return 0;
+            h->handle = NULL;
+        }
+        return 1;
+    }
+#ifdef DISTURB_ENABLE_TCC
+    if (h->kind == 1) {
+        if (h->tcc_state) {
+            tcc_delete(h->tcc_state);
+            h->tcc_state = NULL;
+        }
+        return 1;
+    }
+#endif
+    return 1;
+}
+
+static void *ffi_lib_handle_sym(FfiLibHandle *h, const char *name)
+{
+    if (!h || h->magic != FFI_LIB_HANDLE_MAGIC || !name) return NULL;
+    if (h->kind == 0) {
+        if (!h->handle) return NULL;
+        return ffi_dlsym(h->handle, name);
+    }
+#ifdef DISTURB_ENABLE_TCC
+    if (h->kind == 1) {
+        if (!h->tcc_state) return NULL;
+        return tcc_get_symbol(h->tcc_state, name);
+    }
+#endif
+    return NULL;
 }
 
 static void ffi_lib_handle_clone(void *data)
@@ -2315,10 +2595,7 @@ static void ffi_lib_handle_free(void *data)
     if (!h || h->magic != FFI_LIB_HANDLE_MAGIC) return;
     h->refcount--;
     if (h->refcount > 0) return;
-    if (h->handle) {
-        ffi_dlclose(h->handle);
-        h->handle = NULL;
-    }
+    ffi_lib_handle_close(h);
     h->magic = 0;
     free(h);
 }
@@ -2560,7 +2837,7 @@ static int parse_base_type(const char *name, FfiBase *out)
     if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
     if (strcmp(name, "string") == 0) { *out = FFI_BASE_CSTR; return 1; }
     if (strcmp(name, "cstring") == 0) { *out = FFI_BASE_CSTR; return 1; }
-    if (strcmp(name, "_Bool") == 0 || strcmp(name, "bool") == 0) { *out = FFI_BASE_U8; return 1; }
+    if (strcmp(name, "_Bool") == 0 || strcmp(name, "bool") == 0) { *out = FFI_BASE_BOOL; return 1; }
     if (strcmp(name, "char") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "schar") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "uchar") == 0 || strcmp(name, "u8") == 0) { *out = FFI_BASE_U8; return 1; }
@@ -2632,6 +2909,11 @@ static int parse_base_type(const char *name, FfiBase *out)
     if (strcmp(name, "uint64") == 0) { *out = FFI_BASE_U64; return 1; }
     if (strcmp(name, "float32") == 0) { *out = FFI_BASE_F32; return 1; }
     if (strcmp(name, "float64") == 0) { *out = FFI_BASE_F64; return 1; }
+    if (strcmp(name, "long_double") == 0 || strcmp(name, "longdouble") == 0) { *out = FFI_BASE_LDOUBLE; return 1; }
+    if (strcmp(name, "complex_float") == 0 || strcmp(name, "cfloat") == 0) { *out = FFI_BASE_COMPLEX_FLOAT; return 1; }
+    if (strcmp(name, "complex_double") == 0 || strcmp(name, "cdouble") == 0) { *out = FFI_BASE_COMPLEX_DOUBLE; return 1; }
+    if (strcmp(name, "__int128") == 0 || strcmp(name, "int128") == 0) { *out = FFI_BASE_INT128; return 1; }
+    if (strcmp(name, "__uint128") == 0 || strcmp(name, "uint128") == 0 || strcmp(name, "unsigned__int128") == 0) { *out = FFI_BASE_UINT128; return 1; }
     if (strcmp(name, "ptr") == 0) { *out = FFI_BASE_PTR; return 1; }
     /* Try typedef resolution */
     {
@@ -2761,9 +3043,9 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
         out->array_len = -1;
         out->is_explicit_cstr = 0;
         sig_skip_ws(p);
-        if (p->src[p->pos] == '*' || p->src[p->pos] == '[') {
-            snprintf(err, err_cap, "%s(%s) does not support '*' or '[]' suffix",
-                     ident, schema);
+        if (p->src[p->pos] == '*') {
+            snprintf(err, err_cap, "%s(%s) does not support '*' suffix; use pointer(%s)",
+                     ident, schema, schema);
             free(out->schema_name);
             out->schema_name = NULL;
             out->schema_is_pointer = 0;
@@ -2771,6 +3053,22 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
             out->ptr_depth = 0;
             out->is_explicit_cstr = 0;
             return 0;
+        }
+        /* 4.5: struct(Name)[N] / union(Name)[N] → pointer (array decay) */
+        if (p->src[p->pos] == '[') {
+            p->pos++; /* skip '[' */
+            /* skip optional array size */
+            while (p->src[p->pos] >= '0' && p->src[p->pos] <= '9') p->pos++;
+            sig_skip_ws(p);
+            if (p->src[p->pos] != ']') {
+                snprintf(err, err_cap, "expected ']' after '[' in %s(%s)[...]",
+                         ident, schema);
+                free(out->schema_name);
+                out->schema_name = NULL;
+                return 0;
+            }
+            p->pos++; /* skip ']' */
+            out->schema_is_pointer = 1;
         }
         return 1;
     }
@@ -3032,7 +3330,7 @@ static int parse_base_type(const char *name, FfiBase *out)
     if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
     if (strcmp(name, "string") == 0) { *out = FFI_BASE_CSTR; return 1; }
     if (strcmp(name, "cstring") == 0) { *out = FFI_BASE_CSTR; return 1; }
-    if (strcmp(name, "_Bool") == 0 || strcmp(name, "bool") == 0) { *out = FFI_BASE_U8; return 1; }
+    if (strcmp(name, "_Bool") == 0 || strcmp(name, "bool") == 0) { *out = FFI_BASE_BOOL; return 1; }
     if (strcmp(name, "char") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "schar") == 0) { *out = FFI_BASE_I8; return 1; }
     if (strcmp(name, "uchar") == 0 || strcmp(name, "u8") == 0) { *out = FFI_BASE_U8; return 1; }
@@ -3104,6 +3402,11 @@ static int parse_base_type(const char *name, FfiBase *out)
     if (strcmp(name, "uint64") == 0) { *out = FFI_BASE_U64; return 1; }
     if (strcmp(name, "float32") == 0) { *out = FFI_BASE_F32; return 1; }
     if (strcmp(name, "float64") == 0) { *out = FFI_BASE_F64; return 1; }
+    if (strcmp(name, "long_double") == 0 || strcmp(name, "longdouble") == 0) { *out = FFI_BASE_LDOUBLE; return 1; }
+    if (strcmp(name, "complex_float") == 0 || strcmp(name, "cfloat") == 0) { *out = FFI_BASE_COMPLEX_FLOAT; return 1; }
+    if (strcmp(name, "complex_double") == 0 || strcmp(name, "cdouble") == 0) { *out = FFI_BASE_COMPLEX_DOUBLE; return 1; }
+    if (strcmp(name, "__int128") == 0 || strcmp(name, "int128") == 0) { *out = FFI_BASE_INT128; return 1; }
+    if (strcmp(name, "__uint128") == 0 || strcmp(name, "uint128") == 0 || strcmp(name, "unsigned__int128") == 0) { *out = FFI_BASE_UINT128; return 1; }
     if (strcmp(name, "ptr") == 0) { *out = FFI_BASE_PTR; return 1; }
     /* Try typedef resolution */
     {
@@ -3155,7 +3458,7 @@ static void ffi_fill_float_list(ObjEntry *entry, const void *ptr, int count, siz
 
 static int ffi_arg_is_float(const FfiType *t)
 {
-    return t->base == FFI_BASE_F32 || t->base == FFI_BASE_F64;
+    return t->base == FFI_BASE_F32 || t->base == FFI_BASE_F64 || t->base == FFI_BASE_LDOUBLE;
 }
 
 static int ffi_arg_is_int(const FfiType *t)
@@ -3169,6 +3472,7 @@ static int ffi_arg_is_int(const FfiType *t)
     case FFI_BASE_U32:
     case FFI_BASE_I64:
     case FFI_BASE_U64:
+    case FFI_BASE_BOOL:
         return 1;
     default:
         return 0;
@@ -3286,7 +3590,7 @@ static FfiLayout *ffi_layout_from_elem_spec(VM *vm, ObjEntry *entry, char *err, 
         int bits = 0;
         int is_const = 0;
         if (ffi_parse_schema_type_string(s, disturb_bytes_len(entry->obj),
-                                         &base, &is_array, &len, &bits, &is_const)) {
+                                         &base, &is_array, &len, &bits, &is_const, NULL)) {
             if (is_array || bits > 0) {
                 snprintf(err, err_cap, "memory.viewArray element type must be scalar or struct schema");
                 return NULL;
@@ -3334,6 +3638,7 @@ static ObjEntry *ffi_make_struct_view_owned(VM *vm, void *owned_mem, FfiLayout *
         free(owned_mem);
         return NULL;
     }
+    h->byte_size = layout->size;
     ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
                                                 ffi_view_handle_free, ffi_view_handle_clone);
     if (!entry) {
@@ -3441,6 +3746,56 @@ static ObjEntry *ffi_load_prim_value(VM *vm, uintptr_t addr, FfiBase base)
         memcpy(&v, (void*)addr, sizeof(v));
         return vm_make_float_value(vm, (Float)v);
     }
+    case FFI_BASE_LDOUBLE: {
+        long double v = 0.0L;
+        memcpy(&v, (void*)addr, sizeof(v));
+        return vm_make_float_value(vm, (Float)(double)v);
+    }
+    case FFI_BASE_BOOL: {
+        uint8_t v = 0;
+        memcpy(&v, (void*)addr, sizeof(v));
+        return vm_make_int_value(vm, (Int)(!!v));
+    }
+    case FFI_BASE_COMPLEX_FLOAT: {
+        float parts[2] = {0.0f, 0.0f};
+        memcpy(parts, (void*)addr, sizeof(parts));
+        ObjEntry *list = vm_make_float_list(vm, 2);
+        if (list) {
+            Float re = (Float)parts[0], im = (Float)parts[1];
+            char *dst = disturb_bytes_data(list->obj);
+            memcpy(dst, &re, sizeof(Float));
+            memcpy(dst + sizeof(Float), &im, sizeof(Float));
+        }
+        return list ? list : vm->null_entry;
+    }
+    case FFI_BASE_COMPLEX_DOUBLE: {
+        double parts[2] = {0.0, 0.0};
+        memcpy(parts, (void*)addr, sizeof(parts));
+        ObjEntry *list = vm_make_float_list(vm, 2);
+        if (list) {
+            Float re = (Float)parts[0], im = (Float)parts[1];
+            char *dst = disturb_bytes_data(list->obj);
+            memcpy(dst, &re, sizeof(Float));
+            memcpy(dst + sizeof(Float), &im, sizeof(Float));
+        }
+        return list ? list : vm->null_entry;
+    }
+    case FFI_BASE_INT128:
+    case FFI_BASE_UINT128: {
+        /* Read as [hi, lo] int pair */
+        int64_t hi = 0;
+        uint64_t lo = 0;
+        memcpy(&lo, (void*)addr, 8);
+        memcpy(&hi, (void*)((char*)addr + 8), 8);
+        ObjEntry *list = vm_make_int_list(vm, 2);
+        if (list) {
+            char *dst = disturb_bytes_data(list->obj);
+            Int hi_v = (Int)hi, lo_v = (Int)lo;
+            memcpy(dst, &hi_v, sizeof(Int));
+            memcpy(dst + sizeof(Int), &lo_v, sizeof(Int));
+        }
+        return list ? list : vm->null_entry;
+    }
     case FFI_BASE_PTR: {
         void *p = NULL;
         memcpy(&p, (void*)addr, sizeof(p));
@@ -3463,6 +3818,39 @@ static int ffi_store_prim_value(FfiBase base, uintptr_t addr, ObjEntry *value)
         if (!ffi_entry_to_ptr(value, &raw)) return 0;
         void *p = (void*)raw;
         memcpy((void*)addr, &p, sizeof(p));
+        return 1;
+    }
+    if (base == FFI_BASE_COMPLEX_FLOAT || base == FFI_BASE_COMPLEX_DOUBLE) {
+        /* Expect a list [re, im] */
+        if (!value || !value->obj || disturb_obj_type(value->obj) != DISTURB_T_FLOAT) return 0;
+        size_t list_len = disturb_bytes_len(value->obj) / sizeof(Float);
+        if (list_len < 2) return 0;
+        const char *src = disturb_bytes_data(value->obj);
+        Float re = 0, im = 0;
+        memcpy(&re, src, sizeof(Float));
+        memcpy(&im, src + sizeof(Float), sizeof(Float));
+        if (base == FFI_BASE_COMPLEX_FLOAT) {
+            float parts[2] = { (float)re, (float)im };
+            memcpy((void*)addr, parts, sizeof(parts));
+        } else {
+            double parts[2] = { (double)re, (double)im };
+            memcpy((void*)addr, parts, sizeof(parts));
+        }
+        return 1;
+    }
+    if (base == FFI_BASE_INT128 || base == FFI_BASE_UINT128) {
+        /* Expect an int list [hi, lo] */
+        if (!value || !value->obj || disturb_obj_type(value->obj) != DISTURB_T_INT) return 0;
+        size_t list_len = disturb_bytes_len(value->obj) / sizeof(Int);
+        if (list_len < 2) return 0;
+        const char *src = disturb_bytes_data(value->obj);
+        Int hi_v = 0, lo_v = 0;
+        memcpy(&hi_v, src, sizeof(Int));
+        memcpy(&lo_v, src + sizeof(Int), sizeof(Int));
+        int64_t hi = (int64_t)hi_v;
+        uint64_t lo = (uint64_t)lo_v;
+        memcpy((void*)addr, &lo, 8);
+        memcpy((void*)((char*)addr + 8), &hi, 8);
         return 1;
     }
 
@@ -3519,6 +3907,16 @@ static int ffi_store_prim_value(FfiBase base, uintptr_t addr, ObjEntry *value)
     }
     case FFI_BASE_F64: {
         double out = is_float ? (double)fv : (double)iv;
+        memcpy((void*)addr, &out, sizeof(out));
+        return 1;
+    }
+    case FFI_BASE_LDOUBLE: {
+        long double out = is_float ? (long double)fv : (long double)iv;
+        memcpy((void*)addr, &out, sizeof(out));
+        return 1;
+    }
+    case FFI_BASE_BOOL: {
+        uint8_t out = (uint8_t)(!!(is_float ? (int)fv : (int)iv));
         memcpy((void*)addr, &out, sizeof(out));
         return 1;
     }
@@ -3579,6 +3977,24 @@ int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
 {
     if (out) *out = NULL;
     if (!vm || !target || !index || !entry_is_string(index)) return 0;
+
+    /* Handle array view pseudo-fields */
+    FfiArrayViewHandle *av = ffi_array_view_handle_from_entry(target);
+    if (av) {
+        const char *fname = disturb_bytes_data(index->obj);
+        size_t flen = disturb_bytes_len(index->obj);
+        if (flen == 8 && memcmp(fname, "byteSize", 8) == 0) {
+            size_t bs = (size_t)av->len * (av->elem_layout ? av->elem_layout->size : 0);
+            if (out) *out = vm_make_int_value(vm, (Int)bs);
+            return 1;
+        }
+        if (flen == 3 && memcmp(fname, "len", 3) == 0) {
+            if (out) *out = vm_make_int_value(vm, (Int)av->len);
+            return 1;
+        }
+        return 0;
+    }
+
     if (!ffi_is_struct_view_entry(target)) return 0;
 
     uintptr_t base_ptr = 0;
@@ -3592,6 +4008,15 @@ int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
 
     const char *name = disturb_bytes_data(index->obj);
     size_t name_len = disturb_bytes_len(index->obj);
+
+    /* Pseudo-field: .byteSize — total byte size of the view */
+    if (name_len == 8 && memcmp(name, "byteSize", 8) == 0) {
+        FfiViewHandle *h = ffi_view_handle_from_entry(target);
+        size_t bs = (h && h->byte_size > 0) ? h->byte_size : (layout ? layout->size : 0);
+        if (out) *out = vm_make_int_value(vm, (Int)bs);
+        return 1;
+    }
+
     FfiLayoutField *field = ffi_layout_find_field(layout, name, name_len);
     if (!field) {
         fprintf(stderr, "memory.view: unknown field '%.*s'\n", (int)name_len, name);
@@ -3811,8 +4236,12 @@ static int ffi_layout_is_byvalue_compatible(FfiLayout *layout, char *err, size_t
         }
         return ffi_layout_is_byvalue_compatible(layout->elem, err, err_cap);
     }
+    /* packed/forced_align structs cannot be passed by-value through libffi:
+       on x86-64, GCC passes packed structs on the stack (MEMORY class), but
+       libffi always classifies small structs as INTEGER (register-passed).
+       Workaround: pass a pointer instead, e.g. "void* funcname(void*)" */
     if (layout->packed || layout->forced_align > 0) {
-        snprintf(err, err_cap, "ffi: packed/forced-align structs are not supported for by-value calls");
+        snprintf(err, err_cap, "ffi: packed/forced-align structs cannot be passed by-value (ABI limitation); use pointer(Name) instead");
         return 0;
     }
     for (int i = 0; i < layout->field_count; i++) {
@@ -4324,6 +4753,9 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             if (t->base == FFI_BASE_F32) {
                 values[i].f32 = (float)val;
                 argv[i] = &values[i].f32;
+            } else if (t->base == FFI_BASE_LDOUBLE) {
+                values[i].ld = (long double)val;
+                argv[i] = &values[i].ld;
             } else {
                 values[i].f = val;
                 argv[i] = &values[i].f;
@@ -4367,6 +4799,10 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             case FFI_BASE_U64:
                 values[i].u = (uint64_t)v;
                 argv[i] = &values[i].u;
+                break;
+            case FFI_BASE_BOOL:
+                values[i].u8 = (uint8_t)(!!v);
+                argv[i] = &values[i].u8;
                 break;
             case FFI_BASE_I64:
             default:
@@ -4423,7 +4859,12 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                 if (ta->schema_name) fprintf(stderr, "%s*", ta->schema_name);
                 else if (ta->base == FFI_BASE_CSTR) fprintf(stderr, "cstr");
                 else if (ta->base == FFI_BASE_PTR) fprintf(stderr, "ptr");
-                else if (ffi_arg_is_float(ta)) fprintf(stderr, "%.4g", ta->base == FFI_BASE_F32 ? (double)values[ti].f32 : values[ti].f);
+                else if (ffi_arg_is_float(ta)) {
+                    if (ta->base == FFI_BASE_F32) fprintf(stderr, "%.4g", (double)values[ti].f32);
+                    else if (ta->base == FFI_BASE_LDOUBLE) fprintf(stderr, "%.4Lg", values[ti].ld);
+                    else fprintf(stderr, "%.4g", values[ti].f);
+                }
+                else if (ta->base == FFI_BASE_BOOL) fprintf(stderr, "%s", values[ti].u8 ? "true" : "false");
                 else if (ffi_arg_is_int(ta)) fprintf(stderr, "%lld", (long long)values[ti].i);
                 else fprintf(stderr, "?");
             } else {
@@ -4450,6 +4891,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                 case FFI_BASE_I32: arg0 = (long long)values[0].i32; break;
                 case FFI_BASE_U32: arg0 = (long long)values[0].u32; break;
                 case FFI_BASE_U64: arg0 = (long long)values[0].u; break;
+                case FFI_BASE_BOOL: arg0 = (long long)values[0].u8; break;
                 case FFI_BASE_I64:
                 default: arg0 = (long long)values[0].i; break;
                 }
@@ -4465,11 +4907,14 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             case FFI_BASE_I32: out = (long long)ret.i32; break;
             case FFI_BASE_U32: out = (long long)ret.u32; break;
             case FFI_BASE_U64: out = (long long)ret.u; break;
+            case FFI_BASE_BOOL: out = (long long)(!!ret.u8); break;
             case FFI_BASE_I64:
             default: out = (long long)ret.i; break;
             }
         } else if (ffi_arg_is_float(&fn->ret)) {
-            out = (long long)((fn->ret.base == FFI_BASE_F32) ? ret.f32 : ret.f);
+            if (fn->ret.base == FFI_BASE_F32) out = (long long)ret.f32;
+            else if (fn->ret.base == FFI_BASE_LDOUBLE) out = (long long)(double)ret.ld;
+            else out = (long long)ret.f;
         }
         int out_i = (int)out;
         if (ffi_trace_mouse_last[trace_slot] != out_i) {
@@ -4585,7 +5030,10 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     }
 
     if (ffi_arg_is_float(&fn->ret)) {
-        Float rv = (fn->ret.base == FFI_BASE_F32) ? (Float)ret.f32 : (Float)ret.f;
+        Float rv;
+        if (fn->ret.base == FFI_BASE_F32) rv = (Float)ret.f32;
+        else if (fn->ret.base == FFI_BASE_LDOUBLE) rv = (Float)(double)ret.ld;
+        else rv = (Float)ret.f;
         ffi_push_entry(vm, vm_make_float_value(vm, rv));
         return;
     }
@@ -4599,6 +5047,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         case FFI_BASE_I32: out = (Int)ret.i32; break;
         case FFI_BASE_U32: out = (Int)ret.u32; break;
         case FFI_BASE_U64: out = (Int)ret.u; break;
+        case FFI_BASE_BOOL: out = (Int)(!!ret.u8); break;
         case FFI_BASE_I64:
         default:
             out = (Int)ret.i;
@@ -4717,7 +5166,7 @@ void native_ffi_callback(VM *vm, List *stack, List *global)
     free((void*)name);
     if (fn->has_varargs) {
         ffi_function_release(fn);
-        fprintf(stderr, "ffi.callback does not support variadic signatures yet\n");
+        fprintf(stderr, "ffi.callback: variadic callbacks are not supported (use fixed-argument signatures)\n");
         return;
     }
 
@@ -4900,11 +5349,10 @@ void native_ffi_close(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi.close expects library handle\n");
         return;
     }
-    if (h->handle && !ffi_dlclose(h->handle)) {
+    if (!ffi_lib_handle_close(h)) {
         fprintf(stderr, "%s\n", ffi_dlerror_msg());
         return;
     }
-    h->handle = NULL;
     ffi_push_entry(vm, vm->null_entry);
 }
 
@@ -4919,7 +5367,7 @@ void native_ffi_sym(VM *vm, List *stack, List *global)
     ObjEntry *lib_entry = ffi_native_arg(stack, argc, 0);
     ObjEntry *name_entry = ffi_native_arg(stack, argc, 1);
     FfiLibHandle *h = ffi_lib_handle_from_entry(lib_entry);
-    if (!h || !h->handle) {
+    if (!h) {
         fprintf(stderr, "ffi.sym expects open library handle\n");
         return;
     }
@@ -4936,10 +5384,11 @@ void native_ffi_sym(VM *vm, List *stack, List *global)
     }
     memcpy(name, name_src, name_len);
     name[name_len] = 0;
-    void *ptr = ffi_dlsym(h->handle, name);
+    void *ptr = ffi_lib_handle_sym(h, name);
     free(name);
     if (!ptr) {
-        fprintf(stderr, "%s\n", ffi_dlerror_msg());
+        if (h->kind == 1) fprintf(stderr, "ffi.sym: symbol not found in compiled TCC module\n");
+        else fprintf(stderr, "%s\n", ffi_dlerror_msg());
         return;
     }
     ObjEntry *out = ffi_make_ptr_handle_entry(vm, (uintptr_t)ptr, 0);
@@ -5009,6 +5458,288 @@ void native_ffi_compile(VM *vm, List *stack, List *global)
         return;
     }
     ffi_push_entry(vm, entry);
+}
+
+UNUSED_FN static void ffi_tcc_require_or_todo(const char *api_name)
+{
+#ifdef DISTURB_ENABLE_TCC
+    fprintf(stderr, "ffi.%s unavailable: build with DISTURB_ENABLE_FFI_CALLS for callable C modules\n", api_name);
+#else
+    fprintf(stderr, "ffi.%s requires TCC (build with ENABLE_TCC=1)\n", api_name);
+#endif
+}
+
+#ifdef DISTURB_ENABLE_TCC
+static int ffi_tcc_set_error_copy(char *dst, size_t cap, const char *msg)
+{
+    if (!dst || cap == 0 || !msg) return 0;
+    size_t n = strlen(msg);
+    if (n >= cap) n = cap - 1;
+    memcpy(dst, msg, n);
+    dst[n] = 0;
+    return 1;
+}
+
+static int ffi_tcc_prelude_append(const char *src, size_t len)
+{
+    if (!src || len == 0) return 1;
+    size_t old_len = g_ffi_tcc_prelude_len;
+    size_t add = len + 1; /* newline */
+    char *next = (char*)realloc(g_ffi_tcc_prelude, old_len + add + 1);
+    if (!next) return 0;
+    g_ffi_tcc_prelude = next;
+    memcpy(g_ffi_tcc_prelude + old_len, src, len);
+    g_ffi_tcc_prelude[old_len + len] = '\n';
+    g_ffi_tcc_prelude[old_len + len + 1] = 0;
+    g_ffi_tcc_prelude_len = old_len + len + 1;
+    return 1;
+}
+
+static char *ffi_tcc_join_prelude(const char *src)
+{
+    if (!src) return NULL;
+    size_t src_len = strlen(src);
+    size_t pre_len = (g_ffi_tcc_prelude && g_ffi_tcc_prelude_len > 0) ? g_ffi_tcc_prelude_len : 0;
+    char *buf = (char*)malloc(pre_len + src_len + 1);
+    if (!buf) return NULL;
+    if (pre_len > 0) memcpy(buf, g_ffi_tcc_prelude, pre_len);
+    memcpy(buf + pre_len, src, src_len);
+    buf[pre_len + src_len] = 0;
+    return buf;
+}
+
+static int ffi_tcc_compile_module(const char *src, TCCState **out_state,
+                                  char *err, size_t err_cap)
+{
+    if (out_state) *out_state = NULL;
+    if (!src || !out_state) {
+        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: invalid arguments");
+        return 0;
+    }
+
+    TCCState *s = tcc_new();
+    if (!s) {
+        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: failed to create TCC state");
+        return 0;
+    }
+    ffi_tcc_configure_state(s);
+    tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
+
+    char *unit = ffi_tcc_join_prelude(src);
+    if (!unit) {
+        tcc_delete(s);
+        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: out of memory");
+        return 0;
+    }
+
+    if (tcc_compile_string(s, unit) < 0) {
+        free(unit);
+        tcc_delete(s);
+        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: compilation failed");
+        return 0;
+    }
+    free(unit);
+
+    if (tcc_relocate(s) < 0) {
+        tcc_delete(s);
+        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: relocation failed");
+        return 0;
+    }
+
+    *out_state = s;
+    return 1;
+}
+#endif
+
+/* TCC-dependent APIs (Fase 2.4 / 6.2 / 9.x) */
+static void native_ffi_cdef(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.cdef expects C source string\n");
+        return;
+    }
+    ObjEntry *src_entry = ffi_native_arg(stack, argc, 0);
+    const char *src = NULL;
+    if (!entry_as_cstr(src_entry, &src) || !src) {
+        fprintf(stderr, "ffi.cdef expects C source string\n");
+        return;
+    }
+#ifndef DISTURB_ENABLE_TCC
+    ffi_tcc_require_or_todo("cdef");
+    return;
+#else
+    TCCState *s = NULL;
+    if ((s = tcc_new()) == NULL) {
+        fprintf(stderr, "ffi.cdef: failed to create TCC state\n");
+        return;
+    }
+    ffi_tcc_configure_state(s);
+    tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
+    char *unit = ffi_tcc_join_prelude(src);
+    if (!unit) {
+        tcc_delete(s);
+        fprintf(stderr, "ffi.cdef: out of memory\n");
+        return;
+    }
+    if (tcc_compile_string(s, unit) < 0) {
+        free(unit);
+        tcc_delete(s);
+        fprintf(stderr, "ffi.cdef: compilation failed\n");
+        return;
+    }
+    free(unit);
+    tcc_delete(s);
+
+    if (!ffi_tcc_prelude_append(src, strlen(src))) {
+        fprintf(stderr, "ffi.cdef: out of memory\n");
+        return;
+    }
+    ffi_push_entry(vm, vm->null_entry);
+#endif
+}
+
+static void native_ffi_tcc_compile(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.compile expects C source string\n");
+        return;
+    }
+    ObjEntry *src_entry = ffi_native_arg(stack, argc, 0);
+    const char *src = NULL;
+    if (!entry_as_cstr(src_entry, &src) || !src) {
+        fprintf(stderr, "ffi.compile expects C source string\n");
+        return;
+    }
+
+#if !defined(DISTURB_ENABLE_TCC) || !defined(DISTURB_ENABLE_FFI_CALLS)
+    ffi_tcc_require_or_todo("compile");
+    return;
+#else
+    char err[160] = {0};
+    TCCState *state = NULL;
+    if (!ffi_tcc_compile_module(src, &state, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi.compile failed");
+        return;
+    }
+
+    FfiLibHandle *h = ffi_lib_handle_new_tcc(state);
+    if (!h) {
+        tcc_delete(state);
+        fprintf(stderr, "ffi.compile: out of memory\n");
+        return;
+    }
+    ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
+                                                ffi_lib_handle_free, ffi_lib_handle_clone);
+    if (!entry) {
+        ffi_lib_handle_free(h);
+        fprintf(stderr, "ffi.compile: out of memory\n");
+        return;
+    }
+    ffi_push_entry(vm, entry);
+#endif
+}
+
+static void native_ffi_header(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.header expects header path\n");
+        return;
+    }
+    ObjEntry *path_entry = ffi_native_arg(stack, argc, 0);
+    const char *path = NULL;
+    if (!entry_as_cstr(path_entry, &path) || !path || !path[0]) {
+        fprintf(stderr, "ffi.header expects header path\n");
+        return;
+    }
+#ifndef DISTURB_ENABLE_TCC
+    ffi_tcc_require_or_todo("header");
+    return;
+#else
+    char snippet[512];
+    int n = snprintf(snippet, sizeof(snippet), "#include \"%s\"", path);
+    if (n <= 0 || (size_t)n >= sizeof(snippet)) {
+        fprintf(stderr, "ffi.header: path too long\n");
+        return;
+    }
+
+    TCCState *s = tcc_new();
+    if (!s) {
+        fprintf(stderr, "ffi.header: failed to create TCC state\n");
+        return;
+    }
+    ffi_tcc_configure_state(s);
+    tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
+    char *unit = ffi_tcc_join_prelude(snippet);
+    if (!unit) {
+        tcc_delete(s);
+        fprintf(stderr, "ffi.header: out of memory\n");
+        return;
+    }
+    if (tcc_compile_string(s, unit) < 0) {
+        free(unit);
+        tcc_delete(s);
+        fprintf(stderr, "ffi.header: compilation failed\n");
+        return;
+    }
+    free(unit);
+    tcc_delete(s);
+
+    if (!ffi_tcc_prelude_append(snippet, strlen(snippet))) {
+        fprintf(stderr, "ffi.header: out of memory\n");
+        return;
+    }
+    ffi_push_entry(vm, vm->null_entry);
+#endif
+}
+
+static void native_ffi_eval(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.eval expects C expression string\n");
+        return;
+    }
+    ObjEntry *expr_entry = ffi_native_arg(stack, argc, 0);
+    const char *expr = NULL;
+    if (!entry_as_cstr(expr_entry, &expr) || !expr || !expr[0]) {
+        fprintf(stderr, "ffi.eval expects C expression string\n");
+        return;
+    }
+#ifndef DISTURB_ENABLE_TCC
+    ffi_tcc_require_or_todo("eval");
+    return;
+#else
+    char src[1024];
+    int n = snprintf(src, sizeof(src), "double __disturb_eval_expr(void) { return (double)(%s); }", expr);
+    if (n <= 0 || (size_t)n >= sizeof(src)) {
+        fprintf(stderr, "ffi.eval: expression too long\n");
+        return;
+    }
+
+    char err[160] = {0};
+    TCCState *state = NULL;
+    if (!ffi_tcc_compile_module(src, &state, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi.eval failed");
+        return;
+    }
+
+    double (*fn_eval)(void) = (double(*)(void))tcc_get_symbol(state, "__disturb_eval_expr");
+    if (!fn_eval) {
+        tcc_delete(state);
+        fprintf(stderr, "ffi.eval: symbol resolution failed\n");
+        return;
+    }
+    double result = fn_eval();
+    tcc_delete(state);
+    ffi_push_entry(vm, vm_make_float_value(vm, (Float)result));
+#endif
 }
 
 void native_ffi_new(VM *vm, List *stack, List *global)
@@ -5143,10 +5874,23 @@ void native_ffi_view(VM *vm, List *stack, List *global)
         fprintf(stderr, "memory.view expects struct schema/layout\n");
         return;
     }
+    /* Optional 3rd arg: totalSize (for flexible array member structs) */
+    size_t total_size = 0;
+    if (argc >= 3) {
+        ObjEntry *size_entry = ffi_native_arg(stack, argc, 2);
+        Int sv = 0;
+        if (entry_number_scalar(size_entry, &sv, NULL, NULL) && sv > 0) {
+            total_size = (size_t)sv;
+        }
+    }
     ObjEntry *view = ffi_make_struct_view(vm, ptr, layout, 0, layout && layout->is_const);
     if (!view) {
         fprintf(stderr, "memory: failed to create view\n");
         return;
+    }
+    if (total_size > 0) {
+        FfiViewHandle *h = ffi_view_handle_from_entry(view);
+        if (h) h->byte_size = total_size;
     }
     ffi_push_entry(vm, view);
 }
@@ -5833,20 +6577,20 @@ static void native_ffi_define(VM *vm, List *stack, List *global)
     char *name = ffi_dup_entry_cstr(name_entry);
     if (!name) return;
 
-    /* Find or create ffi.defines table */
-    ObjEntry *ffi_entry = vm_global_find_by_key(
-        vm->global_entry ? vm->global_entry->obj : NULL, "ffi");
-    if (!ffi_entry) { free(name); return; }
+    /* Find or create C.defines table */
+    ObjEntry *c_entry = vm_global_find_by_key(
+        vm->global_entry ? vm->global_entry->obj : NULL, "C");
+    if (!c_entry) { free(name); return; }
 
-    ObjEntry *defines_entry = ffi_table_find_field(ffi_entry->obj, "defines", 7);
+    ObjEntry *defines_entry = ffi_table_find_field(c_entry->obj, "defines", 7);
     if (!defines_entry || disturb_obj_type(defines_entry->obj) != DISTURB_T_TABLE) {
-        /* create ffi.defines table */
+        /* create C.defines table */
         defines_entry = vm_make_table_value(vm, 16);
         if (!defines_entry) { free(name); return; }
-        vm_object_set_by_key(vm, ffi_entry, "defines", 7, defines_entry);
+        vm_object_set_by_key(vm, c_entry, "defines", 7, defines_entry);
     }
 
-    /* Set the constant in ffi.defines */
+    /* Set the constant in C.defines */
     vm_object_set_by_key(vm, defines_entry, name, strlen(name), value_entry);
     free(name);
 }
@@ -5943,7 +6687,7 @@ static void native_ffi_global(VM *vm, List *stack, List *global)
         FfiBase base = FFI_BASE_VOID;
         int is_array = 0, array_len_v = 0, bits = 0, is_const = 0;
         if (ffi_parse_schema_type_string(type_str, type_len,
-                                         &base, &is_array, &array_len_v, &bits, &is_const)
+                                         &base, &is_array, &array_len_v, &bits, &is_const, NULL)
             && !is_array && bits == 0 && base != FFI_BASE_VOID) {
             /* Primitive type — build a synthetic 1-field struct { value = "type" } */
             size_t prim_sz = 0, prim_al = 0;
@@ -6175,7 +6919,7 @@ static void native_ffi_auto(VM *vm, List *stack, List *global)
     }
 
     /* Lookup symbol */
-    void *sym_ptr = ffi_dlsym(h->handle, fn_name);
+    void *sym_ptr = ffi_lib_handle_sym(h, fn_name);
     if (!sym_ptr) {
         fprintf(stderr, "ffi.auto: symbol '%s' not found\n", fn_name);
         free((void*)fn_name);
@@ -6375,6 +7119,7 @@ static void native_ffi_lib_call(VM *vm, List *stack, List *global)
             if (arg) entry_number_scalar(arg, &iv2, &fv2, &is_f);
             double v = is_f ? (double)fv2 : (double)iv2;
             if (t->base == FFI_BASE_F32) { values[i].f32 = (float)v; argv[i] = &values[i].f32; }
+            else if (t->base == FFI_BASE_LDOUBLE) { values[i].ld = (long double)v; argv[i] = &values[i].ld; }
             else { values[i].f = v; argv[i] = &values[i].f; }
         } else {
             Int iv2 = 0;
@@ -6387,6 +7132,7 @@ static void native_ffi_lib_call(VM *vm, List *stack, List *global)
             case FFI_BASE_I32: values[i].i32 = (int32_t)iv2; argv[i] = &values[i].i32; break;
             case FFI_BASE_U32: values[i].u32 = (uint32_t)iv2; argv[i] = &values[i].u32; break;
             case FFI_BASE_U64: values[i].u = (uint64_t)iv2; argv[i] = &values[i].u; break;
+            case FFI_BASE_BOOL: values[i].u8 = (uint8_t)(!!iv2); argv[i] = &values[i].u8; break;
             default: values[i].i = (int64_t)iv2; argv[i] = &values[i].i; break;
             }
         }
@@ -6428,7 +7174,10 @@ static void native_ffi_lib_call(VM *vm, List *stack, List *global)
         } else if (fn->ret.is_ptr || fn->ret.base == FFI_BASE_PTR) {
             ffi_push_entry(vm, vm_make_int_value(vm, (Int)(uintptr_t)ret.p));
         } else if (ffi_arg_is_float(&fn->ret)) {
-            Float rv = (fn->ret.base == FFI_BASE_F32) ? (Float)ret.f32 : (Float)ret.f;
+            Float rv;
+            if (fn->ret.base == FFI_BASE_F32) rv = (Float)ret.f32;
+            else if (fn->ret.base == FFI_BASE_LDOUBLE) rv = (Float)(double)ret.ld;
+            else rv = (Float)ret.f;
             ffi_push_entry(vm, vm_make_float_value(vm, rv));
         } else {
             Int out = 0;
@@ -6440,6 +7189,7 @@ static void native_ffi_lib_call(VM *vm, List *stack, List *global)
             case FFI_BASE_I32: out = (Int)ret.i32; break;
             case FFI_BASE_U32: out = (Int)ret.u32; break;
             case FFI_BASE_U64: out = (Int)ret.u; break;
+            case FFI_BASE_BOOL: out = (Int)(!!ret.u8); break;
             default: out = (Int)ret.i; break;
             }
             ffi_push_entry(vm, vm_make_int_value(vm, out));
@@ -6526,9 +7276,19 @@ static void native_ffi_lib(VM *vm, List *stack, List *global)
 
 #endif /* DISTURB_ENABLE_FFI_CALLS */
 
+void c_module_install(VM *vm, ObjEntry *c_entry)
+{
+    if (!vm || !c_entry) return;
+    ffi_add_module_fn(vm, c_entry, "typedef", native_ffi_typedef);
+    ffi_add_module_fn(vm, c_entry, "enum", native_ffi_enum);
+    ffi_add_module_fn(vm, c_entry, "define", native_ffi_define);
+    ffi_add_module_fn(vm, c_entry, "struct", native_ffi_struct);
+}
+
 void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
 {
     if (!vm || !ffi_entry) return;
+    ffi_set_main_thread(); /* 5.3: record main thread for callback safety check */
 #ifdef DISTURB_ENABLE_FFI_CALLS
     ffi_add_module_fn(vm, ffi_entry, "open", native_ffi_open);
     ffi_add_module_fn(vm, ffi_entry, "close", native_ffi_close);
@@ -6539,16 +7299,15 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
     ffi_add_module_fn(vm, ffi_entry, "auto", native_ffi_auto);
     ffi_add_module_fn(vm, ffi_entry, "lib", native_ffi_lib);
 #endif
-    /* Fase 2: type system helpers (always available) */
-    ffi_add_module_fn(vm, ffi_entry, "typedef", native_ffi_typedef);
-    ffi_add_module_fn(vm, ffi_entry, "enum", native_ffi_enum);
-    ffi_add_module_fn(vm, ffi_entry, "define", native_ffi_define);
-    /* Fase 6: ffi.struct (always available) */
-    ffi_add_module_fn(vm, ffi_entry, "struct", native_ffi_struct);
     /* Fase 7: ffi.trace */
     ffi_add_module_fn(vm, ffi_entry, "trace", native_ffi_trace);
     /* Fase 8: ffi.global */
     ffi_add_module_fn(vm, ffi_entry, "global", native_ffi_global);
+    /* TCC-dependent APIs are always registered; they emit clear error when unavailable */
+    ffi_add_module_fn(vm, ffi_entry, "cdef", native_ffi_cdef);
+    ffi_add_module_fn(vm, ffi_entry, "compile", native_ffi_tcc_compile);
+    ffi_add_module_fn(vm, ffi_entry, "header", native_ffi_header);
+    ffi_add_module_fn(vm, ffi_entry, "eval", native_ffi_eval);
 }
 
 void memory_module_install(VM *vm, ObjEntry *memory_entry)

@@ -1,7 +1,7 @@
 fail = 0,
 
 open_fixture = (path){
-  return ffi.open(path),
+  return C.ffi.open(path),
 },
 
 lib = open_fixture("./tests/ffi/libffi_view_struct.so"),
@@ -12,15 +12,15 @@ if (lib == null) {
   return 0,
 }
 
-ptr = ffi.sym(lib, "sum_variadic_i32"),
+ptr = C.ffi.sym(lib, "sum_variadic_i32"),
 if (ptr == null) {
   fail++,
 } else {
-  sum = ffi.bind(ptr, "i32 sum_variadic_i32(i32, ...)"),
+  sum = C.ffi.bind(ptr, "i32 sum_variadic_i32(i32, ...)"),
   if (sum(4, 10, 20, 30, 40) != 100) { fail++, }
 }
 
-ffi.close(lib),
+C.ffi.close(lib),
 
 lib2 = open_fixture("./tests/ffi/libffi_view_struct.so"),
 if (lib2 == null) { lib2 = open_fixture("./tests/ffi/libffi_view_struct.dylib"), }
@@ -28,10 +28,10 @@ if (lib2 == null) { lib2 = open_fixture("./tests/ffi/libffi_view_struct.dll"), }
 if (lib2 == null) {
   fail++,
 } else {
-  ptr2 = ffi.sym(lib2, "sum_variadic_i32"),
-  sum2 = ffi.bind(ptr2, "i32 sum_variadic_i32(i32, ...)"),
+  ptr2 = C.ffi.sym(lib2, "sum_variadic_i32"),
+  sum2 = C.ffi.bind(ptr2, "i32 sum_variadic_i32(i32, ...)"),
   if (sum2(3, 1, 2, 3) != 6) { fail++, }
-  ffi.close(lib2),
+  C.ffi.close(lib2),
 }
 
 println(fail),

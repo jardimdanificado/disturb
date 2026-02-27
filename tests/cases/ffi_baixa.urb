@@ -1,0 +1,66 @@
+fail = 0,
+
+/* ========== 4.2: Packed structs — pointer workaround ========== */
+/* By-value packed structs hit an ABI mismatch (GCC passes them on the stack,
+   libffi always uses registers for small structs). The documented workaround
+   is to pass/return packed structs via pointer. */
+
+PackedSmall = C.struct("PackedSmall", {
+  __meta = { packed = 1 },
+  tag = "uint8",
+  value = "int32",
+  flag = "uint8",
+}),
+
+/* Verify packed size: 1 + 4 + 1 = 6 */
+sz = C.memory.sizeof(PackedSmall),
+if (sz != 6) { fail++, println("packed size " + sz), }
+
+lib = C.ffi.open("./tests/ffi/libffi_baixa.so"),
+if (lib == null) {
+  lib = C.ffi.open("./tests/ffi/libffi_baixa.dylib"),
+}
+if (lib == null) {
+  println(1),
+  return 0,
+}
+
+/* Packed struct via pointer (workaround for by-value ABI limitation) */
+packed_sum_ptr = C.ffi.auto(lib, "int32 packed_sum_ptr(pointer(PackedSmall))"),
+s1 = C.memory.struct(PackedSmall, { tag = 10, value = 200, flag = 5 }),
+r1 = packed_sum_ptr(s1),
+if (r1 != 215) { fail++, println("packed_sum_ptr " + r1), }
+
+/* Create packed struct from C, read back via view */
+packed_make = C.ffi.auto(lib, "pointer(PackedSmall) packed_make(uint8, int32, uint8)"),
+packed_free_fn = C.ffi.auto(lib, "void packed_free(void*)"),
+s2_ptr = packed_make(7, 999, 3),
+s2 = C.memory.view(s2_ptr, PackedSmall),
+if (s2.tag != 7) { fail++, println("packed_make tag " + s2.tag), }
+if (s2.value != 999) { fail++, println("packed_make value " + s2.value), }
+if (s2.flag != 3) { fail++, println("packed_make flag " + s2.flag), }
+packed_free_fn(s2_ptr),
+
+/* ========== 4.5: struct(X)[N] in signatures (array decay) ========== */
+Vec2Layout = C.struct("Vec2Baixa", { x = "float", y = "float" }),
+
+vec2_array_sum_x = C.ffi.auto(lib, "float vec2_array_sum_x(struct(Vec2Baixa)[], int32)"),
+buf = C.memory.buffer(24),
+arr = C.memory.viewArray(buf, Vec2Layout, 3),
+arr[0].x = 1.0,
+arr[0].y = 0.0,
+arr[1].x = 2.0,
+arr[1].y = 0.0,
+arr[2].x = 3.0,
+arr[2].y = 0.0,
+r2 = vec2_array_sum_x(buf, 3),
+if (r2 != 6.0) { fail++, println("vec2_array_sum_x " + r2), }
+
+/* ========== 10.3: Calling conventions ========== */
+/* abi(cdecl) is the default on all platforms; using it explicitly should work */
+packed_sum_abi = C.ffi.auto(lib, "abi(cdecl) int32 packed_sum_ptr(pointer(PackedSmall))"),
+s3 = C.memory.struct(PackedSmall, { tag = 1, value = 100, flag = 2 }),
+r3 = packed_sum_abi(s3),
+if (r3 != 103) { fail++, println("abi(cdecl) " + r3), }
+
+println(fail),

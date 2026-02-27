@@ -1,7 +1,7 @@
 fail = 0,
 
 load_lib = (path){
-  return ffi.open(path),
+  return C.ffi.open(path),
 },
 
 lib = load_lib("./tests/ffi/libffi_global.so"),
@@ -12,17 +12,17 @@ if (lib == null) {
   return 0,
 }
 
-/* ========== 8.1: ffi.global with primitive type ========== */
+/* ========== 8.1: C.ffi.global with primitive type ========== */
 
 /* Read a global int32 */
-counter = ffi.global(lib, "g_counter", "int32"),
+counter = C.ffi.global(lib, "g_counter", "int32"),
 if (counter == null) { fail++, println("global counter null"), }
 if (counter.value != 42) { fail++, println("global counter value"), }
 
 /* Write through the view */
 counter.value = 100,
 /* Verify via C function that the global actually changed */
-get_counter = ffi.auto(lib, "int32 get_counter()"),
+get_counter = C.ffi.auto(lib, "int32 get_counter()"),
 r1 = get_counter(),
 if (r1 != 100) { fail++, println("global counter write-through"), }
 
@@ -30,21 +30,21 @@ if (r1 != 100) { fail++, println("global counter write-through"), }
 counter.value = 42,
 
 /* Read a global double */
-pi = ffi.global(lib, "g_pi", "double"),
+pi = C.ffi.global(lib, "g_pi", "double"),
 if (pi == null) { fail++, println("global pi null"), }
 /* Check approximate value (3.14...) */
 if (pi.value < 3.14 || pi.value > 3.15) { fail++, println("global pi value"), }
 
 /* Read a global float */
-ratio = ffi.global(lib, "g_ratio", "float"),
+ratio = C.ffi.global(lib, "g_ratio", "float"),
 if (ratio == null) { fail++, println("global ratio null"), }
 /* 1.618 approx */
 if (ratio.value < 1.61 || ratio.value > 1.62) { fail++, println("global ratio value"), }
 
-/* ========== 8.1: ffi.global with struct type ========== */
+/* ========== 8.1: C.ffi.global with struct type ========== */
 
 Vec2Schema = { x = "float", y = "float" },
-pos = ffi.global(lib, "g_position", Vec2Schema),
+pos = C.ffi.global(lib, "g_position", Vec2Schema),
 if (pos == null) { fail++, println("global pos null"), }
 if (pos.x < 10.4 || pos.x > 10.6) { fail++, println("global pos.x"), }
 if (pos.y < 20.2 || pos.y > 20.3) { fail++, println("global pos.y"), }
@@ -54,27 +54,27 @@ pos.x = 99.5,
 pos.y = -1.25,
 
 /* Verify via C function */
-get_pos_x = ffi.auto(lib, "float get_position_x()"),
-get_pos_y = ffi.auto(lib, "float get_position_y()"),
+get_pos_x = C.ffi.auto(lib, "float get_position_x()"),
+get_pos_y = C.ffi.auto(lib, "float get_position_y()"),
 px = get_pos_x(),
 py = get_pos_y(),
 if (px < 99.4 || px > 99.6) { fail++, println("global pos write x"), }
 if (py < -1.3 || py > -1.2) { fail++, println("global pos write y"), }
 
 /* Also works the other way — C modifies, view sees it */
-set_position = ffi.auto(lib, "void set_position(float, float)"),
+set_position = C.ffi.auto(lib, "void set_position(float, float)"),
 set_position(7.0, 8.0),
 if (pos.x < 6.9 || pos.x > 7.1) { fail++, println("global pos C-write x"), }
 if (pos.y < 7.9 || pos.y > 8.1) { fail++, println("global pos C-write y"), }
 
-/* ========== 8.1: ffi.global with compiled layout ========== */
+/* ========== 8.1: C.ffi.global with compiled layout ========== */
 
-Vec2Layout = memory.compile(Vec2Schema),
-pos2 = ffi.global(lib, "g_position", Vec2Layout),
+Vec2Layout = C.memory.compile(Vec2Schema),
+pos2 = C.ffi.global(lib, "g_position", Vec2Layout),
 if (pos2 == null) { fail++, println("global compiled layout null"), }
 if (pos2.x < 6.9 || pos2.x > 7.1) { fail++, println("global compiled layout x"), }
 
 /* ========== Done ========== */
 
-ffi.close(lib),
+C.ffi.close(lib),
 println(fail),

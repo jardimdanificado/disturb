@@ -1743,6 +1743,82 @@ static void native_gc_stats(VM *vm, List *stack, List *global)
     stack = push_entry(vm, stack, vm->null_entry);
 }
 
+static void native_runtime_info(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    ObjEntry *table = vm_make_table_value(vm, 8);
+    if (!table) {
+        stack = push_entry(vm, stack, vm->null_entry);
+        return;
+    }
+
+#if defined(_WIN32) || defined(_WIN64)
+    const char *os = "windows";
+#elif defined(__APPLE__)
+    const char *os = "macos";
+#elif defined(__linux__)
+    const char *os = "linux";
+#elif defined(__FreeBSD__)
+    const char *os = "freebsd";
+#elif defined(__OpenBSD__)
+    const char *os = "openbsd";
+#elif defined(__NetBSD__)
+    const char *os = "netbsd";
+#else
+    const char *os = "unknown";
+#endif
+    vm_object_set_by_key(vm, table, "os", 2, vm_make_bytes_value(vm, os, strlen(os)));
+
+#if defined(__x86_64__) || defined(_M_X64)
+    const char *arch = "x86_64";
+#elif defined(__i386__) || defined(_M_IX86)
+    const char *arch = "x86";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    const char *arch = "aarch64";
+#elif defined(__arm__) || defined(_M_ARM)
+    const char *arch = "arm";
+#elif defined(__riscv) && (__riscv_xlen == 64)
+    const char *arch = "riscv64";
+#elif defined(__riscv) && (__riscv_xlen == 32)
+    const char *arch = "riscv32";
+#elif defined(__powerpc64__)
+    const char *arch = "ppc64";
+#elif defined(__s390x__)
+    const char *arch = "s390x";
+#elif defined(__mips64)
+    const char *arch = "mips64";
+#else
+    const char *arch = "unknown";
+#endif
+    vm_object_set_by_key(vm, table, "arch", 4, vm_make_bytes_value(vm, arch, strlen(arch)));
+
+    vm_object_set_by_key(vm, table, "sizeof_ptr", 10, vm_make_int_value(vm, (Int)sizeof(void*)));
+    vm_object_set_by_key(vm, table, "sizeof_long", 11, vm_make_int_value(vm, (Int)sizeof(long)));
+    vm_object_set_by_key(vm, table, "sizeof_long_double", 18, vm_make_int_value(vm, (Int)sizeof(long double)));
+
+    {
+        uint16_t test = 1;
+        uint8_t first = 0;
+        memcpy(&first, &test, 1);
+        const char *endian = first ? "little" : "big";
+        vm_object_set_by_key(vm, table, "endian", 6, vm_make_bytes_value(vm, endian, strlen(endian)));
+    }
+
+#ifdef DISTURB_ENABLE_TCC
+    vm_object_set_by_key(vm, table, "tcc", 3, vm_make_int_value(vm, 1));
+#else
+    vm_object_set_by_key(vm, table, "tcc", 3, vm_make_int_value(vm, 0));
+#endif
+
+#ifdef DISTURB_ENABLE_FFI_CALLS
+    vm_object_set_by_key(vm, table, "ffi_calls", 9, vm_make_int_value(vm, 1));
+#else
+    vm_object_set_by_key(vm, table, "ffi_calls", 9, vm_make_int_value(vm, 0));
+#endif
+
+    stack = push_entry(vm, stack, table);
+}
+
 static void native_append(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -3108,6 +3184,7 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "gcNew") == 0) return native_gc_new;
     if (strcmp(name, "gcDebug") == 0) return native_gc_debug;
     if (strcmp(name, "gcStats") == 0) return native_gc_stats;
+    if (strcmp(name, "runtimeInfo") == 0) return native_runtime_info;
     if (strcmp(name, "append") == 0) return native_append;
     if (strcmp(name, "add") == 0) return native_add;
     if (strcmp(name, "sub") == 0) return native_sub;

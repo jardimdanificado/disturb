@@ -2757,18 +2757,27 @@ void vm_init(VM *vm)
     entry = vm_define_native(vm, "remove", "remove");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
 
+    ObjEntry *runtime_key = vm_make_key(vm, "C");
+    List *runtime_obj = vm_alloc_list(vm, DISTURB_T_TABLE, runtime_key, 24);
+    ObjEntry *runtime_entry = vm_reg_alloc(vm, runtime_obj);
+    vm_global_add(vm, runtime_entry);
+    ObjEntry *runtime_info = vm_define_native(vm, "info", "runtimeInfo");
+    if (runtime_info) vm_object_set_by_key(vm, runtime_entry, "info", 4, runtime_info);
+
     #ifdef DISTURB_ENABLE_FFI
+    c_module_install(vm, runtime_entry);
+
     ObjEntry *ffi_key = vm_make_key(vm, "ffi");
     List *ffi_obj = vm_alloc_list(vm, DISTURB_T_TABLE, ffi_key, 24);
     ObjEntry *ffi_entry = vm_reg_alloc(vm, ffi_obj);
-    vm_global_add(vm, ffi_entry);
     ffi_module_install(vm, ffi_entry);
+    vm_object_set_by_key(vm, runtime_entry, "ffi", 3, ffi_entry);
 
     ObjEntry *memory_key = vm_make_key(vm, "memory");
     List *memory_obj = vm_alloc_list(vm, DISTURB_T_TABLE, memory_key, 24);
     ObjEntry *memory_entry = vm_reg_alloc(vm, memory_obj);
-    vm_global_add(vm, memory_entry);
     memory_module_install(vm, memory_entry);
+    vm_object_set_by_key(vm, runtime_entry, "memory", 6, memory_entry);
     #endif
 }
 

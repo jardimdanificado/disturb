@@ -24,14 +24,14 @@ ffi_sig_name = (sig){
 },
 
 ffi_bind_all = (path, ...sigs){
-  h = ffi.open(path),
+  h = C.ffi.open(path),
   if (h == null) { return null, }
   api = { __lib = h },
   each(sig in sigs) {
     name = ffi_sig_name(sig),
-    ptr = ffi.sym(h, name),
+    ptr = C.ffi.sym(h, name),
     if (ptr == null) { return null, }
-    api[name] = ffi.bind(ptr, sig),
+    api[name] = C.ffi.bind(ptr, sig),
   }
   return api,
 },
@@ -56,23 +56,23 @@ if (lib == null) {
   return 0,
 }
 
-cb_add = ffi.callback("i32 cb(i32, i32)", (a, b){ return a + b, }),
+cb_add = C.ffi.callback("i32 cb(i32, i32)", (a, b){ return a + b, }),
 if (lib.call_cb_i32(cb_add, 9, 4) != 13) { fail++, }
 
-cb_mul_add = ffi.callback("i32 fold(i32, i32)", (acc, x){ return acc + (x * 2), }),
+cb_mul_add = C.ffi.callback("i32 fold(i32, i32)", (acc, x){ return acc + (x * 2), }),
 if (lib.fold_cb_i32(cb_mul_add, 1, 4) != 21) { fail++, }
 
-cb_f = ffi.callback("f64 cbf(f64, f64)", (a, b){ return a + b + 0.25, }),
+cb_f = C.ffi.callback("f64 cbf(f64, f64)", (a, b){ return a + b + 0.25, }),
 if (lib.call_cb_f64(cb_f, 1.5, 2.5) != 4.25) { fail++, }
 
-cb_pair = ffi.callback("struct(pair) cbp(struct(pair))", (p){
+cb_pair = C.ffi.callback("struct(pair) cbp(struct(pair))", (p){
   p.a = p.a + 1,
   p.b = p.b + 2,
   return p,
 }),
 if (lib.call_cb_pair_sum(cb_pair, 3, 4) != 10) { fail++, }
 
-cb_abi = ffi.callback("abi(default) i32 cbabi(i32, i32)", (a, b){ return a - b, }),
+cb_abi = C.ffi.callback("abi(default) i32 cbabi(i32, i32)", (a, b){ return a - b, }),
 if (lib.call_cb_i32(cb_abi, 9, 4) != 5) { fail++, }
 
 println(fail),
