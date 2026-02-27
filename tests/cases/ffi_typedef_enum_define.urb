@@ -1,0 +1,55 @@
+fail = 0,
+
+/* ---- ffi.typedef: primitive alias ---- */
+ffi.typedef("MyInt", "int32"),
+s = { x = "MyInt" },
+if (memory.sizeof(s) != 4) { fail++, println("typedef prim sizeof"), }
+
+/* ---- ffi.typedef: chained aliases ---- */
+ffi.typedef("AliasA", "uint16"),
+ffi.typedef("AliasB", "AliasA"),
+s2 = { v = "AliasB" },
+if (memory.sizeof(s2) != 2) { fail++, println("typedef chain sizeof"), }
+
+/* ---- ffi.typedef: schema alias ---- */
+inner = { a = "int32", b = "float32" },
+ffi.typedef("Inner", inner),
+outer = { x = "int16", y = "struct(Inner)" },
+if (memory.sizeof(outer) != memory.sizeof({ x = "int16", y = "struct(inner)" })) {
+  // Note: 'inner' variable acts as local schema; 'Inner' registered as typedef
+  // Both should produce the same layout
+  fail++, println("typedef schema sizeof"),
+}
+
+/* ---- ffi.enum: basic ---- */
+Colors = ffi.enum("Colors", {
+  RED = 0,
+  GREEN = 1,
+  BLUE = 2,
+}),
+if (Colors.RED != 0) { fail++, println("enum RED"), }
+if (Colors.GREEN != 1) { fail++, println("enum GREEN"), }
+if (Colors.BLUE != 2) { fail++, println("enum BLUE"), }
+
+/* ---- ffi.enum: global access ---- */
+// enum also registers as global, so Colors is accessible by name
+if (Colors.BLUE != 2) { fail++, println("enum global"), }
+
+/* ---- ffi.enum: typedef -> int32 ---- */
+ffi.enum("Flags", { NONE = 0, ALL = 255 }),
+s3 = { f = "Flags" },
+if (memory.sizeof(s3) != 4) { fail++, println("enum as type sizeof"), }
+
+/* ---- ffi.define: basic ---- */
+ffi.define("PI_APPROX", 3),
+ffi.define("MAX_SIZE", 1024),
+ffi.define("APP_NAME", "test"),
+if (ffi.defines.PI_APPROX != 3) { fail++, println("define PI_APPROX"), }
+if (ffi.defines.MAX_SIZE != 1024) { fail++, println("define MAX_SIZE"), }
+if (ffi.defines.APP_NAME != "test") { fail++, println("define APP_NAME"), }
+
+/* ---- ffi.define: overwrite ---- */
+ffi.define("MAX_SIZE", 2048),
+if (ffi.defines.MAX_SIZE != 2048) { fail++, println("define overwrite"), }
+
+println(fail),

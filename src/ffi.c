@@ -68,10 +68,10 @@ typedef struct {
     FfiLayout *schema_layout; /* resolved struct layout for schema */
     void *schema_ffi_type; /* resolved ffi type for struct(schema)/union(schema) */
     void *schema_ffi_owner; /* owned dynamic ffi type graph */
+    char *fn_ptr_sig; /* non-NULL => function(sig) in signature; inner sig string */
 } FfiType;
 
 #ifdef DISTURB_ENABLE_FFI_CALLS
-static char *ffi_strdup(const char *s);
 typedef struct {
     int refcount;
     void *handle;
@@ -235,6 +235,92 @@ static int g_ffi_callback_seq = 1;
 #endif
 
 static FfiLayoutCacheNode *g_ffi_layout_cache = NULL;
+
+static char *ffi_strdup(const char *s); /* forward decl for typedef registry */
+
+/* ---- Fase 2: typedef registry ---- */
+typedef struct FfiTypedefNode {
+    char *alias;
+    char *target;          /* type string (e.g. "uint64", "int32") */
+    ObjEntry *schema;      /* non-NULL when typedef points to a schema table */
+    struct FfiTypedefNode *next;
+} FfiTypedefNode;
+static FfiTypedefNode *g_ffi_typedef_list = NULL;
+
+static void ffi_typedef_register(const char *alias, const char *target, ObjEntry *schema)
+{
+    /* overwrite if exists */
+    FfiTypedefNode *node = g_ffi_typedef_list;
+    while (node) {
+        if (strcmp(node->alias, alias) == 0) {
+            free(node->target);
+            node->target = target ? ffi_strdup(target) : NULL;
+            node->schema = schema;
+            return;
+        }
+        node = node->next;
+    }
+    node = (FfiTypedefNode*)calloc(1, sizeof(FfiTypedefNode));
+    if (!node) return;
+    node->alias = ffi_strdup(alias);
+    node->target = target ? ffi_strdup(target) : NULL;
+    node->schema = schema;
+    node->next = g_ffi_typedef_list;
+    g_ffi_typedef_list = node;
+}
+
+/* Resolve a typedef alias transitively (max 16 depth to avoid loops). */
+static const char *ffi_typedef_resolve(const char *name)
+{
+    int depth = 0;
+    const char *cur = name;
+    while (depth < 16) {
+        FfiTypedefNode *node = g_ffi_typedef_list;
+        int found = 0;
+        while (node) {
+            if (strcmp(node->alias, cur) == 0) {
+                if (node->target) {
+                    cur = node->target;
+                    found = 1;
+                    break;
+                }
+                return NULL; /* schema-only typedef, not a primitive alias */
+            }
+            node = node->next;
+        }
+        if (!found) break;
+        depth++;
+    }
+    return (cur != name) ? cur : NULL;
+}
+
+/* Resolve a typedef alias to a schema table (for struct/union typedefs). */
+static ObjEntry *ffi_typedef_resolve_schema(const char *name)
+{
+    int depth = 0;
+    const char *cur = name;
+    while (depth < 16) {
+        FfiTypedefNode *node = g_ffi_typedef_list;
+        int found = 0;
+        while (node) {
+            if (strcmp(node->alias, cur) == 0) {
+                if (node->schema) return node->schema;
+                if (node->target) {
+                    cur = node->target;
+                    found = 1;
+                    break;
+                }
+                return NULL;
+            }
+            node = node->next;
+        }
+        if (!found) break;
+        depth++;
+    }
+    return NULL;
+}
+/* ---- end typedef registry ---- */
+
 static FfiArrayViewHandle *ffi_array_view_handle_from_entry(ObjEntry *entry);
 static FfiPtrHandle *ffi_ptr_handle_from_entry(ObjEntry *entry);
 static ObjEntry *ffi_make_ptr_handle_entry(VM *vm, uintptr_t ptr, int owned);
@@ -279,6 +365,65 @@ static int ffi_trace_mouse_slot(const char *name, size_t len)
 
 static int ffi_trace_mouse_last[4] = { INT_MIN, INT_MIN, INT_MIN, INT_MIN };
 
+/* Phase 7: Global trace and validation flags */
+static int g_ffi_trace_enabled = 0;
+
+/* Phase 7.5: Allocation tracking for memory.valid */
+#define FFI_ALLOC_TRACK_CAP_INIT 64
+static struct {
+    uintptr_t *ptrs;
+    size_t count;
+    size_t cap;
+} g_ffi_alloc_track = {NULL, 0, 0};
+
+static void ffi_alloc_track_register(uintptr_t ptr)
+{
+    if (!ptr) return;
+    if (g_ffi_alloc_track.count >= g_ffi_alloc_track.cap) {
+        size_t new_cap = g_ffi_alloc_track.cap ? g_ffi_alloc_track.cap * 2 : FFI_ALLOC_TRACK_CAP_INIT;
+        uintptr_t *new_ptrs = (uintptr_t*)realloc(g_ffi_alloc_track.ptrs, new_cap * sizeof(uintptr_t));
+        if (!new_ptrs) return;
+        g_ffi_alloc_track.ptrs = new_ptrs;
+        g_ffi_alloc_track.cap = new_cap;
+    }
+    g_ffi_alloc_track.ptrs[g_ffi_alloc_track.count++] = ptr;
+}
+
+static void ffi_alloc_track_unregister(uintptr_t ptr)
+{
+    if (!ptr) return;
+    for (size_t i = 0; i < g_ffi_alloc_track.count; i++) {
+        if (g_ffi_alloc_track.ptrs[i] == ptr) {
+            g_ffi_alloc_track.ptrs[i] = g_ffi_alloc_track.ptrs[--g_ffi_alloc_track.count];
+            return;
+        }
+    }
+}
+
+static int ffi_alloc_track_is_valid(uintptr_t ptr)
+{
+    if (!ptr) return 0;
+    for (size_t i = 0; i < g_ffi_alloc_track.count; i++) {
+        if (g_ffi_alloc_track.ptrs[i] == ptr) return 1;
+    }
+    return 0;
+}
+
+static const char *ffi_entry_type_name(ObjEntry *e)
+{
+    if (!e) return "null";
+    switch (disturb_obj_type(e->obj)) {
+    case DISTURB_T_NULL:   return "null";
+    case DISTURB_T_INT:    return "int";
+    case DISTURB_T_FLOAT:  return "float";
+    case DISTURB_T_TABLE:  return entry_is_string(e) ? "string" : "table";
+    case DISTURB_T_NATIVE: return "native";
+    case DISTURB_T_LAMBDA: return "lambda";
+    case DISTURB_T_VIEW:   return "view";
+    default:               return "unknown";
+    }
+}
+
 static char *ffi_dup_entry_cstr(ObjEntry *entry)
 {
     if (!entry || !entry_is_string(entry)) return NULL;
@@ -321,6 +466,8 @@ static void ffi_type_release_runtime(FfiType *t)
     t->schema_ffi_type = NULL;
 #endif
     t->schema_layout = NULL;
+    free(t->fn_ptr_sig);
+    t->fn_ptr_sig = NULL;
 }
 
 static void ffi_types_release_array(FfiType *arr, int count)
@@ -983,6 +1130,14 @@ static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_l
     memcpy(q, name, name_len);
     q[name_len] = 0;
     ObjEntry *global_hit = vm_global_find_by_key(vm->global_entry ? vm->global_entry->obj : NULL, q);
+    if (!global_hit || disturb_obj_type(global_hit->obj) == DISTURB_T_NULL) {
+        /* Fase 2: try typedef -> schema resolution */
+        ObjEntry *typedef_schema = ffi_typedef_resolve_schema(q);
+        if (typedef_schema) {
+            if (q != tmp) free(q);
+            return typedef_schema;
+        }
+    }
     if (q != tmp) free(q);
     if (global_hit && disturb_obj_type(global_hit->obj) == DISTURB_T_NULL) return NULL;
     return global_hit;
@@ -1059,6 +1214,15 @@ static int ffi_parse_schema_meta(ObjEntry *schema, FfiSchemaMeta *meta, char *er
             return 0;
         }
         meta->is_union = is_float ? (((Int)fv) != 0) : (iv != 0);
+    }
+    /* __meta.type = "struct" | "union" (alternative to __meta.union) */
+    ObjEntry *type_entry = ffi_table_find_field(meta_entry->obj, "type", 4);
+    if (type_entry) {
+        const char *type_str = NULL;
+        if (entry_as_cstr(type_entry, &type_str)) {
+            if (strcmp(type_str, "union") == 0) meta->is_union = 1;
+            else if (strcmp(type_str, "struct") == 0) meta->is_union = 0;
+        }
     }
     return 1;
 }
@@ -1819,14 +1983,9 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
             ffi_layout_free(layout);
             return NULL;
         }
+        /* Field value can be a type string OR an inline table (anon struct/union) */
         const char *field_decl = NULL;
-        if (!entry_as_cstr(fields_ref[i].value, &field_decl)) {
-            snprintf(err, err_cap, "ffi: schema field '%.*s' must be a type string",
-                     (int)fields_ref[i].name_len, fields_ref[i].name);
-            free(fields_ref);
-            ffi_layout_free(layout);
-            return NULL;
-        }
+        entry_as_cstr(fields_ref[i].value, &field_decl); /* may be NULL for table fields */
         FfiLayout *child = ffi_compile_schema_layout(vm, fields_ref[i].value, depth + 1, err, err_cap);
         if (!child) {
             free(fields_ref);
@@ -1855,7 +2014,7 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
                   child->base == FFI_BASE_I16 || child->base == FFI_BASE_U16 ||
                   child->base == FFI_BASE_I32 || child->base == FFI_BASE_U32 ||
                   child->base == FFI_BASE_I64 || child->base == FFI_BASE_U64) ||
-                (size_t)bit_width > container_bits || meta.is_union) {
+                (size_t)bit_width > container_bits) {
                 snprintf(err, err_cap, "ffi: invalid bitfield declaration");
                 free(name);
                 free(fields_ref);
@@ -1863,7 +2022,11 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
                 ffi_layout_free(layout);
                 return NULL;
             }
-            if (!bf_open || bf_base != child->base ||
+            if (meta.is_union) {
+                /* In unions, all bitfields share offset 0 */
+                bit_shift = 0;
+                if (child->size > union_size) union_size = child->size;
+            } else if (!bf_open || bf_base != child->base ||
                 (size_t)(bf_used + bit_width) > container_bits) {
                 if (bf_open) offset = bf_offset + bf_container_size;
                 bf_open = 1;
@@ -1874,12 +2037,14 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
                 bf_offset = offset;
                 bf_used = 0;
             }
-            bit_shift = bf_used;
-            bf_used += bit_width;
-            if ((size_t)bf_used == container_bits) {
-                offset = bf_offset + bf_container_size;
-                bf_open = 0;
-                bf_used = 0;
+            if (!meta.is_union) {
+                bit_shift = bf_used;
+                bf_used += bit_width;
+                if ((size_t)bf_used == container_bits) {
+                    offset = bf_offset + bf_container_size;
+                    bf_open = 0;
+                    bf_used = 0;
+                }
             }
         } else if (bf_open) {
             offset = bf_offset + bf_container_size;
@@ -1905,7 +2070,8 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
         {
             char fn_sig[192];
             int fn_const = 0;
-            if (ffi_parse_schema_fnptr_string(field_decl, disturb_bytes_len(fields_ref[i].value->obj),
+            if (field_decl &&
+                ffi_parse_schema_fnptr_string(field_decl, disturb_bytes_len(fields_ref[i].value->obj),
                                               &fn_const, fn_sig, sizeof(fn_sig))) {
                 size_t n = strlen(fn_sig);
                 layout->fields[i].fn_sig = (char*)malloc(n + 1);
@@ -1919,7 +2085,7 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
             }
         }
         layout->fields[i].is_const = (child->is_const ||
-                                      ffi_decl_has_const_prefix(field_decl, disturb_bytes_len(fields_ref[i].value->obj))) ? 1 : 0;
+                                      (field_decl && ffi_decl_has_const_prefix(field_decl, disturb_bytes_len(fields_ref[i].value->obj)))) ? 1 : 0;
         layout->fields[i].bit_width = bit_width;
         layout->fields[i].bit_shift = bit_shift;
         if (field_align > max_align) max_align = field_align;
@@ -2455,6 +2621,23 @@ static int parse_base_type(const char *name, FfiBase *out)
 #endif
         return 1;
     }
+    /* Schema-style aliases (int32, float64, etc.) */
+    if (strcmp(name, "int8") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "uint8") == 0) { *out = FFI_BASE_U8; return 1; }
+    if (strcmp(name, "int16") == 0) { *out = FFI_BASE_I16; return 1; }
+    if (strcmp(name, "uint16") == 0) { *out = FFI_BASE_U16; return 1; }
+    if (strcmp(name, "int32") == 0) { *out = FFI_BASE_I32; return 1; }
+    if (strcmp(name, "uint32") == 0) { *out = FFI_BASE_U32; return 1; }
+    if (strcmp(name, "int64") == 0) { *out = FFI_BASE_I64; return 1; }
+    if (strcmp(name, "uint64") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "float32") == 0) { *out = FFI_BASE_F32; return 1; }
+    if (strcmp(name, "float64") == 0) { *out = FFI_BASE_F64; return 1; }
+    if (strcmp(name, "ptr") == 0) { *out = FFI_BASE_PTR; return 1; }
+    /* Try typedef resolution */
+    {
+        const char *resolved = ffi_typedef_resolve(name);
+        if (resolved) return parse_base_type(resolved, out);
+    }
     return 0;
 }
 
@@ -2468,6 +2651,47 @@ static int sig_parse_type(SigParser *p, FfiType *out, char *err, size_t err_cap)
     if (!sig_read_ident(p, ident, sizeof(ident))) {
         snprintf(err, err_cap, "expected type");
         return 0;
+    }
+
+    /* Fase 2: enum(Name) in signatures resolves to i32 */
+    if (strcmp(ident, "enum") == 0) {
+        if (!sig_match_char(p, '(')) {
+            snprintf(err, err_cap, "expected '(' after enum");
+            return 0;
+        }
+        char enum_name[96];
+        if (!sig_read_ident(p, enum_name, sizeof(enum_name))) {
+            snprintf(err, err_cap, "expected enum name in enum(...)");
+            return 0;
+        }
+        if (!sig_match_char(p, ')')) {
+            snprintf(err, err_cap, "expected ')' after enum name");
+            return 0;
+        }
+        /* enums are represented as i32 in the ABI */
+        out->base = FFI_BASE_I32;
+        return 1;
+    }
+
+    /* Fase 5: function(sig) in signatures — function pointer type */
+    if (strcmp(ident, "function") == 0) {
+        if (!sig_match_char(p, '(')) {
+            snprintf(err, err_cap, "expected '(' after function");
+            return 0;
+        }
+        char inner[192];
+        if (!sig_read_template_content(p, inner, sizeof(inner), err, err_cap)) {
+            return 0;
+        }
+        out->base = FFI_BASE_PTR;
+        out->is_ptr = 1;
+        out->ptr_depth = 1;
+        out->fn_ptr_sig = ffi_strdup(inner);
+        if (!out->fn_ptr_sig) {
+            snprintf(err, err_cap, "out of memory");
+            return 0;
+        }
+        return 1;
     }
 
     if (strcmp(ident, "struct") == 0 || strcmp(ident, "union") == 0 || strcmp(ident, "pointer") == 0) {
@@ -2869,6 +3093,23 @@ static int parse_base_type(const char *name, FfiBase *out)
 #endif
         return 1;
     }
+    /* Schema-style aliases (int32, float64, etc.) */
+    if (strcmp(name, "int8") == 0) { *out = FFI_BASE_I8; return 1; }
+    if (strcmp(name, "uint8") == 0) { *out = FFI_BASE_U8; return 1; }
+    if (strcmp(name, "int16") == 0) { *out = FFI_BASE_I16; return 1; }
+    if (strcmp(name, "uint16") == 0) { *out = FFI_BASE_U16; return 1; }
+    if (strcmp(name, "int32") == 0) { *out = FFI_BASE_I32; return 1; }
+    if (strcmp(name, "uint32") == 0) { *out = FFI_BASE_U32; return 1; }
+    if (strcmp(name, "int64") == 0) { *out = FFI_BASE_I64; return 1; }
+    if (strcmp(name, "uint64") == 0) { *out = FFI_BASE_U64; return 1; }
+    if (strcmp(name, "float32") == 0) { *out = FFI_BASE_F32; return 1; }
+    if (strcmp(name, "float64") == 0) { *out = FFI_BASE_F64; return 1; }
+    if (strcmp(name, "ptr") == 0) { *out = FFI_BASE_PTR; return 1; }
+    /* Try typedef resolution */
+    {
+        const char *resolved = ffi_typedef_resolve(name);
+        if (resolved) return parse_base_type(resolved, out);
+    }
     return 0;
 }
 #endif
@@ -3145,6 +3386,10 @@ static int ffi_layout_equal(const FfiLayout *a, const FfiLayout *b)
 
 static ObjEntry *ffi_load_prim_value(VM *vm, uintptr_t addr, FfiBase base)
 {
+    if (!addr) {
+        fprintf(stderr, "ffi: null pointer dereference in read\n");
+        return vm ? vm->null_entry : NULL;
+    }
     switch (base) {
     case FFI_BASE_I8: {
         int8_t v = 0;
@@ -3209,6 +3454,10 @@ static ObjEntry *ffi_load_prim_value(VM *vm, uintptr_t addr, FfiBase base)
 static int ffi_store_prim_value(FfiBase base, uintptr_t addr, ObjEntry *value)
 {
     if (!value) return 0;
+    if (!addr) {
+        fprintf(stderr, "ffi: null pointer dereference in write\n");
+        return 0;
+    }
     if (base == FFI_BASE_PTR) {
         uintptr_t raw = 0;
         if (!ffi_entry_to_ptr(value, &raw)) return 0;
@@ -3350,6 +3599,11 @@ int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
         return 1;
     }
 
+    if (!base_ptr) {
+        fprintf(stderr, "memory.view: null pointer dereference in field get '%.*s'\n", (int)name_len, name);
+        if (out) *out = vm->null_entry;
+        return 1;
+    }
     uintptr_t addr = base_ptr + base_offset + field->offset;
     if (field->layout->kind == FFI_LAYOUT_PRIM) {
         if (field->bit_width > 0) {
@@ -3444,6 +3698,10 @@ int ffi_view_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value
         fprintf(stderr, "warning: memory.view write to const field '%.*s' ignored\n", (int)name_len, name);
         return 1;
     }
+    if (!base_ptr) {
+        fprintf(stderr, "memory.view: null pointer dereference in field set '%.*s'\n", (int)name_len, name);
+        return -1;
+    }
     uintptr_t addr = base_ptr + base_offset + field->offset;
     if (field->bit_width > 0) {
         if (!ffi_store_bitfield_value(field, addr, value)) {
@@ -3467,6 +3725,11 @@ int ffi_native_index_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **o
 
     FfiArrayViewHandle *av = ffi_array_view_handle_from_entry(target);
     if (av) {
+        if (!av->base_ptr) {
+            fprintf(stderr, "memory.view: null pointer dereference in array index get\n");
+            if (out) *out = vm->null_entry;
+            return 1;
+        }
         Int idx = 0;
         Float fv = 0;
         int is_float = 0;
@@ -3501,6 +3764,10 @@ int ffi_native_index_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *va
     if (!vm || !target || !index) return 0;
     FfiArrayViewHandle *av = ffi_array_view_handle_from_entry(target);
     if (!av) return 0;
+    if (!av->base_ptr) {
+        fprintf(stderr, "memory.view: null pointer dereference in array index set\n");
+        return -1;
+    }
 
     Int idx = 0;
     Float fv = 0;
@@ -3856,6 +4123,10 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                     owned_cstr[i] = dup;
                     values[i].p = (void*)dup;
                 } else {
+                    if (arg && disturb_obj_type(arg->obj) != DISTURB_T_NULL) {
+                        fprintf(stderr, "warning: ffi call '%.*s': arg %d expected string, got %s (coerced to NULL)\n",
+                                (int)self_name_len, self_name ? self_name : "<ffi>", i, ffi_entry_type_name(arg));
+                    }
                     values[i].p = NULL;
                 }
             } else {
@@ -3883,6 +4154,132 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             argv[i] = &values[i].p;
             continue;
         }
+        if (t->base == FFI_BASE_PTR && t->fn_ptr_sig) {
+            /* Fase 5: function(sig) — auto-wrap lambda as callback */
+            if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+                values[i].p = NULL;
+            } else if (disturb_obj_type(arg->obj) == DISTURB_T_LAMBDA) {
+                /* Auto-create callback from lambda using the inner signature */
+                char cb_err[160] = {0};
+                const char *cb_name = NULL;
+                FfiFunction *cb_fn = ffi_parse_signature(t->fn_ptr_sig, cb_err, sizeof(cb_err), &cb_name);
+                free((void*)cb_name);
+                if (!cb_fn) {
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr); free(values); free(argv); free(call_types);
+                    fprintf(stderr, "ffi: function(%s) parse error: %s\n", t->fn_ptr_sig, cb_err);
+                    return;
+                }
+                if (!ffi_call_abi_resolve(cb_fn->abi, &cb_fn->libffi_abi, cb_err, sizeof(cb_err))) {
+                    ffi_function_release(cb_fn);
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr); free(values); free(argv); free(call_types);
+                    fprintf(stderr, "ffi: function(%s) abi error: %s\n", t->fn_ptr_sig, cb_err);
+                    return;
+                }
+                if (!ffi_resolve_schema_type(vm, &cb_fn->ret, cb_err, sizeof(cb_err))) {
+                    ffi_function_release(cb_fn);
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr); free(values); free(argv); free(call_types);
+                    fprintf(stderr, "ffi: function(%s) return type error: %s\n", t->fn_ptr_sig, cb_err);
+                    return;
+                }
+                for (int k = 0; k < cb_fn->argc; k++) {
+                    if (!ffi_resolve_schema_type(vm, &cb_fn->args[k], cb_err, sizeof(cb_err))) {
+                        ffi_function_release(cb_fn);
+                        for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                        free(owned_cstr); free(values); free(argv); free(call_types);
+                        fprintf(stderr, "ffi: function(%s) arg type error: %s\n", t->fn_ptr_sig, cb_err);
+                        return;
+                    }
+                }
+                FfiCallback *cb = (FfiCallback*)calloc(1, sizeof(FfiCallback));
+                if (!cb) {
+                    ffi_function_release(cb_fn);
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr); free(values); free(argv); free(call_types);
+                    fprintf(stderr, "ffi: out of memory\n");
+                    return;
+                }
+                cb->magic = FFI_CALLBACK_MAGIC;
+                cb->refcount = 1;
+                cb->vm = vm;
+                cb->abi = cb_fn->abi;
+                cb->libffi_abi = cb_fn->libffi_abi;
+                cb->argc = cb_fn->argc;
+                cb->ret = cb_fn->ret;
+                memset(&cb_fn->ret, 0, sizeof(cb_fn->ret));
+                cb->args = cb_fn->args;
+                cb_fn->args = NULL;
+                cb->callback_id = g_ffi_callback_seq++;
+                snprintf(cb->lambda_key, sizeof(cb->lambda_key), "__ffi_cb_lambda_%d", cb->callback_id);
+                vm_object_set_by_key(vm, vm->global_entry, cb->lambda_key, strlen(cb->lambda_key), arg);
+                cb->arg_types = (ffi_type**)calloc((size_t)cb->argc, sizeof(ffi_type*));
+                if (!cb->arg_types) {
+                    ffi_callback_release(cb);
+                    ffi_function_release(cb_fn);
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr); free(values); free(argv); free(call_types);
+                    fprintf(stderr, "ffi: out of memory\n");
+                    return;
+                }
+                for (int k = 0; k < cb->argc; k++) {
+                    FfiType *ct = &cb->args[k];
+                    if (ct->schema_name) {
+                        cb->arg_types[k] = ct->schema_is_pointer ? &ffi_type_pointer : (ffi_type*)ct->schema_ffi_type;
+                    } else if (ct->is_ptr || ct->is_array || ct->base == FFI_BASE_CSTR || ct->base == FFI_BASE_PTR) {
+                        cb->arg_types[k] = &ffi_type_pointer;
+                    } else {
+                        cb->arg_types[k] = ffi_type_for_base(ct->base);
+                    }
+                }
+                if (cb->ret.schema_name) {
+                    cb->ret_type = cb->ret.schema_is_pointer ? &ffi_type_pointer : (ffi_type*)cb->ret.schema_ffi_type;
+                } else if (cb->ret.is_ptr || cb->ret.is_array || cb->ret.base == FFI_BASE_CSTR || cb->ret.base == FFI_BASE_PTR) {
+                    cb->ret_type = &ffi_type_pointer;
+                } else {
+                    cb->ret_type = ffi_type_for_base(cb->ret.base);
+                }
+                if (ffi_prep_cif(&cb->cif, cb->libffi_abi, (unsigned)cb->argc, cb->ret_type, cb->arg_types) != FFI_OK) {
+                    ffi_callback_release(cb); ffi_function_release(cb_fn);
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr); free(values); free(argv); free(call_types);
+                    fprintf(stderr, "ffi: failed to prepare auto-callback cif\n");
+                    return;
+                }
+                cb->closure = ffi_closure_alloc(sizeof(ffi_closure), &cb->code_ptr);
+                if (!cb->closure) {
+                    ffi_callback_release(cb); ffi_function_release(cb_fn);
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr); free(values); free(argv); free(call_types);
+                    fprintf(stderr, "ffi: failed to allocate auto-callback closure\n");
+                    return;
+                }
+                if (ffi_prep_closure_loc(cb->closure, &cb->cif, ffi_callback_dispatch, cb, cb->code_ptr) != FFI_OK) {
+                    ffi_callback_release(cb); ffi_function_release(cb_fn);
+                    for (int j = 0; j < call_argc; j++) free(owned_cstr[j]);
+                    free(owned_cstr); free(values); free(argv); free(call_types);
+                    fprintf(stderr, "ffi: failed to prepare auto-callback closure\n");
+                    return;
+                }
+                /* store callback entry in globals so it stays alive */
+                ObjEntry *cb_entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, cb,
+                                                               ffi_callback_release, ffi_callback_retain);
+                if (cb_entry) {
+                    char key[80];
+                    snprintf(key, sizeof(key), "__ffi_auto_cb_%d", cb->callback_id);
+                    vm_object_set_by_key(vm, vm->global_entry, key, strlen(key), cb_entry);
+                }
+                ffi_function_release(cb_fn);
+                values[i].p = cb->code_ptr;
+            } else {
+                uintptr_t ptr = 0;
+                if (ffi_entry_to_ptr(arg, &ptr)) values[i].p = (void*)ptr;
+                else values[i].p = NULL;
+            }
+            argv[i] = &values[i].p;
+            continue;
+        }
         if (t->base == FFI_BASE_PTR) {
             if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
                 values[i].p = NULL;
@@ -3891,6 +4288,8 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                 if (ffi_entry_to_ptr(arg, &ptr)) {
                     values[i].p = (void*)ptr;
                 } else {
+                    fprintf(stderr, "warning: ffi call '%.*s': arg %d expected pointer, got %s (coerced to NULL)\n",
+                            (int)self_name_len, self_name ? self_name : "<ffi>", i, ffi_entry_type_name(arg));
                     values[i].p = NULL;
                 }
             }
@@ -3918,6 +4317,9 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             double val = 0.0;
             if (arg && entry_number_scalar(arg, &iv, &fv, &is_float)) {
                 val = is_float ? (double)fv : (double)iv;
+            } else if (arg && disturb_obj_type(arg->obj) != DISTURB_T_NULL) {
+                fprintf(stderr, "warning: ffi call '%.*s': arg %d expected float, got %s (coerced to 0.0)\n",
+                        (int)self_name_len, self_name ? self_name : "<ffi>", i, ffi_entry_type_name(arg));
             }
             if (t->base == FFI_BASE_F32) {
                 values[i].f32 = (float)val;
@@ -3931,7 +4333,12 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         if (ffi_arg_is_int(t)) {
             Int iv = 0;
             int64_t v = 0;
-            if (arg && entry_number_scalar(arg, &iv, NULL, NULL)) v = (int64_t)iv;
+            if (arg && entry_number_scalar(arg, &iv, NULL, NULL)) {
+                v = (int64_t)iv;
+            } else if (arg && disturb_obj_type(arg->obj) != DISTURB_T_NULL) {
+                fprintf(stderr, "warning: ffi call '%.*s': arg %d expected integer, got %s (coerced to 0)\n",
+                        (int)self_name_len, self_name ? self_name : "<ffi>", i, ffi_entry_type_name(arg));
+            }
             switch (t->base) {
             case FFI_BASE_I8:
                 values[i].i8 = (int8_t)v;
@@ -4005,6 +4412,27 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         }
         call_cif = &var_cif;
     }
+
+    /* Phase 7.4: trace logging before call */
+    if (g_ffi_trace_enabled) {
+        fprintf(stderr, "[ffi.trace] call %.*s(", (int)self_name_len, self_name ? self_name : "<ffi>");
+        for (int ti = 0; ti < call_argc; ti++) {
+            if (ti > 0) fprintf(stderr, ", ");
+            if (ti < fn->argc) {
+                FfiType *ta = &fn->args[ti];
+                if (ta->schema_name) fprintf(stderr, "%s*", ta->schema_name);
+                else if (ta->base == FFI_BASE_CSTR) fprintf(stderr, "cstr");
+                else if (ta->base == FFI_BASE_PTR) fprintf(stderr, "ptr");
+                else if (ffi_arg_is_float(ta)) fprintf(stderr, "%.4g", ta->base == FFI_BASE_F32 ? (double)values[ti].f32 : values[ti].f);
+                else if (ffi_arg_is_int(ta)) fprintf(stderr, "%lld", (long long)values[ti].i);
+                else fprintf(stderr, "?");
+            } else {
+                fprintf(stderr, "...");
+            }
+        }
+        fprintf(stderr, ")\n");
+    }
+
     ffi_call(call_cif, FFI_FN(fn->fn_ptr), ret_ptr, argv);
 
     for (int i = 0; i < call_argc; i++) free(owned_cstr[i]);
@@ -4078,6 +4506,24 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
 
     if (fn->ret.base == FFI_BASE_VOID) {
         ffi_push_entry(vm, vm->null_entry);
+        return;
+    }
+
+    /* Fase 5: function(sig) return — auto-bind returned function pointer */
+    if (fn->ret.fn_ptr_sig && fn->ret.base == FFI_BASE_PTR) {
+        uintptr_t rptr = (uintptr_t)ret.p;
+        if (!rptr) {
+            ffi_push_entry(vm, vm->null_entry);
+            return;
+        }
+        char bind_err[160] = {0};
+        ObjEntry *bound = ffi_bind_ptr_sig_entry(vm, rptr, fn->ret.fn_ptr_sig, bind_err, sizeof(bind_err));
+        if (bound) {
+            ffi_push_entry(vm, bound);
+        } else {
+            /* fallback: return as raw pointer */
+            ffi_push_entry(vm, vm_make_int_value(vm, (Int)(UInt)rptr));
+        }
         return;
     }
 
@@ -4590,6 +5036,7 @@ void native_ffi_new(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi: out of memory\n");
         return;
     }
+    ffi_alloc_track_register((uintptr_t)mem);
     ObjEntry *owned = ffi_make_ptr_handle_entry(vm, (uintptr_t)mem, 1);
     if (!owned) {
         free(mem);
@@ -4615,6 +5062,7 @@ void native_ffi_free(VM *vm, List *stack, List *global)
     FfiPtrHandle *h = ffi_ptr_handle_from_entry(ptr_entry);
     if (h) {
         if (h->owned && h->ptr) {
+            ffi_alloc_track_unregister(h->ptr);
             free((void*)h->ptr);
         }
         h->ptr = 0;
@@ -4627,7 +5075,10 @@ void native_ffi_free(VM *vm, List *stack, List *global)
         fprintf(stderr, "memory.free expects ptr\n");
         return;
     }
-    if (ptr) free((void*)ptr);
+    if (ptr) {
+        ffi_alloc_track_unregister(ptr);
+        free((void*)ptr);
+    }
     ffi_push_entry(vm, vm->null_entry);
 }
 
@@ -4678,8 +5129,8 @@ void native_ffi_view(VM *vm, List *stack, List *global)
     ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
     ObjEntry *schema_or_layout = ffi_native_arg(stack, argc, 1);
     uintptr_t ptr = 0;
-    if (!ffi_entry_to_ptr(ptr_entry, &ptr)) {
-        fprintf(stderr, "memory.view expects ptr\n");
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr) || !ptr) {
+        fprintf(stderr, "memory.view: null or invalid pointer\n");
         return;
     }
     char err[160] = {0};
@@ -4712,8 +5163,8 @@ void native_ffi_view_array(VM *vm, List *stack, List *global)
     ObjEntry *elem_spec = ffi_native_arg(stack, argc, 1);
     ObjEntry *len_entry = ffi_native_arg(stack, argc, 2);
     uintptr_t ptr = 0;
-    if (!ffi_entry_to_ptr(ptr_entry, &ptr)) {
-        fprintf(stderr, "memory.viewArray expects ptr\n");
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr) || !ptr) {
+        fprintf(stderr, "memory.viewArray: null or invalid pointer\n");
         return;
     }
     Int iv = 0;
@@ -4911,12 +5362,1169 @@ void native_memory_point(VM *vm, List *stack, List *global)
     }
 }
 
+/* ---- Fase 3: memory.read(ptr, type [, count]) ---- */
+static void native_ffi_read(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "memory.read expects (ptr, typeString [, count])\n");
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *type_entry = ffi_native_arg(stack, argc, 1);
+
+    uintptr_t ptr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr) || !ptr) {
+        fprintf(stderr, "memory.read: invalid pointer\n");
+        return;
+    }
+
+    const char *type_str = NULL;
+    if (!entry_as_cstr(type_entry, &type_str)) {
+        fprintf(stderr, "memory.read: type must be a string\n");
+        return;
+    }
+
+    FfiBase base = FFI_BASE_VOID;
+    if (!parse_base_type(type_str, &base) || base == FFI_BASE_VOID) {
+        fprintf(stderr, "memory.read: unknown type '%s'\n", type_str);
+        return;
+    }
+
+    size_t elem_size = 0, elem_align = 0;
+    if (!ffi_prim_size_align(base, &elem_size, &elem_align)) {
+        fprintf(stderr, "memory.read: unsupported type '%s'\n", type_str);
+        return;
+    }
+
+    /* optional count for array read */
+    if (argc >= 3) {
+        ObjEntry *count_entry = ffi_native_arg(stack, argc, 2);
+        Int iv = 0; Float fv = 0; int is_float = 0;
+        if (!entry_number_scalar(count_entry, &iv, &fv, &is_float) || is_float || iv <= 0) {
+            fprintf(stderr, "memory.read: count must be a positive integer\n");
+            return;
+        }
+        int count = (int)iv;
+        /* Return a numeric list for array reads */
+        int is_fp = (base == FFI_BASE_F32 || base == FFI_BASE_F64);
+        ObjEntry *list_entry;
+        if (is_fp) {
+            list_entry = ffi_make_float_list(vm, count);
+        } else {
+            list_entry = ffi_make_int_list(vm, count);
+        }
+        if (!list_entry) {
+            fprintf(stderr, "memory.read: out of memory\n");
+            return;
+        }
+        if (is_fp) {
+            ffi_fill_float_list(list_entry, (void*)ptr, count, elem_size);
+        } else {
+            int is_signed = (base == FFI_BASE_I8 || base == FFI_BASE_I16 ||
+                             base == FFI_BASE_I32 || base == FFI_BASE_I64);
+            ffi_fill_int_list(list_entry, (void*)ptr, count, elem_size, is_signed);
+        }
+        ffi_push_entry(vm, list_entry);
+    } else {
+        /* single read */
+        ObjEntry *result = ffi_load_prim_value(vm, ptr, base);
+        ffi_push_entry(vm, result ? result : vm->null_entry);
+    }
+}
+
+/* ---- Fase 3: memory.write(ptr, type, value) ---- */
+static void native_ffi_write(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 3) {
+        fprintf(stderr, "memory.write expects (ptr, typeString, value)\n");
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *type_entry = ffi_native_arg(stack, argc, 1);
+    ObjEntry *value_entry = ffi_native_arg(stack, argc, 2);
+
+    uintptr_t ptr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr) || !ptr) {
+        fprintf(stderr, "memory.write: invalid pointer\n");
+        return;
+    }
+
+    const char *type_str = NULL;
+    if (!entry_as_cstr(type_entry, &type_str)) {
+        fprintf(stderr, "memory.write: type must be a string\n");
+        return;
+    }
+
+    FfiBase base = FFI_BASE_VOID;
+    if (!parse_base_type(type_str, &base) || base == FFI_BASE_VOID) {
+        fprintf(stderr, "memory.write: unknown type '%s'\n", type_str);
+        return;
+    }
+
+    if (!ffi_store_prim_value(base, ptr, value_entry)) {
+        fprintf(stderr, "memory.write: failed to store value\n");
+        return;
+    }
+}
+
+/* ---- Fase 3: memory.copy(dst, src, len) ---- */
+static void native_ffi_copy(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 3) {
+        fprintf(stderr, "memory.copy expects (dst, src, len)\n");
+        return;
+    }
+    ObjEntry *dst_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *src_entry = ffi_native_arg(stack, argc, 1);
+    ObjEntry *len_entry = ffi_native_arg(stack, argc, 2);
+
+    uintptr_t dst = 0, src = 0;
+    if (!ffi_entry_to_ptr(dst_entry, &dst) || !dst) {
+        fprintf(stderr, "memory.copy: invalid dst pointer\n");
+        return;
+    }
+    if (!ffi_entry_to_ptr(src_entry, &src) || !src) {
+        fprintf(stderr, "memory.copy: invalid src pointer\n");
+        return;
+    }
+
+    Int iv = 0; Float fv = 0; int is_float = 0;
+    if (!entry_number_scalar(len_entry, &iv, &fv, &is_float) || is_float || iv < 0) {
+        fprintf(stderr, "memory.copy: len must be a non-negative integer\n");
+        return;
+    }
+    size_t len = (size_t)iv;
+    if (len > 0) memcpy((void*)dst, (void*)src, len);
+}
+
+/* ---- Fase 3: memory.move(dst, src, len) ---- */
+static void native_ffi_move(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 3) {
+        fprintf(stderr, "memory.move expects (dst, src, len)\n");
+        return;
+    }
+    ObjEntry *dst_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *src_entry = ffi_native_arg(stack, argc, 1);
+    ObjEntry *len_entry = ffi_native_arg(stack, argc, 2);
+
+    uintptr_t dst = 0, src = 0;
+    if (!ffi_entry_to_ptr(dst_entry, &dst) || !dst) {
+        fprintf(stderr, "memory.move: invalid dst pointer\n");
+        return;
+    }
+    if (!ffi_entry_to_ptr(src_entry, &src) || !src) {
+        fprintf(stderr, "memory.move: invalid src pointer\n");
+        return;
+    }
+
+    Int iv = 0; Float fv = 0; int is_float = 0;
+    if (!entry_number_scalar(len_entry, &iv, &fv, &is_float) || is_float || iv < 0) {
+        fprintf(stderr, "memory.move: len must be a non-negative integer\n");
+        return;
+    }
+    size_t len = (size_t)iv;
+    if (len > 0) memmove((void*)dst, (void*)src, len);
+}
+
+/* ---- Fase 3: memory.zero(ptr, len) ---- */
+static void native_ffi_zero(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "memory.zero expects (ptr, len)\n");
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *len_entry = ffi_native_arg(stack, argc, 1);
+
+    uintptr_t ptr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr) || !ptr) {
+        fprintf(stderr, "memory.zero: invalid pointer\n");
+        return;
+    }
+
+    Int iv = 0; Float fv = 0; int is_float = 0;
+    if (!entry_number_scalar(len_entry, &iv, &fv, &is_float) || is_float || iv < 0) {
+        fprintf(stderr, "memory.zero: len must be a non-negative integer\n");
+        return;
+    }
+    size_t len = (size_t)iv;
+    if (len > 0) memset((void*)ptr, 0, len);
+}
+
+/* ---- Fase 3: memory.offset(ptr, offset [, elemType]) ---- */
+static void native_ffi_offset(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "memory.offset expects (ptr, offset [, elemType])\n");
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *off_entry = ffi_native_arg(stack, argc, 1);
+
+    uintptr_t ptr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr) || !ptr) {
+        fprintf(stderr, "memory.offset: null or invalid pointer\n");
+        return;
+    }
+
+    Int iv = 0; Float fv = 0; int is_float = 0;
+    if (!entry_number_scalar(off_entry, &iv, &fv, &is_float)) {
+        fprintf(stderr, "memory.offset: offset must be a number\n");
+        return;
+    }
+    int64_t offset = is_float ? (int64_t)fv : (int64_t)iv;
+
+    if (argc >= 3) {
+        /* typed offset: stride = sizeof(elemType) * index */
+        ObjEntry *type_entry = ffi_native_arg(stack, argc, 2);
+        const char *type_str = NULL;
+
+        /* type_entry can be a type string or a schema/layout */
+        if (entry_as_cstr(type_entry, &type_str)) {
+            FfiBase base = FFI_BASE_VOID;
+            if (parse_base_type(type_str, &base) && base != FFI_BASE_VOID) {
+                size_t elem_size = 0, elem_align = 0;
+                if (ffi_prim_size_align(base, &elem_size, &elem_align)) {
+                    offset *= (int64_t)elem_size;
+                } else {
+                    fprintf(stderr, "memory.offset: unsupported type '%s'\n", type_str);
+                    return;
+                }
+            } else {
+                fprintf(stderr, "memory.offset: unknown type '%s'\n", type_str);
+                return;
+            }
+        } else {
+            /* Try resolving as schema/layout for struct stride */
+            char err[160] = {0};
+            FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, type_entry, err, sizeof(err));
+            if (layout && layout->size > 0) {
+                offset *= (int64_t)layout->size;
+            } else {
+                fprintf(stderr, "memory.offset: cannot resolve element size\n");
+                return;
+            }
+        }
+    }
+
+    uintptr_t result = (uintptr_t)((intptr_t)ptr + offset);
+    ObjEntry *handle = ffi_make_ptr_handle_entry(vm, result, 0); /* not owned */
+    if (!handle) {
+        fprintf(stderr, "memory.offset: out of memory\n");
+        return;
+    }
+    ffi_push_entry(vm, handle);
+}
+
+/* ---- Fase 3: memory.deref(ptr [, schema]) ---- */
+static void native_ffi_deref(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "memory.deref expects (ptr [, schema])\n");
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+
+    uintptr_t ptr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr) || !ptr) {
+        fprintf(stderr, "memory.deref: invalid pointer\n");
+        return;
+    }
+
+    if (argc >= 2) {
+        /* memory.deref(ptr, schema) — dereference pointer, return view */
+        ObjEntry *schema_arg = ffi_native_arg(stack, argc, 1);
+
+        /* Check if schema_arg is a type string for primitive deref */
+        const char *type_str = NULL;
+        if (entry_as_cstr(schema_arg, &type_str)) {
+            FfiBase base = FFI_BASE_VOID;
+            if (parse_base_type(type_str, &base) && base != FFI_BASE_VOID
+                && base != FFI_BASE_CSTR) {
+                /* deref as primitive: read what the pointer points to */
+                void *target = NULL;
+                memcpy(&target, (void*)ptr, sizeof(void*));
+                if (!target) {
+                    ffi_push_entry(vm, vm->null_entry);
+                    return;
+                }
+                ObjEntry *result = ffi_load_prim_value(vm, (uintptr_t)target, base);
+                ffi_push_entry(vm, result ? result : vm->null_entry);
+                return;
+            }
+        }
+
+        /* schema or layout — deref pointer to struct */
+        char err[160] = {0};
+        FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_arg, err, sizeof(err));
+        if (!layout) {
+            fprintf(stderr, "memory.deref: %s\n", err[0] ? err : "invalid schema");
+            return;
+        }
+        /* Read the pointed-to address */
+        void *target = NULL;
+        memcpy(&target, (void*)ptr, sizeof(void*));
+        if (!target) {
+            ffi_push_entry(vm, vm->null_entry);
+            return;
+        }
+        if (layout->kind == FFI_LAYOUT_STRUCT) {
+            ObjEntry *view = ffi_make_struct_view(vm, (uintptr_t)target, layout, 0, 0);
+            ffi_push_entry(vm, view ? view : vm->null_entry);
+        } else {
+            /* Non-struct: return as ptr handle */
+            ObjEntry *handle = ffi_make_ptr_handle_entry(vm, (uintptr_t)target, 0);
+            ffi_push_entry(vm, handle ? handle : vm->null_entry);
+        }
+    } else {
+        /* memory.deref(ptr) — dereference pointer, return new ptr handle */
+        void *target = NULL;
+        memcpy(&target, (void*)ptr, sizeof(void*));
+        if (!target) {
+            ffi_push_entry(vm, vm->null_entry);
+            return;
+        }
+        ObjEntry *handle = ffi_make_ptr_handle_entry(vm, (uintptr_t)target, 0);
+        ffi_push_entry(vm, handle ? handle : vm->null_entry);
+    }
+}
+
+/* ---- Fase 3: memory.cast(ptr, schema) ---- */
+static void native_ffi_cast(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "memory.cast expects (ptr, schema)\n");
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *schema_arg = ffi_native_arg(stack, argc, 1);
+
+    uintptr_t ptr = 0;
+    if (!ffi_entry_to_ptr(ptr_entry, &ptr) || !ptr) {
+        fprintf(stderr, "memory.cast: invalid pointer\n");
+        return;
+    }
+
+    char err[160] = {0};
+    FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_arg, err, sizeof(err));
+    if (!layout) {
+        fprintf(stderr, "memory.cast: %s\n", err[0] ? err : "invalid schema");
+        return;
+    }
+
+    if (layout->kind == FFI_LAYOUT_STRUCT) {
+        ObjEntry *view = ffi_make_struct_view(vm, ptr, layout, 0, 0);
+        ffi_push_entry(vm, view ? view : vm->null_entry);
+    } else {
+        /* For non-struct layouts, just return a ptr handle */
+        ObjEntry *handle = ffi_make_ptr_handle_entry(vm, ptr, 0);
+        ffi_push_entry(vm, handle ? handle : vm->null_entry);
+    }
+}
+
 static void ffi_add_module_fn(VM *vm, ObjEntry *ffi_entry, const char *name, NativeFn fn)
 {
     ObjEntry *entry = vm_make_native_entry_data(vm, name, fn, NULL, NULL, NULL);
     if (!entry) return;
     vm_object_set_by_key(vm, ffi_entry, name, strlen(name), entry);
 }
+
+/* ---- Fase 2: native_ffi_typedef ---- */
+static void native_ffi_typedef(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "ffi.typedef expects (alias, targetType)\n");
+        return;
+    }
+    ObjEntry *alias_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *target_entry = ffi_native_arg(stack, argc, 1);
+    if (!alias_entry || !entry_is_string(alias_entry)) {
+        fprintf(stderr, "ffi.typedef: alias must be a string\n");
+        return;
+    }
+    char *alias = ffi_dup_entry_cstr(alias_entry);
+    if (!alias) return;
+
+    /* target is either a type string or a schema table */
+    if (entry_is_string(target_entry)) {
+        char *target = ffi_dup_entry_cstr(target_entry);
+        ffi_typedef_register(alias, target, NULL);
+        free(target);
+    } else if (target_entry && disturb_obj_type(target_entry->obj) == DISTURB_T_TABLE) {
+        /* typedef pointing to a struct schema */
+        ffi_typedef_register(alias, NULL, target_entry);
+    } else {
+        fprintf(stderr, "ffi.typedef: target must be a type string or schema table\n");
+        free(alias);
+        return;
+    }
+    free(alias);
+}
+
+/* ---- Fase 2: native_ffi_enum ---- */
+static void native_ffi_enum(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "ffi.enum expects (name, { KEY = val, ... })\n");
+        return;
+    }
+    ObjEntry *name_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *table_entry = ffi_native_arg(stack, argc, 1);
+    if (!name_entry || !entry_is_string(name_entry)) {
+        fprintf(stderr, "ffi.enum: name must be a string\n");
+        return;
+    }
+    if (!table_entry || disturb_obj_type(table_entry->obj) != DISTURB_T_TABLE) {
+        fprintf(stderr, "ffi.enum: second arg must be a table { KEY = val, ... }\n");
+        return;
+    }
+    char *name = ffi_dup_entry_cstr(name_entry);
+    if (!name) return;
+
+    /* Register enum name as typedef -> int32 */
+    ffi_typedef_register(name, "int32", NULL);
+
+    /* Store table as global with enum name so user can do EnumName.KEY */
+    vm_object_set_by_key(vm, vm->global_entry, name, strlen(name), table_entry);
+
+    /* Also push table as return value */
+    ffi_push_entry(vm, table_entry);
+    free(name);
+}
+
+/* ---- Fase 2: native_ffi_define ---- */
+static void native_ffi_define(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "ffi.define expects (name, value)\n");
+        return;
+    }
+    ObjEntry *name_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *value_entry = ffi_native_arg(stack, argc, 1);
+    if (!name_entry || !entry_is_string(name_entry)) {
+        fprintf(stderr, "ffi.define: name must be a string\n");
+        return;
+    }
+    if (!value_entry) return;
+
+    char *name = ffi_dup_entry_cstr(name_entry);
+    if (!name) return;
+
+    /* Find or create ffi.defines table */
+    ObjEntry *ffi_entry = vm_global_find_by_key(
+        vm->global_entry ? vm->global_entry->obj : NULL, "ffi");
+    if (!ffi_entry) { free(name); return; }
+
+    ObjEntry *defines_entry = ffi_table_find_field(ffi_entry->obj, "defines", 7);
+    if (!defines_entry || disturb_obj_type(defines_entry->obj) != DISTURB_T_TABLE) {
+        /* create ffi.defines table */
+        defines_entry = vm_make_table_value(vm, 16);
+        if (!defines_entry) { free(name); return; }
+        vm_object_set_by_key(vm, ffi_entry, "defines", 7, defines_entry);
+    }
+
+    /* Set the constant in ffi.defines */
+    vm_object_set_by_key(vm, defines_entry, name, strlen(name), value_entry);
+    free(name);
+}
+
+/* ========================================================================
+ * Fase 6 — Ergonomia e Açúcar Sintático
+ * ======================================================================== */
+
+/* 7.4: ffi.trace(enabled) — enable/disable FFI call tracing */
+static void native_ffi_trace(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        /* No args: return current state */
+        ffi_push_entry(vm, vm_make_int_value(vm, g_ffi_trace_enabled ? 1 : 0));
+        return;
+    }
+    ObjEntry *arg = ffi_native_arg(stack, argc, 0);
+    Int iv = 0;
+    Float fv = 0;
+    int is_float = 0;
+    if (arg && entry_number_scalar(arg, &iv, &fv, &is_float)) {
+        g_ffi_trace_enabled = is_float ? (fv != 0.0) : (iv != 0);
+    } else {
+        g_ffi_trace_enabled = (arg && disturb_obj_type(arg->obj) != DISTURB_T_NULL) ? 1 : 0;
+    }
+    ffi_push_entry(vm, vm_make_int_value(vm, g_ffi_trace_enabled ? 1 : 0));
+}
+
+/* 7.5: memory.valid(ptr) — check if pointer was allocated by memory.new */
+static void native_memory_valid(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        ffi_push_entry(vm, vm_make_int_value(vm, 0));
+        return;
+    }
+    ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
+    uintptr_t ptr = 0;
+    if (!ptr_entry || !ffi_entry_to_ptr(ptr_entry, &ptr) || !ptr) {
+        ffi_push_entry(vm, vm_make_int_value(vm, 0));
+        return;
+    }
+    int valid = ffi_alloc_track_is_valid(ptr);
+    ffi_push_entry(vm, vm_make_int_value(vm, valid ? 1 : 0));
+}
+
+/* 8.1: ffi.global(lib, name, type) — access C global variable via view */
+static void native_ffi_global(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 3) {
+        fprintf(stderr, "ffi.global expects library handle, symbol name, and type\n");
+        return;
+    }
+    ObjEntry *lib_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *name_entry = ffi_native_arg(stack, argc, 1);
+    ObjEntry *type_entry = ffi_native_arg(stack, argc, 2);
+
+    FfiLibHandle *h = ffi_lib_handle_from_entry(lib_entry);
+    if (!h || !h->handle) {
+        fprintf(stderr, "ffi.global expects open library handle\n");
+        return;
+    }
+    if (!name_entry || !entry_is_string(name_entry)) {
+        fprintf(stderr, "ffi.global expects string symbol name\n");
+        return;
+    }
+    size_t name_len = disturb_bytes_len(name_entry->obj);
+    const char *name_src = disturb_bytes_data(name_entry->obj);
+    char *name = (char*)calloc(1, name_len + 1);
+    if (!name) { fprintf(stderr, "ffi: out of memory\n"); return; }
+    memcpy(name, name_src, name_len);
+    name[name_len] = 0;
+    void *sym_ptr = ffi_dlsym(h->handle, name);
+    free(name);
+    if (!sym_ptr) {
+        fprintf(stderr, "ffi.global: symbol '%.*s' not found: %s\n",
+                (int)name_len, name_src, ffi_dlerror_msg());
+        return;
+    }
+
+    /* Try to interpret type_entry as schema/layout for structs */
+    char err[160] = {0};
+    FfiLayout *layout = NULL;
+
+    /* Check if type is a string representing a primitive type */
+    const char *type_str = NULL;
+    if (entry_as_cstr(type_entry, &type_str)) {
+        size_t type_len = disturb_bytes_len(type_entry->obj);
+        FfiBase base = FFI_BASE_VOID;
+        int is_array = 0, array_len_v = 0, bits = 0, is_const = 0;
+        if (ffi_parse_schema_type_string(type_str, type_len,
+                                         &base, &is_array, &array_len_v, &bits, &is_const)
+            && !is_array && bits == 0 && base != FFI_BASE_VOID) {
+            /* Primitive type — build a synthetic 1-field struct { value = "type" } */
+            size_t prim_sz = 0, prim_al = 0;
+            if (!ffi_prim_size_align(base, &prim_sz, &prim_al)) {
+                fprintf(stderr, "ffi.global: unsupported primitive type\n");
+                return;
+            }
+            layout = (FfiLayout*)calloc(1, sizeof(FfiLayout));
+            if (!layout) { fprintf(stderr, "ffi: out of memory\n"); return; }
+            layout->kind = FFI_LAYOUT_STRUCT;
+            layout->size = prim_sz;
+            layout->align = prim_al;
+            layout->field_count = 1;
+            layout->fields = (FfiLayoutField*)calloc(1, sizeof(FfiLayoutField));
+            if (!layout->fields) {
+                free(layout);
+                fprintf(stderr, "ffi: out of memory\n");
+                return;
+            }
+            FfiLayout *field_layout = (FfiLayout*)calloc(1, sizeof(FfiLayout));
+            if (!field_layout) {
+                free(layout->fields);
+                free(layout);
+                fprintf(stderr, "ffi: out of memory\n");
+                return;
+            }
+            field_layout->kind = FFI_LAYOUT_PRIM;
+            field_layout->base = base;
+            field_layout->is_const = is_const;
+            field_layout->size = prim_sz;
+            field_layout->align = prim_al;
+
+            layout->fields[0].name = (char*)malloc(6);
+            if (!layout->fields[0].name) {
+                free(field_layout); free(layout->fields); free(layout);
+                fprintf(stderr, "ffi: out of memory\n");
+                return;
+            }
+            memcpy(layout->fields[0].name, "value", 6);
+            layout->fields[0].name_len = 5;
+            layout->fields[0].offset = 0;
+            layout->fields[0].layout = field_layout;
+            layout->fields[0].is_const = is_const;
+        }
+    }
+
+    /* If not a primitive, try as struct schema/layout */
+    if (!layout) {
+        layout = ffi_layout_from_schema_or_layout(vm, type_entry, err, sizeof(err));
+        if (!layout) {
+            fprintf(stderr, "ffi.global: %s\n", err[0] ? err : "invalid type");
+            return;
+        }
+        if (layout->kind != FFI_LAYOUT_STRUCT) {
+            fprintf(stderr, "ffi.global: type must be a primitive string or struct schema\n");
+            return;
+        }
+    }
+
+    ObjEntry *view = ffi_make_struct_view(vm, (uintptr_t)sym_ptr, layout, 0, 0);
+    if (!view) {
+        fprintf(stderr, "ffi.global: failed to create view\n");
+        return;
+    }
+    ffi_push_entry(vm, view);
+}
+
+/* 6.1: ffi.struct(name, schema) — compile + register globally */
+static void native_ffi_struct(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "ffi.struct expects name and schema\n");
+        return;
+    }
+    ObjEntry *name_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *schema_entry = ffi_native_arg(stack, argc, 1);
+
+    const char *name = NULL;
+    if (!entry_as_cstr(name_entry, &name) || !name || !name[0]) {
+        fprintf(stderr, "ffi.struct: first argument must be a non-empty string name\n");
+        return;
+    }
+
+    char err[160] = {0};
+    FfiLayout *layout = ffi_compile_schema_cached(vm, schema_entry, err, sizeof(err));
+    if (!layout) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi.struct: compile failed");
+        return;
+    }
+
+    /* Register schema globally so struct(Name)/pointer(Name) work in signatures */
+    vm_object_set_by_key(vm, vm->global_entry, name, strlen(name), schema_entry);
+
+    /* Also register as a typedef: Name -> Name (identity, for parse_base_type resolution) */
+    ffi_typedef_register(name, name, schema_entry);
+
+    /* Return compiled layout handle */
+    FfiLayoutHandle *h = ffi_layout_handle_new(layout);
+    if (!h) {
+        fprintf(stderr, "ffi.struct: out of memory\n");
+        return;
+    }
+    ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
+                                                ffi_layout_handle_free, ffi_layout_handle_clone);
+    if (!entry) {
+        ffi_layout_handle_free(h);
+        return;
+    }
+    ffi_push_entry(vm, entry);
+}
+
+/* 6.5: memory.struct(schema, { field = value, ... }) — alloc + init + return view */
+static void native_memory_struct(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "memory.struct expects schema [, init_table]\n");
+        return;
+    }
+    ObjEntry *schema_or_layout = ffi_native_arg(stack, argc, 0);
+    ObjEntry *init_table = (argc >= 2) ? ffi_native_arg(stack, argc, 1) : NULL;
+
+    char err[160] = {0};
+    FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_or_layout, err, sizeof(err));
+    if (!layout) {
+        fprintf(stderr, "%s\n", err[0] ? err : "memory.struct: layout resolution failed");
+        return;
+    }
+    if (layout->kind != FFI_LAYOUT_STRUCT) {
+        fprintf(stderr, "memory.struct expects struct schema/layout\n");
+        return;
+    }
+
+    /* Allocate zero-initialized memory */
+    size_t bytes = layout->size ? layout->size : 1;
+    void *mem = calloc(1, bytes);
+    if (!mem) {
+        fprintf(stderr, "memory.struct: out of memory\n");
+        return;
+    }
+
+    /* Apply init values from the table */
+    if (init_table && init_table->obj &&
+        disturb_obj_type(init_table->obj) == DISTURB_T_TABLE) {
+        List *obj = init_table->obj;
+        for (Int i = 2; i < obj->size; i++) {
+            ObjEntry *kv = (ObjEntry*)obj->data[i].p;
+            ObjEntry *key = vm_entry_key(kv);
+            if (!key || !entry_is_string(key)) continue;
+            const char *fname = disturb_bytes_data(key->obj);
+            size_t flen = disturb_bytes_len(key->obj);
+
+            /* Find field in layout */
+            int found = 0;
+            for (int fi = 0; fi < layout->field_count; fi++) {
+                FfiLayoutField *f = &layout->fields[fi];
+                if (f->name_len == flen && memcmp(f->name, fname, flen) == 0) {
+                    if (f->layout && f->layout->kind == FFI_LAYOUT_PRIM) {
+                        uintptr_t addr = (uintptr_t)mem + f->offset;
+                        ffi_store_prim_value(f->layout->base, addr, kv);
+                    }
+                    found = 1;
+                    break;
+                }
+            }
+            if (!found) {
+                fprintf(stderr, "memory.struct: unknown field '%.*s'\n", (int)flen, fname);
+            }
+        }
+    }
+
+    /* Return owned struct view */
+    ObjEntry *view = ffi_make_struct_view_owned(vm, mem, layout);
+    if (!view) {
+        ffi_push_entry(vm, vm->null_entry);
+        return;
+    }
+    ffi_push_entry(vm, view);
+}
+
+#ifdef DISTURB_ENABLE_FFI_CALLS
+
+/* 6.4: ffi.auto(lib, sig) — sym + bind in one step with cache */
+static void native_ffi_auto(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 2) {
+        fprintf(stderr, "ffi.auto expects lib handle and signature\n");
+        return;
+    }
+    ObjEntry *lib_entry = ffi_native_arg(stack, argc, 0);
+    ObjEntry *sig_entry = ffi_native_arg(stack, argc, 1);
+
+    FfiLibHandle *h = ffi_lib_handle_from_entry(lib_entry);
+    if (!h) {
+        /* Also accept ffi.lib proxy table: look for __handle field */
+        if (lib_entry && lib_entry->obj &&
+            disturb_obj_type(lib_entry->obj) == DISTURB_T_TABLE) {
+            ObjEntry *hfield = ffi_table_find_field(lib_entry->obj, "__handle", 8);
+            if (hfield) h = ffi_lib_handle_from_entry(hfield);
+        }
+    }
+    if (!h) {
+        fprintf(stderr, "ffi.auto: first argument must be a library handle from ffi.open or ffi.lib\n");
+        return;
+    }
+    const char *sig = NULL;
+    if (!entry_as_cstr(sig_entry, &sig) || !sig) {
+        fprintf(stderr, "ffi.auto: second argument must be a string signature\n");
+        return;
+    }
+
+    /* Parse function name from signature to resolve symbol */
+    char err[160] = {0};
+    const char *fn_name = NULL;
+    FfiFunction *fn = ffi_parse_signature(sig, err, sizeof(err), &fn_name);
+    if (!fn) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi.auto: invalid signature");
+        return;
+    }
+    if (!fn_name || !fn_name[0]) {
+        ffi_function_release(fn);
+        fprintf(stderr, "ffi.auto: signature must contain a function name\n");
+        return;
+    }
+
+    /* Lookup symbol */
+    void *sym_ptr = ffi_dlsym(h->handle, fn_name);
+    if (!sym_ptr) {
+        fprintf(stderr, "ffi.auto: symbol '%s' not found\n", fn_name);
+        free((void*)fn_name);
+        ffi_function_release(fn);
+        return;
+    }
+
+    /* Prepare and bind */
+    if (!ffi_prepare_ptr(vm, fn, sym_ptr, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "ffi.auto: bind failed");
+        free((void*)fn_name);
+        ffi_function_release(fn);
+        return;
+    }
+
+    ObjEntry *entry = vm_make_native_entry_data(vm, fn_name, native_ffi_call, fn,
+                                                ffi_function_release, ffi_function_retain);
+    free((void*)fn_name);
+    if (!entry) {
+        ffi_function_release(fn);
+        fprintf(stderr, "ffi.auto: failed to create bound function\n");
+        return;
+    }
+    ffi_push_entry(vm, entry);
+}
+
+/* 6.3: ffi.lib(path) — returns a table proxy with .call(sig, ...args) method */
+
+/* Internal data stored on the lib proxy table */
+typedef struct {
+    uint32_t magic;
+    int refcount;
+    void *dl_handle;
+} FfiLibProxy;
+
+#define FFI_LIB_PROXY_MAGIC 0x4C504D47u
+
+static void ffi_lib_proxy_free(void *data)
+{
+    FfiLibProxy *p = (FfiLibProxy*)data;
+    if (!p || p->magic != FFI_LIB_PROXY_MAGIC) return;
+    if (--p->refcount > 0) return;
+    if (p->dl_handle) ffi_dlclose(p->dl_handle);
+    p->magic = 0;
+    free(p);
+}
+
+static void ffi_lib_proxy_clone(void *data)
+{
+    FfiLibProxy *p = (FfiLibProxy*)data;
+    if (!p || p->magic != FFI_LIB_PROXY_MAGIC) return;
+    p->refcount++;
+}
+
+/* ffi_lib_proxy_from_entry: extract proxy from a native entry (reserved for future use) */
+#if 0
+static FfiLibProxy *ffi_lib_proxy_from_entry(ObjEntry *entry)
+{
+    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    NativeBox *box = (NativeBox*)entry->obj->data[2].p;
+    if (!box || !box->data) return NULL;
+    FfiLibProxy *p = (FfiLibProxy*)box->data;
+    if (p->magic != FFI_LIB_PROXY_MAGIC) return NULL;
+    return p;
+}
+#endif
+
+/* lib.call(sig, ...args) — resolve symbol from sig, bind, call with remaining args */
+static void native_ffi_lib_call(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "lib.call expects signature [, ...args]\n");
+        return;
+    }
+
+    /* The lib proxy handle is stored as __handle on the call entry's parent table.
+     * We retrieve it from the call_entry's self — the lib table has a __handle native entry. */
+    ObjEntry *self = vm && vm->call_entry ? vm->call_entry : NULL;
+    /* Go up: self is the "call" function on the table. We need the table's __handle.
+     * We can't easily traverse up, so we store the proxy directly on the call native. */
+    FfiLibProxy *proxy = NULL;
+    if (self && disturb_obj_type(self->obj) == DISTURB_T_NATIVE && self->obj->size >= 3) {
+        NativeBox *box = (NativeBox*)self->obj->data[2].p;
+        if (box && box->data) {
+            FfiLibProxy *p = (FfiLibProxy*)box->data;
+            if (p->magic == FFI_LIB_PROXY_MAGIC) proxy = p;
+        }
+    }
+    if (!proxy) {
+        fprintf(stderr, "lib.call: invalid library proxy\n");
+        return;
+    }
+
+    ObjEntry *sig_entry = ffi_native_arg(stack, argc, 0);
+    const char *sig = NULL;
+    if (!entry_as_cstr(sig_entry, &sig) || !sig) {
+        fprintf(stderr, "lib.call: first argument must be a string signature\n");
+        return;
+    }
+
+    /* Parse signature to get function name */
+    char err[160] = {0};
+    const char *fn_name = NULL;
+    FfiFunction *fn = ffi_parse_signature(sig, err, sizeof(err), &fn_name);
+    if (!fn) {
+        fprintf(stderr, "%s\n", err[0] ? err : "lib.call: invalid signature");
+        return;
+    }
+
+    /* Lookup symbol */
+    void *sym_ptr = ffi_dlsym(proxy->dl_handle, fn_name);
+    if (!sym_ptr) {
+        fprintf(stderr, "lib.call: symbol '%s' not found\n", fn_name);
+        free((void*)fn_name);
+        ffi_function_release(fn);
+        return;
+    }
+    free((void*)fn_name);
+
+    /* Prepare */
+    if (!ffi_prepare_ptr(vm, fn, sym_ptr, err, sizeof(err))) {
+        fprintf(stderr, "%s\n", err[0] ? err : "lib.call: bind failed");
+        ffi_function_release(fn);
+        return;
+    }
+
+    /* Set up argc override: the call args are argc-1 (skip signature) */
+    uint32_t call_argc = argc - 1;
+
+    /* We need to invoke native_ffi_call with the right setup.
+     * The simplest approach: temporarily build a callable entry and invoke it.
+     * Instead, we replicate the core call logic by directly calling ffi_call. */
+
+    /* Build argument arrays */
+    ffi_type **call_types = (ffi_type**)calloc((size_t)call_argc, sizeof(ffi_type*));
+    FfiValue *values = (FfiValue*)calloc((size_t)call_argc, sizeof(FfiValue));
+    void **argv = (void**)calloc((size_t)call_argc, sizeof(void*));
+    char **owned_cstr = (char**)calloc((size_t)call_argc, sizeof(char*));
+    if ((!call_types || !values || !argv || !owned_cstr) && call_argc > 0) {
+        free(call_types); free(values); free(argv); free(owned_cstr);
+        ffi_function_release(fn);
+        fprintf(stderr, "lib.call: out of memory\n");
+        return;
+    }
+
+    int ok = 1;
+    for (uint32_t i = 0; i < call_argc && ok; i++) {
+        ObjEntry *arg = ffi_native_arg(stack, argc, i + 1);
+        if ((int)i >= fn->argc) {
+            /* vararg: treat as pointer or int */
+            Int iv = 0; Float fv = 0; int is_float = 0;
+            if (arg && entry_number_scalar(arg, &iv, &fv, &is_float)) {
+                if (is_float) {
+                    values[i].f = (double)fv;
+                    argv[i] = &values[i].f;
+                    call_types[i] = &ffi_type_double;
+                } else {
+                    values[i].i = (int64_t)iv;
+                    argv[i] = &values[i].i;
+                    call_types[i] = &ffi_type_sint64;
+                }
+            } else if (arg && entry_is_string(arg)) {
+                char *dup = ffi_dup_entry_cstr(arg);
+                owned_cstr[i] = dup;
+                values[i].p = (void*)dup;
+                argv[i] = &values[i].p;
+                call_types[i] = &ffi_type_pointer;
+            } else {
+                uintptr_t ptr = 0;
+                if (arg) ffi_entry_to_ptr(arg, &ptr);
+                values[i].p = (void*)ptr;
+                argv[i] = &values[i].p;
+                call_types[i] = &ffi_type_pointer;
+            }
+            continue;
+        }
+        FfiType *t = &fn->args[i];
+        call_types[i] = fn->arg_types ? fn->arg_types[i] : &ffi_type_pointer;
+        if (t->base == FFI_BASE_CSTR && !t->is_explicit_cstr) {
+            if (arg && entry_is_string(arg)) {
+                char *dup = ffi_dup_entry_cstr(arg);
+                owned_cstr[i] = dup;
+                values[i].p = (void*)dup;
+            } else {
+                values[i].p = NULL;
+            }
+            argv[i] = &values[i].p;
+        } else if (t->is_ptr || t->is_array || t->base == FFI_BASE_PTR || t->base == FFI_BASE_CSTR) {
+            uintptr_t ptr = 0;
+            if (arg) ffi_entry_to_ptr(arg, &ptr);
+            values[i].p = (void*)ptr;
+            argv[i] = &values[i].p;
+        } else if (ffi_arg_is_float(t)) {
+            Float fv2 = 0; Int iv2 = 0; int is_f = 0;
+            if (arg) entry_number_scalar(arg, &iv2, &fv2, &is_f);
+            double v = is_f ? (double)fv2 : (double)iv2;
+            if (t->base == FFI_BASE_F32) { values[i].f32 = (float)v; argv[i] = &values[i].f32; }
+            else { values[i].f = v; argv[i] = &values[i].f; }
+        } else {
+            Int iv2 = 0;
+            if (arg) entry_number_scalar(arg, &iv2, NULL, NULL);
+            switch (t->base) {
+            case FFI_BASE_I8: values[i].i8 = (int8_t)iv2; argv[i] = &values[i].i8; break;
+            case FFI_BASE_U8: values[i].u8 = (uint8_t)iv2; argv[i] = &values[i].u8; break;
+            case FFI_BASE_I16: values[i].i16 = (int16_t)iv2; argv[i] = &values[i].i16; break;
+            case FFI_BASE_U16: values[i].u16 = (uint16_t)iv2; argv[i] = &values[i].u16; break;
+            case FFI_BASE_I32: values[i].i32 = (int32_t)iv2; argv[i] = &values[i].i32; break;
+            case FFI_BASE_U32: values[i].u32 = (uint32_t)iv2; argv[i] = &values[i].u32; break;
+            case FFI_BASE_U64: values[i].u = (uint64_t)iv2; argv[i] = &values[i].u; break;
+            default: values[i].i = (int64_t)iv2; argv[i] = &values[i].i; break;
+            }
+        }
+    }
+
+    if (ok) {
+        /* Use varargs cif if needed, otherwise use prepared cif */
+        ffi_cif call_cif;
+        ffi_cif *cif_ptr = &fn->cif;
+        if (fn->has_varargs && (int)call_argc > fn->fixed_argc) {
+            ffi_type **all_types = (ffi_type**)calloc(call_argc, sizeof(ffi_type*));
+            if (all_types) {
+                for (uint32_t i = 0; i < call_argc; i++) all_types[i] = call_types[i];
+                if (ffi_prep_cif_var(&call_cif, fn->libffi_abi, (unsigned)fn->fixed_argc,
+                                     (unsigned)call_argc, fn->ret_type, all_types) == FFI_OK) {
+                    cif_ptr = &call_cif;
+                }
+                free(all_types);
+            }
+        }
+        FfiValue ret;
+        memset(&ret, 0, sizeof(ret));
+        ffi_call(cif_ptr, FFI_FN(fn->fn_ptr), &ret, argv);
+
+        /* Convert return value */
+        if (fn->ret.base == FFI_BASE_VOID) {
+            ffi_push_entry(vm, vm->null_entry);
+        } else if (fn->ret.fn_ptr_sig && fn->ret.base == FFI_BASE_PTR) {
+            uintptr_t rptr = (uintptr_t)ret.p;
+            if (!rptr) { ffi_push_entry(vm, vm->null_entry); }
+            else {
+                char be[160] = {0};
+                ObjEntry *bound = ffi_bind_ptr_sig_entry(vm, rptr, fn->ret.fn_ptr_sig, be, sizeof(be));
+                ffi_push_entry(vm, bound ? bound : vm_make_int_value(vm, (Int)(UInt)rptr));
+            }
+        } else if (fn->ret.base == FFI_BASE_CSTR && !fn->ret.is_explicit_cstr) {
+            const char *s = (const char*)ret.p;
+            ffi_push_entry(vm, s ? vm_make_bytes_value(vm, s, strlen(s)) : vm->null_entry);
+        } else if (fn->ret.is_ptr || fn->ret.base == FFI_BASE_PTR) {
+            ffi_push_entry(vm, vm_make_int_value(vm, (Int)(uintptr_t)ret.p));
+        } else if (ffi_arg_is_float(&fn->ret)) {
+            Float rv = (fn->ret.base == FFI_BASE_F32) ? (Float)ret.f32 : (Float)ret.f;
+            ffi_push_entry(vm, vm_make_float_value(vm, rv));
+        } else {
+            Int out = 0;
+            switch (fn->ret.base) {
+            case FFI_BASE_I8: out = (Int)ret.i8; break;
+            case FFI_BASE_U8: out = (Int)ret.u8; break;
+            case FFI_BASE_I16: out = (Int)ret.i16; break;
+            case FFI_BASE_U16: out = (Int)ret.u16; break;
+            case FFI_BASE_I32: out = (Int)ret.i32; break;
+            case FFI_BASE_U32: out = (Int)ret.u32; break;
+            case FFI_BASE_U64: out = (Int)ret.u; break;
+            default: out = (Int)ret.i; break;
+            }
+            ffi_push_entry(vm, vm_make_int_value(vm, out));
+        }
+    }
+
+    for (uint32_t j = 0; j < call_argc; j++) free(owned_cstr[j]);
+    free(owned_cstr);
+    free(values);
+    free(argv);
+    free(call_types);
+    ffi_function_release(fn);
+}
+
+static void native_ffi_lib(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.lib expects library path\n");
+        return;
+    }
+    ObjEntry *path_entry = ffi_native_arg(stack, argc, 0);
+    const char *path = NULL;
+    if (!entry_as_cstr(path_entry, &path) || !path) {
+        fprintf(stderr, "ffi.lib: argument must be a string path\n");
+        return;
+    }
+
+    void *dl = ffi_dlopen(path);
+    if (!dl) {
+        fprintf(stderr, "ffi.lib: failed to open '%s'\n", path);
+        ffi_push_entry(vm, vm->null_entry);
+        return;
+    }
+
+    /* Create proxy struct */
+    FfiLibProxy *proxy = (FfiLibProxy*)calloc(1, sizeof(FfiLibProxy));
+    if (!proxy) {
+        ffi_dlclose(dl);
+        fprintf(stderr, "ffi.lib: out of memory\n");
+        return;
+    }
+    proxy->magic = FFI_LIB_PROXY_MAGIC;
+    proxy->refcount = 1;
+    proxy->dl_handle = dl;
+
+    /* Create result table */
+    ObjEntry *table = vm_make_table_value(vm, 4);
+    if (!table) {
+        ffi_lib_proxy_free(proxy);
+        return;
+    }
+
+    /* Create .call method — the proxy data is stored on the call native entry itself */
+    ObjEntry *call_fn = vm_make_native_entry_data(vm, "call", native_ffi_lib_call, proxy,
+                                                  ffi_lib_proxy_free, ffi_lib_proxy_clone);
+    if (!call_fn) {
+        ffi_lib_proxy_free(proxy);
+        return;
+    }
+    vm_object_set_by_key(vm, table, "call", 4, call_fn);
+
+    /* Also store __handle as a lib handle entry for use with ffi.sym/ffi.auto.
+     * Re-open the library so the lib handle has its own dlopen refcount. */
+    void *dl2 = ffi_dlopen(path);
+    if (dl2) {
+        FfiLibHandle *lh = ffi_lib_handle_new(dl2);
+        if (lh) {
+            ObjEntry *lh_entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, lh,
+                                                           ffi_lib_handle_free, ffi_lib_handle_clone);
+            if (lh_entry) {
+                vm_object_set_by_key(vm, table, "__handle", 8, lh_entry);
+            } else {
+                ffi_lib_handle_free(lh);
+            }
+        } else {
+            ffi_dlclose(dl2);
+        }
+    }
+
+    ffi_push_entry(vm, table);
+}
+
+#endif /* DISTURB_ENABLE_FFI_CALLS */
 
 void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
 {
@@ -4927,7 +6535,20 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
     ffi_add_module_fn(vm, ffi_entry, "sym", native_ffi_sym);
     ffi_add_module_fn(vm, ffi_entry, "bind", native_ffi_bind);
     ffi_add_module_fn(vm, ffi_entry, "callback", native_ffi_callback);
+    /* Fase 6: ergonomia (FFI_CALLS dependent) */
+    ffi_add_module_fn(vm, ffi_entry, "auto", native_ffi_auto);
+    ffi_add_module_fn(vm, ffi_entry, "lib", native_ffi_lib);
 #endif
+    /* Fase 2: type system helpers (always available) */
+    ffi_add_module_fn(vm, ffi_entry, "typedef", native_ffi_typedef);
+    ffi_add_module_fn(vm, ffi_entry, "enum", native_ffi_enum);
+    ffi_add_module_fn(vm, ffi_entry, "define", native_ffi_define);
+    /* Fase 6: ffi.struct (always available) */
+    ffi_add_module_fn(vm, ffi_entry, "struct", native_ffi_struct);
+    /* Fase 7: ffi.trace */
+    ffi_add_module_fn(vm, ffi_entry, "trace", native_ffi_trace);
+    /* Fase 8: ffi.global */
+    ffi_add_module_fn(vm, ffi_entry, "global", native_ffi_global);
 }
 
 void memory_module_install(VM *vm, ObjEntry *memory_entry)
@@ -4944,6 +6565,19 @@ void memory_module_install(VM *vm, ObjEntry *memory_entry)
     ffi_add_module_fn(vm, memory_entry, "buffer", native_ffi_buffer);
     ffi_add_module_fn(vm, memory_entry, "string", native_ffi_string);
     ffi_add_module_fn(vm, memory_entry, "point", native_memory_point);
+    /* Fase 3 */
+    ffi_add_module_fn(vm, memory_entry, "read", native_ffi_read);
+    ffi_add_module_fn(vm, memory_entry, "write", native_ffi_write);
+    ffi_add_module_fn(vm, memory_entry, "copy", native_ffi_copy);
+    ffi_add_module_fn(vm, memory_entry, "move", native_ffi_move);
+    ffi_add_module_fn(vm, memory_entry, "zero", native_ffi_zero);
+    ffi_add_module_fn(vm, memory_entry, "offset", native_ffi_offset);
+    ffi_add_module_fn(vm, memory_entry, "deref", native_ffi_deref);
+    ffi_add_module_fn(vm, memory_entry, "cast", native_ffi_cast);
+    /* Fase 6: memory.struct (always available) */
+    ffi_add_module_fn(vm, memory_entry, "struct", native_memory_struct);
+    /* Fase 7: memory.valid */
+    ffi_add_module_fn(vm, memory_entry, "valid", native_memory_valid);
 }
 
 #endif

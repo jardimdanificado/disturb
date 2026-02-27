@@ -130,6 +130,10 @@ else
   probe_file="$(mktemp)"
   echo 'println(ffi.bind.type);' > "$probe_file"
   if "$BIN" "$probe_file" >/dev/null 2>/dev/null; then
+    # Phase 2: typedef/enum/define (no gcc needed)
+    run_ffi_case ffi_typedef_enum_define
+    # Phase 4: advanced structs/unions (no gcc needed)
+    run_ffi_case ffi_advanced_structs
     if command -v gcc >/dev/null 2>&1; then
       uname_s="$(uname -s 2>/dev/null || echo Unknown)"
       lib_ext="so"
@@ -147,6 +151,21 @@ else
       echo "building ffi struct test library"
       rm -f tests/ffi/libffi_view_struct.so tests/ffi/libffi_view_struct.dylib tests/ffi/libffi_view_struct.dll
       gcc $cflags_shared tests/ffi/ffi_view_struct.c -o "tests/ffi/libffi_view_struct.$lib_ext"
+      echo "building ffi memory ops test library"
+      rm -f tests/ffi/libffi_memory_ops.so tests/ffi/libffi_memory_ops.dylib tests/ffi/libffi_memory_ops.dll
+      gcc $cflags_shared tests/ffi/ffi_memory_ops.c -o "tests/ffi/libffi_memory_ops.$lib_ext"
+      echo "building ffi fnptr sig test library"
+      rm -f tests/ffi/libffi_fnptr_sig.so tests/ffi/libffi_fnptr_sig.dylib tests/ffi/libffi_fnptr_sig.dll
+      gcc $cflags_shared tests/ffi/ffi_fnptr_sig.c -o "tests/ffi/libffi_fnptr_sig.$lib_ext"
+      echo "building ffi ergo test library"
+      rm -f tests/ffi/libffi_ergo.so tests/ffi/libffi_ergo.dylib tests/ffi/libffi_ergo.dll
+      gcc $cflags_shared tests/ffi/ffi_ergo.c -o "tests/ffi/libffi_ergo.$lib_ext"
+      echo "building ffi safety test library"
+      rm -f tests/ffi/libffi_safety.so tests/ffi/libffi_safety.dylib tests/ffi/libffi_safety.dll
+      gcc $cflags_shared tests/ffi/ffi_safety.c -o "tests/ffi/libffi_safety.$lib_ext"
+      echo "building ffi global test library"
+      rm -f tests/ffi/libffi_global.so tests/ffi/libffi_global.dylib tests/ffi/libffi_global.dll
+      gcc $cflags_shared tests/ffi/ffi_global.c -o "tests/ffi/libffi_global.$lib_ext"
       run_ffi_case ffi_view_struct
       case "$uname_s" in
         MINGW*|MSYS*|CYGWIN*)
@@ -163,6 +182,11 @@ else
       run_ffi_case ffi_buffers_strings
       run_ffi_case ffi_callbacks
       run_ffi_case ffi_const_views
+      run_ffi_case ffi_memory_ops
+      run_ffi_case ffi_fnptr_sig
+      run_ffi_case ffi_ergo
+      run_ffi_case ffi_safety
+      run_ffi_case ffi_global
     else
       echo "gcc not found, skipping ffi struct view test"
     fi

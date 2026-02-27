@@ -1,0 +1,119 @@
+fail = 0,
+
+/* ---- 4.1: Inline anonymous struct ---- */
+/* Schema with nested inline struct using __meta.type */
+schema_with_inline = {
+  flags = "uint32",
+  pos = {
+    __meta = { type = "struct" },
+    __order = { "x", "y" },
+    x = "float32",
+    y = "float32",
+  },
+},
+
+/* Verify sizeof — should be: 4 (flags) + 4 (x) + 4 (y) = 12$$ bytes */
+sz = memory.sizeof(schema_with_inline),
+if (sz != 12) { fail++, println("inline struct sizeof: " + sz), }
+
+/* Allocate, write, and read through view */
+ptr = memory.new(schema_with_inline),
+view = memory.view(ptr, schema_with_inline),
+view.flags = 42,
+view.pos.x = 1.5,
+view.pos.y = 2.5,
+if (view.flags != 42) { fail++, println("inline flags"), }
+if (view.pos.x != 1.5) { fail++, println("inline pos.x"), }
+if (view.pos.y != 2.5) { fail++, println("inline pos.y"), }
+memory.free(ptr),
+
+/* ---- 4.1: Inline anonymous union ---- */
+schema_with_union = {
+  tag = "int32",
+  value = {
+    __meta = { type = "union" },
+    i = "int32",
+    f = "float32",
+  },
+},
+
+/* sizeof: 4 (tag) + 4 (union of i32/f32) = 8 bytes */
+sz2 = memory.sizeof(schema_with_union),
+if (sz2 != 8) { fail++, println("inline union sizeof: " + sz2), }
+
+ptr2 = memory.new(schema_with_union),
+view2 = memory.view(ptr2, schema_with_union),
+view2.tag = 1,
+view2.value.i = 100,
+if (view2.tag != 1) { fail++, println("union tag"), }
+if (view2.value.i != 100) { fail++, println("union i"), }
+memory.free(ptr2),
+
+/* ---- 4.1: Inline with __meta.union = 1 (legacy syntax) ---- */
+schema_legacy_union = {
+  tag = "int32",
+  value = {
+    __meta = { union = 1 },
+    a = "int32",
+    b = "float32",
+  },
+},
+
+sz3 = memory.sizeof(schema_legacy_union),
+if (sz3 != 8) { fail++, println("legacy union sizeof: " + sz3), }
+
+/* ---- 4.1: Deep nesting ---- */
+deep = {
+  __order = { "header", "inner" },
+  header = "int32",
+  inner = {
+    __meta = { type = "struct" },
+    __order = { "a", "nested" },
+    a = "int16",
+    nested = {
+      __meta = { type = "struct" },
+      __order = { "x", "y" },
+      x = "int8",
+      y = "int8",
+    },
+  },
+},
+
+/* header(4) + inner(a=2 + nested(x=1,y=1)=2) = 4+4=8 */
+deep_sz = memory.sizeof(deep),
+if (deep_sz != 8) { fail++, println("deep sizeof: " + deep_sz), }
+
+ptr3 = memory.new(deep),
+view3 = memory.view(ptr3, deep),
+view3.header = 99,
+view3.inner.a = 7,
+view3.inner.nested.x = 3,
+view3.inner.nested.y = 4,
+if (view3.header != 99) { fail++, println("deep header"), }
+if (view3.inner.a != 7) { fail++, println("deep inner.a"), }
+if (view3.inner.nested.x != 3) { fail++, println("deep nested.x"), }
+if (view3.inner.nested.y != 4) { fail++, println("deep nested.y"), }
+memory.free(ptr3),
+
+/* ---- 4.3: Bitfields in unions ---- */
+bf_union = {
+  __meta = { union = 1 },
+  raw = "uint32",
+  lo = "uint32:16",
+  hi = "uint32:16",
+},
+
+bf_sz = memory.sizeof(bf_union),
+if (bf_sz != 4) { fail++, println("bf union sizeof: " + bf_sz), }
+
+ptr4 = memory.new(bf_union),
+view4 = memory.view(ptr4, bf_union),
+view4.raw = 0,
+view4.lo = 5,
+/* lo is 16-bit bitfield at offset 0, same underlying memory as raw */
+if (view4.lo != 5) { fail++, println("bf union lo"), }
+/* raw should have 5 in its low 16 bits */
+if (view4.raw != 5) { fail++, println("bf union raw"), }
+memory.free(ptr4),
+
+println(fail),

@@ -1,0 +1,74 @@
+fail = 0,
+
+/* ---- Load test library ---- */
+load_lib = (path){
+  return ffi.open(path),
+},
+
+lib = load_lib("./tests/ffi/libffi_fnptr_sig.so"),
+if (lib == null) { lib = load_lib("./tests/ffi/libffi_fnptr_sig.dylib"), }
+if (lib == null) { lib = load_lib("./tests/ffi/libffi_fnptr_sig.dll"), }
+if (lib == null) {
+  println(1),
+  return 0,
+}
+
+bind = (name, sig){
+  ptr = ffi.sym(lib, name),
+  if (ptr == null) { fail++, return null, }
+  return ffi.bind(ptr, sig),
+},
+
+/* ---- 5.1a: function(sig) as argument — lambda auto-wrap ---- */
+apply_binop = bind("apply_binop", "int32 apply_binop(function(int32 op(int32, int32)), int32, int32)"),
+
+add = (a, b){ return a + b, },
+mul = (a, b){ return a * b, },
+
+r1 = apply_binop(add, 3, 4),
+if (r1 != 7) { fail++, println("apply_binop add"), }
+
+r2 = apply_binop(mul, 5, 6),
+if (r2 != 30) { fail++, println("apply_binop mul"), }
+
+/* ---- 5.1b: multiple function(sig) args ---- */
+compose_binops = bind("compose_binops", "int32 compose_binops(function(int32 f(int32, int32)), function(int32 g(int32, int32)), int32, int32)"),
+
+r3 = compose_binops(mul, add, 3, 4),
+if (r3 != 49) { fail++, println("compose_binops: mul(add(3,4), add(3,4)) = 49"), }
+
+/* ---- 5.1c: function(sig) as return type — auto-bind ---- */
+get_op = bind("get_op", "function(int32 op(int32, int32)) get_op(int32)"),
+
+op_add = get_op(0),
+if (op_add == null) { fail++, println("get_op 0 null"), }
+r4 = op_add(10, 20),
+if (r4 != 30) { fail++, println("get_op(0)(10,20) add"), }
+
+op_mul = get_op(1),
+r5 = op_mul(6, 7),
+if (r5 != 42) { fail++, println("get_op(1)(6,7) mul"), }
+
+op_null = get_op(99),
+if (op_null != null) { fail++, println("get_op(99) should be null"), }
+
+/* ---- 5.1d: void function(sig) argument ---- */
+set_action_result = bind("set_action_result", "void set_action_result(int32)"),
+get_action_result = bind("get_action_result", "int32 get_action_result()"),
+run_action = bind("run_action", "void run_action(function(void act(int32)), int32)"),
+
+set_action_result(0),
+run_action((v){ set_action_result(v * 10), }, 7),
+r6 = get_action_result(),
+if (r6 != 70) { fail++, println("run_action"), }
+
+/* ---- 5.1e: pass existing callback (not lambda) through function(sig) ---- */
+cb = ffi.callback("int32 op(int32, int32)", (a, b){ return a - b, }),
+r7 = apply_binop(cb, 10, 3),
+if (r7 != 7) { fail++, println("apply_binop callback"), }
+
+/* ---- 5.1f: null as function pointer ---- */
+r8 = apply_binop(null, 1, 2),
+if (r8 != -1) { fail++, println("apply_binop null"), }
+
+println(fail),

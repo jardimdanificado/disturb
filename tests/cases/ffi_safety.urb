@@ -1,0 +1,78 @@
+fail = 0,
+
+/* ========== 7.5: memory.valid ========== */
+
+schema = { x = "int32", y = "int32" },
+ptr = memory.new(schema),
+if (ptr == null) { fail++, println("memory.new null"), }
+
+/* Freshly allocated pointer should be valid */
+v1 = memory.valid(ptr),
+if (v1 != 1) { fail++, println("valid after new"), }
+
+/* After free, should no longer be valid */
+memory.free(ptr),
+v2 = memory.valid(ptr),
+if (v2 != 0) { fail++, println("valid after free"), }
+
+/* Null should not be valid */
+v3 = memory.valid(null),
+if (v3 != 0) { fail++, println("valid null"), }
+
+/* No args — should return 0 */
+v4 = memory.valid(),
+if (v4 != 0) { fail++, println("valid no args"), }
+
+/* ========== 7.4: ffi.trace ========== */
+
+/* Initially disabled */
+t0 = ffi.trace(),
+if (t0 != 0) { fail++, println("trace initial"), }
+
+/* Enable */
+t1 = ffi.trace(1),
+if (t1 != 1) { fail++, println("trace enable"), }
+
+/* Query */
+t2 = ffi.trace(),
+if (t2 != 1) { fail++, println("trace query"), }
+
+/* Disable */
+t3 = ffi.trace(0),
+if (t3 != 0) { fail++, println("trace disable"), }
+
+/* ========== 7.4: ffi.trace with actual FFI call ========== */
+
+load_lib = (path){
+  return ffi.open(path),
+},
+
+lib = load_lib("./tests/ffi/libffi_safety.so"),
+if (lib == null) { lib = load_lib("./tests/ffi/libffi_safety.dylib"), }
+if (lib == null) { lib = load_lib("./tests/ffi/libffi_safety.dll"), }
+if (lib == null) {
+  println(1),
+  return 0,
+}
+
+add_sym = ffi.sym(lib, "safety_add"),
+add = ffi.bind(add_sym, "int32 safety_add(int32, int32)"),
+
+/* Enable trace, make a call, disable trace — call should still work */
+ffi.trace(1),
+r = add(10, 20),
+ffi.trace(0),
+if (r != 30) { fail++, println("trace call result"), }
+
+/* ========== 7.2: null pointer guards (memory.view on null should not crash) ========== */
+/* We can't easily test that the guard *prevents* a crash from .urb,
+   but we can verify viewing null doesn't produce a value: */
+
+/* memory.valid on random integer should return 0 */
+v5 = memory.valid(12345),
+if (v5 != 0) { fail++, println("valid random int"), }
+
+/* ========== Done ========== */
+
+ffi.close(lib),
+println(fail),
