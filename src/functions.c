@@ -1272,12 +1272,18 @@ static void native_import(VM *vm, List *stack, List *global)
 }
 #endif
 
-static void native_print(VM *vm, List *stack, List *global)
+static void native_describe(VM *vm, List *stack, List *global)
 {
     (void)vm;
     (void)global;
     uint32_t argc = native_argc(vm, global);
     if (argc == 0) {
+        ObjEntry *self = native_this(vm);
+        if (self) {
+            print_entry(stdout, vm, self);
+            fputc('\n', stdout);
+            return;
+        }
         if (stack->size > 2) {
             ObjEntry *entry = (ObjEntry*)stack->data[stack->size - 1].p;
             print_plain_entry(stdout, vm, entry);
@@ -1294,12 +1300,17 @@ static void native_print(VM *vm, List *stack, List *global)
     fputc('\n', stdout);
 }
 
-static void native_println(VM *vm, List *stack, List *global)
+static void native_print(VM *vm, List *stack, List *global)
 {
     (void)vm;
     (void)global;
     uint32_t argc = native_argc(vm, global);
     if (argc == 0) {
+        ObjEntry *self = native_this(vm);
+        if (self) {
+            print_plain_entry(stdout, vm, self);
+            return;
+        }
         if (stack->size > 2) {
             ObjEntry *entry = (ObjEntry*)stack->data[stack->size - 1].p;
             print_plain_entry(stdout, vm, entry);
@@ -1312,6 +1323,13 @@ static void native_println(VM *vm, List *stack, List *global)
         if (i) fputc(' ', stdout);
         print_plain_entry(stdout, vm, entry);
     }
+}
+
+static void native_println(VM *vm, List *stack, List *global)
+{
+    (void)vm;
+    (void)global;
+    native_print(vm, stack, global);
     fputc('\n', stdout);
 }
 
@@ -3156,6 +3174,7 @@ static void native_remove(VM *vm, List *stack, List *global)
 
 NativeFn vm_lookup_native(const char *name)
 {
+    if (strcmp(name, "describe") == 0) return native_describe;
     if (strcmp(name, "print") == 0) return native_print;
     if (strcmp(name, "println") == 0) return native_println;
     if (strcmp(name, "len") == 0) return native_len;

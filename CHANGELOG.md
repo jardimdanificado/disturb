@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.1
+- rename `print` to `describe`: the old `print(value)` that showed type-annotated output (e.g. `[int x] [42]`) is now called `describe`.
+- add new `print`: outputs plain values without a trailing newline (same as the old `println` minus the newline).
+- `println` remains unchanged (plain output followed by a newline).
+- fix `describe`, `print`, and `println` not working as methods; calling `x.describe()`, `x.print()`, or `x.println()` now correctly operates on the receiver.
+
 ## 1.7.0
 - unify C runtime/FFI surface under global `C`:
   - runtime-only helpers moved to `C.typedef`, `C.enum`, `C.define`, `C.struct`

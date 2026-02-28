@@ -2634,6 +2634,8 @@ void vm_init(VM *vm)
     }
 
     ObjEntry *entry = NULL;
+    entry = vm_define_native(vm, "describe", "describe");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "print", "print");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "println", "println");
