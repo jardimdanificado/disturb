@@ -14,13 +14,20 @@ Return conventions:
 
 ## Core and Utility
 
-### `print(...values)`
-- Prints values in typed/literal style.
+### `describe(...values)` / `target.describe()`
+- Prints values in typed/literal style (e.g. `[int x] [42]`), followed by a newline.
 - If called with no arguments, prints top of stack (or `(stack empty)`).
+- As a method, prints the receiver in typed style.
 
-### `println(...values)`
-- Prints values in plain style.
+### `print(...values)` / `target.print()`
+- Prints values in plain style without a trailing newline.
+- If called with no arguments, prints top of stack.
+- As a method, prints the receiver.
+
+### `println(...values)` / `target.println()`
+- Prints values in plain style followed by a newline.
 - If called with no arguments, prints top of stack plus newline.
+- As a method, prints the receiver followed by a newline.
 
 ### `len(target)` / `target.len()`
 - Returns logical length.

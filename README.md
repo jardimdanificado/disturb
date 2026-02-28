@@ -298,6 +298,7 @@ Important constraints:
 Disturb installs common functions in `global.common`, so they are callable as methods and as globals.
 
 ### Core
+- `describe`
 - `print`
 - `println`
 - `len`
@@ -351,11 +352,13 @@ Disturb installs common functions in `global.common`, so they are callable as me
 - `insert`
 - `remove`
 
-## Print vs Println
+## Describe, Print, and Println
 
-- `print(...)` prints values with typed/literal style.
-- `println(...)` prints plain value style.
-- `print()` / `println()` with no args read the top of stack when available.
+- `describe(...)` prints values with typed/literal style (e.g. `[int x] [42]`), followed by a newline.
+- `print(...)` prints plain values without a trailing newline.
+- `println(...)` prints plain values followed by a newline.
+- All three can be called as methods: `x.describe()`, `x.print()`, `x.println()`.
+- With no arguments, they read the top of stack when available.
 
 ## Script Arguments
 
