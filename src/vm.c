@@ -5725,7 +5725,7 @@ BC_L_OR:
                     
                     /* Handle vectorization */
                     if (lc > 1 || rc > 1) {
-                        Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
+                        Int out_count = (lc > 1 && rc > 1) ? (lc > rc ? lc : rc) : (lc > 1 ? lc : rc);
                         List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
                         
                         if (!result) return 0;
@@ -5742,7 +5742,7 @@ BC_L_OR:
                                     vm_read_float_at(left->obj, 0, &v);
                                     lv = (Int)v;
                                 }
-                            } else {
+                            } else if (i < lc) {
                                 if (lt == DISTURB_T_INT) {
                                     vm_read_int_at(left->obj, i, &lv);
                                 } else {
@@ -5761,7 +5761,7 @@ BC_L_OR:
                                     vm_read_float_at(right->obj, 0, &v);
                                     rv = (Int)v;
                                 }
-                            } else {
+                            } else if (i < rc) {
                                 if (rt == DISTURB_T_INT) {
                                     vm_read_int_at(right->obj, i, &rv);
                                 } else {
@@ -5772,27 +5772,33 @@ BC_L_OR:
                             }
                             
                             /* Compute bitwise operation */
+                            int left_present = (lc == 1 || i < lc);
+                            int right_present = (rc == 1 || i < rc);
                             Int res = 0;
-                            switch (op) {
-                            case BC_BITAND: res = lv & rv; break;
-                            case BC_BITOR: res = lv | rv; break;
-                            case BC_BITXOR: res = lv ^ rv; break;
-                            case BC_SHL:
-                            case BC_SHR: {
-                                if (rv < 0 || rv >= (Int)(sizeof(Int) * 8u)) {
-                                    fprintf(stderr, "bytecode error at pc %zu: shift expects range 0..%u\n",
-                                            pc, (unsigned)((sizeof(Int) * 8u) - 1u));
-                                    return 0;
+                            if (left_present && right_present) {
+                                switch (op) {
+                                case BC_BITAND: res = lv & rv; break;
+                                case BC_BITOR: res = lv | rv; break;
+                                case BC_BITXOR: res = lv ^ rv; break;
+                                case BC_SHL:
+                                case BC_SHR: {
+                                    if (rv < 0 || rv >= (Int)(sizeof(Int) * 8u)) {
+                                        fprintf(stderr, "bytecode error at pc %zu: shift expects range 0..%u\n",
+                                                pc, (unsigned)((sizeof(Int) * 8u) - 1u));
+                                        return 0;
+                                    }
+                                    unsigned int shift = (unsigned int)rv;
+                                    if (op == BC_SHL) {
+                                        res = (Int)(((uint64_t)lv) << shift);
+                                    } else {
+                                        res = lv >> shift;
+                                    }
+                                    break;
                                 }
-                                unsigned int shift = (unsigned int)rv;
-                                if (op == BC_SHL) {
-                                    res = (Int)(((uint64_t)lv) << shift);
-                                } else {
-                                    res = lv >> shift;
+                                default: break;
                                 }
-                                break;
-                            }
-                            default: break;
+                            } else {
+                                res = left_present ? lv : rv;
                             }
                             
                             vm_write_int_at(result, i, res);
@@ -5860,7 +5866,7 @@ BC_L_OR:
                     
                     /* Handle vectorization */
                     if (lc > 1 || rc > 1) {
-                        Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
+                        Int out_count = (lc > 1 && rc > 1) ? (lc > rc ? lc : rc) : (lc > 1 ? lc : rc);
                         List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
                         
                         if (!result) return 0;
@@ -5879,7 +5885,7 @@ BC_L_OR:
                                     vm_read_float_at(left->obj, 0, &v);
                                     lv = (double)v;
                                 }
-                            } else {
+                            } else if (i < lc) {
                                 if (lt == DISTURB_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(left->obj, i, &v);
@@ -5902,7 +5908,7 @@ BC_L_OR:
                                     vm_read_float_at(right->obj, 0, &v);
                                     rv = (double)v;
                                 }
-                            } else {
+                            } else if (i < rc) {
                                 if (rt == DISTURB_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(right->obj, i, &v);
@@ -5954,7 +5960,7 @@ BC_L_OR:
                     
                     /* Handle vectorization */
                     if (lc > 1 || rc > 1) {
-                        Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
+                        Int out_count = (lc > 1 && rc > 1) ? (lc > rc ? lc : rc) : (lc > 1 ? lc : rc);
                         List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
                         
                         if (!result) return 0;
@@ -5973,7 +5979,7 @@ BC_L_OR:
                                     vm_read_float_at(left->obj, 0, &v);
                                     lv = (double)v;
                                 }
-                            } else {
+                            } else if (i < lc) {
                                 if (lt == DISTURB_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(left->obj, i, &v);
@@ -5996,7 +6002,7 @@ BC_L_OR:
                                     vm_read_float_at(right->obj, 0, &v);
                                     rv = (double)v;
                                 }
-                            } else {
+                            } else if (i < rc) {
                                 if (rt == DISTURB_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(right->obj, i, &v);
@@ -6056,7 +6062,7 @@ BC_L_OR:
                 
                 /* Handle vectorization if either has multiple elements */
                 if (lc > 1 || rc > 1) {
-                    Int out_count = (lc > 1 && rc > 1) ? (lc < rc ? lc : rc) : (lc > 1 ? lc : rc);
+                    Int out_count = (lc > 1 && rc > 1) ? (lc > rc ? lc : rc) : (lc > 1 ? lc : rc);
                     int out_is_float = (lt == DISTURB_T_FLOAT || rt == DISTURB_T_FLOAT);
                     
                     List *result = out_is_float 
@@ -6080,7 +6086,7 @@ BC_L_OR:
                                 vm_read_float_at(left->obj, 0, &v);
                                 lv = (double)v;
                             }
-                        } else {
+                        } else if (i < lc) {
                             if (lt == DISTURB_T_INT) {
                                 Int v = 0;
                                 vm_read_int_at(left->obj, i, &v);
@@ -6103,7 +6109,7 @@ BC_L_OR:
                                 vm_read_float_at(right->obj, 0, &v);
                                 rv = (double)v;
                             }
-                        } else {
+                        } else if (i < rc) {
                             if (rt == DISTURB_T_INT) {
                                 Int v = 0;
                                 vm_read_int_at(right->obj, i, &v);
@@ -6117,13 +6123,19 @@ BC_L_OR:
                         
                         /* Compute result */
                         double res = 0.0;
-                        switch (op) {
-                        case BC_ADD: res = lv + rv; break;
-                        case BC_SUB: res = lv - rv; break;
-                        case BC_MUL: res = lv * rv; break;
-                        case BC_DIV: res = lv / rv; break;
-                        case BC_MOD: res = fmod(lv, rv); break;
-                        default: break;
+                        int left_present = (lc == 1 || i < lc);
+                        int right_present = (rc == 1 || i < rc);
+                        if (left_present && right_present) {
+                            switch (op) {
+                            case BC_ADD: res = lv + rv; break;
+                            case BC_SUB: res = lv - rv; break;
+                            case BC_MUL: res = lv * rv; break;
+                            case BC_DIV: res = lv / rv; break;
+                            case BC_MOD: res = fmod(lv, rv); break;
+                            default: break;
+                            }
+                        } else {
+                            res = left_present ? lv : rv;
                         }
                         
                         /* Write result */

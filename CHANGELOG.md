@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.7.2
+- vectorized binary operations now use `max(left, right)` length instead of `min`: extra elements from the longer side are preserved in the result.
+- for arithmetic (`+`, `-`, `*`, `/`, `%`) and bitwise (`&`, `|`, `^`, `<<`, `>>`), extra elements (where the shorter side has no pair) are copied as-is into the output without applying the operation.
+
 ## 1.7.1
 - rename `print` to `describe`: the old `print(value)` that showed type-annotated output (e.g. `[int x] [42]`) is now called `describe`.
 - add new `print`: outputs plain values without a trailing newline (same as the old `println` minus the newline).
