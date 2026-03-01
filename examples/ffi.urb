@@ -36,7 +36,7 @@ ffi_bind_all = (path, ...sigs){
   return api,
 },
 
-// FFI example (requires ENABLE_FFI=1 and a compatible shared library).
+// FFI example (requires DISABLE_SYSTEM=0 and a compatible shared library).
 // Tries common libc names across Linux/macOS/Windows.
 load_libc = (path){
   return ffi_bind_all(path,

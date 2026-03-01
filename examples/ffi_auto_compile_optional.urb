@@ -38,7 +38,7 @@ ffi_bind_all = (path, ...sigs){
 
 // ffi_auto_compile_optional.urb
 // memory.compile is optional: passing a schema table auto-compiles/caches layout.
-// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
+// Requires DISABLE_SYSTEM=0 and tests/ffi/libffi_view_struct.(so|dylib|dll).
 
 inner = { a = "int8", b = "int16" },
 outer = {

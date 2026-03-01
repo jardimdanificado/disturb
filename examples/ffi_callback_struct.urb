@@ -37,7 +37,7 @@ ffi_bind_all = (path, ...sigs){
 },
 
 // Example: callback with struct-by-value signature.
-// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll).
+// Requires DISABLE_SYSTEM=0 and tests/ffi/libffi_view_struct.(so|dylib|dll).
 
 pair = { a = "i32", b = "i32" },
 

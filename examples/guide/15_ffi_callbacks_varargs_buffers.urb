@@ -37,7 +37,7 @@ ffi_bind_all = (path, ...sigs){
 },
 
 // FFI callbacks, variadic signatures, and raw buffer/string helpers.
-// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll) built.
+// Requires DISABLE_SYSTEM=0 and tests/ffi/libffi_view_struct.(so|dylib|dll) built.
 
 load_fixture = (path){
   return ffi_bind_all(path,

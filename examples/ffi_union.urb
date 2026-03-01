@@ -41,7 +41,7 @@ ffi_bind_all = (path, ...sigs){
 // - __meta = { union = 1 }
 // - union(schema) by-value args/returns
 // - pointer(schema) to union memory
-// Requires ENABLE_FFI=1 and tests/ffi/libffi_view_struct.(so|dylib|dll)
+// Requires DISABLE_SYSTEM=0 and tests/ffi/libffi_view_struct.(so|dylib|dll)
 
 half = {
   lo = "int16",

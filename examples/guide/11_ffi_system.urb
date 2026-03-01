@@ -39,7 +39,7 @@ ffi_bind_all = (path, ...sigs){
 // 11_ffi_system.urb
 // FFI basics (optional build flag).
 
-// Requires building with ENABLE_FFI=1.
+// Requires building with DISABLE_SYSTEM=0.
 // Tries common libc names across Linux/macOS/Windows.
 load_libc = (path){
   return ffi_bind_all(path,

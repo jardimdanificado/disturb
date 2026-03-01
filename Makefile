@@ -1,34 +1,23 @@
 CC = gcc
-DISABLE_IO ?= 0
-ENABLE_FFI ?= 1
+DISABLE_SYSTEM ?= 0
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 IS_WINDOWS := $(findstring MINGW,$(UNAME_S))
 
 CFLAGS = -O2 -std=c99 -Wall -Wextra -pedantic -Iinclude
+CFLAGS += -DDISTURB_ENABLE_FFI
 LDFLAGS = -lm
 
-ifeq ($(DISABLE_IO),1)
+ifeq ($(DISABLE_SYSTEM),1)
 	CFLAGS += -DDISTURB_EMBEDDED
-override ENABLE_FFI = 0
 endif
 
-ifeq ($(ENABLE_FFI),1)
-	CFLAGS += -DDISTURB_ENABLE_FFI
-endif
-
-ifeq ($(DISABLE_IO),0)
+ifeq ($(DISABLE_SYSTEM),0)
 	CFLAGS += -DDISTURB_ENABLE_IO
-endif
-
-
-ifeq ($(ENABLE_FFI),1)
-	ifeq ($(DISABLE_IO),0)
 	CFLAGS += -DDISTURB_ENABLE_FFI_CALLS
 	LDFLAGS += -lffi
 ifeq ($(IS_WINDOWS),)
 ifneq ($(UNAME_S),Darwin)
 	LDFLAGS += -ldl
-endif
 endif
 endif
 endif

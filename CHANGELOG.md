@@ -6,6 +6,8 @@
 - consolidate `docs/` directory documentation into main `README.md`.
 - simplify build files: remove `libregexp` compilation from Makefile and CMakeLists.txt.
 - new target: make test.
+- unify build toggles into a single `DISABLE_SYSTEM` flag (default `0` = full build).
+- `DISABLE_SYSTEM=1` disables system-dependent features (IO natives, `import`, dynamic FFI calls), while keeping FFI core (`C`, `C.memory`, `C.typedef`, `C.struct`) available.
 
 ## 1.7.3
 - remove native TCC APIs: `C.ffi.cdef`, `C.ffi.compile`, `C.ffi.header`, `C.ffi.eval`.

@@ -282,7 +282,20 @@ static int g_ffi_callback_seq = 1;
 
 static FfiLayoutCacheNode *g_ffi_layout_cache = NULL;
 
-static char *ffi_strdup(const char *s); /* forward decl for typedef registry */
+#ifdef DISTURB_ENABLE_FFI_CALLS
+static char *ffi_strdup(const char *s); /* forward decl for call-signature parser */
+#endif
+
+static char *ffi_strdup_basic(const char *s)
+{
+    if (!s) return NULL;
+    size_t len = strlen(s);
+    char *out = (char*)malloc(len + 1);
+    if (!out) return NULL;
+    memcpy(out, s, len);
+    out[len] = 0;
+    return out;
+}
 
 /* ---- Fase 2: typedef registry ---- */
 typedef struct FfiTypedefNode {
@@ -300,7 +313,7 @@ static void ffi_typedef_register(const char *alias, const char *target, ObjEntry
     while (node) {
         if (strcmp(node->alias, alias) == 0) {
             free(node->target);
-            node->target = target ? ffi_strdup(target) : NULL;
+            node->target = target ? ffi_strdup_basic(target) : NULL;
             node->schema = schema;
             return;
         }
@@ -308,8 +321,8 @@ static void ffi_typedef_register(const char *alias, const char *target, ObjEntry
     }
     node = (FfiTypedefNode*)calloc(1, sizeof(FfiTypedefNode));
     if (!node) return;
-    node->alias = ffi_strdup(alias);
-    node->target = target ? ffi_strdup(target) : NULL;
+    node->alias = ffi_strdup_basic(alias);
+    node->target = target ? ffi_strdup_basic(target) : NULL;
     node->schema = schema;
     node->next = g_ffi_typedef_list;
     g_ffi_typedef_list = node;
@@ -3391,7 +3404,6 @@ static int parse_base_type(const char *name, FfiBase *out)
 }
 #endif
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
 static ObjEntry *ffi_make_int_list(VM *vm, int count)
 {
     ObjEntry *entry = vm_make_int_list(vm, (Int)count);
@@ -3430,6 +3442,7 @@ static void ffi_fill_float_list(ObjEntry *entry, const void *ptr, int count, siz
     }
 }
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
 static int ffi_arg_is_float(const FfiType *t)
 {
     return t->base == FFI_BASE_F32 || t->base == FFI_BASE_F64 || t->base == FFI_BASE_LDOUBLE;
@@ -6332,6 +6345,7 @@ static void native_memory_valid(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, vm_make_int_value(vm, valid ? 1 : 0));
 }
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
 /* 8.1: ffi.global(lib, name, type) — access C global variable via view */
 static void native_ffi_global(VM *vm, List *stack, List *global)
 {
@@ -6446,6 +6460,7 @@ static void native_ffi_global(VM *vm, List *stack, List *global)
     }
     ffi_push_entry(vm, view);
 }
+#endif
 
 /* 6.1: ffi.struct(name, schema) — compile + register globally */
 static void native_ffi_struct(VM *vm, List *stack, List *global)
@@ -6993,8 +7008,10 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
 #endif
     /* Fase 7: ffi.trace */
     ffi_add_module_fn(vm, ffi_entry, "trace", native_ffi_trace);
+#ifdef DISTURB_ENABLE_FFI_CALLS
     /* Fase 8: ffi.global */
     ffi_add_module_fn(vm, ffi_entry, "global", native_ffi_global);
+#endif
 }
 
 void memory_module_install(VM *vm, ObjEntry *memory_entry)

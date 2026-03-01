@@ -38,16 +38,16 @@ jobs:
           tests/run.sh
           tests/run_examples.sh
 
-      - name: Build + tests (DISABLE_IO=1)
+      - name: Build + tests (DISABLE_SYSTEM=1)
         run: |
           make clean
-          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" DISABLE_IO=1
+          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" DISABLE_SYSTEM=1
           BIN=./disturb SKIP_FFI=1 tests/run.sh
 
-      - name: Build + tests (DISABLE_IO=1 + embedded mode)
+      - name: Build + tests (DISABLE_SYSTEM=1 + embedded mode)
         run: |
           make clean
-          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" DISABLE_IO=1
+          make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" DISABLE_SYSTEM=1
           BIN=./disturb SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
 
   windows:
@@ -77,18 +77,18 @@ jobs:
           BIN=./disturb.exe tests/run.sh
           BIN=./disturb.exe tests/run_examples.sh
 
-      - name: Build + tests (DISABLE_IO=1)
+      - name: Build + tests (DISABLE_SYSTEM=1)
         shell: msys2 {0}
         run: |
           make clean
-          make -j2 DISABLE_IO=1
+          make -j2 DISABLE_SYSTEM=1
           BIN=./disturb.exe SKIP_FFI=1 tests/run.sh
 
-      - name: Build + tests (DISABLE_IO=1 + embedded mode)
+      - name: Build + tests (DISABLE_SYSTEM=1 + embedded mode)
         shell: msys2 {0}
         run: |
           make clean
-          make -j2 DISABLE_IO=1
+          make -j2 DISABLE_SYSTEM=1
           BIN=./disturb.exe SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
 
   windows-msvc:
@@ -117,12 +117,12 @@ jobs:
         run: |
           cmake --build build-msvc --config Release -j2
 
-      - name: Configure + Build (Release, DISABLE_IO=ON)
+      - name: Configure + Build (Release, DISABLE_SYSTEM=ON)
         run: |
           cmake -S . -B build-msvc-embedded -A x64 `
             -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
             -DVCPKG_TARGET_TRIPLET=x64-windows `
-            -DDISABLE_IO=ON
+            -DDISABLE_SYSTEM=ON
           cmake --build build-msvc-embedded --config Release -j2
 
       - name: Probe C.ffi.bind availability

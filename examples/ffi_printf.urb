@@ -38,7 +38,7 @@ ffi_bind_all = (path, ...sigs){
 
 // ffi_printf.urb
 // Example of variadic printf via FFI (ffi.open + ffi.sym + ffi.bind)
-// Requires ENABLE_FFI=1 and ENABLE_FFI_CALLS=1.
+// Requires DISABLE_SYSTEM=0.
 
 load_libc = (path){
   return ffi_bind_all(path,

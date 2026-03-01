@@ -9,7 +9,7 @@ This README now includes the full function reference.
 Requirements:
 - `gcc` (or compatible C compiler)
 - `make`
-- `libffi` headers/libs for desktop/default builds with FFI calls (`ENABLE_FFI=1` and `DISABLE_IO=0`)
+- `libffi` headers/libs for default/full builds (`DISABLE_SYSTEM=0`)
 
 Build:
 
@@ -21,24 +21,23 @@ make
 Optional flags:
 
 ```bash
-make DISABLE_IO=1
-make ENABLE_FFI=0
+make DISABLE_SYSTEM=1
 ```
 
 Flag behavior summary:
-- `DISABLE_IO=1`: embedded profile; disables IO natives, dynamic calls, and `import` (also forces `ENABLE_FFI=0`)
-- `ENABLE_FFI=0`: disables `C.ffi` and `C.memory` modules entirely
+- `DISABLE_SYSTEM=0` (default/full): enables IO natives, `import`, and dynamic FFI calls (`C.ffi.open`/`C.ffi.sym`/`C.ffi.bind`/`C.ffi.callback`)
+- `DISABLE_SYSTEM=1` (embedded): disables features that depend on OS/file-system integration (IO natives, `import`, dynamic FFI calls), while keeping FFI core (`C`, `C.memory`, `C.typedef`/`C.struct`) available
 
 MSVC build (Windows):
 
 ```powershell
-cmake -S . -B build-msvc -A x64 -DDISABLE_IO=1
+cmake -S . -B build-msvc -A x64 -DDISABLE_SYSTEM=1
 cmake --build build-msvc --config Release
 .\build-msvc\Release\disturb.exe --help
 ```
 
 Notes:
-- The MSVC embedded profile can be validated with `DISABLE_IO=1` (FFI core remains enabled).
+- The MSVC embedded profile can be validated with `DISABLE_SYSTEM=1` (FFI core remains enabled).
 - To enable dynamic calls (`C.ffi.open`/`C.ffi.sym`/`C.ffi.bind`) under MSVC, provide a `libffi` build (headers + `.lib`/`.dll`) and configure CMake paths accordingly.
 
 ## CLI
@@ -303,7 +302,7 @@ Disturb installs common functions in `global.common`, so they are callable as me
 - `toFloat`
 - `gc`
 
-### IO (when `DISABLE_IO=0`)
+### IO (when `DISABLE_SYSTEM=0`)
 - `read(path)`
 - `write(path, data)`
 
@@ -440,7 +439,7 @@ Runtime C integration is exposed under global `C`:
 - memory/layout/view APIs: `C.memory.*`
 - runtime/platform info: `C.info()`
 
-Dynamic foreign calls (`C.ffi.open`, `C.ffi.sym`, `C.ffi.bind`) require `ENABLE_FFI=1` and `DISABLE_IO=0`.
+Dynamic foreign calls (`C.ffi.open`, `C.ffi.sym`, `C.ffi.bind`) require `DISABLE_SYSTEM=0`.
 
 Main API:
 - `C.info()`
@@ -603,7 +602,7 @@ Return conventions:
 - Strings are converted byte-by-byte to float values.
 - Errors if target is not int-based list.
 
-## IO (requires `DISABLE_IO=0`)
+## IO (requires `DISABLE_SYSTEM=0`)
 
 ### `read(path)`
 - `path` must be string.
