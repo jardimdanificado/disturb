@@ -5,12 +5,20 @@ on:
 
 jobs:
   unix:
-    name: Unix (${{ matrix.os }})
+    name: Unix (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - name: Linux x64
+            os: ubuntu-latest
+          - name: Linux ARM64
+            os: ubuntu-24.04-arm
+          - name: macOS Intel x64
+            os: macos-13
+          - name: macOS ARM64
+            os: macos-14
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -51,7 +59,7 @@ jobs:
           BIN=./disturb SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
 
   windows:
-    name: Windows (MSYS2/MinGW64)
+    name: Windows x64 (MSYS2/MinGW64)
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -92,7 +100,7 @@ jobs:
           BIN=./disturb.exe SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
 
   windows-msvc:
-    name: Windows (MSVC)
+    name: Windows x64 (MSVC)
     runs-on: windows-latest
     steps:
       - name: Checkout
