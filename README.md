@@ -13,7 +13,6 @@ Requirements:
 - `gcc` (or compatible C compiler)
 - `make`
 - `libffi` headers/libs for desktop/default builds with FFI calls (`ENABLE_FFI=1` and `DISABLE_IO=0`)
-- optional: `libtcc` (or vendored TinyCC in `libs/tinycc`) for TCC-backed APIs (`ENABLE_TCC=1`)
 
 Build:
 
@@ -27,13 +26,11 @@ Optional flags:
 ```bash
 make DISABLE_IO=1
 make ENABLE_FFI=0
-make ENABLE_TCC=1
 ```
 
 Flag behavior summary:
-- `DISABLE_IO=1`: embedded profile; disables IO natives, dynamic calls, and `import` (also forces `ENABLE_FFI=0`, `ENABLE_TCC=0`)
+- `DISABLE_IO=1`: embedded profile; disables IO natives, dynamic calls, and `import` (also forces `ENABLE_FFI=0`)
 - `ENABLE_FFI=0`: disables `C.ffi` and `C.memory` modules entirely
-- `ENABLE_TCC=1`: enables TCC-backed APIs (`C.ffi.cdef`, `C.ffi.compile`, `C.ffi.header`, `C.ffi.eval`)
 
 MSVC build (Windows):
 
@@ -465,7 +462,6 @@ Main API:
 - `C.ffi.lib(path)`
 - `C.ffi.global(lib, name, typeOrSchema)`
 - `C.ffi.trace()` / `C.ffi.trace(0|1)`
-- `C.ffi.cdef(cSource)` / `C.ffi.compile(cSource)` / `C.ffi.header(path)` / `C.ffi.eval(expr)` (require `ENABLE_TCC=1`)
 - `C.memory.compile(schema)`
 - `C.memory.new(schemaOrLayout)`
 - `C.memory.struct(schemaOrLayout[, init])`

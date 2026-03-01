@@ -1,7 +1,7 @@
-// TinyCC module example.
+// TinyCC module example - Using libs/tcc.urb
 // Requires: import system + FFI + libtcc available in the dynamic loader path.
 
-tcc = import("libs/tcc"),
+tcc = import("libs/tcc.urb"),
 mod = tcc.auto(),
 
 if (mod == null) {
@@ -9,28 +9,52 @@ if (mod == null) {
   return 0,
 }
 
-ctx = mod.new(),
-if (ctx == null) {
-  println("failed to create TCC state"),
+// Example 1: Simple compile and bind
+println("=== Example 1: compile + bind ==="),
+lib = mod.compile("int add(int a, int b) { return a + b; }"),
+if (lib == null) {
+  println("compile failed"),
   return 0,
 }
 
-ctx.setOutputType(mod.OUTPUT_MEMORY),
-src = "int add(int a, int b) { return a + b, }",
-
-rc_compile = ctx.compile(src),
-rc_reloc = ctx.relocate(),
-add_ptr = ctx.getSymbol("add"),
-
-if (rc_compile != 0 || rc_reloc != 0 || add_ptr == 0 || add_ptr == null) {
-  println("tcc compile/relocate failed"),
-  println(rc_compile),
-  println(rc_reloc),
-  ctx.close(),
+add_ptr = lib.sym("add"),
+if (add_ptr == null || add_ptr == 0) {
+  println("symbol lookup failed"),
+  lib.close(),
   return 0,
 }
 
-add = ffi.bind(add_ptr, "i32 add(i32, i32)"),
-println(add(20, 22)),
+add = C.ffi.bind(add_ptr, "i32 add(i32, i32)"),
+result = add(20, 22),
+println("add(20, 22) = " + result),
+lib.close(),
 
-ctx.close(),
+// Example 2: Using prelude (cdef)
+println("\n=== Example 2: cdef + compile ==="),
+mod.cdef("typedef int myint;"),
+mod.cdef("typedef struct { int x; int y; } Point;"),
+
+lib2 = mod.compile("myint multiply(myint a, myint b) { return a * b; }"),
+if (lib2 == null) {
+  println("compile2 failed"),
+  return 0,
+}
+
+multiply = C.ffi.bind(lib2.sym("multiply"), "i32 multiply(i32, i32)"),
+result2 = multiply(7, 6),
+println("multiply(7, 6) = " + result2),
+lib2.close(),
+
+// Example 3: eval
+println("\n=== Example 3: eval ==="),
+size = mod.eval("sizeof(int)"),
+if (size != null) {
+  println("sizeof(int) = " + size),
+}
+
+expr_result = mod.eval("2 + 3 * 4"),
+if (expr_result != null) {
+  println("2 + 3 * 4 = " + expr_result),
+}
+
+println("\nAll examples completed successfully!"),

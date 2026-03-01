@@ -12,10 +12,6 @@
 #include <wchar.h>
 #include <stdarg.h>
 
-#ifdef DISTURB_ENABLE_TCC
-#include <libtcc.h>
-#endif
-
 #if defined(__GNUC__) || defined(__clang__)
 #define UNUSED_FN __attribute__((unused))
 #else
@@ -272,11 +268,8 @@ enum {
 typedef struct {
     uint32_t magic;
     int refcount;
-    int kind; /* 0 = dlopen handle, 1 = TCC in-memory module */
+    int kind; /* 0 = dlopen handle */
     void *handle;
-#ifdef DISTURB_ENABLE_TCC
-    TCCState *tcc_state;
-#endif
 } FfiLibHandle;
 #endif
 
@@ -288,19 +281,6 @@ static int g_ffi_callback_seq = 1;
 #endif
 
 static FfiLayoutCacheNode *g_ffi_layout_cache = NULL;
-
-#ifdef DISTURB_ENABLE_TCC
-static char *g_ffi_tcc_prelude = NULL;
-static size_t g_ffi_tcc_prelude_len = 0;
-
-static void ffi_tcc_configure_state(TCCState *s)
-{
-    if (!s) return;
-    /* Vendored TinyCC build artifacts (used in this project). */
-    tcc_set_lib_path(s, "libs/tinycc");
-    tcc_add_sysinclude_path(s, "libs/tinycc/include");
-}
-#endif
 
 static char *ffi_strdup(const char *s); /* forward decl for typedef registry */
 
@@ -2553,20 +2533,6 @@ static FfiLibHandle *ffi_lib_handle_new(void *handle)
     return h;
 }
 
-#ifdef DISTURB_ENABLE_TCC
-static FfiLibHandle *ffi_lib_handle_new_tcc(TCCState *state)
-{
-    FfiLibHandle *h = (FfiLibHandle*)calloc(1, sizeof(FfiLibHandle));
-    if (!h) return NULL;
-    h->magic = FFI_LIB_HANDLE_MAGIC;
-    h->refcount = 1;
-    h->kind = 1;
-    h->handle = NULL;
-    h->tcc_state = state;
-    return h;
-}
-#endif
-
 static int ffi_lib_handle_close(FfiLibHandle *h)
 {
     if (!h || h->magic != FFI_LIB_HANDLE_MAGIC) return 0;
@@ -2577,15 +2543,6 @@ static int ffi_lib_handle_close(FfiLibHandle *h)
         }
         return 1;
     }
-#ifdef DISTURB_ENABLE_TCC
-    if (h->kind == 1) {
-        if (h->tcc_state) {
-            tcc_delete(h->tcc_state);
-            h->tcc_state = NULL;
-        }
-        return 1;
-    }
-#endif
     return 1;
 }
 
@@ -2596,12 +2553,6 @@ static void *ffi_lib_handle_sym(FfiLibHandle *h, const char *name)
         if (!h->handle) return NULL;
         return ffi_dlsym(h->handle, name);
     }
-#ifdef DISTURB_ENABLE_TCC
-    if (h->kind == 1) {
-        if (!h->tcc_state) return NULL;
-        return tcc_get_symbol(h->tcc_state, name);
-    }
-#endif
     return NULL;
 }
 
@@ -5483,288 +5434,6 @@ void native_ffi_compile(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, entry);
 }
 
-UNUSED_FN static void ffi_tcc_require_or_todo(const char *api_name)
-{
-#ifdef DISTURB_ENABLE_TCC
-    fprintf(stderr, "ffi.%s unavailable: build with DISTURB_ENABLE_FFI_CALLS for callable C modules\n", api_name);
-#else
-    fprintf(stderr, "ffi.%s requires TCC (build with ENABLE_TCC=1)\n", api_name);
-#endif
-}
-
-#ifdef DISTURB_ENABLE_TCC
-static int ffi_tcc_set_error_copy(char *dst, size_t cap, const char *msg)
-{
-    if (!dst || cap == 0 || !msg) return 0;
-    size_t n = strlen(msg);
-    if (n >= cap) n = cap - 1;
-    memcpy(dst, msg, n);
-    dst[n] = 0;
-    return 1;
-}
-
-static int ffi_tcc_prelude_append(const char *src, size_t len)
-{
-    if (!src || len == 0) return 1;
-    size_t old_len = g_ffi_tcc_prelude_len;
-    size_t add = len + 1; /* newline */
-    char *next = (char*)realloc(g_ffi_tcc_prelude, old_len + add + 1);
-    if (!next) return 0;
-    g_ffi_tcc_prelude = next;
-    memcpy(g_ffi_tcc_prelude + old_len, src, len);
-    g_ffi_tcc_prelude[old_len + len] = '\n';
-    g_ffi_tcc_prelude[old_len + len + 1] = 0;
-    g_ffi_tcc_prelude_len = old_len + len + 1;
-    return 1;
-}
-
-static char *ffi_tcc_join_prelude(const char *src)
-{
-    if (!src) return NULL;
-    size_t src_len = strlen(src);
-    size_t pre_len = (g_ffi_tcc_prelude && g_ffi_tcc_prelude_len > 0) ? g_ffi_tcc_prelude_len : 0;
-    char *buf = (char*)malloc(pre_len + src_len + 1);
-    if (!buf) return NULL;
-    if (pre_len > 0) memcpy(buf, g_ffi_tcc_prelude, pre_len);
-    memcpy(buf + pre_len, src, src_len);
-    buf[pre_len + src_len] = 0;
-    return buf;
-}
-
-static int ffi_tcc_compile_module(const char *src, TCCState **out_state,
-                                  char *err, size_t err_cap)
-{
-    if (out_state) *out_state = NULL;
-    if (!src || !out_state) {
-        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: invalid arguments");
-        return 0;
-    }
-
-    TCCState *s = tcc_new();
-    if (!s) {
-        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: failed to create TCC state");
-        return 0;
-    }
-    ffi_tcc_configure_state(s);
-    tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
-
-    char *unit = ffi_tcc_join_prelude(src);
-    if (!unit) {
-        tcc_delete(s);
-        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: out of memory");
-        return 0;
-    }
-
-    if (tcc_compile_string(s, unit) < 0) {
-        free(unit);
-        tcc_delete(s);
-        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: compilation failed");
-        return 0;
-    }
-    free(unit);
-
-    if (tcc_relocate(s) < 0) {
-        tcc_delete(s);
-        ffi_tcc_set_error_copy(err, err_cap, "ffi.compile: relocation failed");
-        return 0;
-    }
-
-    *out_state = s;
-    return 1;
-}
-#endif
-
-/* TCC-dependent APIs (Fase 2.4 / 6.2 / 9.x) */
-static void native_ffi_cdef(VM *vm, List *stack, List *global)
-{
-    (void)global;
-    uint32_t argc = ffi_native_argc(vm);
-    if (argc < 1) {
-        fprintf(stderr, "ffi.cdef expects C source string\n");
-        return;
-    }
-    ObjEntry *src_entry = ffi_native_arg(stack, argc, 0);
-    const char *src = NULL;
-    if (!entry_as_cstr(src_entry, &src) || !src) {
-        fprintf(stderr, "ffi.cdef expects C source string\n");
-        return;
-    }
-#ifndef DISTURB_ENABLE_TCC
-    ffi_tcc_require_or_todo("cdef");
-    return;
-#else
-    TCCState *s = NULL;
-    if ((s = tcc_new()) == NULL) {
-        fprintf(stderr, "ffi.cdef: failed to create TCC state\n");
-        return;
-    }
-    ffi_tcc_configure_state(s);
-    tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
-    char *unit = ffi_tcc_join_prelude(src);
-    if (!unit) {
-        tcc_delete(s);
-        fprintf(stderr, "ffi.cdef: out of memory\n");
-        return;
-    }
-    if (tcc_compile_string(s, unit) < 0) {
-        free(unit);
-        tcc_delete(s);
-        fprintf(stderr, "ffi.cdef: compilation failed\n");
-        return;
-    }
-    free(unit);
-    tcc_delete(s);
-
-    if (!ffi_tcc_prelude_append(src, strlen(src))) {
-        fprintf(stderr, "ffi.cdef: out of memory\n");
-        return;
-    }
-    ffi_push_entry(vm, vm->null_entry);
-#endif
-}
-
-static void native_ffi_tcc_compile(VM *vm, List *stack, List *global)
-{
-    (void)global;
-    uint32_t argc = ffi_native_argc(vm);
-    if (argc < 1) {
-        fprintf(stderr, "ffi.compile expects C source string\n");
-        return;
-    }
-    ObjEntry *src_entry = ffi_native_arg(stack, argc, 0);
-    const char *src = NULL;
-    if (!entry_as_cstr(src_entry, &src) || !src) {
-        fprintf(stderr, "ffi.compile expects C source string\n");
-        return;
-    }
-
-#if !defined(DISTURB_ENABLE_TCC) || !defined(DISTURB_ENABLE_FFI_CALLS)
-    ffi_tcc_require_or_todo("compile");
-    return;
-#else
-    char err[160] = {0};
-    TCCState *state = NULL;
-    if (!ffi_tcc_compile_module(src, &state, err, sizeof(err))) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi.compile failed");
-        return;
-    }
-
-    FfiLibHandle *h = ffi_lib_handle_new_tcc(state);
-    if (!h) {
-        tcc_delete(state);
-        fprintf(stderr, "ffi.compile: out of memory\n");
-        return;
-    }
-    ObjEntry *entry = vm_make_native_entry_data(vm, NULL, native_ffi_handle_noop, h,
-                                                ffi_lib_handle_free, ffi_lib_handle_clone);
-    if (!entry) {
-        ffi_lib_handle_free(h);
-        fprintf(stderr, "ffi.compile: out of memory\n");
-        return;
-    }
-    ffi_push_entry(vm, entry);
-#endif
-}
-
-static void native_ffi_header(VM *vm, List *stack, List *global)
-{
-    (void)global;
-    uint32_t argc = ffi_native_argc(vm);
-    if (argc < 1) {
-        fprintf(stderr, "ffi.header expects header path\n");
-        return;
-    }
-    ObjEntry *path_entry = ffi_native_arg(stack, argc, 0);
-    const char *path = NULL;
-    if (!entry_as_cstr(path_entry, &path) || !path || !path[0]) {
-        fprintf(stderr, "ffi.header expects header path\n");
-        return;
-    }
-#ifndef DISTURB_ENABLE_TCC
-    ffi_tcc_require_or_todo("header");
-    return;
-#else
-    char snippet[512];
-    int n = snprintf(snippet, sizeof(snippet), "#include \"%s\"", path);
-    if (n <= 0 || (size_t)n >= sizeof(snippet)) {
-        fprintf(stderr, "ffi.header: path too long\n");
-        return;
-    }
-
-    TCCState *s = tcc_new();
-    if (!s) {
-        fprintf(stderr, "ffi.header: failed to create TCC state\n");
-        return;
-    }
-    ffi_tcc_configure_state(s);
-    tcc_set_output_type(s, TCC_OUTPUT_MEMORY);
-    char *unit = ffi_tcc_join_prelude(snippet);
-    if (!unit) {
-        tcc_delete(s);
-        fprintf(stderr, "ffi.header: out of memory\n");
-        return;
-    }
-    if (tcc_compile_string(s, unit) < 0) {
-        free(unit);
-        tcc_delete(s);
-        fprintf(stderr, "ffi.header: compilation failed\n");
-        return;
-    }
-    free(unit);
-    tcc_delete(s);
-
-    if (!ffi_tcc_prelude_append(snippet, strlen(snippet))) {
-        fprintf(stderr, "ffi.header: out of memory\n");
-        return;
-    }
-    ffi_push_entry(vm, vm->null_entry);
-#endif
-}
-
-static void native_ffi_eval(VM *vm, List *stack, List *global)
-{
-    (void)global;
-    uint32_t argc = ffi_native_argc(vm);
-    if (argc < 1) {
-        fprintf(stderr, "ffi.eval expects C expression string\n");
-        return;
-    }
-    ObjEntry *expr_entry = ffi_native_arg(stack, argc, 0);
-    const char *expr = NULL;
-    if (!entry_as_cstr(expr_entry, &expr) || !expr || !expr[0]) {
-        fprintf(stderr, "ffi.eval expects C expression string\n");
-        return;
-    }
-#ifndef DISTURB_ENABLE_TCC
-    ffi_tcc_require_or_todo("eval");
-    return;
-#else
-    char src[1024];
-    int n = snprintf(src, sizeof(src), "double __disturb_eval_expr(void) { return (double)(%s); }", expr);
-    if (n <= 0 || (size_t)n >= sizeof(src)) {
-        fprintf(stderr, "ffi.eval: expression too long\n");
-        return;
-    }
-
-    char err[160] = {0};
-    TCCState *state = NULL;
-    if (!ffi_tcc_compile_module(src, &state, err, sizeof(err))) {
-        fprintf(stderr, "%s\n", err[0] ? err : "ffi.eval failed");
-        return;
-    }
-
-    double (*fn_eval)(void) = (double(*)(void))tcc_get_symbol(state, "__disturb_eval_expr");
-    if (!fn_eval) {
-        tcc_delete(state);
-        fprintf(stderr, "ffi.eval: symbol resolution failed\n");
-        return;
-    }
-    double result = fn_eval();
-    tcc_delete(state);
-    ffi_push_entry(vm, vm_make_float_value(vm, (Float)result));
-#endif
-}
-
 void native_ffi_new(VM *vm, List *stack, List *global)
 {
     (void)global;
@@ -7326,11 +6995,6 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
     ffi_add_module_fn(vm, ffi_entry, "trace", native_ffi_trace);
     /* Fase 8: ffi.global */
     ffi_add_module_fn(vm, ffi_entry, "global", native_ffi_global);
-    /* TCC-dependent APIs are always registered; they emit clear error when unavailable */
-    ffi_add_module_fn(vm, ffi_entry, "cdef", native_ffi_cdef);
-    ffi_add_module_fn(vm, ffi_entry, "compile", native_ffi_tcc_compile);
-    ffi_add_module_fn(vm, ffi_entry, "header", native_ffi_header);
-    ffi_add_module_fn(vm, ffi_entry, "eval", native_ffi_eval);
 }
 
 void memory_module_install(VM *vm, ObjEntry *memory_entry)

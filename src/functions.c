@@ -1822,12 +1822,6 @@ static void native_runtime_info(VM *vm, List *stack, List *global)
         vm_object_set_by_key(vm, table, "endian", 6, vm_make_bytes_value(vm, endian, strlen(endian)));
     }
 
-#ifdef DISTURB_ENABLE_TCC
-    vm_object_set_by_key(vm, table, "tcc", 3, vm_make_int_value(vm, 1));
-#else
-    vm_object_set_by_key(vm, table, "tcc", 3, vm_make_int_value(vm, 0));
-#endif
-
 #ifdef DISTURB_ENABLE_FFI_CALLS
     vm_object_set_by_key(vm, table, "ffi_calls", 9, vm_make_int_value(vm, 1));
 #else

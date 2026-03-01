@@ -4,7 +4,6 @@ project(disturb C)
 
 option(DISABLE_IO "Disable IO natives and dynamic FFI calls (embedded profile)" OFF)
 option(ENABLE_FFI "Enable Disturb ffi/memory modules" ON)
-option(ENABLE_TCC "Enable libtcc integration for TCC-dependent ffi APIs" OFF)
 
 set(DISTURB_SOURCES
   libs/libregexp/cutils.c
@@ -52,7 +51,6 @@ endif()
 if(DISABLE_IO)
   target_compile_definitions(disturb PRIVATE DISTURB_EMBEDDED)
   set(ENABLE_FFI OFF CACHE BOOL "" FORCE)
-  set(ENABLE_TCC OFF CACHE BOOL "" FORCE)
 endif()
 
 if(ENABLE_FFI)
@@ -101,26 +99,6 @@ if(ENABLE_FFI)
     endif()
   endif()
 
-  if(ENABLE_TCC)
-    set(TCC_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libs/tinycc")
-    find_path(TCC_INCLUDE_DIR libtcc.h
-      HINTS "${TCC_VENDOR_DIR}"
-    )
-    find_library(TCC_LIBRARY NAMES tcc libtcc
-      HINTS "${TCC_VENDOR_DIR}" "${TCC_VENDOR_DIR}/lib"
-    )
-    if(NOT TCC_INCLUDE_DIR OR NOT TCC_LIBRARY)
-      message(FATAL_ERROR "ENABLE_TCC=ON requires libtcc (libtcc.h + tcc/libtcc library).")
-    endif()
-    target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_TCC)
-    target_include_directories(disturb PRIVATE ${TCC_INCLUDE_DIR})
-    target_link_libraries(disturb PRIVATE ${TCC_LIBRARY})
-    if(UNIX)
-      get_filename_component(TCC_LIBRARY_DIR ${TCC_LIBRARY} DIRECTORY)
-      set_target_properties(disturb PROPERTIES BUILD_RPATH "${TCC_LIBRARY_DIR}")
-    endif()
-  endif()
-endif()
 
 if(UNIX AND NOT APPLE)
   if(NOT DISABLE_IO)

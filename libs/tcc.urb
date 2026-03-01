@@ -6,16 +6,16 @@ return {
 
   _load_api = (lib_path){
     ffi_bind_all = (path, ...sigs){
-      h = ffi.open(path),
+      h = C.ffi.open(path),
       if (h == null) { return null, }
       api = { __lib = h },
       each(sig in sigs) {
         head = sig.split("(")[0].trim(),
         parts = head.split(" "),
         name = (parts[parts.size - 1].split("!")[0] + ""),
-        ptr = ffi.sym(h, name),
+        ptr = C.ffi.sym(h, name),
         if (ptr == null) { return null, }
-        api[name] = ffi.bind(ptr, sig),
+        api[name] = C.ffi.bind(ptr, sig),
       }
       return api,
     },
@@ -45,12 +45,86 @@ return {
     return {
       path = resolved_path,
       _api = api,
+      _prelude = "",
 
       OUTPUT_MEMORY = 1,
       OUTPUT_EXE = 2,
       OUTPUT_OBJ = 3,
       OUTPUT_DLL = 4,
       OUTPUT_PREPROCESS = 5,
+
+      // Adiciona declarações C que serão incluídas em compilações futuras
+      cdef = (src){
+        if (this._prelude.size > 0) {
+          this._prelude = this._prelude + "\n" + src,
+        } else {
+          this._prelude = src,
+        }
+        return null,
+      },
+
+      // Compila código C e retorna um handle que pode ser usado com ffi.sym/ffi.bind
+      compile = (src){
+        ctx = this.new(),
+        if (ctx == null) {
+          return null,
+        }
+        ctx.setOutputType(this.OUTPUT_MEMORY),
+        
+        full_src = src,
+        if (this._prelude.size > 0) {
+          full_src = this._prelude + "\n" + src,
+        }
+        
+        rc = ctx.compile(full_src),
+        if (rc != 0) {
+          ctx.close(),
+          return null,
+        }
+        
+        rc = ctx.relocate(),
+        if (rc != 0) {
+          ctx.close(),
+          return null,
+        }
+        
+        // Retorna um objeto handle compatível com ffi.sym e ffi.bind
+        return {
+          _ctx = ctx,
+          _module = this,
+          
+          // Compatível com ffi.sym
+          sym = (name){
+            return this._ctx.getSymbol(name),
+          },
+          
+          // Compatível com ffi.close
+          close = (){
+            this._ctx.close(),
+          }
+        },
+      },
+
+      // Avalia uma expressão C e retorna o resultado como número
+      eval = (expr){
+        src = "double __urb_eval(void) { return (double)(" + expr + "); }",
+        handle = this.compile(src),
+        if (handle == null) {
+          return null,
+        }
+        
+        fn_ptr = handle.sym("__urb_eval"),
+        if (fn_ptr == null || fn_ptr == 0) {
+          handle.close(),
+          return null,
+        }
+        
+        fn = C.ffi.bind(fn_ptr, "f64 __urb_eval()"),
+        result = fn(),
+        handle.close(),
+        
+        return result,
+      },
 
       new = (){
         ptr = this._api.tcc_new(),

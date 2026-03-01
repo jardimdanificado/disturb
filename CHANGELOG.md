@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.3
+- remove native TCC APIs: `C.ffi.cdef`, `C.ffi.compile`, `C.ffi.header`, `C.ffi.eval`.
+- enhanced `libs/tcc.urb`.
+- remove `ENABLE_TCC` build flag (Makefile, CMakeLists.txt) and `info.tcc` from `C.info()` runtime.
+- remove deprecated test cases `ffi_tcc_unavailable.urb`, `ffi_tcc_compile_eval.urb`.
+
 ## 1.7.2
 - vectorized binary operations now use `max(left, right)` length instead of `min`: extra elements from the longer side are preserved in the result.
 - for arithmetic (`+`, `-`, `*`, `/`, `%`) and bitwise (`&`, `|`, `^`, `<<`, `>>`), extra elements (where the shorter side has no pair) are copied as-is into the output without applying the operation.

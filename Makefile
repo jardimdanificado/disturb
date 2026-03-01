@@ -1,8 +1,6 @@
 CC = gcc
 DISABLE_IO ?= 0
 ENABLE_FFI ?= 1
-ENABLE_TCC ?= 0
-TCC_VENDOR_DIR := libs/tinycc
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 IS_WINDOWS := $(findstring MINGW,$(UNAME_S))
 
@@ -13,20 +11,10 @@ LDFLAGS = -lm
 ifeq ($(DISABLE_IO),1)
 	CFLAGS += -DDISTURB_EMBEDDED
 override ENABLE_FFI = 0
-override ENABLE_TCC = 0
 endif
 
 ifeq ($(ENABLE_FFI),1)
 	CFLAGS += -DDISTURB_ENABLE_FFI
-ifeq ($(ENABLE_TCC),1)
-	CFLAGS += -DDISTURB_ENABLE_TCC
-	ifneq (,$(wildcard $(TCC_VENDOR_DIR)/libtcc.h))
-		CFLAGS += -I$(TCC_VENDOR_DIR)
-		LDFLAGS += -L$(TCC_VENDOR_DIR) -Wl,-rpath,$(CURDIR)/$(TCC_VENDOR_DIR) -ltcc
-	else
-		LDFLAGS += -ltcc
-	endif
-endif
 endif
 
 ifeq ($(DISABLE_IO),0)

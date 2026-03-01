@@ -213,8 +213,6 @@ else
       run_ffi_case ffi_global
       run_ffi_case ffi_media
       run_ffi_case ffi_baixa
-      run_ffi_case ffi_tcc_unavailable
-      run_ffi_case ffi_tcc_compile_eval
     else
       echo "gcc not found, skipping ffi native shared-library tests"
     fi

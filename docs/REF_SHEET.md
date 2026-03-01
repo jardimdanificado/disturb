@@ -167,8 +167,7 @@ Flags:
 - Dynamic FFI calls: `C.ffi.open`, `C.ffi.sym`, `C.ffi.bind`, `C.ffi.close`, `C.ffi.auto`, `C.ffi.lib`
 - Memory/layout: `C.memory.new`, `C.memory.free`, `C.memory.view`, `C.memory.viewArray`, `C.memory.sizeof`, `C.memory.offsetof`
 - Pointer/memory ops: `C.memory.read`, `C.memory.write`, `C.memory.copy`, `C.memory.move`, `C.memory.zero`, `C.memory.offset`, `C.memory.cast`, `C.memory.deref`, `C.memory.valid`
-- Runtime info: `C.info()` (`os`, `arch`, `sizeof_*`, `endian`, `tcc`, `ffi_calls`)
-- Optional TCC APIs (build with `ENABLE_TCC=1`): `C.ffi.cdef`, `C.ffi.compile`, `C.ffi.header`, `C.ffi.eval`
+- Runtime info: `C.info()` (`os`, `arch`, `sizeof_*`, `endian`, `ffi_calls`)
 
 ## Script Args
 

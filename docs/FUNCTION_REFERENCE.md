@@ -312,7 +312,6 @@ Primary APIs used by examples/tests:
 - `C.ffi.auto(libOrProxy, sig)` / `C.ffi.lib(path)`
 - `C.ffi.global(lib, name, typeOrSchema)`
 - `C.ffi.trace()` / `C.ffi.trace(0|1)`
-- `C.ffi.cdef(cSource)` / `C.ffi.compile(cSource)` / `C.ffi.header(path)` / `C.ffi.eval(expr)` (require `ENABLE_TCC=1`)
 - `C.memory.compile(schema)`
 - `C.memory.new(schemaOrLayout)` (allocates zeroed struct memory and returns owned pointer handle)
 - `C.memory.struct(schemaOrLayout[, init])`
