@@ -6,9 +6,6 @@ option(DISABLE_IO "Disable IO natives and dynamic FFI calls (embedded profile)" 
 option(ENABLE_FFI "Enable Disturb ffi/memory modules" ON)
 
 set(DISTURB_SOURCES
-  libs/libregexp/cutils.c
-  libs/libregexp/libunicode.c
-  libs/libregexp/libregexp.c
   src/vm.c
   src/bytecode.c
   src/syntax.c
@@ -22,8 +19,6 @@ add_executable(disturb ${DISTURB_SOURCES})
 
 target_include_directories(disturb PRIVATE
   include
-  libs/libregexp
-  libs
 )
 
 set_property(TARGET disturb PROPERTY C_STANDARD 11)
@@ -36,12 +31,6 @@ if(MSVC)
   target_compile_definitions(disturb PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
   target_compile_options(disturb PRIVATE -O2 -Wall -Wextra -pedantic)
-  set_source_files_properties(
-    libs/libregexp/cutils.c
-    libs/libregexp/libunicode.c
-    libs/libregexp/libregexp.c
-    PROPERTIES COMPILE_OPTIONS "-Wno-unused-parameter;-Wno-sign-compare;-Wno-pedantic"
-  )
 endif()
 
 if(NOT DISABLE_IO)

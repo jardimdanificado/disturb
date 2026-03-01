@@ -1,7 +1,7 @@
-// TinyCC module example - Using libs/tcc.urb
+// TinyCC module example - Using examples/libs/tcc.urb
 // Requires: import system + FFI + libtcc available in the dynamic loader path.
 
-tcc = import("libs/tcc.urb"),
+tcc = import("examples/libs/tcc.urb"),
 mod = tcc.auto(),
 
 if (mod == null) {

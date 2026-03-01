@@ -3264,7 +3264,6 @@ static int source_has_compiletime_papagaio_decl(const char *masked_src)
 {
     if (!masked_src) return 0;
     if (strstr(masked_src, "$pattern{")) return 1;
-    if (strstr(masked_src, "$regex")) return 1;
     if (strstr(masked_src, "$eval{")) return 1;
     return 0;
 }
@@ -3311,15 +3310,6 @@ static int parse_decl_span(const char *src, size_t n, size_t pos, size_t *out_en
     if (i + 5 <= n && memcmp(src + i, "$eval", 5) == 0) {
         i += 5;
         while (i < n && isspace((unsigned char)src[i])) i++;
-        if (i >= n || src[i] != '{') return 0;
-        if (!parse_brace_block_span(src, n, i, &i)) return 0;
-        if (out_end) *out_end = i;
-        return 1;
-    }
-
-    if (i + 6 <= n && memcmp(src + i, "$regex", 6) == 0) {
-        i += 6;
-        while (i < n && src[i] != '{' && src[i] != '\n') i++;
         if (i >= n || src[i] != '{') return 0;
         if (!parse_brace_block_span(src, n, i, &i)) return 0;
         if (out_end) *out_end = i;

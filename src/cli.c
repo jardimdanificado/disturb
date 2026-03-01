@@ -91,7 +91,7 @@ static void print_help(void)
     puts("  disturb --help");
     puts("");
     puts("notes:");
-    puts("  asm/disasm are available in example/asm_lib.urb.");
+    puts("  asm/disasm are available in examples/asm_lib.urb.");
 }
 
 static void repl_update_state(const char *line, int *depth, int *in_single, int *in_double, int *escape)

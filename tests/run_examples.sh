@@ -11,7 +11,7 @@ fi
 ok=0
 fail=0
 
-for src in $(find example -type f -name '*.urb' | sort); do
+for src in $(find examples -type f -name '*.urb' | sort); do
   echo "example: $src"
   if "$BIN" "$src" >/tmp/disturb_example.out 2>/tmp/disturb_example.err; then
     ok=$((ok + 1))

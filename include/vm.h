@@ -9,13 +9,11 @@
 #include <stdbool.h>
 #include <ctype.h>
 
-#include "../libs/urb.h"
+#include "urb.h"
 
 #undef PANIC
 
 #include "bytecode.h"
-
-#define DISTURB_VERSION "0.18.0"
 
 #define PANIC(message) do {\
         fprintf(stderr, "DISTURB ERROR:" message "\n");\

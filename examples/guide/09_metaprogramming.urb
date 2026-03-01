@@ -12,8 +12,8 @@ println(emit(bytecode)),
 // evalBytecode() executes bytecode bytes.
 evalBytecode(bytecode),
 
-// asm()/disasm() are provided by example/asm_lib.urb.
-eval(read("example/asm_lib.urb")),
+// asm()/disasm() are provided by examples/asm_lib.urb.
+eval(read("examples/asm_lib.urb")),
 asm_text = "PUSH_INT 1\nPUSH_INT 2\nBUILD_INT 2\n",
 asm_bytes = asm(asm_text),
 println(disasm(asm_bytes)),

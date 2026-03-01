@@ -46,29 +46,6 @@ enum {
     INTERN_TABLE_INIT_CAP = 2048
 };
 
-int lre_check_stack_overflow(void *opaque, size_t alloca_size)
-{
-    (void)opaque;
-    (void)alloca_size;
-    return 0;
-}
-
-int lre_check_timeout(void *opaque)
-{
-    (void)opaque;
-    return 0;
-}
-
-void *lre_realloc(void *opaque, void *ptr, size_t size)
-{
-    (void)opaque;
-    if (!size) {
-        free(ptr);
-        return NULL;
-    }
-    return realloc(ptr, size);
-}
-
 static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_t len,
                                     ObjEntry *value, size_t pc);
 static void vm_obj_ref_move(VM *vm, List *old_obj, List *new_obj);

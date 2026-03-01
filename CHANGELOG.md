@@ -1,8 +1,15 @@
 # Changelog
 
+## 1.7.4
+- restructure codebase: remove `libs/` directory (move `urb.h` to `include/`, move `tcc.urb` to `examples/libs/`).
+- remove `libregexp` vendored dependency (regex support via `$regex` removed from papagaio).
+- consolidate `docs/` directory documentation into main `README.md`.
+- simplify build files: remove `libregexp` compilation from Makefile and CMakeLists.txt.
+- new target: make test.
+
 ## 1.7.3
 - remove native TCC APIs: `C.ffi.cdef`, `C.ffi.compile`, `C.ffi.header`, `C.ffi.eval`.
-- enhanced `libs/tcc.urb`.
+- enhanced `examples/libs/tcc.urb`.
 - remove `ENABLE_TCC` build flag (Makefile, CMakeLists.txt) and `info.tcc` from `C.info()` runtime.
 - remove deprecated test cases `ffi_tcc_unavailable.urb`, `ffi_tcc_compile_eval.urb`.
 
@@ -89,15 +96,15 @@
 ## 1.3.0
 - add automatic papagaio source preprocessing at compile-time for declarations outside strings/comments (`$pattern{...}{...}`, `$regex ... {...}`, `$eval{...}`).
 - keep papagaio behavior inside string literals as runtime processing, preserving existing `papagaio(text)` and string-literal flows.
-- add mixed coverage and examples for compile-time + runtime papagaio usage in the same file (`tests/cases/papagaio_preprocessor.urb`, `example/papagaio_preprocess_mixed.urb`).
+- add mixed coverage and examples for compile-time + runtime papagaio usage in the same file (`tests/cases/papagaio_preprocessor.urb`, `examples/papagaio_preprocess_mixed.urb`).
 - remove `ffi.load` from the public/runtime FFI API and from native alias resolution (`ffiLoad`), keeping dynamic calls on the explicit two-step flow.
 - standardize dynamic loading on `ffi.open(path)` + `ffi.sym(lib, name)` + `ffi.bind(ptr, sig)` + `ffi.close(lib)`.
 - fix `ffi.sym` symbol-name handling for derived strings (e.g. `split`/`trim` results) by passing a null-terminated copy to the platform loader.
 - migrate all FFI-facing scripts from `ffi.load(...)` to the new flow:
-  - libraries: `libs/raylib.urb`, `libs/tcc.urb`
+  - libraries: raylib integration module, `examples/libs/tcc.urb`
   - tests: `tests/cases/ffi_*` loaders
-  - examples and guide examples: `example/ffi*.urb`, `example/guide/11_ffi_system.urb`, `example/guide/14_ffi_struct_views_bind.urb`, `example/guide/15_ffi_callbacks_varargs_buffers.urb`, `example/guide/16_ffi_unions.urb`
-- update FFI documentation to remove `ffi.load` references and describe the new call flow in `README.md`, `docs/FUNCTION_REFERENCE.md`, and `docs/REF_SHEET.md`.
+  - examples and guide examples: `examples/ffi*.urb`, `examples/guide/11_ffi_system.urb`, `examples/guide/14_ffi_struct_views_bind.urb`, `examples/guide/15_ffi_callbacks_varargs_buffers.urb`, `examples/guide/16_ffi_unions.urb`
+- update FFI documentation to remove `ffi.load` references and describe the new call flow in `README.md`.
 - update build option descriptions to reflect new dynamic-call API wording (`ffi.open`/`ffi.sym`/`ffi.bind`) in `CMakeLists.txt`.
 
 ## 1.2.1
@@ -109,10 +116,10 @@
 - enable `ENABLE_FFI_CALLS=ON` for MSVC CI/release builds using `libffi` from `vcpkg` (`x64-windows`), restoring `ffi.load`/`ffi.bind` availability on Windows MSVC artifacts.
 - switch MSVC CI/release `vcpkg` triplet to `x64-windows` and align MSVC runtime selection (`/MD`/`/MDd`) to avoid CRT mismatch warnings (`LNK4098`).
 - fix MSVC CI probe step to execute the Disturb binary correctly when checking `ffi.load`/`ffi.bind`.
-- include `docs/` and `example/` directories in all release artifacts.
-- add function-pointer-field example: `example/ffi_fnptr_fields.urb`.
-- add optional compile example: `example/ffi_auto_compile_optional.urb`.
-- update docs to make `memory.compile` optional in common flows and document `function(...)` (`fn(...)` alias accepted).
+- include `examples/` directory in all release artifacts.
+- add function-pointer-field example: `examples/ffi_fnptr_fields.urb`.
+- add optional compile example: `examples/ffi_auto_compile_optional.urb`.
+- update documentation to make `memory.compile` optional in common flows and document `function(...)` (`fn(...)` alias accepted).
 
 ## 1.2.0
 - change lambda vararg syntax from `name...` to `...name`; old trailing form now errors with guidance (`invalid vararg syntax: use '...name'`).
@@ -136,7 +143,7 @@
 - add `ffi.callback(signature, lambda)` to expose lambda callbacks as C function pointers via libffi closures.
 - add `memory.buffer(len)` and `memory.string(ptr[,len])` helpers for pointer/string/buffer ergonomics.
 - add dedicated FFI regression coverage: `ffi_varargs`, `ffi_callbacks`, `ffi_buffers_strings`, `ffi_const_views`, and strict-mode negative test `ffi_const_write_strict`.
-- add new examples for advanced FFI flows: `example/ffi_callbacks_varargs_buffers.urb` and `example/guide/15_ffi_callbacks_varargs_buffers.urb`.
+- add new examples for advanced FFI flows: `examples/ffi_callbacks_varargs_buffers.urb` and `examples/guide/15_ffi_callbacks_varargs_buffers.urb`.
 - update docs/examples to reflect vararg, FFI signature, and memory APIs.
 
 ## 1.1.1
@@ -145,7 +152,7 @@
 - add cross-platform dynamic library loading fallback in FFI (`dlopen/dlsym` on Unix, `LoadLibrary/GetProcAddress` on Windows).
 - make FFI fixture/examples portable across `.so`, `.dylib`, and `.dll`.
 - add by-value FFI struct signatures with `@schema` (args/returns) integrated with compiled struct layouts.
-- add `tests/run_examples.sh` to execute all example scripts under `example/`.
+- add `tests/run_examples.sh` to execute all example scripts under `examples/`.
 - removed "system" native function.
 - add `import(path)` module/package loader:
   - `*.urb` paths load directly;
@@ -205,7 +212,7 @@
 - Add build flags to disable IO (`ENABLE_IO`), system (`ENABLE_SYSTEM`), or FFI (`ENABLE_FFI`).
 - Add `.value` meta to copy/assign entry contents without changing identity.
 - Add `use strict;` numeric mode with `1i/1u/1f` suffixes and stricter int/float checks.
-- Add pure Disturb assembler/disassembler in `example/asm_lib.urb`.
+- Add pure Disturb assembler/disassembler in `examples/asm_lib.urb`.
 
 ## 0.14.1
 - Apply Papagaio processing to all string literals, with `\$` escape support.
@@ -239,7 +246,7 @@
 
 ## 0.12.3
 - Add language comment support (`//` and `/* ... */`).
-- Add annotated guide examples under `example/guide`.
+- Add annotated guide examples under `examples/guide`.
 
 ## 0.12.2
 - Treat byte values like strings for printing and string operations.

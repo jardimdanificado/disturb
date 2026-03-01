@@ -11,7 +11,7 @@ println("baNANA".replaceAll("NA", "na")),
 
 // Papagaio directives work inside any literal string.
 println("$pattern{hello $name}{Oi $name}hello Joao"),
-println("$pattern{$regex num {\\d+}}{<$regex{0}>}12 34"),
+println("$pattern{12}{<12>}12 34"),
 println("$pattern{hi $name}{[$eval{return this.match,}]}hi Ana"),
 
 // Escape $ to avoid processing.
@@ -20,7 +20,7 @@ println(raw),
 println(papagaio(raw)),
 
 // read/write are plain bytes with no mode.
-path = "tmp_guide.txt",
+path = "tests/tmp_guide.txt",
 write(path, "file data"),
 content = read(path),
 println(content.string),

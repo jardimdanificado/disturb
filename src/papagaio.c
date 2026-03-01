@@ -6,7 +6,6 @@
 #include "papagaio_internal.h"
 
 #include "bytecode.h"
-#include "libregexp.h"
 
 #include <ctype.h>
 #include <stdarg.h>
@@ -247,57 +246,6 @@ static int extract_block(
     return (int)strlen(src);
 }
 
-static int apply_regex_placeholder(
-    StrBuf *out,
-    const char *replacement,
-    size_t repl_len,
-    size_t *idx,
-    const Symbols *sym,
-    const Match *m
-)
-{
-    if (!m->regex.capture) return 0;
-    size_t sigil_len = strlen(sym->sigil);
-    size_t regex_len = sym->regex ? strlen(sym->regex) : 0;
-    size_t pos = *idx + sigil_len + regex_len;
-    while (pos < repl_len && isspace((unsigned char)replacement[pos])) pos++;
-    StrView open = { sym->open, strlen(sym->open) };
-    StrView close = { sym->close, strlen(sym->close) };
-    StrView block;
-    int next = extract_block(replacement, (int)pos, open, close, &block);
-    if ((size_t)next == pos) return 0;
-    StrView trimmed = trim_view(block);
-    const char *base = m->regex.src ? m->regex.src : "";
-    size_t group_start = m->regex.match_start;
-    size_t group_end = m->regex.match_end;
-    if (trimmed.len == 0 ||
-        (trimmed.len == 5 && strncmp(trimmed.ptr, "match", 5) == 0)) {
-        // entire match
-    } else {
-        if (trimmed.len >= 16) return 0;
-        char tmp[16];
-        memcpy(tmp, trimmed.ptr, trimmed.len);
-        tmp[trimmed.len] = 0;
-        char *endptr = NULL;
-        long idx_val = strtol(tmp, &endptr, 10);
-        if (!tmp[0] || *endptr != 0 || idx_val < 0) return 0;
-        int idx_int = (int)idx_val;
-        if (idx_int < m->regex.capture_count) {
-            const uint8_t *start_ptr = m->regex.capture[2 * idx_int];
-            const uint8_t *end_ptr = m->regex.capture[2 * idx_int + 1];
-            if (start_ptr) group_start = (size_t)(start_ptr - (const uint8_t*)base);
-            if (end_ptr) group_end = (size_t)(end_ptr - (const uint8_t*)base);
-            if (group_end < group_start) group_end = group_start;
-        } else {
-            group_start = group_end = m->regex.match_start;
-        }
-    }
-    if (group_end > strlen(base)) group_end = strlen(base);
-    sb_append_n(out, base + group_start, group_end - group_start);
-    *idx = (size_t)next;
-    return 1;
-}
-
 static int apply_eval_placeholder(
     StrBuf *out,
     const char *replacement,
@@ -373,8 +321,6 @@ static void free_pattern(Pattern *p)
     for (int i = 0; i < p->count; i++) {
         free(p->t[i].open_str);
         free(p->t[i].close_str);
-        free(p->t[i].regex_str);
-        free(p->t[i].re_code);
     }
     free(p->t);
     p->t = NULL;
@@ -761,54 +707,6 @@ void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
             continue;
         }
 
-        if (sym->regex && starts_with_str(pat + i, sym->sigil) &&
-            starts_with_str(pat + i + sigil_len, sym->regex)) {
-            int start = i;
-            i += sigil_len + (int)strlen(sym->regex);
-            while (i < n && isspace((unsigned char)pat[i])) i++;
-            int v = i;
-            while (i < n && (isalnum((unsigned char)pat[i]) || pat[i] == '_')) i++;
-            t->var = (StrView){ pat + v, (size_t)(i - v) };
-            while (i < n && isspace((unsigned char)pat[i])) i++;
-            StrView open = { sym->open, strlen(sym->open) };
-            StrView close = { sym->close, strlen(sym->close) };
-            StrView block;
-            i = extract_block(pat, i, open, close, &block);
-            StrView trimmed = trim_view(block);
-            if (trimmed.len == 0) {
-                t->type = TOK_LITERAL;
-                t->value = (StrView){ pat + start, (size_t)(i - start) };
-                p->count++;
-                continue;
-            }
-            t->regex_str = (char*)malloc(trimmed.len + 1);
-            if (!t->regex_str) {
-                t->type = TOK_LITERAL;
-                t->value = (StrView){ pat + start, (size_t)(i - start) };
-                p->count++;
-                continue;
-            }
-            memcpy(t->regex_str, trimmed.ptr, trimmed.len);
-            t->regex_str[trimmed.len] = 0;
-            char err[256] = {0};
-            int compiled_len = 0;
-            t->re_code = lre_compile(&compiled_len, err, sizeof(err), t->regex_str, trimmed.len, 0, NULL);
-            if (!t->re_code) {
-                fprintf(stderr, "papagaio regex compile error: %s\n", err[0] ? err : "invalid pattern");
-                free(t->regex_str);
-                t->regex_str = NULL;
-                t->type = TOK_LITERAL;
-                t->value = (StrView){ pat + start, (size_t)(i - start) };
-                p->count++;
-                continue;
-            }
-            t->re_len = (size_t)compiled_len;
-            t->re_capture_count = lre_get_capture_count(t->re_code);
-            t->type = TOK_REGEX;
-            p->count++;
-            continue;
-        }
-
         if (starts_with_str(pat + i, sym->sigil)) {
             int double_sigil = starts_with_str(pat + i + sigil_len, sym->sigil);
 
@@ -1002,45 +900,6 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
             continue;
         }
 
-        if (t->type == TOK_REGEX) {
-            if (!t->re_code) goto fail;
-            int capture_group_count = t->re_capture_count > 0 ? t->re_capture_count : 1;
-            size_t capture_slots = (size_t)capture_group_count * 2;
-            const uint8_t **capture = capture_slots ? (const uint8_t**)calloc(capture_slots, sizeof(const uint8_t*)) : NULL;
-            if (capture_slots && !capture) goto fail;
-            int ret = lre_exec((uint8_t**)capture, t->re_code, (const uint8_t*)src, pos, src_len, 0, NULL);
-            if (ret != 1) {
-                free((void*)capture);
-                goto fail;
-            }
-            const uint8_t *start_ptr = capture[0];
-            const uint8_t *end_ptr = capture[1];
-            size_t match_start = start_ptr ? (size_t)(start_ptr - (const uint8_t*)src) : (size_t)pos;
-            size_t match_end = end_ptr ? (size_t)(end_ptr - (const uint8_t*)src) : match_start;
-            if (match_start != (size_t)pos) {
-                free((void*)capture);
-                goto fail;
-            }
-            if (match_end > (size_t)src_len) match_end = (size_t)src_len;
-            if (match_start > match_end) match_start = match_end;
-            ensure_cap(m);
-            m->cap[m->count++] = (Capture){
-                t->var,
-                { src + match_start, match_end - match_start },
-                NULL
-            };
-            if (m->regex.capture) {
-                free((void*)m->regex.capture);
-            }
-            m->regex.capture = capture;
-            m->regex.capture_count = capture_group_count;
-            m->regex.match_start = match_start;
-            m->regex.match_end = match_end;
-            m->regex.src = src;
-            pos = (int)match_end;
-            continue;
-        }
-
         const Token *nx = (t->next_sig >= 0) ? &p->t[t->next_sig] : NULL;
 
         if (t->type == TOK_VAR) {
@@ -1174,9 +1033,6 @@ char *apply_replacement_ex(const char *rep, const Match *m, const Symbols *sym, 
 
     while (i < n) {
         if (starts_with_str(rep + i, sym->sigil)) {
-            if (sym->regex && apply_regex_placeholder(&out, rep, n, &i, sym, m)) {
-                continue;
-            }
             if (sym->eval && apply_eval_placeholder(&out, rep, n, &i, sym, vm, m)) {
                 continue;
             }
@@ -1258,7 +1114,6 @@ static char *_papagaio_process_ex_impl(VM *vm, const char *input, const char *si
                 break;
             }
         }
-
         if (!matched) {
             sb_append_char(&out, input[pos++]);
         }

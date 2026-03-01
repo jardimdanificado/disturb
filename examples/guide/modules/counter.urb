@@ -1,4 +1,4 @@
-// example/guide/modules/counter.urb
+// examples/guide/modules/counter.urb
 count = 0,
 count++,
 

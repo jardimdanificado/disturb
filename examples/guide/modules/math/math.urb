@@ -1,4 +1,4 @@
-// example/guide/modules/math/math.urb
+// examples/guide/modules/math/math.urb
 base = 40,
 
 return {
