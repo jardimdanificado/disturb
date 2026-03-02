@@ -1836,13 +1836,20 @@ static Int bytes_list_count(const ObjEntry *entry, size_t elem_size);
 static Int numeric_entry_count(ObjEntry *entry, int *out_is_float);
 static double numeric_entry_read_at(ObjEntry *entry, Int i, int is_float);
 
+static int entry_is_data_value(ObjEntry *e)
+{
+    if (!e) return 0;
+    Int t = disturb_obj_type(e->obj);
+    return t == DISTURB_T_TABLE || t == DISTURB_T_INT || t == DISTURB_T_FLOAT;
+}
+
 static void native_append(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *self = native_this(vm);
     ObjEntry *dst = NULL;
     ObjEntry *src = NULL;
-    if (self) {
+    if (entry_is_data_value(self)) {
         dst = self;
         src = native_arg(stack, argc, 0);
     } else {
@@ -2082,7 +2089,10 @@ static void native_pow(VM *vm, List *stack, List *global)
     ObjEntry *self = native_this(vm);
     ObjEntry *base_entry = NULL;
     ObjEntry *exp_entry = NULL;
-    if (self) {
+    /* Only treat self as base if it is actually a numeric entry (same guard
+     * as native_mod/native_add etc.) so that function-call form pow(a,b)
+     * doesn't accidentally pick up a stale this_entry. */
+    if (self && numeric_entry_count(self, NULL) > 0) {
         base_entry = self;
         exp_entry = native_arg(stack, argc, 0);
     } else {
@@ -2098,23 +2108,29 @@ static void native_pow(VM *vm, List *stack, List *global)
     Int base_count = numeric_entry_count(base_entry, &base_is_float);
     Int exp_count = numeric_entry_count(exp_entry, &exp_is_float);
 
-    /* If either operand is a multi-element array, do element-wise pow */
+    /* If either operand is a multi-element array, do element-wise pow.
+     * Semantics mirror the binary arithmetic operators: min(base,exp) pairs
+     * receive pow(); extra elements from the longer side are copied as-is. */
     if (base_count > 1 || exp_count > 1) {
         Int out_count = base_count > exp_count ? base_count : exp_count;
-        if (base_count > 1 && exp_count > 1 && base_count != exp_count) {
-            fprintf(stderr, "pow: array length mismatch (%ld vs %ld)\n",
-                    (long)base_count, (long)exp_count);
-            return;
-        }
+        Int overlap   = base_count < exp_count ? base_count : exp_count;
         ObjEntry *res = vm_make_float_list(vm, out_count);
         if (!res) { fprintf(stderr, "pow: allocation failed\n"); return; }
-        for (Int i = 0; i < out_count; i++) {
-            Int bi = (base_count > 1) ? i : 0;
-            Int ei = (exp_count  > 1) ? i : 0;
-            double b = (base_count >= 1) ? numeric_entry_read_at(base_entry, bi, base_is_float) : 0.0;
-            double e = (exp_count  >= 1) ? numeric_entry_read_at(exp_entry,  ei, exp_is_float)  : 0.0;
-            Float result = (Float)pow(b, e);
-            write_float_bytes(res->obj, i, result);
+        /* Apply pow for overlapping pairs */
+        for (Int i = 0; i < overlap; i++) {
+            double b = numeric_entry_read_at(base_entry, i, base_is_float);
+            double e = numeric_entry_read_at(exp_entry,  i, exp_is_float);
+            write_float_bytes(res->obj, i, (Float)pow(b, e));
+        }
+        /* Copy extra base elements unchanged */
+        for (Int i = overlap; i < base_count; i++) {
+            double b = numeric_entry_read_at(base_entry, i, base_is_float);
+            write_float_bytes(res->obj, i, (Float)b);
+        }
+        /* Copy extra exp elements unchanged */
+        for (Int i = overlap; i < exp_count; i++) {
+            double e = numeric_entry_read_at(exp_entry, i, exp_is_float);
+            write_float_bytes(res->obj, i, (Float)e);
         }
         push_entry(vm, stack, res);
         return;
@@ -2405,7 +2421,7 @@ static void native_slice(VM *vm, List *stack, List *global)
     uint32_t arg_off = 0; /* index of "start" argument */
     {
         ObjEntry *self = native_this(vm);
-        if (self) {
+        if (entry_is_data_value(self)) {
             target = self;
             arg_off = 0;
         } else {

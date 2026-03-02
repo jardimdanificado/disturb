@@ -10,10 +10,12 @@
 - add postfix `expr?` operator (`BC_TRUTH`): returns a float in `[0.0, 1.0]` representing the ratio of non-zero elements — `nonzeros / total`; `null` yields `0.0`, empty string yields `0.0`, non-empty string is measured byte-by-byte, tables/lambdas/views always yield `1.0`.
 - `?` alone is now a valid token (`TOK_QMARK`); previously it was silently treated as `TOK_EOF`.
 - vectorize all unary math functions (`abs`, `floor`, `ceil`, `round`, `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `log`, `exp`): when called on a multi-element int or float array, applies the function element-wise and returns a float array; scalar inputs behave as before.
-- vectorize `pow`: supports all four combinations of scalar/array for base and exponent; array×array requires matching lengths; result is always a float array when any operand is multi-element.
+- vectorize `pow`: supports all four combinations of scalar/array for base and exponent; semantics mirror binary arithmetic operators — `min(len_base, len_exp)` pairs receive `pow()`, extra elements from the longer side are copied unchanged; result is always a float array when any operand is multi-element.
 - `slice` now supports tables (returns a new table with elements from `[start, end)`), int arrays, and float arrays (returns a new array of the same type); existing string behaviour is unchanged; both method-call and function-call argument conventions are handled correctly.
 - `append` now supports int and float number arrays: concatenates the raw elements; when element types differ (int src or dst vs float src or dst), elements are promoted to float automatically; also supports tables: all elements of the source table are shallow-cloned and appended to the destination table in order.
 - `push` (and the int-array path in related mutation functions) now auto-converts float values to int via truncation when the target is an int array, instead of rejecting non-exact float-to-int conversions; float arrays continue to accept int values by widening.
+- `pow`, `slice`, and `append` correctly handle the function-call form (`pow(a, b)`, `slice(a, start, end)`, `append(dst, src)`), in addition to the method-call form, by guarding against a stale `this_entry` pointing to the native function itself.
+- add `tests/cases/math_vectors.urb` and `examples/math_vectors.urb` covering vectorized math, `pow`, `slice`, and `append` in both method-call and function-call forms.
 
 ## 1.7.4
 - restructure codebase: remove `libs/` directory (move `urb.h` to `include/`, move `tcc.urb` to `examples/libs/`).

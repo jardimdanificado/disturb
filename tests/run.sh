@@ -47,6 +47,7 @@ run_case locals
 run_case numeric_suffixes
 run_case keyintern_toggle
 run_case value
+run_case math_vectors
 
 can_import=1
 import_probe="$(mktemp)"
