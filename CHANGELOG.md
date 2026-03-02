@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.8.0
+- overhaul boolean/truthiness system: a value is now false when its type is null, it is an empty string, or it is a numeric array (int/float) where zero elements are a majority or tied with non-zero elements; true in all other cases (tables, lambdas, views, non-empty strings, numeric arrays where non-zeros strictly outnumber zeros).
+- scalar compatibility preserved: single `0` remains false, any non-zero scalar remains true.
+- vectorize `!` (`BC_NOT`): on multi-element numeric arrays produces an element-wise int array (0→1, non-zero→0); scalar fallback uses updated truthiness rule.
+- vectorize `&&` and `||` (`BC_AND`/`BC_OR`): on multi-element numeric arrays produce element-wise int results; scalar fallback uses updated truthiness rule.
+- all conditional paths (`BC_JMP_IF_FALSE`, `?=`) inherit the new vectorized truthiness semantics automatically.
+- update `examples/guide/04_operators_truthiness.urb` to document and demonstrate the new semantics.
+- add postfix `expr?` operator (`BC_TRUTH`): returns a float in `[0.0, 1.0]` representing the ratio of non-zero elements — `nonzeros / total`; `null` yields `0.0`, empty string yields `0.0`, non-empty string is measured byte-by-byte, tables/lambdas/views always yield `1.0`.
+- `?` alone is now a valid token (`TOK_QMARK`); previously it was silently treated as `TOK_EOF`.
+
 ## 1.7.4
 - restructure codebase: remove `libs/` directory (move `urb.h` to `include/`, move `tcc.urb` to `examples/libs/`).
 - remove `libregexp` vendored dependency (regex support via `$regex` removed from papagaio).

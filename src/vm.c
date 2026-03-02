@@ -1557,24 +1557,37 @@ Int vm_value_len_entry(const ObjEntry *entry)
     }
 }
 
+/*
+ * Vectorized boolean semantics:
+ *   - null                                           → false
+ *   - numeric array (INT/FLOAT, non-string), size > 0:
+ *       count_nonzeros > count_zeros                 → true
+ *       count_zeros >= count_nonzeros (incl. equal)  → false
+ *   - everything else (tables, lambdas, strings …)   → true
+ */
 static int vm_entry_truthy(const ObjEntry *entry)
 {
     if (!entry || !entry->in_use) return 0;
     Int type = disturb_obj_type(entry->obj);
     if (type == DISTURB_T_NULL) return 0;
-    if (type == DISTURB_T_INT && !entry_is_string(entry)) {
-        size_t len = disturb_bytes_len(entry->obj);
-        if (len == sizeof(Int)) {
-            Int v = 0;
-            if (vm_read_int_at(entry->obj, 0, &v) && v == 0) return 0;
+    /* empty string is false; non-empty string is true */
+    if (entry_is_string(entry)) return disturb_bytes_len(entry->obj) > 0 ? 1 : 0;
+    if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
+        Int count = vm_bytes_to_count(disturb_bytes_len(entry->obj), type);
+        if (count <= 0) return 0;
+        Int zeros = 0, nonzeros = 0;
+        for (Int i = 0; i < count; i++) {
+            if (type == DISTURB_T_INT) {
+                Int v = 0;
+                vm_read_int_at(entry->obj, i, &v);
+                if (v == 0) zeros++; else nonzeros++;
+            } else {
+                Float v = 0;
+                vm_read_float_at(entry->obj, i, &v);
+                if (v == (Float)0) zeros++; else nonzeros++;
+            }
         }
-    }
-    if (type == DISTURB_T_FLOAT) {
-        size_t len = disturb_bytes_len(entry->obj);
-        if (len == sizeof(Float)) {
-            Float v = 0;
-            if (vm_read_float_at(entry->obj, 0, &v) && v == 0) return 0;
-        }
+        return nonzeros > zeros ? 1 : 0;
     }
     return 1;
 }
@@ -3611,6 +3624,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         case BC_SHL:
         case BC_SHR:
         case BC_BNOT:
+        case BC_TRUTH:
         case BC_EQ:
         case BC_SEQ:
         case BC_SNEQ:
@@ -4737,7 +4751,8 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len)
         [BC_BITXOR] = &&BC_L_BITXOR,
         [BC_SHL] = &&BC_L_SHL,
         [BC_SHR] = &&BC_L_SHR,
-        [BC_BNOT] = &&BC_L_BNOT
+        [BC_BNOT] = &&BC_L_BNOT,
+        [BC_TRUTH] = &&BC_L_TRUTH
     };
 #define DISPATCH() do { \
         if (vm->gc_rate > 0) { \
@@ -5676,6 +5691,64 @@ BC_L_OR:
                 break;
             }
             if (op == BC_AND || op == BC_OR) {
+                /* Vectorized AND/OR for numeric arrays */
+                Int lt = disturb_obj_type(left->obj);
+                Int rt = disturb_obj_type(right->obj);
+                int left_is_string = (lt == DISTURB_T_INT && entry_is_string(left));
+                int right_is_string = (rt == DISTURB_T_INT && entry_is_string(right));
+
+                if (!left_is_string && !right_is_string &&
+                    (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
+                    (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT)) {
+
+                    Int lc = (lt == DISTURB_T_INT)
+                             ? vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_INT)
+                             : vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_FLOAT);
+                    Int rc = (rt == DISTURB_T_INT)
+                             ? vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_INT)
+                             : vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_FLOAT);
+
+                    if (lc > 1 || rc > 1) {
+                        Int out_count = (lc > 1 && rc > 1)
+                                        ? (lc > rc ? lc : rc)
+                                        : (lc > 1 ? lc : rc);
+                        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL,
+                                                      (size_t)out_count * sizeof(Int));
+                        if (!result) return 0;
+
+                        for (Int i = 0; i < out_count; i++) {
+                            double lv = 0.0, rv = 0.0;
+
+                            /* Get left element */
+                            if (lc == 1) {
+                                if (lt == DISTURB_T_INT) { Int v = 0; vm_read_int_at(left->obj, 0, &v); lv = (double)v; }
+                                else { Float v = 0; vm_read_float_at(left->obj, 0, &v); lv = (double)v; }
+                            } else if (i < lc) {
+                                if (lt == DISTURB_T_INT) { Int v = 0; vm_read_int_at(left->obj, i, &v); lv = (double)v; }
+                                else { Float v = 0; vm_read_float_at(left->obj, i, &v); lv = (double)v; }
+                            }
+
+                            /* Get right element */
+                            if (rc == 1) {
+                                if (rt == DISTURB_T_INT) { Int v = 0; vm_read_int_at(right->obj, 0, &v); rv = (double)v; }
+                                else { Float v = 0; vm_read_float_at(right->obj, 0, &v); rv = (double)v; }
+                            } else if (i < rc) {
+                                if (rt == DISTURB_T_INT) { Int v = 0; vm_read_int_at(right->obj, i, &v); rv = (double)v; }
+                                else { Float v = 0; vm_read_float_at(right->obj, i, &v); rv = (double)v; }
+                            }
+
+                            int lb = (lv != 0.0) ? 1 : 0;
+                            int rb = (rv != 0.0) ? 1 : 0;
+                            Int res = (Int)(op == BC_AND ? (lb && rb) : (lb || rb));
+                            vm_write_int_at(result, i, res);
+                        }
+
+                        vm_stack_push_entry(vm, vm_reg_alloc(vm, result));
+                        break;
+                    }
+                }
+
+                /* Scalar fallback */
                 int l = vm_entry_truthy(left);
                 int r = vm_entry_truthy(right);
                 int res = op == BC_AND ? (l && r) : (l || r);
@@ -6243,8 +6316,90 @@ BC_L_NOT:
         {
             ObjEntry *value = vm_stack_pop_entry(vm, "NOT", pc);
             if (!value) return 0;
+
+            /* Vectorized NOT for numeric arrays */
+            Int not_type = disturb_obj_type(value->obj);
+            int not_is_string = (not_type == DISTURB_T_INT && entry_is_string(value));
+            if (!not_is_string && (not_type == DISTURB_T_INT || not_type == DISTURB_T_FLOAT)) {
+                Int not_count = vm_bytes_to_count(disturb_bytes_len(value->obj), not_type);
+                if (not_count > 1) {
+                    List *not_result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL,
+                                                      (size_t)not_count * sizeof(Int));
+                    if (!not_result) return 0;
+                    for (Int i = 0; i < not_count; i++) {
+                        int elem_true = 0;
+                        if (not_type == DISTURB_T_INT) {
+                            Int v = 0;
+                            vm_read_int_at(value->obj, i, &v);
+                            elem_true = (v != 0);
+                        } else {
+                            Float v = 0;
+                            vm_read_float_at(value->obj, i, &v);
+                            elem_true = (v != (Float)0);
+                        }
+                        vm_write_int_at(not_result, i, elem_true ? 0 : 1);
+                    }
+                    vm_stack_push_entry(vm, vm_reg_alloc(vm, not_result));
+                    break;
+                }
+            }
+
+            /* Scalar fallback */
             int res = vm_entry_truthy(value) ? 0 : 1;
             vm_stack_push_entry(vm, vm_make_int_value(vm, res));
+            break;
+        }
+        case BC_TRUTH:
+#ifdef __GNUC__
+BC_L_TRUTH:
+#endif
+        {
+            ObjEntry *value = vm_stack_pop_entry(vm, "TRUTH", pc);
+            if (!value) return 0;
+            Float truth_ratio = 0.0;
+            Int tt = disturb_obj_type(value->obj);
+            if (tt == DISTURB_T_NULL) {
+                truth_ratio = 0.0;
+            } else if (tt == DISTURB_T_TABLE || tt == DISTURB_T_NATIVE ||
+                       tt == DISTURB_T_LAMBDA || tt == DISTURB_T_VIEW) {
+                truth_ratio = 1.0;
+            } else if (tt == DISTURB_T_INT || tt == DISTURB_T_FLOAT) {
+                if (entry_is_string(value)) {
+                    /* strings: treat raw bytes as an int-8 array */
+                    size_t blen = disturb_bytes_len(value->obj);
+                    if (blen == 0) {
+                        truth_ratio = 0.0;
+                    } else {
+                        const unsigned char *bdata =
+                            (const unsigned char *)disturb_bytes_data(value->obj);
+                        Int nonzeros = 0;
+                        for (size_t bi = 0; bi < blen; bi++) {
+                            if (bdata[bi] != 0) nonzeros++;
+                        }
+                        truth_ratio = (Float)nonzeros / (Float)(Int)blen;
+                    }
+                } else {
+                    Int count = vm_bytes_to_count(disturb_bytes_len(value->obj), tt);
+                    if (count == 0) {
+                        truth_ratio = 0.0;
+                    } else {
+                        Int nonzeros = 0;
+                        for (Int i = 0; i < count; i++) {
+                            if (tt == DISTURB_T_INT) {
+                                Int v = 0;
+                                vm_read_int_at(value->obj, i, &v);
+                                if (v != 0) nonzeros++;
+                            } else {
+                                Float v = 0;
+                                vm_read_float_at(value->obj, i, &v);
+                                if (v != (Float)0) nonzeros++;
+                            }
+                        }
+                        truth_ratio = (Float)nonzeros / (Float)count;
+                    }
+                }
+            }
+            vm_stack_push_entry(vm, vm_make_float_value(vm, truth_ratio));
             break;
         }
         case BC_POP:

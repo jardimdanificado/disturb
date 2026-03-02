@@ -63,7 +63,8 @@ enum {
     BC_BITXOR,
     BC_SHL,
     BC_SHR,
-    BC_BNOT
+    BC_BNOT,
+    BC_TRUTH
 };
 
 void bc_init(Bytecode *bc);

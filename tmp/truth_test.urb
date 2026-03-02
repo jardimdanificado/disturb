@@ -1,0 +1,17 @@
+// scalar
+println(0?),          // 0.0
+println(5?),          // 1.0
+println(null?),       // 0.0
+
+// arrays
+println((1 0 0)?),    // 0.333...
+println((1 2 0)?),    // 0.666...
+println((1 0)?),      // 0.5
+println((3 7 2)?),    // 1.0
+
+// string (bytes)
+println("hello"?),    // 1.0  (all non-zero bytes)
+println(""?),         // 0.0  (empty)
+
+// table/lambda
+println({a=1}?),      // 1.0

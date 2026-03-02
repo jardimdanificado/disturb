@@ -144,6 +144,7 @@ const char *bc_opcode_name(uint8_t op)
     case BC_SHL: return "SHL";
     case BC_SHR: return "SHR";
     case BC_BNOT: return "BNOT";
+    case BC_TRUTH: return "TRUTH";
     default: return "UNKNOWN";
     }
 }

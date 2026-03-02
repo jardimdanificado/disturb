@@ -11,10 +11,38 @@ println(2 < 1),
 println(1 && 2),
 println(null || 9),
 
-// Only null and numeric 0 are false.
-println(!null),
-println(!0),
-println(!5),
+// Vectorized boolean semantics:
+// A value is FALSE when:
+//   - its type is null, OR
+//   - it is a numeric array (int/float) with count_zeros >= count_nonzeros.
+// A value is TRUE otherwise (tables, lambdas, strings, and numeric arrays
+// where nonzeros strictly outnumber zeros).
+
+// Scalars: 0 and null are still false; any other number is true.
+println(!null),   // 1
+println(!0),      // 1
+println(!5),      // 0
+
+// Numeric arrays — truthiness depends on the zero/non-zero majority.
+// 1 nonzero vs 2 zeros -> false.
+a = 1 0 0,
+if (a) { println("a true"), } else { println("a false"), }
+
+// 2 nonzeros vs 1 zero -> true.
+b = 1 2 0,
+if (b) { println("b true"), } else { println("b false"), }
+
+// Tie (1 zero == 1 nonzero) -> false.
+c = 1 0,
+if (c) { println("c true"), } else { println("c false"), }
+
+// Logical operators are vectorized for numeric arrays.
+// NOT produces an element-wise boolean inverse.
+println(!(1 0 3)),       // 0 1 0
+
+// AND and OR produce element-wise results.
+println((1 0 1) && (1 1 0)),   // 1 0 0
+println((1 0 0) || (0 0 1)),   // 1 0 1
 
 // String concatenation auto-stringifies values.
 println("n=" + 10),

@@ -45,6 +45,7 @@ typedef enum {
     TOK_COLON,
     TOK_EQ,
     TOK_QEQ,
+    TOK_QMARK,
     TOK_PLUS,
     TOK_MINUS,
     TOK_STAR,
@@ -836,7 +837,7 @@ static Token next_token(Parser *p)
             next_char(p);
             t.kind = TOK_QEQ;
         } else {
-            t.kind = TOK_EOF;
+            t.kind = TOK_QMARK;
         }
         break;
     case '<':
@@ -1555,6 +1556,14 @@ static Expr *parse_postfix(Parser *p)
             call->as.call.has_override = 0;
             call->as.call.override_len = 0;
             expr = call;
+            continue;
+        }
+        if (match(p, TOK_QMARK)) {
+            Expr *e = expr_new(p, EXPR_UNARY);
+            if (!e) return NULL;
+            e->as.unary.op = TOK_QMARK;
+            e->as.unary.expr = expr;
+            expr = e;
             continue;
         }
         break;
@@ -2444,6 +2453,7 @@ static int emit_expr(Bytecode *bc, Parser *p, Expr *e)
         uint8_t op = BC_NOT;
         if (e->as.unary.op == TOK_MINUS) op = BC_NEG;
         else if (e->as.unary.op == TOK_TILDE) op = BC_BNOT;
+        else if (e->as.unary.op == TOK_QMARK) op = BC_TRUTH;
         if (!bc_emit_u8(bc, op)) {
             parser_error(p, "failed to emit unary op");
             return 0;
