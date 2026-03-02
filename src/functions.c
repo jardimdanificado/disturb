@@ -1831,6 +1831,11 @@ static void native_runtime_info(VM *vm, List *stack, List *global)
     stack = push_entry(vm, stack, table);
 }
 
+/* Forward declarations for helpers used before their definition */
+static Int bytes_list_count(const ObjEntry *entry, size_t elem_size);
+static Int numeric_entry_count(ObjEntry *entry, int *out_is_float);
+static double numeric_entry_read_at(ObjEntry *entry, Int i, int is_float);
+
 static void native_append(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -1849,15 +1854,82 @@ static void native_append(VM *vm, List *stack, List *global)
         return;
     }
 
-    if (!entry_is_string(dst) || !entry_is_string(src)) {
-        fprintf(stderr, "append expects string values\n");
+    /* String append (original behaviour) */
+    if (entry_is_string(dst) && entry_is_string(src)) {
+        dst->obj = vm_update_shared_obj(vm, dst->obj,
+                                        disturb_bytes_append(dst->obj,
+                                                         disturb_bytes_data(src->obj),
+                                                         disturb_bytes_len(src->obj)));
         return;
     }
 
-    dst->obj = vm_update_shared_obj(vm, dst->obj,
-                                    disturb_bytes_append(dst->obj,
-                                                     disturb_bytes_data(src->obj),
-                                                     disturb_bytes_len(src->obj)));
+    /* Numeric array append */
+    Int dst_type = disturb_obj_type(dst->obj);
+    Int src_type = disturb_obj_type(src->obj);
+    int dst_is_num = ((dst_type == DISTURB_T_INT && !entry_is_string(dst)) || dst_type == DISTURB_T_FLOAT);
+    int src_is_num = ((src_type == DISTURB_T_INT && !entry_is_string(src)) || src_type == DISTURB_T_FLOAT);
+
+    if (dst_is_num && src_is_num) {
+        int dst_float = (dst_type == DISTURB_T_FLOAT);
+        int src_float = (src_type == DISTURB_T_FLOAT);
+
+        if (dst_float == src_float) {
+            /* Same element type: raw bytes concat */
+            size_t src_bytes = disturb_bytes_len(src->obj);
+            dst->obj = vm_update_shared_obj(vm, dst->obj,
+                                            disturb_bytes_append(dst->obj,
+                                                             disturb_bytes_data(src->obj),
+                                                             src_bytes));
+        } else {
+            /* Mismatched types: promote dst to float if needed, then append as floats */
+            Int src_elem = (Int)(disturb_bytes_len(src->obj) / (src_float ? sizeof(Float) : sizeof(Int)));
+            if (!dst_float) {
+                /* Convert dst from int to float */
+                Int dst_elem = bytes_list_count(dst, sizeof(Int));
+                ObjEntry *new_dst = vm_make_float_list(vm, dst_elem + src_elem);
+                if (!new_dst) { fprintf(stderr, "append: allocation failed\n"); return; }
+                for (Int i = 0; i < dst_elem; i++) {
+                    Int iv = 0;
+                    memcpy(&iv, disturb_bytes_data(dst->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+                    Float fv = (Float)iv;
+                    write_float_bytes(new_dst->obj, i, fv);
+                }
+                for (Int i = 0; i < src_elem; i++) {
+                    double v = numeric_entry_read_at(src, i, src_float);
+                    write_float_bytes(new_dst->obj, dst_elem + i, (Float)v);
+                }
+                /* Replace dst with the new float entry; we cannot change the pointer that
+                   the caller holds, so we update its obj in-place. */
+                dst->obj = vm_update_shared_obj(vm, dst->obj, new_dst->obj);
+                new_dst->obj = NULL;
+            } else {
+                /* dst is float, src is int: convert src elements to float and append */
+                for (Int i = 0; i < src_elem; i++) {
+                    Int iv = 0;
+                    memcpy(&iv, disturb_bytes_data(src->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+                    Float fv = (Float)iv;
+                    dst->obj = vm_update_shared_obj(vm, dst->obj,
+                                                    disturb_bytes_append(dst->obj,
+                                                                     (const char *)&fv, sizeof(Float)));
+                }
+            }
+        }
+        return;
+    }
+
+    /* Table append: copy all elements from src into dst */
+    if (dst_type == DISTURB_T_TABLE && src_type == DISTURB_T_TABLE) {
+        for (Int i = 2; i < src->obj->size; i++) {
+            ObjEntry *elem = (ObjEntry*)src->obj->data[i].p;
+            if (!elem) continue;
+            ObjEntry *cloned = vm_clone_entry_shallow(vm, elem, NULL);
+            dst->obj = vm_update_shared_obj(vm, dst->obj,
+                                            disturb_table_add(dst->obj, cloned));
+        }
+        return;
+    }
+
+    fprintf(stderr, "append expects string, numeric array, or table values\n");
 }
 
 static int native_number_seed(VM *vm, List *stack, List *global, Float *out, uint32_t *start)
@@ -1981,27 +2053,79 @@ static void native_mod(VM *vm, List *stack, List *global)
     push_number(vm, stack, (Float)fmod((double)a, (double)b));
 }
 
+/* Helper: read the element count and type info for a numeric entry (non-string). */
+static Int numeric_entry_count(ObjEntry *entry, int *out_is_float)
+{
+    if (!entry) return 0;
+    Int t = disturb_obj_type(entry->obj);
+    if (t == DISTURB_T_FLOAT) { if (out_is_float) *out_is_float = 1; return bytes_list_count(entry, sizeof(Float)); }
+    if (t == DISTURB_T_INT && !entry_is_string(entry)) { if (out_is_float) *out_is_float = 0; return bytes_list_count(entry, sizeof(Int)); }
+    return 0;
+}
+
+static double numeric_entry_read_at(ObjEntry *entry, Int i, int is_float)
+{
+    if (is_float) {
+        Float fv = 0;
+        memcpy(&fv, disturb_bytes_data(entry->obj) + (size_t)i * sizeof(Float), sizeof(Float));
+        return (double)fv;
+    } else {
+        Int iv = 0;
+        memcpy(&iv, disturb_bytes_data(entry->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+        return (double)iv;
+    }
+}
+
 static void native_pow(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *self = native_this(vm);
-    Float base = 0;
-    Float exp = 0;
-    if (self && entry_as_number(self, &base)) {
-        ObjEntry *arg0 = native_arg(stack, argc, 0);
-        if (!arg0 || !entry_as_number(arg0, &exp)) {
-            fprintf(stderr, "pow expects numbers\n");
-            return;
-        }
+    ObjEntry *base_entry = NULL;
+    ObjEntry *exp_entry = NULL;
+    if (self) {
+        base_entry = self;
+        exp_entry = native_arg(stack, argc, 0);
     } else {
-        ObjEntry *arg0 = native_arg(stack, argc, 0);
-        ObjEntry *arg1 = native_arg(stack, argc, 1);
-        if (!arg0 || !arg1 || !entry_as_number(arg0, &base) || !entry_as_number(arg1, &exp)) {
-            fprintf(stderr, "pow expects numbers\n");
+        base_entry = native_arg(stack, argc, 0);
+        exp_entry = native_arg(stack, argc, 1);
+    }
+    if (!base_entry || !exp_entry) {
+        fprintf(stderr, "pow expects numbers\n");
+        return;
+    }
+
+    int base_is_float = 0, exp_is_float = 0;
+    Int base_count = numeric_entry_count(base_entry, &base_is_float);
+    Int exp_count = numeric_entry_count(exp_entry, &exp_is_float);
+
+    /* If either operand is a multi-element array, do element-wise pow */
+    if (base_count > 1 || exp_count > 1) {
+        Int out_count = base_count > exp_count ? base_count : exp_count;
+        if (base_count > 1 && exp_count > 1 && base_count != exp_count) {
+            fprintf(stderr, "pow: array length mismatch (%ld vs %ld)\n",
+                    (long)base_count, (long)exp_count);
             return;
         }
+        ObjEntry *res = vm_make_float_list(vm, out_count);
+        if (!res) { fprintf(stderr, "pow: allocation failed\n"); return; }
+        for (Int i = 0; i < out_count; i++) {
+            Int bi = (base_count > 1) ? i : 0;
+            Int ei = (exp_count  > 1) ? i : 0;
+            double b = (base_count >= 1) ? numeric_entry_read_at(base_entry, bi, base_is_float) : 0.0;
+            double e = (exp_count  >= 1) ? numeric_entry_read_at(exp_entry,  ei, exp_is_float)  : 0.0;
+            Float result = (Float)pow(b, e);
+            write_float_bytes(res->obj, i, result);
+        }
+        push_entry(vm, stack, res);
+        return;
     }
-    push_number(vm, stack, (Float)pow((double)base, (double)exp));
+
+    Float base = 0, expv = 0;
+    if (!entry_as_number(base_entry, &base) || !entry_as_number(exp_entry, &expv)) {
+        fprintf(stderr, "pow expects numbers\n");
+        return;
+    }
+    push_number(vm, stack, (Float)pow((double)base, (double)expv));
 }
 
 static void native_min(VM *vm, List *stack, List *global)
@@ -2047,6 +2171,8 @@ static void native_max(VM *vm, List *stack, List *global)
 }
 
 
+/* native_apply_unary_math below handles both scalar and vector cases;
+ * native_unary_number is kept for potential external callers. */
 static int native_unary_number(VM *vm, List *stack, List *global, Float *out)
 {
     uint32_t argc = native_argc(vm, global);
@@ -2057,134 +2183,124 @@ static int native_unary_number(VM *vm, List *stack, List *global, Float *out)
     return 1;
 }
 
-static void native_abs(VM *vm, List *stack, List *global)
+/* Apply a double→double math function to a numeric entry, element-wise.
+ * For multi-element arrays the result is always a float array.
+ * For scalars the result is int or float depending on whether fn preserves
+ * integer values (handled by push_number rounding heuristic). */
+static void native_apply_unary_math(VM *vm, List *stack, List *global,
+                                    double (*fn)(double), const char *name)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "abs expects a number\n");
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *entry = NULL;
+    {
+        ObjEntry *self = native_this(vm);
+        if (self) {
+            Int t = disturb_obj_type(self->obj);
+            if ((t == DISTURB_T_INT && !entry_is_string(self)) || t == DISTURB_T_FLOAT)
+                entry = self;
+        }
+    }
+    if (!entry) entry = native_arg(stack, argc, 0);
+    if (!entry) {
+        fprintf(stderr, "%s expects a number\n", name);
         return;
     }
-    push_number(vm, stack, (Float)fabs((double)v));
+    Int type = disturb_obj_type(entry->obj);
+    if ((type == DISTURB_T_INT && !entry_is_string(entry)) || type == DISTURB_T_FLOAT) {
+        size_t elem_size = (type == DISTURB_T_FLOAT) ? sizeof(Float) : sizeof(Int);
+        Int count = bytes_list_count(entry, elem_size);
+        if (count > 1) {
+            ObjEntry *res = vm_make_float_list(vm, count);
+            if (!res) { fprintf(stderr, "%s: allocation failed\n", name); return; }
+            for (Int i = 0; i < count; i++) {
+                double v = 0.0;
+                if (type == DISTURB_T_FLOAT) {
+                    Float fv = 0;
+                    memcpy(&fv, disturb_bytes_data(entry->obj) + (size_t)i * sizeof(Float), sizeof(Float));
+                    v = (double)fv;
+                } else {
+                    Int iv = 0;
+                    memcpy(&iv, disturb_bytes_data(entry->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+                    v = (double)iv;
+                }
+                Float result = (Float)fn(v);
+                write_float_bytes(res->obj, i, result);
+            }
+            push_entry(vm, stack, res);
+            return;
+        }
+    }
+    Float v = 0;
+    if (!entry_as_number(entry, &v)) {
+        fprintf(stderr, "%s expects a number\n", name);
+        return;
+    }
+    push_number(vm, stack, (Float)fn((double)v));
+}
+
+static void native_abs(VM *vm, List *stack, List *global)
+{
+    native_apply_unary_math(vm, stack, global, fabs, "abs");
 }
 
 static void native_floor(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "floor expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)floor((double)v));
+    native_apply_unary_math(vm, stack, global, floor, "floor");
 }
 
 static void native_ceil(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "ceil expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)ceil((double)v));
+    native_apply_unary_math(vm, stack, global, ceil, "ceil");
 }
 
 static void native_round(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "round expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)round((double)v));
+    native_apply_unary_math(vm, stack, global, round, "round");
 }
 
 static void native_sqrt(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "sqrt expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)sqrt((double)v));
+    native_apply_unary_math(vm, stack, global, sqrt, "sqrt");
 }
 
 static void native_sin(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "sin expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)sin((double)v));
+    native_apply_unary_math(vm, stack, global, sin, "sin");
 }
 
 static void native_cos(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "cos expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)cos((double)v));
+    native_apply_unary_math(vm, stack, global, cos, "cos");
 }
 
 static void native_tan(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "tan expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)tan((double)v));
+    native_apply_unary_math(vm, stack, global, tan, "tan");
 }
 
 static void native_asin(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "asin expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)asin((double)v));
+    native_apply_unary_math(vm, stack, global, asin, "asin");
 }
 
 static void native_acos(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "acos expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)acos((double)v));
+    native_apply_unary_math(vm, stack, global, acos, "acos");
 }
 
 static void native_atan(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "atan expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)atan((double)v));
+    native_apply_unary_math(vm, stack, global, atan, "atan");
 }
 
 static void native_log(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "log expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)log((double)v));
+    native_apply_unary_math(vm, stack, global, log, "log");
 }
 
 static void native_exp(VM *vm, List *stack, List *global)
 {
-    Float v = 0;
-    if (!native_unary_number(vm, stack, global, &v)) {
-        fprintf(stderr, "exp expects a number\n");
-        return;
-    }
-    push_number(vm, stack, (Float)exp((double)v));
+    native_apply_unary_math(vm, stack, global, exp, "exp");
 }
 
 static ObjEntry *native_string_target(VM *vm, List *stack, uint32_t argc)
@@ -2284,31 +2400,111 @@ static int bytes_list_remove(VM *vm, ObjEntry *target, size_t offset, void *out,
 static void native_slice(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
-    ObjEntry *target = native_string_target(vm, stack, argc);
+    /* Determine target (self or first arg) and arg offset for start/end */
+    ObjEntry *target = NULL;
+    uint32_t arg_off = 0; /* index of "start" argument */
+    {
+        ObjEntry *self = native_this(vm);
+        if (self) {
+            target = self;
+            arg_off = 0;
+        } else {
+            target = native_arg(stack, argc, 0);
+            arg_off = 1;
+        }
+    }
     if (!target) {
-        fprintf(stderr, "slice expects a string target\n");
+        fprintf(stderr, "slice expects a target\n");
+        return;
+    }
+
+    Int type = disturb_obj_type(target->obj);
+
+    /* ---- TABLE slice: return new table with elements [start, end) ---- */
+    if (type == DISTURB_T_TABLE) {
+        Int size = (Int)(target->obj->size - 2);
+        Int start = 0;
+        Int end = size;
+        if (argc > arg_off) {
+            ObjEntry *a = native_arg(stack, argc, arg_off);
+            if (!number_to_int(a, &start)) { fprintf(stderr, "slice expects numeric start\n"); return; }
+            if (start < 0) start = size + start;
+            if (start < 0) start = 0;
+            if (start > size) start = size;
+        }
+        if (argc > arg_off + 1) {
+            ObjEntry *a = native_arg(stack, argc, arg_off + 1);
+            if (!number_to_int(a, &end)) { fprintf(stderr, "slice expects numeric end\n"); return; }
+            if (end < 0) end = size + end;
+            if (end < 0) end = 0;
+            if (end > size) end = size;
+        }
+        if (end < start) end = start;
+        ObjEntry *res = vm_make_table_value(vm, end - start);
+        if (!res) { fprintf(stderr, "slice: allocation failed\n"); return; }
+        for (Int i = start; i < end; i++) {
+            ObjEntry *elem = (ObjEntry*)target->obj->data[2 + i].p;
+            if (!elem) continue;
+            ObjEntry *cloned = vm_clone_entry_shallow(vm, elem, NULL);
+            res->obj = disturb_table_add(res->obj, cloned);
+        }
+        push_entry(vm, stack, res);
+        return;
+    }
+
+    /* ---- NUMERIC ARRAY slice ---- */
+    if ((type == DISTURB_T_INT && !entry_is_string(target)) || type == DISTURB_T_FLOAT) {
+        int is_float = (type == DISTURB_T_FLOAT);
+        size_t elem_size = is_float ? sizeof(Float) : sizeof(Int);
+        Int count = bytes_list_count(target, elem_size);
+        Int start = 0;
+        Int end = count;
+        if (argc > arg_off) {
+            ObjEntry *a = native_arg(stack, argc, arg_off);
+            if (!number_to_int(a, &start)) { fprintf(stderr, "slice expects numeric start\n"); return; }
+            if (start < 0) start = count + start;
+            if (start < 0) start = 0;
+            if (start > count) start = count;
+        }
+        if (argc > arg_off + 1) {
+            ObjEntry *a = native_arg(stack, argc, arg_off + 1);
+            if (!number_to_int(a, &end)) { fprintf(stderr, "slice expects numeric end\n"); return; }
+            if (end < 0) end = count + end;
+            if (end < 0) end = 0;
+            if (end > count) end = count;
+        }
+        if (end < start) end = start;
+        Int out_count = end - start;
+        ObjEntry *res = is_float ? vm_make_float_list(vm, out_count) : vm_make_int_list(vm, out_count);
+        if (!res) { fprintf(stderr, "slice: allocation failed\n"); return; }
+        if (out_count > 0) {
+            memcpy(disturb_bytes_data(res->obj),
+                   disturb_bytes_data(target->obj) + (size_t)start * elem_size,
+                   (size_t)out_count * elem_size);
+        }
+        push_entry(vm, stack, res);
+        return;
+    }
+
+    /* ---- STRING slice (original behaviour) ---- */
+    if (!entry_is_string(target)) {
+        fprintf(stderr, "slice expects a string, table or numeric array\n");
         return;
     }
     const char *s = disturb_bytes_data(target->obj);
     size_t len = disturb_bytes_len(target->obj);
     Int start = 0;
     Int end = (Int)len;
-    if (argc >= 1) {
-        ObjEntry *arg0 = native_arg(stack, argc, 0);
-        if (!number_to_int(arg0, &start)) {
-            fprintf(stderr, "slice expects numeric start\n");
-            return;
-        }
+    if (argc > arg_off) {
+        ObjEntry *a = native_arg(stack, argc, arg_off);
+        if (!number_to_int(a, &start)) { fprintf(stderr, "slice expects numeric start\n"); return; }
         if (start < 0) start = (Int)len + start;
         if (start < 0) start = 0;
         if ((size_t)start > len) start = (Int)len;
     }
-    if (argc >= 2) {
-        ObjEntry *arg1 = native_arg(stack, argc, 1);
-        if (!number_to_int(arg1, &end)) {
-            fprintf(stderr, "slice expects numeric end\n");
-            return;
-        }
+    if (argc > arg_off + 1) {
+        ObjEntry *a = native_arg(stack, argc, arg_off + 1);
+        if (!number_to_int(a, &end)) { fprintf(stderr, "slice expects numeric end\n"); return; }
         if (end < 0) end = (Int)len + end;
         if (end < 0) end = 0;
         if ((size_t)end > len) end = (Int)len;
@@ -2811,12 +3007,8 @@ static void native_push(VM *vm, List *stack, List *global)
                 return;
             }
             if (is_float) {
-                Int cast = (Int)fv;
-                if ((Float)cast != fv) {
-                    fprintf(stderr, "push expects int values\n");
-                    return;
-                }
-                iv = cast;
+                /* Auto-convert float → int (truncate) */
+                iv = (Int)fv;
             }
             size_t offset = disturb_bytes_len(target->obj);
             if (!bytes_list_insert(vm, target, offset, &iv, sizeof(Int))) {
