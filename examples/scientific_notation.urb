@@ -1,0 +1,23 @@
+// Scientific notation for numeric literals.
+// strtod handles it natively; values that fit an integer are stored as int.
+
+// Integer results
+println(1e3),      // 1000
+println(2.5e2),    // 250
+println(1e0),      // 1
+println(0e0),      // 0
+
+// Float results
+println(1.5e-2),   // 0.015
+println(6.022e23), // 6.022e+23
+
+// Works in array literals too
+a = 1e2 2e2 3e2,
+println(a),        // 100 200 300
+
+b = 1.5e1 2.5e1,
+println(b),        // 15 25
+
+// Works with math functions
+println(sqrt(1e4)),  // 100
+println(log(1e0)),   // 0

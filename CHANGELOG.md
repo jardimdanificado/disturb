@@ -8,6 +8,7 @@
 - all conditional paths (`BC_JMP_IF_FALSE`, `?=`) inherit the new vectorized truthiness semantics automatically.
 - update `examples/guide/04_operators_truthiness.urb` to document and demonstrate the new semantics.
 - add postfix `expr?` operator (`BC_TRUTH`): returns a float in `[0.0, 1.0]` representing the ratio of non-zero elements — `nonzeros / total`; `null` yields `0.0`, empty string yields `0.0`, non-empty string is measured byte-by-byte, tables/lambdas/views always yield `1.0`.
+- scientific notation (`1e3`, `2.5e-4`, `6.022e23`) is supported natively via `strtod`; values that fit an integer are stored as int, others as float.
 - `?` alone is now a valid token (`TOK_QMARK`); previously it was silently treated as `TOK_EOF`.
 - vectorize all unary math functions (`abs`, `floor`, `ceil`, `round`, `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `log`, `exp`): when called on a multi-element int or float array, applies the function element-wise and returns a float array; scalar inputs behave as before.
 - vectorize `pow`: supports all four combinations of scalar/array for base and exponent; semantics mirror binary arithmetic operators — `min(len_base, len_exp)` pairs receive `pow()`, extra elements from the longer side are copied unchanged; result is always a float array when any operand is multi-element.

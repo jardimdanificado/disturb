@@ -21,6 +21,12 @@ af = 1f,
 println(ai),
 println(af),
 
+// Scientific notation is supported for both int and float results.
+println(1e3),     // 1000 (int)
+println(2.5e2),   // 250 (int)
+println(1.5e-2),  // 0.015 (float)
+println(6.022e23),// 6.022e+23 (float)
+
 // Infinity is a global float constant.
 println(inf),
 
