@@ -2640,7 +2640,6 @@ static int parse_switch_case(Parser *p, Bytecode *bc, const char *tmp_name, size
 {
     Expr *case_expr = parse_expr(p);
     if (!case_expr) return 0;
-    if (!expect(p, TOK_COLON, "expected ':' after case")) return 0;
 
     if (!emit_load_global_name(bc, p, tmp_name, tmp_len)) return 0;
     if (!emit_expr(bc, p, case_expr)) return 0;
@@ -2702,7 +2701,6 @@ static int parse_switch_statement(Parser *p, Bytecode *bc)
                 return 0;
             }
             seen_default = 1;
-            if (!expect(p, TOK_COLON, "expected ':' after default")) return 0;
             while (p->current.kind != TOK_RBRACE) {
                 if (!parse_statement(p, bc)) return 0;
             }

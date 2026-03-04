@@ -1,5 +1,11 @@
 # Changelog
 
+## TODO
+- optimize the switch case stuff to not be just a ifelse alias.
+
+## 1.8.1
+- the `:` after `case <expr>` and `default` in switch statements is no longer part of the syntax; `case 1 { ... }` is the required form.
+
 ## 1.8.0
 - overhaul boolean/truthiness system: a value is now false when its type is null, it is an empty string, or it is a numeric array (int/float) where zero elements are a majority or tied with non-zero elements; true in all other cases (tables, lambdas, views, non-empty strings, numeric arrays where non-zeros strictly outnumber zeros).
 - scalar compatibility preserved: single `0` remains false, any non-zero scalar remains true.

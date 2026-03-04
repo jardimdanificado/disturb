@@ -1,13 +1,13 @@
 value = "beta",
 
 switch (value) {
-case "alpha":
+case "alpha"
     println("alpha"),
-case "beta":
+case "beta"
     println("beta"),
-case "gamma":
+case "gamma"
     println("gamma"),
-default:
+default
     println("default"),
 }
 
