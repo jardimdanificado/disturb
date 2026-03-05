@@ -121,7 +121,7 @@ Special global:
 List behavior:
 - numeric lists are homogeneous (`int` list or `float` list)
 - mixed numeric literals like `1 2.5` become float lists
-- string values are byte lists with string semantics
+- int arrays are raw byte buffers; a string literal is an int array accessed via the `.string` view
 
 Numeric list shorthand example:
 
@@ -191,14 +191,15 @@ Supported forms:
 - `obj["key"]`
 - `obj[k]` where `k` is string-like key
 - `list[i]`
-- `string[i]`
+- `arr.string[i]` — byte `i` of an int array as a 1-byte string (char)
+- `arr.u8[i]`, `arr.u16[i]`, `arr.u32[i]`, `arr.u64[i]` — element `i` interpreted as that width
 
 Rules:
 - numeric indexing is 0-based
 - out-of-range numeric index errors
 - key indexing is for tables
-- string index yields a single-byte char value
-- string index assignment accepts single-byte char or byte numeric value
+- `arr.string[i]` yields a single-byte string (char); assignment accepts a single-byte string or byte integer
+- raw `arr[i]` on an int array returns `sizeof(Int)`-wide elements (8 bytes on 64-bit)
 
 ## Variables, Scope, and Calls
 
@@ -280,6 +281,18 @@ Common uses:
 - inspect runtime shape: `println(x.type),`
 - resize containers: `x.size = 10,`, `x.capacity = 32,`
 - replace value while keeping identity slot: `x.value = {...},`
+
+`.size` semantics depend on the type/view:
+- `table`: number of entries
+- `int` array (raw): `total_bytes / sizeof(Int)`
+- `float` array (raw): `total_bytes / sizeof(Float)`
+- `arr.string.size`: `strlen` (bytes up to first `\0`)
+- `arr.u8.size` / `arr.i8.size`: `total_bytes / 1`
+- `arr.u16.size` / `arr.i16.size`: `total_bytes / 2`
+- `arr.u32.size` / `arr.i32.size`: `total_bytes / 4`
+- `arr.u64.size` / `arr.i64.size`: `total_bytes / 8`
+- `arr.f32.size`: `total_bytes / 4`
+- `arr.f64.size`: `total_bytes / 8`
 
 Important constraints:
 - `.name` expects string or `null`
@@ -578,9 +591,10 @@ Return conventions:
 - As a method, prints the receiver followed by a newline.
 
 ### `len(target)` / `target.len()`
-- Returns logical length.
-- Strings: bytes length.
-- Numeric lists: element count.
+- Returns logical length (same semantics as `.size`).
+- Int arrays: `total_bytes / sizeof(Int)` (native-width element count).
+- Float arrays: `total_bytes / sizeof(Float)`.
+- String literals / `.string` views: `strlen` (bytes up to first `\0`).
 - Tables: entry count.
 - Numeric list shorthand is valid: `a = 1 2 3,` then `len(a)` returns `3`.
 

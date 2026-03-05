@@ -3826,11 +3826,20 @@ static Int vm_meta_size_entry(const ObjEntry *entry)
         return obj->size - 2;
     }
     if (type == DISTURB_T_INT) {
-        if (entry_is_string(entry)) return (Int)disturb_bytes_len(obj);
+        if (entry_is_string(entry)) return (Int)strlen(disturb_bytes_data(obj));
         return vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_INT);
     }
     if (type == DISTURB_T_FLOAT) {
         return vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_FLOAT);
+    }
+    if (type == DISTURB_T_VIEW && obj->size >= 4) {
+        ObjEntry *base = (ObjEntry*)obj->data[2].p;
+        ViewType view = (ViewType)obj->data[3].i;
+        if (base && base->in_use) {
+            size_t stride = vm_view_stride(view);
+            return stride > 0 ? (Int)(disturb_bytes_len(base->obj) / stride) : 0;
+        }
+        return 0;
     }
     if (obj->size < 2) return 0;
     return obj->size - 2;
@@ -3854,6 +3863,16 @@ static Int vm_meta_capacity_entry(const ObjEntry *entry)
     if (type == DISTURB_T_FLOAT) {
         size_t bytes = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
         return vm_bytes_to_count(bytes, DISTURB_T_FLOAT);
+    }
+    if (type == DISTURB_T_VIEW && obj->size >= 4) {
+        ObjEntry *base = (ObjEntry*)obj->data[2].p;
+        ViewType view = (ViewType)obj->data[3].i;
+        if (base && base->in_use) {
+            size_t stride = vm_view_stride(view);
+            size_t bytes = base->obj->capacity >= 2 ? (size_t)base->obj->capacity - 2 : 0;
+            return stride > 0 ? (Int)(bytes / stride) : 0;
+        }
+        return 0;
     }
     if (obj->capacity < 2) return 0;
     return obj->capacity - 2;

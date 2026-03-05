@@ -3,6 +3,15 @@
 ## TODO
 - optimize the switch case stuff to not be just a ifelse alias.
 
+## 1.9.0
+- int/float arrays are raw byte buffers; `"string"` is a view over those bytes, not a separate type.
+- `arr.string` produces a string view over the int array's bytes: `println(arr.string)` prints as NUL-terminated text, `arr.string[i]` returns the char at byte `i` as a 1-byte string.
+- `.size` and `.capacity` on typed views (`arr.string`, `arr.u8`, `arr.u16`, `arr.u32`, `arr.u64`, `arr.f32`, `arr.f64`) now return the element count for that view's element width: `arr.u8.size = total_bytes / 1`, `arr.u16.size = total_bytes / 2`, etc.
+- `arr.string.size` uses `strlen` semantics (stops at first `\0`); `arr.string.capacity` is raw allocated bytes.
+- `arr.size` (plain int array, no view) returns `total_bytes / sizeof(Int)` as before.
+- fix `vm_meta_size_entry`: VIEW type now returns `disturb_bytes_len(base) / stride`; string type now uses `strlen` instead of raw byte count.
+- fix `vm_meta_capacity_entry`: VIEW type now returns `base_capacity_bytes / stride`.
+
 ## 1.8.1
 - the `:` after `case <expr>` and `default` in switch statements is no longer part of the syntax; `case 1 { ... }` is the required form.
 
