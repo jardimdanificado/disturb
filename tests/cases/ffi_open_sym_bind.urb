@@ -22,6 +22,32 @@ if (ptr == null) {
 
 C.ffi.close(lib),
 
+libf = C.ffi.open("./tests/ffi/libffi_view_struct.so", C.ffi.RTLD_NOW | C.ffi.RTLD_LOCAL),
+if (libf == null) { libf = C.ffi.open("./tests/ffi/libffi_view_struct.dylib", C.ffi.RTLD_NOW | C.ffi.RTLD_LOCAL), }
+if (libf == null) { libf = C.ffi.open("./tests/ffi/libffi_view_struct.dll", C.ffi.RTLD_NOW | C.ffi.RTLD_LOCAL), }
+if (libf == null) {
+  fail++,
+} else {
+  ptrf = C.ffi.sym(libf, "sum_variadic_i32"),
+  if (ptrf == null) { fail++, }
+  C.ffi.close(libf),
+}
+
+strlen_ptr = C.ffi.symSelf("strlen"),
+if (strlen_ptr == null) {
+  fail++,
+} else {
+  strlen = C.ffi.bind(strlen_ptr, "u64 strlen(cstring)"),
+  if (strlen("disturb") != 7) { fail++, }
+}
+
+bad = C.ffi.open("./tests/ffi/definitely_missing_library.so", C.ffi.RTLD_NOW),
+if (bad != null) { fail++, }
+derr = C.ffi.dlerror(),
+if (derr == null) { fail++, }
+en = C.ffi.errno(),
+if (en.type != "int") { fail++, }
+
 lib2 = open_fixture("./tests/ffi/libffi_view_struct.so"),
 if (lib2 == null) { lib2 = open_fixture("./tests/ffi/libffi_view_struct.dylib"), }
 if (lib2 == null) { lib2 = open_fixture("./tests/ffi/libffi_view_struct.dll"), }

@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <errno.h>
 #include <wchar.h>
 #include <stdarg.h>
 
@@ -271,6 +272,15 @@ typedef struct {
     int kind; /* 0 = dlopen handle */
     void *handle;
 } FfiLibHandle;
+
+enum {
+    DISTURB_RTLD_LAZY     = 1 << 0,
+    DISTURB_RTLD_NOW      = 1 << 1,
+    DISTURB_RTLD_LOCAL    = 1 << 2,
+    DISTURB_RTLD_GLOBAL   = 1 << 3,
+    DISTURB_RTLD_NODELETE = 1 << 4,
+    DISTURB_RTLD_NOLOAD   = 1 << 5,
+};
 #endif
 
 #ifdef DISTURB_ENABLE_FFI_CALLS
@@ -537,8 +547,23 @@ static void ffi_types_release_array(FfiType *arr, int count)
     }
 }
 
-#ifdef _WIN32
 static char g_ffi_dl_error[256];
+
+static void ffi_dl_clear_error(void)
+{
+    g_ffi_dl_error[0] = 0;
+}
+
+static void ffi_dl_set_error_cstr(const char *msg)
+{
+    if (!msg || !msg[0]) {
+        ffi_dl_clear_error();
+        return;
+    }
+    snprintf(g_ffi_dl_error, sizeof(g_ffi_dl_error), "%s", msg);
+}
+
+#ifdef _WIN32
 
 static void ffi_dl_set_error_win32(const char *fmt, ...)
 {
@@ -572,8 +597,10 @@ static void ffi_dl_set_error_last(const char *prefix)
     if (msg) LocalFree(msg);
 }
 
-static void *ffi_dlopen(const char *path)
+static void *ffi_dlopen_flags(const char *path, int flags)
 {
+    (void)flags;
+    ffi_dl_clear_error();
     SetLastError(0);
     HMODULE h = LoadLibraryA(path);
     if (!h) {
@@ -584,6 +611,7 @@ static void *ffi_dlopen(const char *path)
 
 static void *ffi_dlsym(void *handle, const char *name)
 {
+    ffi_dl_clear_error();
     SetLastError(0);
     FARPROC p = GetProcAddress((HMODULE)handle, name);
     if (!p) {
@@ -593,9 +621,23 @@ static void *ffi_dlsym(void *handle, const char *name)
     return (void*)p;
 }
 
+static void *ffi_dlsym_self(const char *name)
+{
+    ffi_dl_clear_error();
+    SetLastError(0);
+    HMODULE self = GetModuleHandleA(NULL);
+    FARPROC p = self ? GetProcAddress(self, name) : NULL;
+    if (!p) {
+        ffi_dl_set_error_last("ffi.symSelf failed");
+        return NULL;
+    }
+    return (void*)p;
+}
+
 static int ffi_dlclose(void *handle)
 {
     if (!handle) return 1;
+    ffi_dl_clear_error();
     SetLastError(0);
     if (!FreeLibrary((HMODULE)handle)) {
         ffi_dl_set_error_last("ffi.close failed");
@@ -609,26 +651,111 @@ static const char *ffi_dlerror_msg(void)
     return g_ffi_dl_error[0] ? g_ffi_dl_error : "ffi dynamic loading error";
 }
 #else
-static void *ffi_dlopen(const char *path)
+static int ffi_translate_dlopen_flags(int flags)
 {
-    return dlopen(path, RTLD_LAZY);
+    int native_flags = 0;
+    ffi_dl_clear_error();
+    dlerror();
+
+#ifdef RTLD_NOW
+    if (flags & DISTURB_RTLD_NOW) native_flags |= RTLD_NOW;
+#endif
+#ifdef RTLD_LAZY
+    if (flags & DISTURB_RTLD_LAZY) native_flags |= RTLD_LAZY;
+    if ((native_flags & (RTLD_LAZY
+#ifdef RTLD_NOW
+        | RTLD_NOW
+#endif
+        )) == 0) {
+        native_flags |= RTLD_LAZY;
+    }
+#endif
+#ifdef RTLD_LOCAL
+    if (flags & DISTURB_RTLD_LOCAL) native_flags |= RTLD_LOCAL;
+#endif
+#ifdef RTLD_GLOBAL
+    if (flags & DISTURB_RTLD_GLOBAL) native_flags |= RTLD_GLOBAL;
+#endif
+#ifdef RTLD_NODELETE
+    if (flags & DISTURB_RTLD_NODELETE) native_flags |= RTLD_NODELETE;
+#endif
+#ifdef RTLD_NOLOAD
+    if (flags & DISTURB_RTLD_NOLOAD) native_flags |= RTLD_NOLOAD;
+#endif
+
+    return native_flags;
+}
+
+static void *ffi_dlopen_flags(const char *path, int flags)
+{
+    void *handle = dlopen(path, ffi_translate_dlopen_flags(flags));
+    if (!handle) {
+        const char *e = dlerror();
+        ffi_dl_set_error_cstr(e ? e : "ffi.open failed");
+    }
+    return handle;
 }
 
 static void *ffi_dlsym(void *handle, const char *name)
 {
-    return dlsym(handle, name);
+    void *ptr = NULL;
+    ffi_dl_clear_error();
+    dlerror();
+    ptr = dlsym(handle, name);
+    {
+        const char *e = dlerror();
+        if (e) {
+            ffi_dl_set_error_cstr(e);
+            return NULL;
+        }
+    }
+    return ptr;
+}
+
+static void *ffi_dlsym_self(const char *name)
+{
+    void *ptr = NULL;
+    ffi_dl_clear_error();
+    dlerror();
+#ifdef RTLD_DEFAULT
+    ptr = dlsym(RTLD_DEFAULT, name);
+#else
+    {
+        void *self = dlopen(NULL, ffi_translate_dlopen_flags(0));
+        if (!self) {
+            const char *e = dlerror();
+            ffi_dl_set_error_cstr(e ? e : "ffi.symSelf failed");
+            return NULL;
+        }
+        ptr = dlsym(self, name);
+        dlclose(self);
+    }
+#endif
+    {
+        const char *e = dlerror();
+        if (e) {
+            ffi_dl_set_error_cstr(e);
+            return NULL;
+        }
+    }
+    return ptr;
 }
 
 static int ffi_dlclose(void *handle)
 {
     if (!handle) return 1;
-    return dlclose(handle) == 0;
+    ffi_dl_clear_error();
+    if (dlclose(handle) != 0) {
+        const char *e = dlerror();
+        ffi_dl_set_error_cstr(e ? e : "ffi.close failed");
+        return 0;
+    }
+    return 1;
 }
 
 static const char *ffi_dlerror_msg(void)
 {
-    const char *e = dlerror();
-    return e ? e : "ffi dynamic loading error";
+    return g_ffi_dl_error[0] ? g_ffi_dl_error : "ffi dynamic loading error";
 }
 #endif
 
@@ -5301,7 +5428,19 @@ void native_ffi_open(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi.open expects string path\n");
         return;
     }
-    void *handle = ffi_dlopen(path);
+    Int iv = 0;
+    Float fv = 0;
+    int is_float = 0;
+    int flags = 0;
+    if (argc >= 2) {
+        ObjEntry *flags_entry = ffi_native_arg(stack, argc, 1);
+        if (!flags_entry || !entry_number_scalar(flags_entry, &iv, &fv, &is_float) || is_float) {
+            fprintf(stderr, "ffi.open expects integer flags as second argument\n");
+            return;
+        }
+        flags = (int)iv;
+    }
+    void *handle = ffi_dlopen_flags(path, flags);
     if (!handle) {
         fprintf(stderr, "%s\n", ffi_dlerror_msg());
         return;
@@ -5386,6 +5525,60 @@ void native_ffi_sym(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, out);
 }
 
+void native_ffi_sym_self(VM *vm, List *stack, List *global)
+{
+    (void)global;
+    uint32_t argc = ffi_native_argc(vm);
+    if (argc < 1) {
+        fprintf(stderr, "ffi.symSelf expects symbol name\n");
+        return;
+    }
+    ObjEntry *name_entry = ffi_native_arg(stack, argc, 0);
+    if (!name_entry || !entry_is_string(name_entry)) {
+        fprintf(stderr, "ffi.symSelf expects string symbol name\n");
+        return;
+    }
+    size_t name_len = disturb_bytes_len(name_entry->obj);
+    const char *name_src = disturb_bytes_data(name_entry->obj);
+    char *name = (char*)calloc(1, name_len + 1);
+    if (!name) {
+        fprintf(stderr, "ffi: out of memory\n");
+        return;
+    }
+    memcpy(name, name_src, name_len);
+    name[name_len] = 0;
+    void *ptr = ffi_dlsym_self(name);
+    free(name);
+    if (!ptr) {
+        fprintf(stderr, "%s\n", ffi_dlerror_msg());
+        return;
+    }
+    ObjEntry *out = ffi_make_ptr_handle_entry(vm, (uintptr_t)ptr, 0);
+    if (!out) {
+        ffi_push_entry(vm, vm_make_int_value(vm, (Int)(uintptr_t)ptr));
+        return;
+    }
+    ffi_push_entry(vm, out);
+}
+
+static void native_ffi_errno(VM *vm, List *stack, List *global)
+{
+    (void)stack;
+    (void)global;
+    ffi_push_entry(vm, vm_make_int_value(vm, (Int)errno));
+}
+
+static void native_ffi_dlerror(VM *vm, List *stack, List *global)
+{
+    (void)stack;
+    (void)global;
+    if (!g_ffi_dl_error[0]) {
+        ffi_push_entry(vm, vm->null_entry);
+        return;
+    }
+    ffi_push_entry(vm, vm_make_bytes_value(vm, g_ffi_dl_error, strlen(g_ffi_dl_error)));
+}
+
 #else
 void native_ffi_callback(VM *vm, List *stack, List *global)
 {
@@ -5415,6 +5608,12 @@ void native_ffi_sym(VM *vm, List *stack, List *global)
 {
     (void)vm; (void)stack; (void)global;
     fprintf(stderr, "ffi.sym unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+}
+
+void native_ffi_sym_self(VM *vm, List *stack, List *global)
+{
+    (void)vm; (void)stack; (void)global;
+    fprintf(stderr, "ffi.symSelf unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
 }
 #endif
 
@@ -6195,6 +6394,13 @@ static void ffi_add_module_fn(VM *vm, ObjEntry *ffi_entry, const char *name, Nat
     vm_object_set_by_key(vm, ffi_entry, name, strlen(name), entry);
 }
 
+static void ffi_add_module_int(VM *vm, ObjEntry *entry, const char *name, Int value)
+{
+    ObjEntry *val = vm_make_int_value(vm, value);
+    if (!val) return;
+    vm_object_set_by_key(vm, entry, name, strlen(name), val);
+}
+
 /* ---- Fase 2: native_ffi_typedef ---- */
 static void native_ffi_typedef(VM *vm, List *stack, List *global)
 {
@@ -6926,7 +7132,7 @@ static void native_ffi_lib(VM *vm, List *stack, List *global)
         return;
     }
 
-    void *dl = ffi_dlopen(path);
+    void *dl = ffi_dlopen_flags(path, 0);
     if (!dl) {
         fprintf(stderr, "ffi.lib: failed to open '%s'\n", path);
         ffi_push_entry(vm, vm->null_entry);
@@ -6962,7 +7168,7 @@ static void native_ffi_lib(VM *vm, List *stack, List *global)
 
     /* Also store __handle as a lib handle entry for use with ffi.sym/ffi.auto.
      * Re-open the library so the lib handle has its own dlopen refcount. */
-    void *dl2 = ffi_dlopen(path);
+    void *dl2 = ffi_dlopen_flags(path, 0);
     if (dl2) {
         FfiLibHandle *lh = ffi_lib_handle_new(dl2);
         if (lh) {
@@ -6997,11 +7203,20 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
     if (!vm || !ffi_entry) return;
     ffi_set_main_thread(); /* 5.3: record main thread for callback safety check */
 #ifdef DISTURB_ENABLE_FFI_CALLS
+    ffi_add_module_int(vm, ffi_entry, "RTLD_LAZY", DISTURB_RTLD_LAZY);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_NOW", DISTURB_RTLD_NOW);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_LOCAL", DISTURB_RTLD_LOCAL);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_GLOBAL", DISTURB_RTLD_GLOBAL);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_NODELETE", DISTURB_RTLD_NODELETE);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_NOLOAD", DISTURB_RTLD_NOLOAD);
     ffi_add_module_fn(vm, ffi_entry, "open", native_ffi_open);
     ffi_add_module_fn(vm, ffi_entry, "close", native_ffi_close);
     ffi_add_module_fn(vm, ffi_entry, "sym", native_ffi_sym);
+    ffi_add_module_fn(vm, ffi_entry, "symSelf", native_ffi_sym_self);
     ffi_add_module_fn(vm, ffi_entry, "bind", native_ffi_bind);
     ffi_add_module_fn(vm, ffi_entry, "callback", native_ffi_callback);
+    ffi_add_module_fn(vm, ffi_entry, "errno", native_ffi_errno);
+    ffi_add_module_fn(vm, ffi_entry, "dlerror", native_ffi_dlerror);
     /* Fase 6: ergonomia (FFI_CALLS dependent) */
     ffi_add_module_fn(vm, ffi_entry, "auto", native_ffi_auto);
     ffi_add_module_fn(vm, ffi_entry, "lib", native_ffi_lib);

@@ -6,6 +6,7 @@
 ## 1.9.1
 - `argc` CLI global is now exposed as an integer scalar instead of a string.
 - `C.info()` no longer exposes the deprecated `tcc` field.
+- add low-level `C.ffi` loader helpers: `symSelf()`, `errno()`, `dlerror()`, and portable `RTLD_*` constants for `open(path[, flags])`.
 
 ## 1.9.0
 - int/float arrays are raw byte buffers; `"string"` is a view over those bytes, not a separate type.

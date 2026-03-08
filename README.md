@@ -461,14 +461,17 @@ Main API:
 - `C.define(name, value)`
 - `C.struct(name, schema)`
 - `C.defines` (constants table)
-- `C.ffi.open(libPath)`
+- `C.ffi.open(libPath[, flags])`
 - `C.ffi.sym(libHandle, symbolName)`
+- `C.ffi.symSelf(symbolName)`
 - `C.ffi.close(libHandle)`
 - `C.ffi.bind(ptr, "signature")`
 - `C.ffi.callback("signature", lambda)`
 - `C.ffi.auto(libOrProxy, sig)`
 - `C.ffi.lib(path)`
 - `C.ffi.global(lib, name, typeOrSchema)`
+- `C.ffi.errno()`
+- `C.ffi.dlerror()`
 - `C.ffi.trace()` / `C.ffi.trace(0|1)`
 - `C.memory.compile(schema)`
 - `C.memory.new(schemaOrLayout)`
@@ -492,6 +495,10 @@ Main API:
 
 Notes:
 - Two-step loading is supported via `C.ffi.open` + `C.ffi.sym` + `C.ffi.bind`.
+- `C.ffi.symSelf(name)` resolves a symbol from the current process without an explicit library handle.
+- `C.ffi.errno()` returns the current thread-local C `errno` value.
+- `C.ffi.dlerror()` returns the last dynamic-loader error string or `null`.
+- `C.ffi.open(path, flags)` accepts bitwise-OR loader flags from `C.ffi.RTLD_LAZY`, `C.ffi.RTLD_NOW`, `C.ffi.RTLD_LOCAL`, `C.ffi.RTLD_GLOBAL`, `C.ffi.RTLD_NODELETE`, `C.ffi.RTLD_NOLOAD`.
 - `C.memory.compile(schema)` is optional for normal use.
 - `C.memory.view/sizeof/alignof/offsetof/new` accept either a schema table or a compiled layout handle; schema tables are auto-compiled and cached internally.
 - `C.memory.point(value)` returns a numeric pointer for list/view data or existing pointer-like FFI values (`null` maps to `0`).
@@ -866,13 +873,15 @@ Primary APIs used by examples/tests:
 - `C.enum(name, fields)`
 - `C.define(name, value)`
 - `C.struct(name, schema)`
-- `C.ffi.open(libPath)`
+- `C.ffi.open(libPath[, flags])`
 - `C.ffi.sym(libHandle, symbolName)`
+- `C.ffi.symSelf(symbolName)`
 - `C.ffi.close(libHandle)`
 - `C.ffi.bind(ptr, sig)`
 - `C.ffi.callback(sig, lambda)` (builds C callback pointer from lambda)
 - `C.ffi.auto(libOrProxy, sig)` / `C.ffi.lib(path)`
 - `C.ffi.global(lib, name, typeOrSchema)`
+- `C.ffi.errno()` / `C.ffi.dlerror()`
 - `C.ffi.trace()` / `C.ffi.trace(0|1)`
 - `C.memory.compile(schema)`
 - `C.memory.new(schemaOrLayout)` (allocates zeroed struct memory and returns owned pointer handle)
@@ -891,6 +900,7 @@ Primary APIs used by examples/tests:
 - `C.memory.offsetof(schemaOrLayout, "field.path")`
 - `C.memory.view(ptr, schemaOrLayout[, totalSize])`
 - `C.memory.viewArray(ptr, elemSpec, len)`
+- loader flags for `C.ffi.open`: `C.ffi.RTLD_LAZY`, `C.ffi.RTLD_NOW`, `C.ffi.RTLD_LOCAL`, `C.ffi.RTLD_GLOBAL`, `C.ffi.RTLD_NODELETE`, `C.ffi.RTLD_NOLOAD`
 - `C.memory.compile(schema)` is optional in common flows; schema tables are auto-compiled/cached when passed to `C.memory.view`, `C.memory.sizeof`, `C.memory.alignof`, `C.memory.offsetof`, and `C.memory.new`.
 - signatures support: `struct(schema)` (by-value struct), `union(schema)` (by-value union), `pointer(schema)` (typed pointer), `void*` (raw pointer), pointer depth via `pointer(pointer(...))`
 - string-like types in signatures:
