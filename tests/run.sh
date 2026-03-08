@@ -24,6 +24,23 @@ run_case() {
   echo "case: $name ok"
 }
 
+run_case_with_args() {
+  name=$1
+  shift
+  src="tests/cases/${name}.urb"
+  expected="tests/expected/${name}.out"
+  actual="tests/expected/${name}.actual"
+
+  echo "case: $name"
+  "$BIN" "$src" "$@" > "$actual"
+  if ! diff -u "$expected" "$actual"; then
+    echo "test failed: $name" >&2
+    exit 1
+  fi
+  rm -f "$actual"
+  echo "case: $name ok"
+}
+
 run_case basic
 run_case indexing
 run_case bytes
@@ -49,6 +66,7 @@ run_case keyintern_toggle
 run_case value
 run_case math_vectors
 run_case scientific_notation
+run_case_with_args cli_args alpha beta
 
 can_import=1
 import_probe="$(mktemp)"

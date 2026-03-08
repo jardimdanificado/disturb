@@ -371,7 +371,7 @@ Disturb installs common functions in `global.common`, so they are callable as me
 CLI arguments are exposed as globals:
 - `arg_0`, `arg_1`, ...
 - `args` table
-- `argc` (string value)
+- `argc` (int value)
 
 Example:
 

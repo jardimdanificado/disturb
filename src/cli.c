@@ -162,9 +162,12 @@ static void vm_add_args(VM *vm, int argc, char **argv)
         free(items);
     }
     
-    // Define argc como uma variável única
+    // Define argc como um inteiro escalar
     snprintf(var_name, sizeof(var_name), "%d", argc);
-    vm_define_bytes(vm, "argc", var_name);
+    {
+        char *argc_items[1] = { var_name };
+        vm_define_number(vm, "argc", argc_items, 1, 0);
+    }
 }
 
 static int repl_run(int argc, char **argv)

@@ -3,6 +3,10 @@
 ## TODO
 - optimize the switch case stuff to not be just a ifelse alias.
 
+## 1.9.1
+- `argc` CLI global is now exposed as an integer scalar instead of a string.
+- `C.info()` no longer exposes the deprecated `tcc` field.
+
 ## 1.9.0
 - int/float arrays are raw byte buffers; `"string"` is a view over those bytes, not a separate type.
 - `arr.string` produces a string view over the int array's bytes: `println(arr.string)` prints as NUL-terminated text, `arr.string[i]` returns the char at byte `i` as a 1-byte string.

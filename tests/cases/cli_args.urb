@@ -1,0 +1,5 @@
+println(argc),
+println(argc + 1),
+println(arg_0),
+println(arg_1),
+println(args.size),

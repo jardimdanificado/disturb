@@ -10,6 +10,7 @@ if (info.arch == null) { fail++, println("info arch null"), }
 if (info.sizeof_ptr < 1) { fail++, println("info sizeof_ptr"), }
 if (info.sizeof_long < 1) { fail++, println("info sizeof_long"), }
 if (info.sizeof_long_double < 1) { fail++, println("info sizeof_long_double"), }
+if (info.has("tcc")) { fail++, println("info tcc"), }
 
 if (info.endian != "little") {
   if (info.endian != "big") { fail++, println("info endian"), }
