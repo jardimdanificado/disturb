@@ -2,6 +2,14 @@
 
 ## TODO
 - optimize the switch case stuff to not be just a ifelse alias.
+- optimize all vector stuff with SIMD.
+-- paralelism.
+--- gpu computing optimizations.
+
+## 1.9.2
+- add scalar-vector math helpers in `global.common`: `sadd`, `ssub`, `smul`, `sdiv`, `smod`, `spow`.
+- scalar-vector helpers support both call styles: function form (`sadd(vec, n)`) and method form (`vec.sadd(n)`).
+- expand math vector regression coverage with scalar-vector operation cases and expected outputs; document new helpers in README math section.
 
 ## 1.9.1
 - `argc` CLI global is now exposed as an integer scalar instead of a string.

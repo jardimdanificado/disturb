@@ -2674,6 +2674,18 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "pow", "pow");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "sadd", "sadd");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "ssub", "ssub");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "smul", "smul");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "sdiv", "sdiv");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "smod", "smod");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "spow", "spow");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "min", "min");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "max", "max");

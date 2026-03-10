@@ -2060,6 +2060,110 @@ static void native_mod(VM *vm, List *stack, List *global)
     push_number(vm, stack, (Float)fmod((double)a, (double)b));
 }
 
+enum NativeScalarMathOp {
+    NATIVE_SOP_ADD = 0,
+    NATIVE_SOP_SUB,
+    NATIVE_SOP_MUL,
+    NATIVE_SOP_DIV,
+    NATIVE_SOP_MOD,
+    NATIVE_SOP_POW,
+};
+
+static void native_apply_scalar_math(VM *vm, List *stack, List *global,
+                                     enum NativeScalarMathOp op, const char *name)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *self = native_this(vm);
+    ObjEntry *vec_entry = NULL;
+    ObjEntry *scalar_entry = NULL;
+
+    if (self) {
+        Int self_type = disturb_obj_type(self->obj);
+        if ((self_type == DISTURB_T_INT && !entry_is_string(self)) || self_type == DISTURB_T_FLOAT) {
+            vec_entry = self;
+            scalar_entry = native_arg(stack, argc, 0);
+        }
+    }
+    if (!vec_entry) {
+        vec_entry = native_arg(stack, argc, 0);
+        scalar_entry = native_arg(stack, argc, 1);
+    }
+
+    if (!vec_entry || !scalar_entry) {
+        fprintf(stderr, "%s expects vector and scalar\n", name);
+        return;
+    }
+
+    int vec_is_float = 0;
+    Int vec_count = numeric_entry_count(vec_entry, &vec_is_float);
+    if (vec_count <= 0) {
+        fprintf(stderr, "%s expects numeric vector as first argument\n", name);
+        return;
+    }
+
+    Float scalar = 0;
+    if (!entry_as_number(scalar_entry, &scalar)) {
+        fprintf(stderr, "%s expects numeric scalar as second argument\n", name);
+        return;
+    }
+
+    int out_is_float = vec_is_float || disturb_obj_type(scalar_entry->obj) == DISTURB_T_FLOAT;
+    ObjEntry *res = out_is_float ? vm_make_float_list(vm, vec_count) : vm_make_int_list(vm, vec_count);
+    if (!res) {
+        fprintf(stderr, "%s: allocation failed\n", name);
+        return;
+    }
+
+    for (Int i = 0; i < vec_count; i++) {
+        double lv = numeric_entry_read_at(vec_entry, i, vec_is_float);
+        double rv = (double)scalar;
+        double out = 0.0;
+        switch (op) {
+        case NATIVE_SOP_ADD: out = lv + rv; break;
+        case NATIVE_SOP_SUB: out = lv - rv; break;
+        case NATIVE_SOP_MUL: out = lv * rv; break;
+        case NATIVE_SOP_DIV: out = lv / rv; break;
+        case NATIVE_SOP_MOD: out = fmod(lv, rv); break;
+        case NATIVE_SOP_POW: out = pow(lv, rv); break;
+        default: break;
+        }
+        if (out_is_float) write_float_bytes(res->obj, i, (Float)out);
+        else write_int_bytes(res->obj, i, (Int)out);
+    }
+
+    push_entry(vm, stack, res);
+}
+
+static void native_sadd(VM *vm, List *stack, List *global)
+{
+    native_apply_scalar_math(vm, stack, global, NATIVE_SOP_ADD, "sadd");
+}
+
+static void native_ssub(VM *vm, List *stack, List *global)
+{
+    native_apply_scalar_math(vm, stack, global, NATIVE_SOP_SUB, "ssub");
+}
+
+static void native_smul(VM *vm, List *stack, List *global)
+{
+    native_apply_scalar_math(vm, stack, global, NATIVE_SOP_MUL, "smul");
+}
+
+static void native_sdiv(VM *vm, List *stack, List *global)
+{
+    native_apply_scalar_math(vm, stack, global, NATIVE_SOP_DIV, "sdiv");
+}
+
+static void native_smod(VM *vm, List *stack, List *global)
+{
+    native_apply_scalar_math(vm, stack, global, NATIVE_SOP_MOD, "smod");
+}
+
+static void native_spow(VM *vm, List *stack, List *global)
+{
+    native_apply_scalar_math(vm, stack, global, NATIVE_SOP_POW, "spow");
+}
+
 /* Helper: read the element count and type info for a numeric entry (non-string). */
 static Int numeric_entry_count(ObjEntry *entry, int *out_is_float)
 {
@@ -3413,6 +3517,12 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "div") == 0) return native_div;
     if (strcmp(name, "mod") == 0) return native_mod;
     if (strcmp(name, "pow") == 0) return native_pow;
+    if (strcmp(name, "sadd") == 0) return native_sadd;
+    if (strcmp(name, "ssub") == 0) return native_ssub;
+    if (strcmp(name, "smul") == 0) return native_smul;
+    if (strcmp(name, "sdiv") == 0) return native_sdiv;
+    if (strcmp(name, "smod") == 0) return native_smod;
+    if (strcmp(name, "spow") == 0) return native_spow;
     if (strcmp(name, "min") == 0) return native_min;
     if (strcmp(name, "max") == 0) return native_max;
     if (strcmp(name, "abs") == 0) return native_abs;

@@ -329,6 +329,7 @@ Disturb installs common functions in `global.common`, so they are callable as me
 ### Math
 - `append`
 - `add sub mul div mod pow`
+- `sadd ssub smul sdiv smod spow` (vector + scalar)
 - `min max abs floor ceil round sqrt`
 - `sin cos tan asin acos atan log exp`
 
