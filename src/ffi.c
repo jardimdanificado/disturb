@@ -27,6 +27,7 @@
 #define DISTURB_ALIGNOF(T) __alignof__(T)
 #endif
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -60,6 +61,7 @@ static int ffi_is_main_thread(void) {
     return !ffi_main_thread_set || pthread_equal(pthread_self(), ffi_main_thread_id);
 }
 #endif
+#endif /* DISTURB_ENABLE_FFI_CALLS */
 
 typedef enum {
     FFI_BASE_VOID = 0,
@@ -7204,8 +7206,8 @@ void c_module_install(VM *vm, ObjEntry *c_entry)
 void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
 {
     if (!vm || !ffi_entry) return;
-    ffi_set_main_thread(); /* 5.3: record main thread for callback safety check */
 #ifdef DISTURB_ENABLE_FFI_CALLS
+    ffi_set_main_thread(); /* 5.3: record main thread for callback safety check */
     ffi_add_module_int(vm, ffi_entry, "RTLD_LAZY", DISTURB_RTLD_LAZY);
     ffi_add_module_int(vm, ffi_entry, "RTLD_NOW", DISTURB_RTLD_NOW);
     ffi_add_module_int(vm, ffi_entry, "RTLD_LOCAL", DISTURB_RTLD_LOCAL);
