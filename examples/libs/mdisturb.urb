@@ -1,0 +1,202 @@
+// MDisturb
+// Uso:
+//   disturb mdisturb.urb print arquivo.md
+//   disturb mdisturb.urb extract arquivo.md [saida.urb]
+//   disturb mdisturb.urb run arquivo.md
+
+md_usage = (){
+  println("MDisturb - roda Disturb a partir de Markdown"),
+  println("Uso:"),
+  println("  disturb mdisturb.urb print <arquivo.md>"),
+  println("  disturb mdisturb.urb extract <arquivo.md> [saida.urb]"),
+  println("  disturb mdisturb.urb run <arquivo.md>"),
+},
+
+md_ends_with = (text, suffix){
+  n = len(text),
+  m = len(suffix),
+  if (m > n) { return 0, }
+  return (text.substr(n - m, m) == suffix),
+},
+
+md_default_output = (input_path){
+  if (md_ends_with(input_path, ".md")) {
+    return (input_path.substr(0, len(input_path) - 3) + ".urb"),
+  }
+  return (input_path + ".urb"),
+},
+
+md_char_at = (text, idx){
+  if (idx < 0 || idx >= len(text)) { return "", }
+  return text.substr(idx, 1),
+},
+
+md_strip_cr = (line){
+  n = len(line),
+  if (n > 0) {
+    if (md_char_at(line, n - 1) == '\r') {
+      return line.substr(0, n - 1),
+    }
+  }
+  return line,
+},
+
+md_is_ws = (ch){
+  return (ch == ' ' || ch == '\t' || ch == '\r'),
+},
+
+md_count_leading_spaces = (line){
+  i = 0,
+  n = len(line),
+  while (i < n) {
+    if (md_char_at(line, i) != ' ') {
+      break,
+    }
+    i++,
+  }
+  return i,
+},
+
+md_all_ws_from = (text, start){
+  i = start,
+  n = len(text),
+  while (i < n) {
+    if (!md_is_ws(md_char_at(text, i))) {
+      return 0,
+    }
+    i++,
+  }
+  return 1,
+},
+
+md_parse_fence = (line){
+  indent = md_count_leading_spaces(line),
+  if (indent > 3) {
+    return {is_fence = 0},
+  }
+
+  n = len(line),
+  if (indent >= n) {
+    return {is_fence = 0},
+  }
+
+  ch = md_char_at(line, indent),
+  if (ch != '`') {
+    if (ch != '~') {
+      return {is_fence = 0},
+    }
+  }
+
+  run = 0,
+  while ((indent + run) < n) {
+    if (md_char_at(line, indent + run) != ch) {
+      break,
+    }
+    run++,
+  }
+
+  if (run < 3) {
+    return {is_fence = 0},
+  }
+
+  return {
+    is_fence = 1,
+    indent = indent,
+    ch = ch,
+    run = run,
+  },
+},
+
+md_extract = (markdown_text){
+  lines = markdown_text.split("\n"),
+  out = {},
+  in_fence = 0,
+  fence_ch = "",
+  fence_run = 0,
+
+  each line in lines {
+    clean_line = md_strip_cr(line),
+    fence = md_parse_fence(clean_line),
+
+    if (!in_fence) {
+      if (fence.is_fence) {
+        in_fence = 1,
+        fence_ch = fence.ch,
+        fence_run = fence.run,
+      }
+      continue,
+    }
+
+    if (fence.is_fence) {
+      if (fence.ch == fence_ch) {
+        if (fence.run >= fence_run) {
+          close_pos = fence.indent + fence.run,
+          if (md_all_ws_from(clean_line, close_pos)) {
+            in_fence = 0,
+            fence_ch = "",
+            fence_run = 0,
+            continue,
+          }
+        }
+      }
+    }
+
+    out.push(clean_line.copy()),
+  }
+
+  return out.join("\n"),
+},
+
+md_load = (path){
+  content = read(path),
+  if (content == null) {
+    println("MDisturb: falha ao ler " + path),
+    return null,
+  }
+  return (content + ""),
+},
+
+if (argc < 2) {
+  md_usage(),
+  return,
+}
+
+cmd = (arg_0 + ""),
+input_path = (arg_1 + ""),
+
+if (cmd == "print") {
+  markdown_text = md_load(input_path),
+  if (markdown_text == null) { return, }
+  println(md_extract(markdown_text)),
+  return,
+}
+
+if (cmd == "extract") {
+  markdown_text = md_load(input_path),
+  if (markdown_text == null) { return, }
+
+  out_path = md_default_output(input_path),
+  if (argc >= 3 && arg_2 != null) {
+    out_path = (arg_2 + ""),
+  }
+
+  urb_source = md_extract(markdown_text),
+  ok = write(out_path, urb_source),
+  if (!ok) {
+    println("MDisturb: falha ao gravar " + out_path),
+    return,
+  }
+
+  println("MDisturb: gerado " + out_path),
+  return,
+}
+
+if (cmd == "run") {
+  markdown_text = md_load(input_path),
+  if (markdown_text == null) { return, }
+  eval(md_extract(markdown_text)),
+  return,
+}
+
+println("MDisturb: comando invalido: " + cmd),
+md_usage(),

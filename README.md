@@ -24,6 +24,18 @@ Optional flags:
 make DISABLE_SYSTEM=1
 ```
 
+Install:
+
+```bash
+make install
+```
+
+Install options:
+- change output binary name: `make TARGET=disturb-dev`
+- change install path: `make install PREFIX=$HOME/.local`
+- stage install root (packaging): `make install DESTDIR=/tmp/pkgroot`
+- change installed file name: `make install INSTALL_TARGET=disturb`
+
 Flag behavior summary:
 - `DISABLE_SYSTEM=0` (default/full): enables IO natives, `import`, and dynamic FFI calls (`C.ffi.open`/`C.ffi.sym`/`C.ffi.bind`/`C.ffi.callback`)
 - `DISABLE_SYSTEM=1` (embedded): disables features that depend on OS/file-system integration (IO natives, `import`, dynamic FFI calls), while keeping FFI core (`C`, `C.memory`, `C.typedef`/`C.struct`) available
@@ -53,6 +65,24 @@ Notes:
 - No-arg execution starts the REPL.
 - `--compile-bytecode` emits raw bytecode.
 - `--run-bytecode` runs raw bytecode.
+
+## MDisturb (Markdown -> Disturb)
+
+`MDisturb` is a Disturb script that reads `.md` files and treats fenced code blocks (```...``` or ~~~...~~~) as Disturb source.
+
+Commands:
+
+```bash
+./disturb mdisturb.urb print docs.md
+./disturb mdisturb.urb extract docs.md [output.urb]
+./disturb mdisturb.urb run docs.md
+```
+
+Behavior:
+- `print`: prints the extracted Disturb source.
+- `extract`: writes extracted source to `.urb` (`docs.md -> docs.urb` by default).
+- `run`: evaluates extracted source directly with `eval`.
+- language labels on fences are ignored; all fenced code is considered Disturb.
 
 ## First Script
 

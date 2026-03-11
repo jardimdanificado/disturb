@@ -10,6 +10,7 @@
 - add scalar-vector math helpers in `global.common`: `sadd`, `ssub`, `smul`, `sdiv`, `smod`, `spow`.
 - scalar-vector helpers support both call styles: function form (`sadd(vec, n)`) and method form (`vec.sadd(n)`).
 - expand math vector regression coverage with scalar-vector operation cases and expected outputs; document new helpers in README math section.
+- add `mdisturb.urb`: Disturb-native Markdown tool to extract (`.md` -> `.urb`), print, and run fenced code blocks as Disturb source.
 
 ## 1.9.1
 - `argc` CLI global is now exposed as an integer scalar instead of a string.

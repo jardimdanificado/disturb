@@ -547,6 +547,7 @@ static void ffi_types_release_array(FfiType *arr, int count)
     }
 }
 
+#ifdef DISTURB_ENABLE_FFI_CALLS
 static char g_ffi_dl_error[256];
 
 static void ffi_dl_clear_error(void)
@@ -758,6 +759,8 @@ static const char *ffi_dlerror_msg(void)
     return g_ffi_dl_error[0] ? g_ffi_dl_error : "ffi dynamic loading error";
 }
 #endif
+
+#endif /* DISTURB_ENABLE_FFI_CALLS */
 
 #ifdef DISTURB_ENABLE_FFI_CALLS
 static void ffi_function_retain(void *data)
