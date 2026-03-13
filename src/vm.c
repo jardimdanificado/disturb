@@ -6518,3 +6518,253 @@ ObjEntry *vm_eval_source(VM *vm, const char *src, size_t len)
     bc_free(&bc);
     return result ? result : vm->null_entry;
 }
+
+/* Markdown parser helper functions */
+static int md__is_ws(char c) {
+    return c == ' ' || c == '\t' || c == '\r';
+}
+
+static int md__count_leading_spaces(const char *line, int len) {
+    int i = 0;
+    while (i < len && line[i] == ' ') i++;
+    return i;
+}
+
+static int md__all_ws_from(const char *line, int start, int len) {
+    for (int i = start; i < len; i++) {
+        if (!md__is_ws(line[i])) return 0;
+    }
+    return 1;
+}
+
+static int md__parse_fence(const char *line, int len, int *out_indent, char *out_ch, int *out_run) {
+    int indent = md__count_leading_spaces(line, len);
+    if (indent > 3) return 0;
+    if (indent >= len) return 0;
+    char ch = line[indent];
+    if (ch != '`' && ch != '~') return 0;
+    int run = 0;
+    while (indent + run < len && line[indent + run] == ch) run++;
+    if (run < 3) return 0;
+    if (ch == '`') {
+        for (int i = indent + run; i < len; i++) {
+            if (line[i] == '`') return 0;
+        }
+    }
+    *out_indent = indent;
+    *out_ch     = ch;
+    *out_run    = run;
+    return 1;
+}
+
+static void md_append(char **out, size_t *out_len, size_t *out_cap, const char *str, size_t len) {
+    if (!*out) return;
+    if (*out_len + len + 1 > *out_cap) {
+        while (*out_cap < *out_len + len + 1) *out_cap *= 2;
+        char *tmp = (char*)realloc(*out, *out_cap);
+        if (!tmp) { free(*out); *out = NULL; return; }
+        *out = tmp;
+    }
+    memcpy(*out + *out_len, str, len);
+    *out_len += len;
+    (*out)[*out_len] = '\0';
+}
+
+static void md_append_str(char **out, size_t *out_len, size_t *out_cap, const char *str) {
+    md_append(out, out_len, out_cap, str, strlen(str));
+}
+
+static void md_append_literal(char **out, size_t *out_len, size_t *out_cap, const char *content, int len) {
+    md_append_str(out, out_len, out_cap, "\"");
+    for (int i = 0; i < len; i++) {
+        char c = content[i];
+        if (c == '\\' || c == '"') {
+            md_append_str(out, out_len, out_cap, "\\");
+            md_append(out, out_len, out_cap, &c, 1);
+        } else if (c == '\n') {
+            md_append_str(out, out_len, out_cap, "\\n");
+        } else if (c == '\r') {
+            md_append_str(out, out_len, out_cap, "\\r");
+        } else {
+            md_append(out, out_len, out_cap, &c, 1);
+        }
+    }
+    md_append_str(out, out_len, out_cap, "\"");
+}
+
+static char *trim_string(const char *str, int *len) {
+    int start = 0;
+    while (start < *len && md__is_ws(str[start])) start++;
+    int end = *len;
+    while (end > start && md__is_ws(str[end - 1])) end--;
+    *len = end - start;
+    return (char*)(str + start);
+}
+
+char *disturb_md_extract_urb(const char *md_source)
+{
+    size_t out_cap = 4096;
+    size_t out_len = 0;
+    char *out = (char*)malloc(out_cap);
+    if (!out) return NULL;
+    out[0] = '\0';
+
+    int in_fence = 0;
+    char fence_ch = 0;
+    int fence_run = 0;
+    int fence_ind = 0;
+
+    int in_list = 0;
+    int in_table = 0;
+    char curr_section[256];
+    strcpy(curr_section, "content");
+    
+    char table_headers[32][128];
+    int num_headers = 0;
+
+    md_append_str(&out, &out_len, &out_cap, "global.md ?= global.gc.new(0),\n");
+    md_append_str(&out, &out_len, &out_cap, "global.md[\"content\"] ?= global.gc.new(0),\n");
+
+    const char *p = md_source;
+    while (*p) {
+        const char *nl = p;
+        while (*nl && *nl != '\n') nl++;
+        int raw_len = (int)(nl - p);
+        int line_len = raw_len;
+        if (line_len > 0 && p[line_len - 1] == '\r') line_len--;
+
+        int f_indent = 0; char f_ch = 0; int f_run = 0;
+        int is_fence = md__parse_fence(p, line_len, &f_indent, &f_ch, &f_run);
+
+        if (!in_fence) {
+            if (is_fence) {
+                if (in_table) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_table),\n"); in_table = 0; }
+                if (in_list) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_list),\n"); in_list = 0; }
+                in_fence = 1;
+                fence_ch = f_ch; fence_run = f_run; fence_ind = f_indent;
+            } else {
+                int start = md__count_leading_spaces(p, line_len);
+                if (start < line_len && p[start] == '#' && (start + 1 >= line_len || p[start + 1] == ' ')) {
+                    if (in_table) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_table),\n"); in_table = 0; }
+                    if (in_list) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_list),\n"); in_list = 0; }
+                    
+                    int h_start = start + 1;
+                    while (h_start < line_len && p[h_start] == ' ') h_start++;
+                    int h_len = line_len - h_start;
+                    char *h_str = trim_string(p + h_start, &h_len);
+                    if (h_len > 255) h_len = 255;
+                    memcpy(curr_section, h_str, h_len);
+                    curr_section[h_len] = '\0';
+                    md_append_str(&out, &out_len, &out_cap, "global.md[\"");
+                    md_append_str(&out, &out_len, &out_cap, curr_section);
+                    md_append_str(&out, &out_len, &out_cap, "\"] ?= global.gc.new(0),\n");
+                } else if (start < line_len && p[start] == '-' && (start + 1 >= line_len || p[start + 1] == ' ')) {
+                    if (in_table) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_table),\n"); in_table = 0; }
+                    if (!in_list) {
+                        md_append_str(&out, &out_len, &out_cap, "__md_list = global.gc.new(0),\n");
+                        in_list = 1;
+                    }
+                    int i_start = start + 1;
+                    while (i_start < line_len && p[i_start] == ' ') i_start++;
+                    int i_len = line_len - i_start;
+                    char *i_str = trim_string(p + i_start, &i_len);
+                    md_append_str(&out, &out_len, &out_cap, "__md_list.push(");
+                    md_append_literal(&out, &out_len, &out_cap, i_str, i_len);
+                    md_append_str(&out, &out_len, &out_cap, "),\n");
+                } else if (memchr(p, '|', line_len) != NULL) {
+                    if (!in_table) {
+                        if (in_list) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_list),\n"); in_list = 0; }
+                        md_append_str(&out, &out_len, &out_cap, "__md_table = global.gc.new(0),\n");
+                        num_headers = 0;
+                        int pos = 0;
+                        while(pos < line_len) {
+                            int pipe_pos = pos;
+                            while(pipe_pos < line_len && p[pipe_pos] != '|') pipe_pos++;
+                            int col_len = pipe_pos - pos;
+                            char *col_str = trim_string(p + pos, &col_len);
+                            if (num_headers < 32) {
+                                int len = col_len > 127 ? 127 : col_len;
+                                memcpy(table_headers[num_headers], col_str, len);
+                                table_headers[num_headers][len] = '\0';
+                                num_headers++;
+                            }
+                            pos = pipe_pos + 1;
+                        }
+                        in_table = 1;
+                    } else {
+                        // Check if it's separator line (contains ---)
+                        int is_sep = 0;
+                        for (int i=0; i<line_len; i++) {
+                            if (p[i] == '-' && i+1<line_len && p[i+1] == '-') { is_sep = 1; break; }
+                        }
+                        if (is_sep) {
+                            // skip
+                        } else {
+                            md_append_str(&out, &out_len, &out_cap, "__md_row = global.gc.new(0),\n");
+                            int pos = 0;
+                            int col_idx = 0;
+                            while(pos < line_len && col_idx < num_headers) {
+                                int pipe_pos = pos;
+                                while(pipe_pos < line_len && p[pipe_pos] != '|') pipe_pos++;
+                                int col_len = pipe_pos - pos;
+                                char *col_str = trim_string(p + pos, &col_len);
+                                md_append_str(&out, &out_len, &out_cap, "__md_row[\"");
+                                md_append_str(&out, &out_len, &out_cap, table_headers[col_idx]);
+                                md_append_str(&out, &out_len, &out_cap, "\"] = ");
+                                md_append_literal(&out, &out_len, &out_cap, col_str, col_len);
+                                md_append_str(&out, &out_len, &out_cap, ",\n");
+                                col_idx++;
+                                pos = pipe_pos + 1;
+                            }
+                            md_append_str(&out, &out_len, &out_cap, "__md_table.push(__md_row.clone()),\n");
+                        }
+                    }
+                } else if (md__all_ws_from(p, 0, line_len)) {
+                    // empty line, ignore
+                } else {
+                    if (in_table) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_table),\n"); in_table = 0; }
+                    if (in_list) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_list),\n"); in_list = 0; }
+                    
+                    int text_len = line_len;
+                    char *text_str = trim_string(p, &text_len);
+                    md_append_str(&out, &out_len, &out_cap, "global.md[\"");
+                    md_append_str(&out, &out_len, &out_cap, curr_section);
+                    md_append_str(&out, &out_len, &out_cap, "\"].push(");
+                    md_append_literal(&out, &out_len, &out_cap, text_str, text_len);
+                    md_append_str(&out, &out_len, &out_cap, "),\n");
+                }
+            }
+        } else {
+            if (is_fence && f_ch == fence_ch && f_run >= fence_run) {
+                int close_pos = f_indent + f_run;
+                if (md__all_ws_from(p, close_pos, line_len)) {
+                    in_fence = 0;
+                    fence_ch = 0; fence_run = 0; fence_ind = 0;
+                    if (*nl == '\n') nl++;
+                    p = nl;
+                    continue;
+                }
+            }
+            const char *content = p;
+            int content_len = line_len;
+            int stripped = 0;
+            while (stripped < fence_ind && stripped < content_len && content[stripped] == ' ') {
+                stripped++;
+            }
+            content += stripped;
+            content_len -= stripped;
+            md_append(&out, &out_len, &out_cap, content, content_len);
+            md_append_str(&out, &out_len, &out_cap, "\n");
+        }
+        if (*nl == '\n') nl++;
+        p = nl;
+    }
+
+    if (in_table) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_table),\n"); in_table = 0; }
+    if (in_list) { md_append_str(&out, &out_len, &out_cap, "global.md[\""); md_append_str(&out, &out_len, &out_cap, curr_section); md_append_str(&out, &out_len, &out_cap, "\"].push(__md_list),\n"); in_list = 0; }
+
+    md_append_str(&out, &out_len, &out_cap, "return global.md,\n");
+
+    return out;
+}
+

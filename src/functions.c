@@ -1175,131 +1175,7 @@ static char *path_replace_ext(const char *path, size_t path_len,
 }
 
 #ifndef DISTURB_EMBEDDED
-static int module_md__is_ws(char c)
-{
-    return c == ' ' || c == '\t' || c == '\r';
-}
 
-static int module_md__count_leading_spaces(const char *line, int len)
-{
-    int i = 0;
-    while (i < len && line[i] == ' ') i++;
-    return i;
-}
-
-static int module_md__all_ws_from(const char *line, int start, int len)
-{
-    for (int i = start; i < len; i++) {
-        if (!module_md__is_ws(line[i])) return 0;
-    }
-    return 1;
-}
-
-static int module_md__parse_fence(const char *line, int len,
-                                  int *out_indent, char *out_ch, int *out_run)
-{
-    int indent = module_md__count_leading_spaces(line, len);
-    if (indent > 3 || indent >= len) return 0;
-
-    char ch = line[indent];
-    if (ch != '`' && ch != '~') return 0;
-
-    int run = 0;
-    while (indent + run < len && line[indent + run] == ch) run++;
-    if (run < 3) return 0;
-
-    if (ch == '`') {
-        for (int i = indent + run; i < len; i++) {
-            if (line[i] == '`') return 0;
-        }
-    }
-
-    *out_indent = indent;
-    *out_ch = ch;
-    *out_run = run;
-    return 1;
-}
-
-static char *module_md_extract_urb(const char *md_source)
-{
-    size_t out_cap = 4096;
-    size_t out_len = 0;
-    char *out = (char*)malloc(out_cap);
-    if (!out) return NULL;
-    out[0] = 0;
-
-    int in_fence = 0;
-    char fence_ch = 0;
-    int fence_run = 0;
-    int fence_ind = 0;
-
-    const char *p = md_source;
-    while (*p) {
-        const char *nl = p;
-        while (*nl && *nl != '\n') nl++;
-
-        int raw_len = (int)(nl - p);
-        int line_len = raw_len;
-        if (line_len > 0 && p[line_len - 1] == '\r') line_len--;
-
-        int f_indent = 0;
-        char f_ch = 0;
-        int f_run = 0;
-        int is_fence = module_md__parse_fence(p, line_len, &f_indent, &f_ch, &f_run);
-
-        if (!in_fence) {
-            if (is_fence) {
-                in_fence = 1;
-                fence_ch = f_ch;
-                fence_run = f_run;
-                fence_ind = f_indent;
-            }
-        } else {
-            if (is_fence && f_ch == fence_ch && f_run >= fence_run) {
-                int close_pos = f_indent + f_run;
-                if (module_md__all_ws_from(p, close_pos, line_len)) {
-                    in_fence = 0;
-                    fence_ch = 0;
-                    fence_run = 0;
-                    fence_ind = 0;
-                    if (*nl == '\n') nl++;
-                    p = nl;
-                    continue;
-                }
-            }
-
-            const char *content = p;
-            int content_len = line_len;
-            int stripped = 0;
-            while (stripped < fence_ind && stripped < content_len && content[stripped] == ' ') {
-                stripped++;
-            }
-            content += stripped;
-            content_len -= stripped;
-
-            size_t need = out_len + (size_t)content_len + 2;
-            if (need > out_cap) {
-                while (out_cap < need) out_cap <<= 1;
-                char *tmp = (char*)realloc(out, out_cap);
-                if (!tmp) {
-                    free(out);
-                    return NULL;
-                }
-                out = tmp;
-            }
-
-            memcpy(out + out_len, content, (size_t)content_len);
-            out_len += (size_t)content_len;
-            out[out_len++] = '\n';
-            out[out_len] = 0;
-        }
-
-        if (*nl == '\n') nl++;
-        p = nl;
-    }
-
-    return out;
-}
 
 static char *module_resolve_path(const char *path, size_t path_len, size_t *out_len)
 {
@@ -1428,7 +1304,7 @@ static void native_import(VM *vm, List *stack, List *global)
         if (src_len) memcpy(md_text, src, src_len);
         md_text[src_len] = 0;
 
-        char *urb_src = module_md_extract_urb(md_text);
+        char *urb_src = disturb_md_extract_urb(md_text);
         free(md_text);
         free(src);
         if (!urb_src) {

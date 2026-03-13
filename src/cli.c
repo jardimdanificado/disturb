@@ -97,142 +97,6 @@ static void print_help(void)
     puts("  asm/disasm are available in examples/asm_lib.urb.");
 }
 
-/* ---------------------------------------------------------------------------
- * Markdown fence extractor (CommonMark 4.5 compliant)
- * Returns a heap-allocated string with the extracted Disturb source, or NULL.
- * The caller must free() it.
- * --------------------------------------------------------------------------*/
-
-static int md__is_ws(char c)
-{
-    return c == ' ' || c == '\t' || c == '\r';
-}
-
-static int md__count_leading_spaces(const char *line, int len)
-{
-    int i = 0;
-    while (i < len && line[i] == ' ') i++;
-    return i;
-}
-
-static int md__all_ws_from(const char *line, int start, int len)
-{
-    for (int i = start; i < len; i++) {
-        if (!md__is_ws(line[i])) return 0;
-    }
-    return 1;
-}
-
-/* Parses a fence line. Returns 1 if fence; fills out_indent, out_ch, out_run. */
-static int md__parse_fence(const char *line, int len,
-                            int *out_indent, char *out_ch, int *out_run)
-{
-    int indent = md__count_leading_spaces(line, len);
-    if (indent > 3) return 0;
-    if (indent >= len) return 0;
-
-    char ch = line[indent];
-    if (ch != '`' && ch != '~') return 0;
-
-    int run = 0;
-    while (indent + run < len && line[indent + run] == ch) run++;
-    if (run < 3) return 0;
-
-    /* Backtick fence: info string must not contain a backtick */
-    if (ch == '`') {
-        for (int i = indent + run; i < len; i++) {
-            if (line[i] == '`') return 0;
-        }
-    }
-
-    *out_indent = indent;
-    *out_ch     = ch;
-    *out_run    = run;
-    return 1;
-}
-
-static char *md_extract_urb(const char *md_source)
-{
-    /* Working buffer for output */
-    size_t out_cap = 4096;
-    size_t out_len = 0;
-    char *out = (char*)malloc(out_cap);
-    if (!out) return NULL;
-    out[0] = '\0';
-
-    int in_fence    = 0;
-    char fence_ch   = 0;
-    int  fence_run  = 0;
-    int  fence_ind  = 0;
-
-    const char *p = md_source;
-    while (*p) {
-        /* Find end of line */
-        const char *nl = p;
-        while (*nl && *nl != '\n') nl++;
-
-        int raw_len = (int)(nl - p);
-        /* Strip trailing CR */
-        int line_len = raw_len;
-        if (line_len > 0 && p[line_len - 1] == '\r') line_len--;
-
-        /* Parse potential fence */
-        int f_indent = 0; char f_ch = 0; int f_run = 0;
-        int is_fence = md__parse_fence(p, line_len, &f_indent, &f_ch, &f_run);
-
-        if (!in_fence) {
-            if (is_fence) {
-                in_fence   = 1;
-                fence_ch   = f_ch;
-                fence_run  = f_run;
-                fence_ind  = f_indent;
-            }
-            /* skip non-fence lines outside a block */
-        } else {
-            /* Check for closing fence */
-            if (is_fence && f_ch == fence_ch && f_run >= fence_run) {
-                int close_pos = f_indent + f_run;
-                if (md__all_ws_from(p, close_pos, line_len)) {
-                    in_fence = 0;
-                    fence_ch = 0; fence_run = 0; fence_ind = 0;
-                    /* consume newline and continue */
-                    if (*nl == '\n') nl++;
-                    p = nl;
-                    continue;
-                }
-            }
-
-            /* Content line: strip up to fence_ind leading spaces */
-            const char *content = p;
-            int content_len = line_len;
-            int stripped = 0;
-            while (stripped < fence_ind && stripped < content_len &&
-                   content[stripped] == ' ') {
-                stripped++;
-            }
-            content     += stripped;
-            content_len -= stripped;
-
-            /* Ensure capacity: content + '\n' + '\0' */
-            size_t need = out_len + (size_t)content_len + 2;
-            if (need > out_cap) {
-                while (out_cap < need) out_cap *= 2;
-                char *tmp = (char*)realloc(out, out_cap);
-                if (!tmp) { free(out); return NULL; }
-                out = tmp;
-            }
-            memcpy(out + out_len, content, (size_t)content_len);
-            out_len += (size_t)content_len;
-            out[out_len++] = '\n';
-            out[out_len]   = '\0';
-        }
-
-        if (*nl == '\n') nl++;
-        p = nl;
-    }
-
-    return out;
-}
 
 /* Returns 1 if path ends with .md or .MD */
 static int path_is_markdown(const char *path)
@@ -407,7 +271,7 @@ static int run_markdown_script(const char *path, int script_argc, char **script_
     char *md_src = read_file_text(path);
     if (!md_src) return 1;
 
-    char *urb_src = md_extract_urb(md_src);
+    char *urb_src = disturb_md_extract_urb(md_src);
     free(md_src);
     if (!urb_src) {
         fprintf(stderr, "disturb: failed to extract code from %s\n", path);
@@ -436,7 +300,7 @@ static int compile_bytecode_file(const char *src_path, const char *out_path)
 
     char *src;
     if (path_is_markdown(src_path)) {
-        src = md_extract_urb(raw);
+        src = disturb_md_extract_urb(raw);
         free(raw);
         if (!src) {
             fprintf(stderr, "disturb: failed to extract code from %s\n", src_path);
@@ -549,7 +413,7 @@ static int disturb_main(int argc, char **argv)
         const char *md_path = argv[argi];
         char *md_src = read_file_text(md_path);
         if (!md_src) return 1;
-        char *urb_src = md_extract_urb(md_src);
+        char *urb_src = disturb_md_extract_urb(md_src);
         free(md_src);
         if (!urb_src) {
             fprintf(stderr, "disturb: failed to extract code from %s\n", md_path);

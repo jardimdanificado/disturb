@@ -6,9 +6,11 @@
 -- paralelism.
 --- gpu computing optimizations.
 
+## 1.10.1
+- refactor duplicate Markdown extraction logic across the codebase into a centralized native `disturb_md_extract_urb` routine in the VM.
+- modify `import()` and `mdisturb` to automatically parse extended Markdown syntax (`# headings`, `- lists`, `| tables |`, `> blockquotes`), mapping them to AST objects natively dynamically allocated in `global.md.<heading>`.
+
 ## 1.9.3
-- add `$options{a, b, c}` to papagaio patterns: matches any one of the comma-separated literal alternatives at that position in the pattern; supports multi-word alternatives (e.g. `somado a`).
-- add `$optional{phrase}` to papagaio patterns: the given literal phrase (which may contain spaces) is matched if present and silently skipped if absent; the overall pattern still succeeds either way.
 - whitespace tokens (`TOK_WS`) adjacent to optional tokens no longer fail the match when the optional term is absent.
 - fix pattern matching for `$var <literal> $var` forms: the variable scanner now correctly resets the position to the end of the trimmed capture (before trailing whitespace) so the following whitespace token can consume it.
 - `TOK_OPTIONS` is now recognised as a valid stopper for the preceding variable scan, mirroring the existing treatment of `TOK_LITERAL`.

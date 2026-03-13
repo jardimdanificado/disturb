@@ -83,6 +83,7 @@ Behavior:
 - `extract`: writes extracted source to `.urb` (`docs.md -> docs.urb` by default).
 - `run`: evaluates extracted source directly with `eval`.
 - language labels on fences are ignored; all fenced code is considered Disturb.
+- non-fenced Markdown blocks like headings, lists, tables, and blockquotes are securely parsed into native Disturb AST constructs under the `global.md` table.
 
 ## First Script
 

@@ -1,0 +1,28 @@
+assert = (cond){ if (!cond) { println("TEST FAILED"), } },
+
+md_ast = import("tests/cases/markdown_parser_data.md"),
+a_vals = md_ast.a.values(),
+
+// Teste0 element
+assert(a_vals[0] == "teste0"),
+
+// List elements
+l = a_vals[1].values(),
+assert(l[0] == "b1"),
+assert(l[1] == "b2"),
+
+// Table elements
+t = a_vals[2].values(),
+assert(t[0].porta == "80"),
+assert(t[0].protocolo == "http"),
+assert(t[1].porta == "443"),
+assert(t[1].protocolo == "https"),
+
+// Blockquote
+assert(a_vals[3] == ">comentario sei la"),
+
+// Normal text
+assert(a_vals[4] == "fim do arquivo"),
+
+println("OK: Markdown parser extracted all blocks successfully."),
+
