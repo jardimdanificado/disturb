@@ -775,125 +775,6 @@ void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
 
             i += sigil_len;
 
-            /* ---- $options{a, b, c} ---- */
-            if (sym->options && starts_with_str(pat + i, sym->options)) {
-                size_t kw_len = strlen(sym->options);
-                int j = i + (int)kw_len;
-                while (j < n && isspace((unsigned char)pat[j])) j++;
-                if (j < n && starts_with_str(pat + j, sym->open)) {
-                    StrView blk;
-                    StrView sv_open  = { sym->open,  (size_t)open_len  };
-                    StrView sv_close = { sym->close, (size_t)close_len };
-                    int next = extract_block(pat, j, sv_open, sv_close, &blk);
-                    int alt_cap = 4;
-                    t->alts = (char**)malloc(sizeof(char*) * alt_cap);
-                    t->alt_count = 0;
-                    const char *cp  = blk.ptr;
-                    const char *bend = blk.ptr + blk.len;
-                    while (cp <= bend) {
-                        const char *comma = cp;
-                        while (comma < bend && *comma != ',') comma++;
-                        StrView part = trim_view((StrView){ cp, (size_t)(comma - cp) });
-                        if (part.len > 0) {
-                            if (t->alt_count >= alt_cap) {
-                                alt_cap <<= 1;
-                                t->alts = (char**)realloc(t->alts, sizeof(char*) * alt_cap);
-                            }
-                            t->alts[t->alt_count] = (char*)malloc(part.len + 1);
-                            if (t->alts[t->alt_count]) {
-                                memcpy(t->alts[t->alt_count], part.ptr, part.len);
-                                t->alts[t->alt_count][part.len] = 0;
-                                t->alt_count++;
-                            }
-                        }
-                        if (comma >= bend) break;
-                        cp = comma + 1;
-                    }
-                    t->type = TOK_OPTIONS;
-                    i = next;
-                    if (i < n && pat[i] == '?') { t->optional = 1; i++; }
-                    p->count++;
-                    continue;
-                }
-            }
-
-            /* ---- $optional{phrase} ---- */
-            if (sym->optional && starts_with_str(pat + i, sym->optional)) {
-                size_t kw_len = strlen(sym->optional);
-                int j = i + (int)kw_len;
-                while (j < n && isspace((unsigned char)pat[j])) j++;
-                if (j < n && starts_with_str(pat + j, sym->open)) {
-                    StrView blk;
-                    StrView sv_open  = { sym->open,  (size_t)open_len  };
-                    StrView sv_close = { sym->close, (size_t)close_len };
-                    int next = extract_block(pat, j, sv_open, sv_close, &blk);
-                    StrView phrase = trim_view(blk);
-                    t->literal_str = (char*)malloc(phrase.len + 1);
-                    if (t->literal_str) {
-                        memcpy(t->literal_str, phrase.ptr, phrase.len);
-                        t->literal_str[phrase.len] = 0;
-                    }
-                    t->value    = (StrView){ t->literal_str ? t->literal_str : "", phrase.len };
-                    t->optional = 1;
-                    t->type     = TOK_OPTIONAL_LIT;
-                    i = next;
-                    p->count++;
-                    continue;
-                }
-            }
-
-            if (starts_with_str(pat + i, sym->open)) {
-                i += open_len;
-                int o = i;
-                while (i < n && !starts_with_str(pat + i, sym->close)) i++;
-                StrView raw_open = { pat + o, (size_t)(i - o) };
-                if (starts_with_str(pat + i, sym->close)) i += close_len;
-
-                StrView raw_close = { sym->close, strlen(sym->close) };
-                if (starts_with_str(pat + i, sym->open)) {
-                    i += open_len;
-                    int c = i;
-                    while (i < n && !starts_with_str(pat + i, sym->close)) i++;
-                    raw_close = (StrView){ pat + c, (size_t)(i - c) };
-                    if (starts_with_str(pat + i, sym->close)) i += close_len;
-                }
-
-                StrView open_trim = trim_view(raw_open);
-                size_t open_len_out = 0;
-                char *open_unesc = unescape_delim(open_trim, &open_len_out);
-                if (open_len_out == 0) {
-                    free(open_unesc);
-                    t->open = (StrView){ sym->open, strlen(sym->open) };
-                } else {
-                    t->open_str = open_unesc;
-                    t->open = (StrView){ t->open_str, open_len_out };
-                }
-
-                StrView close_trim = trim_view(raw_close);
-                size_t close_len_out = 0;
-                char *close_unesc = unescape_delim(close_trim, &close_len_out);
-                if (close_len_out == 0) {
-                    free(close_unesc);
-                    t->close = (StrView){ sym->close, strlen(sym->close) };
-                } else {
-                    t->close_str = close_unesc;
-                    t->close = (StrView){ t->close_str, close_len_out };
-                }
-
-                int v = i;
-                while (i < n && (isalnum((unsigned char)pat[i]) || pat[i] == '_')) i++;
-                t->var = (StrView){ pat + v, (size_t)(i - v) };
-
-                if (i < n && pat[i] == '?') {
-                    t->optional = 1;
-                    i++;
-                }
-
-                t->type = TOK_BLOCK;
-                p->count++;
-                continue;
-            }
-
             int v = i;
             while (i < n && (isalnum((unsigned char)pat[i]) || pat[i] == '_')) i++;
             size_t vlen = (size_t)(i - v);
@@ -904,6 +785,81 @@ void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
                 continue;
             }
             t->var = (StrView){ pat + v, vlen };
+
+            if (i + sigil_len <= n && memcmp(pat + i, sym->sigil, sigil_len) == 0) {
+                i += sigil_len;
+                int mod_start = i;
+                while (i < n && (isalnum((unsigned char)pat[i]) || pat[i] == '_')) i++;
+                StrView mod = { pat + mod_start, (size_t)(i - mod_start) };
+                
+                if (sv_eq(mod, (StrView){"int", 3})) t->modifier = MOD_INT;
+                else if (sv_eq(mod, (StrView){"float", 5})) t->modifier = MOD_FLOAT;
+                else if (sv_eq(mod, (StrView){"number", 6})) t->modifier = MOD_NUMBER;
+                else if (sv_eq(mod, (StrView){"upper", 5})) t->modifier = MOD_UPPER;
+                else if (sv_eq(mod, (StrView){"lower", 5})) t->modifier = MOD_LOWER;
+                else if (sv_eq(mod, (StrView){"capitalized", 11})) t->modifier = MOD_CAPITALIZED;
+                else if (sv_eq(mod, (StrView){"word", 4})) t->modifier = MOD_WORD;
+                else if (sv_eq(mod, (StrView){"identifier", 10})) t->modifier = MOD_IDENTIFIER;
+                else if (sv_eq(mod, (StrView){"hex", 3})) t->modifier = MOD_HEX;
+                else if (sv_eq(mod, (StrView){"path", 4})) t->modifier = MOD_PATH;
+                else if (sv_eq(mod, (StrView){"binary", 6})) t->modifier = MOD_BINARY;
+                else if (sv_eq(mod, (StrView){"percent", 7})) t->modifier = MOD_PERCENT;
+                else if (sv_eq(mod, (StrView){"aliases", 7})) {
+                    t->modifier = MOD_ALIASES;
+                    while (i < n && isspace((unsigned char)pat[i])) i++;
+                    if (i < n && starts_with_str(pat + i, sym->open)) {
+                        StrView blk;
+                        StrView sv_open  = { sym->open,  (size_t)open_len  };
+                        StrView sv_close = { sym->close, (size_t)close_len };
+                        int next = extract_block(pat, i, sv_open, sv_close, &blk);
+                        int alt_cap = 4;
+                        t->alts = (char**)malloc(sizeof(char*) * alt_cap);
+                        t->alt_count = 0;
+                        const char *cp  = blk.ptr;
+                        const char *bend = blk.ptr + blk.len;
+                        while (cp <= bend) {
+                            const char *comma = cp;
+                            while (comma < bend && *comma != ',') comma++;
+                            StrView part = trim_view((StrView){ cp, (size_t)(comma - cp) });
+                            if (part.len > 0) {
+                                if (t->alt_count >= alt_cap) {
+                                    alt_cap <<= 1;
+                                    t->alts = (char**)realloc(t->alts, sizeof(char*) * alt_cap);
+                                }
+                                t->alts[t->alt_count] = (char*)malloc(part.len + 1);
+                                if (t->alts[t->alt_count]) {
+                                    memcpy(t->alts[t->alt_count], part.ptr, part.len);
+                                    t->alts[t->alt_count][part.len] = 0;
+                                    t->alt_count++;
+                                }
+                            }
+                            if (comma >= bend) break;
+                            cp = comma + 1;
+                        }
+                        i = next;
+                    }
+                }
+                else if (sv_eq(mod, (StrView){"optional", 8}) || sv_eq(mod, (StrView){"starts", 6}) || sv_eq(mod, (StrView){"ends", 4})) {
+                    if (sv_eq(mod, (StrView){"optional", 8})) t->modifier = MOD_OPTIONAL;
+                    else if (sv_eq(mod, (StrView){"starts", 6})) t->modifier = MOD_STARTS;
+                    else if (sv_eq(mod, (StrView){"ends", 4})) t->modifier = MOD_ENDS;
+                    
+                    while (i < n && isspace((unsigned char)pat[i])) i++;
+                    if (i < n && starts_with_str(pat + i, sym->open)) {
+                        StrView blk;
+                        StrView sv_open  = { sym->open,  (size_t)open_len  };
+                        StrView sv_close = { sym->close, (size_t)close_len };
+                        int next = extract_block(pat, i, sv_open, sv_close, &blk);
+                        StrView phrase = trim_view(blk);
+                        t->literal_str = (char*)malloc(phrase.len + 1);
+                        if (t->literal_str) {
+                            memcpy(t->literal_str, phrase.ptr, phrase.len);
+                            t->literal_str[phrase.len] = 0;
+                        }
+                        i = next;
+                    }
+                }
+            }
 
             if (i < n && pat[i] == '?') {
                 t->optional = 1;
@@ -1002,14 +958,87 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
                 skip_ws(src, &pos);
 
             int s = pos;
+
+            if (t->modifier == MOD_ALIASES) {
+                int matched_alt = 0;
+                for (int ai = 0; ai < t->alt_count; ai++) {
+                    size_t alt_len = strlen(t->alts[ai]);
+                    if ((size_t)(src_len - pos) >= alt_len &&
+                        memcmp(src + pos, t->alts[ai], alt_len) == 0) {
+                        pos += (int)alt_len;
+                        matched_alt = 1;
+                        break;
+                    }
+                }
+                if (!matched_alt) {
+                    if (!t->optional) goto fail;
+                    ensure_cap(m);
+                    m->cap[m->count++] = (Capture){ t->var, { "", 0 }, NULL };
+                    continue;
+                }
+                ensure_cap(m);
+                m->cap[m->count++] = (Capture){ t->var, { src + s, (size_t)(pos - s) }, NULL };
+                continue;
+            } else if (t->modifier == MOD_OPTIONAL) {
+                if ((size_t)(src_len - pos) >= t->value.len &&
+                    t->value.len > 0 &&
+                    memcmp(src + pos, t->value.ptr, t->value.len) == 0) {
+                    pos += (int)t->value.len;
+                }
+                ensure_cap(m);
+                m->cap[m->count++] = (Capture){ t->var, { src + s, (size_t)(pos - s) }, NULL };
+                continue;
+            } else if (t->modifier == MOD_STARTS) {
+                if ((size_t)(src_len - pos) < t->value.len ||
+                    memcmp(src + pos, t->value.ptr, t->value.len) != 0) {
+                    if (!t->optional) goto fail;
+                    ensure_cap(m);
+                    m->cap[m->count++] = (Capture){ t->var, { "", 0 }, NULL };
+                    continue;
+                }
+                /* Continue matching using the standard scan logic below but we know it starts right. */
+            } else if (t->modifier == MOD_ENDS) {
+                 /* We handle MOD_ENDS specially during the scan loop below. */
+            }
+
             if (nx && (nx->type == TOK_LITERAL || nx->type == TOK_BLOCK || nx->type == TOK_BLOCKSEQ || nx->type == TOK_OPTIONS)) {
                 while (src[pos]) {
                     if (src[pos] == '\n') break;
                     if (nx->type == TOK_LITERAL && sv_starts_with(src + pos, nx->value)) break;
                     if ((nx->type == TOK_BLOCK || nx->type == TOK_BLOCKSEQ) &&
                         sv_starts_with(src + pos, nx->open)) break;
+                    
+                    int valid = 1;
+                    char c = src[pos];
+                    if (t->modifier == MOD_INT) {
+                        if (!(isdigit((unsigned char)c) || (pos == s && c == '-'))) valid = 0;
+                    } else if (t->modifier == MOD_FLOAT || t->modifier == MOD_NUMBER) {
+                        if (!(isdigit((unsigned char)c) || c == '.' || (pos == s && c == '-'))) valid = 0;
+                    } else if (t->modifier == MOD_UPPER) {
+                        if (!isupper((unsigned char)c)) valid = 0;
+                    } else if (t->modifier == MOD_LOWER) {
+                        if (!islower((unsigned char)c)) valid = 0;
+                    } else if (t->modifier == MOD_CAPITALIZED) {
+                        if (pos == s) { if (!isupper((unsigned char)c)) valid = 0; }
+                        else { if (!islower((unsigned char)c)) valid = 0; }
+                    } else if (t->modifier == MOD_WORD) {
+                        if (!isalpha((unsigned char)c)) valid = 0;
+                    } else if (t->modifier == MOD_IDENTIFIER) {
+                        if (!(isalnum((unsigned char)c) || c == '_')) valid = 0;
+                        if (pos == s && isdigit((unsigned char)c)) valid = 0;
+                    } else if (t->modifier == MOD_HEX) {
+                        if (!isxdigit((unsigned char)c) && c != 'x' && c != 'X') valid = 0;
+                    } else if (t->modifier == MOD_PATH) {
+                        if (isspace((unsigned char)c) || c == '\n') valid = 0;
+                    } else if (t->modifier == MOD_BINARY) {
+                        if (c != '0' && c != '1' && c != 'b' && c != 'B') valid = 0;
+                    } else if (t->modifier == MOD_PERCENT) {
+                        if (!(isdigit((unsigned char)c) || c == '.' || c == '%' || (pos == s && c == '-'))) valid = 0;
+                    }
+
+                    if (!valid) break;
+
                     if (nx->type == TOK_OPTIONS) {
-                        /* stop if any alternative starts here */
                         int found_alt = 0;
                         for (int ai = 0; ai < nx->alt_count; ai++) {
                             size_t alen = strlen(nx->alts[ai]);
@@ -1022,7 +1051,25 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
                         if (found_alt) break;
                     }
                     pos++;
+                    
+                    if (t->modifier == MOD_ENDS && t->value.len > 0) {
+                        if ((size_t)(pos - s) >= t->value.len && 
+                            memcmp(src + pos - t->value.len, t->value.ptr, t->value.len) == 0) {
+                            break;
+                        }
+                    }
                 }
+                
+                if (t->modifier == MOD_ENDS && t->value.len > 0) {
+                    if ((size_t)(pos - s) < t->value.len ||
+                        memcmp(src + pos - t->value.len, t->value.ptr, t->value.len) != 0) {
+                        if (!t->optional) goto fail;
+                        ensure_cap(m);
+                        m->cap[m->count++] = (Capture){ t->var, { "", 0 }, NULL };
+                        continue;
+                    }
+                }
+
                 int end = pos;
                 while (end > s && isspace((unsigned char)src[end - 1])) end--;
                 if (end == s) {
@@ -1037,8 +1084,6 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
                     { src + s, (size_t)(end - s) },
                     NULL
                 };
-                /* Reset pos to after the trimmed capture (before any trailing
-                 * whitespace) so the following TOK_WS token can consume it. */
                 pos = end;
                 continue;
             }
@@ -1050,7 +1095,55 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
                     if (nx->type == TOK_BLOCK && sv_starts_with(src + pos, nx->open)) break;
                     if (nx->type == TOK_BLOCKSEQ && sv_starts_with(src + pos, nx->open)) break;
                 } else if (isspace((unsigned char)src[pos])) break;
+                
+                int valid = 1;
+                char c = src[pos];
+                if (t->modifier == MOD_INT) {
+                    if (!(isdigit((unsigned char)c) || (pos == s && c == '-'))) valid = 0;
+                } else if (t->modifier == MOD_FLOAT || t->modifier == MOD_NUMBER) {
+                    if (!(isdigit((unsigned char)c) || c == '.' || (pos == s && c == '-'))) valid = 0;
+                } else if (t->modifier == MOD_UPPER) {
+                    if (!isupper((unsigned char)c)) valid = 0;
+                } else if (t->modifier == MOD_LOWER) {
+                    if (!islower((unsigned char)c)) valid = 0;
+                } else if (t->modifier == MOD_CAPITALIZED) {
+                    if (pos == s) { if (!isupper((unsigned char)c)) valid = 0; }
+                    else { if (!islower((unsigned char)c)) valid = 0; }
+                } else if (t->modifier == MOD_WORD) {
+                    if (!isalpha((unsigned char)c)) valid = 0;
+                } else if (t->modifier == MOD_IDENTIFIER) {
+                    if (!(isalnum((unsigned char)c) || c == '_')) valid = 0;
+                    if (pos == s && isdigit((unsigned char)c)) valid = 0;
+                } else if (t->modifier == MOD_HEX) {
+                    if (!isxdigit((unsigned char)c) && c != 'x' && c != 'X') valid = 0;
+                } else if (t->modifier == MOD_PATH) {
+                    if (isspace((unsigned char)c) || c == '\n') valid = 0;
+                } else if (t->modifier == MOD_BINARY) {
+                    if (c != '0' && c != '1' && c != 'b' && c != 'B') valid = 0;
+                } else if (t->modifier == MOD_PERCENT) {
+                    if (!(isdigit((unsigned char)c) || c == '.' || c == '%' || (pos == s && c == '-'))) valid = 0;
+                }
+
+                if (!valid) break;
+                
                 pos++;
+                
+                if (t->modifier == MOD_ENDS && t->value.len > 0) {
+                    if ((size_t)(pos - s) >= t->value.len && 
+                        memcmp(src + pos - t->value.len, t->value.ptr, t->value.len) == 0) {
+                        break;
+                    }
+                }
+            }
+            
+            if (t->modifier == MOD_ENDS && t->value.len > 0) {
+                if ((size_t)(pos - s) < t->value.len ||
+                    memcmp(src + pos - t->value.len, t->value.ptr, t->value.len) != 0) {
+                    if (!t->optional) goto fail;
+                    ensure_cap(m);
+                    m->cap[m->count++] = (Capture){ t->var, { "", 0 }, NULL };
+                    continue;
+                }
             }
 
             if (pos == s) {

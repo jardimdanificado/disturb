@@ -8,7 +8,10 @@
 
 ## 1.10.1
 - refactor duplicate Markdown extraction logic across the codebase into a centralized native `disturb_md_extract_urb` routine in the VM.
-- modify `import()` and `mdisturb` to automatically parse extended Markdown syntax (`# headings`, `- lists`, `| tables |`, `> blockquotes`), mapping them to AST objects natively dynamically allocated in `global.md.<heading>`.
+- modify `import()` and `mdisturb` to automatically parse extended Markdown syntax (`# headings`, `- lists`, `| tables |`), mapping them to AST objects natively dynamically allocated in `global.md.<heading>`.
+- add papagaio pattern variable modifiers via `$name$modifier` syntax: type-constrained captures `$int`, `$float`, `$number`, `$hex`, `$binary`, `$percent`; text-constrained captures `$upper`, `$lower`, `$capitalized`, `$word`, `$identifier`, `$path`.
+- add parameterized papagaio modifiers: `$name$aliases{a, b, c}` (match one alternative and capture), `$name$optional{text}` (optionally match literal and capture), `$name$starts{prefix}` (match content starting with prefix), `$name$ends{suffix}` (match content ending with suffix).
+- replace `$options{a, b, c}` with `$name$aliases{a, b, c}` and `$optional{text}` with `$name$optional{text}`; all parameterized modifiers now bind to a named variable for capture.
 
 ## 1.9.3
 - whitespace tokens (`TOK_WS`) adjacent to optional tokens no longer fail the match when the optional term is absent.

@@ -83,7 +83,7 @@ Behavior:
 - `extract`: writes extracted source to `.urb` (`docs.md -> docs.urb` by default).
 - `run`: evaluates extracted source directly with `eval`.
 - language labels on fences are ignored; all fenced code is considered Disturb.
-- non-fenced Markdown blocks like headings, lists, tables, and blockquotes are securely parsed into native Disturb AST constructs under the `global.md` table.
+- non-fenced Markdown blocks like headings, lists and tables are securely parsed into native Disturb AST constructs under the `global.md` table.
 
 ## First Script
 
@@ -464,8 +464,69 @@ Supported patterns include:
 
 Runtime API:
 - `papagaio(text)`
+- `papagaio(text, pattern, replacement)`
 
 Papagaio runtime context is exposed under `global.papagaio` (for `content` and `match` access inside eval blocks).
+
+### Pattern Variable Modifiers
+
+Variables in patterns use the `$name` syntax for free-form capture. Modifiers constrain what a variable matches by appending `$modifier` after the variable name:
+
+```
+$name$modifier
+```
+
+#### Type Modifiers
+
+| Modifier | Matches | Example |
+|---|---|---|
+| `$int` | digits, optional leading `-` | `$v$int` matches `42`, `-7` |
+| `$float` | digits, `.`, optional leading `-` | `$v$float` matches `3.14`, `-0.5` |
+| `$number` | same as `$float` | `$v$number` matches `42`, `3.14` |
+| `$hex` | hex digits (`0-9a-fA-F`), `x`/`X` | `$v$hex` matches `0xFF`, `AB12` |
+| `$binary` | `0`, `1`, `b`/`B` | `$v$binary` matches `0b1010`, `110` |
+| `$percent` | digits, `.`, `%`, optional leading `-` | `$v$percent` matches `99.9%`, `-5%` |
+
+#### Text Modifiers
+
+| Modifier | Matches | Example |
+|---|---|---|
+| `$upper` | uppercase letters only | `$v$upper` matches `ABC` |
+| `$lower` | lowercase letters only | `$v$lower` matches `abc` |
+| `$capitalized` | first char upper, rest lower | `$v$capitalized` matches `Hello` |
+| `$word` | alphabetic characters only | `$v$word` matches `Hello` |
+| `$identifier` | alphanumeric + `_`, cannot start with digit | `$v$identifier` matches `my_var1` |
+| `$path` | any non-whitespace characters | `$v$path` matches `/usr/bin/local` |
+
+#### Parameterized Modifiers
+
+| Modifier | Description | Example |
+|---|---|---|
+| `$name$aliases{a, b, c}` | matches one of the listed alternatives and captures it | `$fruit$aliases{apple, banana}` |
+| `$name$optional{text}` | optionally matches the literal text, captures it if found | `$x$optional{the }` |
+| `$name$starts{prefix}` | captures content that must start with the given prefix | `$v$starts{http}` |
+| `$name$ends{suffix}` | captures content that must end with the given suffix | `$v$ends{.txt}` |
+
+#### Examples
+
+```disturb
+// Type modifiers
+println(papagaio("price is 42", "price is $v$int", "$v")),       // 42
+println(papagaio("temp 36.6", "temp $t$float", "$t")),           // 36.6
+println(papagaio("color: FF00AA", "color: $c$hex", "$c")),       // FF00AA
+
+// Text modifiers
+println(papagaio("HELLO world", "$a$upper $b$lower", "$a-$b")),  // HELLO-world
+
+// Aliases (captures the matched alternative)
+println(papagaio("i like apples", "i like $f$aliases{apples, oranges}", "$f")), // apples
+
+// Optional (captures the text if present, empty string otherwise)
+println(papagaio("hello world", "$g$optional{hello }world", "$g")),  // hello
+
+// Starts / Ends
+println(papagaio("http://example.com", "$url$starts{http}", "$url")), // http://example.com
+```
 
 ## GC and Runtime Controls
 

@@ -25,8 +25,29 @@ typedef enum {
     TOK_OPTIONAL_LIT
 } TokenType;
 
+typedef enum {
+    MOD_NONE,
+    MOD_INT,
+    MOD_FLOAT,
+    MOD_NUMBER,
+    MOD_UPPER,
+    MOD_LOWER,
+    MOD_CAPITALIZED,
+    MOD_WORD,
+    MOD_IDENTIFIER,
+    MOD_HEX,
+    MOD_PATH,
+    MOD_BINARY,
+    MOD_PERCENT,
+    MOD_ALIASES,
+    MOD_OPTIONAL,
+    MOD_STARTS,
+    MOD_ENDS
+} VarModifier;
+
 typedef struct {
     TokenType type;
+    VarModifier modifier;
     StrView value;
     StrView var;
     StrView open;
@@ -36,10 +57,9 @@ typedef struct {
     unsigned optional : 1;
     int next_sig;
     unsigned all_opt : 1;
-    /* TOK_OPTIONS: list of alternative literal strings */
+    /* Parameterized modifiers: alts for ALIASES, literal_str for OPTIONAL/STARTS/ENDS */
     char **alts;
     int alt_count;
-    /* TOK_OPTIONAL_LIT: owned copy of the phrase to optionally match */
     char *literal_str;
 } Token;
 
