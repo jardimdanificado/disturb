@@ -12,6 +12,7 @@
 - whitespace tokens (`TOK_WS`) adjacent to optional tokens no longer fail the match when the optional term is absent.
 - fix pattern matching for `$var <literal> $var` forms: the variable scanner now correctly resets the position to the end of the trimmed capture (before trailing whitespace) so the following whitespace token can consume it.
 - `TOK_OPTIONS` is now recognised as a valid stopper for the preceding variable scan, mirroring the existing treatment of `TOK_LITERAL`.
+- expand `import(path)` to support Markdown modules: direct `.md` imports now extract fenced code blocks before evaluation; package imports keep `.urb` as primary entry and fall back to `.md` when `<pkg>/<pkg>.urb` is missing.
 
 ## 1.9.2
 - add scalar-vector math helpers in `global.common`: `sadd`, `ssub`, `smul`, `sdiv`, `smod`, `spow`.

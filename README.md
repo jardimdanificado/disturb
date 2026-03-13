@@ -416,14 +416,18 @@ println(arg_0),
 
 `import(path)` behavior:
 - if `path` ends with `.urb`, loads that file directly
+- if `path` ends with `.md`, extracts fenced code blocks and loads the extracted Disturb source directly
 - otherwise loads package entry: `path/<basename(path)>.urb`
+- if package `.urb` entry is missing, falls back to `path/<basename(path)>.md` and extracts fenced code blocks
 - module runs in isolated VM
 - module export is the top-level `return` value
 - loaded modules are cached by resolved path
 
 Examples:
 - `import("tests/modules/math.urb")`
+- `import("tests/modules/math.md")`
 - `import("tests/modules/pkg")` -> loads `tests/modules/pkg/pkg.urb`
+- `examples/import_markdown.urb` demonstrates direct `.md` import and package fallback to `.md`
 
 ## Bytecode and Metaprogramming
 

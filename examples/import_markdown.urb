@@ -1,0 +1,12 @@
+// import_markdown.urb
+// Demonstrates importing modules from Markdown files.
+
+mod = import("examples/import_markdown_module.md"),
+println(mod.tag),
+println(mod.add(10, 20)),
+
+pkg1 = import("examples/import_markdown_pkg"),
+pkg2 = import("examples/import_markdown_pkg"),
+println(pkg1.tag),
+println(pkg1.count),
+println(pkg1 === pkg2),

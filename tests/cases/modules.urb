@@ -49,4 +49,39 @@ if (pkg === pkg2) {
   fail++,
 }
 
+mmd1 = import("tests/modules/math.md"),
+mmd2 = import("tests/modules/math.md"),
+if (mmd1 === mmd2) {
+} else {
+  fail++,
+}
+if (mmd1.tag == "math_md") {
+} else {
+  fail++,
+}
+if (mmd1.add(2, 3) == 5) {
+} else {
+  fail++,
+}
+if (mmd1.secret == 17) {
+} else {
+  fail++,
+}
+
+pkg_md = import("tests/modules/pkg_md"),
+if (pkg_md.tag == "pkg_md") {
+} else {
+  fail++,
+}
+if (pkg_md.count == 1) {
+} else {
+  fail++,
+}
+
+pkg_md2 = import("tests/modules/pkg_md"),
+if (pkg_md === pkg_md2) {
+} else {
+  fail++,
+}
+
 println(fail),
