@@ -20,7 +20,9 @@ typedef enum {
     TOK_VAR,
     TOK_BLOCK,
     TOK_WS,
-    TOK_BLOCKSEQ
+    TOK_BLOCKSEQ,
+    TOK_OPTIONS,
+    TOK_OPTIONAL_LIT
 } TokenType;
 
 typedef struct {
@@ -34,6 +36,11 @@ typedef struct {
     unsigned optional : 1;
     int next_sig;
     unsigned all_opt : 1;
+    /* TOK_OPTIONS: list of alternative literal strings */
+    char **alts;
+    int alt_count;
+    /* TOK_OPTIONAL_LIT: owned copy of the phrase to optionally match */
+    char *literal_str;
 } Token;
 
 typedef struct {
@@ -45,6 +52,8 @@ typedef struct {
     const char *block;
     const char *blockseq;
     const char *regex;
+    const char *options;   /* keyword for $options{a, b, c} alternatives */
+    const char *optional;  /* keyword for $optional{phrase} optional literal */
 } Symbols;
 
 typedef struct {

@@ -18,6 +18,8 @@
 #define PAPAGAIO_DEFAULT_BLOCK "recursive"
 #define PAPAGAIO_DEFAULT_BLOCKSEQ "sequential"
 #define PAPAGAIO_DEFAULT_REGEX "regex"
+#define PAPAGAIO_DEFAULT_OPTIONS "options"
+#define PAPAGAIO_DEFAULT_OPTIONAL "optional"
 #define PAPAGAIO_ESCAPED_SIGIL '\x01'
 
 typedef struct {
@@ -46,6 +48,8 @@ static Symbols make_default_symbols(const char *sigil, const char *open, const c
     sym.block = PAPAGAIO_DEFAULT_BLOCK;
     sym.blockseq = PAPAGAIO_DEFAULT_BLOCKSEQ;
     sym.regex = PAPAGAIO_DEFAULT_REGEX;
+    sym.options = PAPAGAIO_DEFAULT_OPTIONS;
+    sym.optional = PAPAGAIO_DEFAULT_OPTIONAL;
     return sym;
 }
 
@@ -321,6 +325,12 @@ static void free_pattern(Pattern *p)
     for (int i = 0; i < p->count; i++) {
         free(p->t[i].open_str);
         free(p->t[i].close_str);
+        free(p->t[i].literal_str);
+        if (p->t[i].alts) {
+            for (int j = 0; j < p->t[i].alt_count; j++)
+                free(p->t[i].alts[j]);
+            free(p->t[i].alts);
+        }
     }
     free(p->t);
     p->t = NULL;
@@ -765,6 +775,73 @@ void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
 
             i += sigil_len;
 
+            /* ---- $options{a, b, c} ---- */
+            if (sym->options && starts_with_str(pat + i, sym->options)) {
+                size_t kw_len = strlen(sym->options);
+                int j = i + (int)kw_len;
+                while (j < n && isspace((unsigned char)pat[j])) j++;
+                if (j < n && starts_with_str(pat + j, sym->open)) {
+                    StrView blk;
+                    StrView sv_open  = { sym->open,  (size_t)open_len  };
+                    StrView sv_close = { sym->close, (size_t)close_len };
+                    int next = extract_block(pat, j, sv_open, sv_close, &blk);
+                    int alt_cap = 4;
+                    t->alts = (char**)malloc(sizeof(char*) * alt_cap);
+                    t->alt_count = 0;
+                    const char *cp  = blk.ptr;
+                    const char *bend = blk.ptr + blk.len;
+                    while (cp <= bend) {
+                        const char *comma = cp;
+                        while (comma < bend && *comma != ',') comma++;
+                        StrView part = trim_view((StrView){ cp, (size_t)(comma - cp) });
+                        if (part.len > 0) {
+                            if (t->alt_count >= alt_cap) {
+                                alt_cap <<= 1;
+                                t->alts = (char**)realloc(t->alts, sizeof(char*) * alt_cap);
+                            }
+                            t->alts[t->alt_count] = (char*)malloc(part.len + 1);
+                            if (t->alts[t->alt_count]) {
+                                memcpy(t->alts[t->alt_count], part.ptr, part.len);
+                                t->alts[t->alt_count][part.len] = 0;
+                                t->alt_count++;
+                            }
+                        }
+                        if (comma >= bend) break;
+                        cp = comma + 1;
+                    }
+                    t->type = TOK_OPTIONS;
+                    i = next;
+                    if (i < n && pat[i] == '?') { t->optional = 1; i++; }
+                    p->count++;
+                    continue;
+                }
+            }
+
+            /* ---- $optional{phrase} ---- */
+            if (sym->optional && starts_with_str(pat + i, sym->optional)) {
+                size_t kw_len = strlen(sym->optional);
+                int j = i + (int)kw_len;
+                while (j < n && isspace((unsigned char)pat[j])) j++;
+                if (j < n && starts_with_str(pat + j, sym->open)) {
+                    StrView blk;
+                    StrView sv_open  = { sym->open,  (size_t)open_len  };
+                    StrView sv_close = { sym->close, (size_t)close_len };
+                    int next = extract_block(pat, j, sv_open, sv_close, &blk);
+                    StrView phrase = trim_view(blk);
+                    t->literal_str = (char*)malloc(phrase.len + 1);
+                    if (t->literal_str) {
+                        memcpy(t->literal_str, phrase.ptr, phrase.len);
+                        t->literal_str[phrase.len] = 0;
+                    }
+                    t->value    = (StrView){ t->literal_str ? t->literal_str : "", phrase.len };
+                    t->optional = 1;
+                    t->type     = TOK_OPTIONAL_LIT;
+                    i = next;
+                    p->count++;
+                    continue;
+                }
+            }
+
             if (starts_with_str(pat + i, sym->open)) {
                 i += open_len;
                 int o = i;
@@ -864,6 +941,24 @@ void parse_pattern_ex(const char *pat, Pattern *p, const Symbols *sym)
         }
         p->t[a].all_opt = (unsigned)all;
     }
+
+    /* Mark WS tokens that are adjacent to optional tokens so they don't
+     * fail the match when the optional token is absent. */
+    for (int a = 0; a < p->count; a++) {
+        if (p->t[a].type != TOK_WS) continue;
+        /* Check next significant token */
+        int ns = p->t[a].next_sig;
+        if (ns >= 0 && p->t[ns].optional) {
+            p->t[a].optional = 1;
+            continue;
+        }
+        /* Check previous significant token */
+        for (int b = a - 1; b >= 0; b--) {
+            if (p->t[b].type == TOK_WS) continue;
+            if (p->t[b].optional) p->t[a].optional = 1;
+            break;
+        }
+    }
 }
 
 int match_pattern(const char *src, int src_len, const Pattern *p, int start, Match *m)
@@ -887,7 +982,7 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
 
         if (t->type == TOK_WS) {
             if (!isspace((unsigned char)src[pos])) {
-                if (!t->all_opt) goto fail;
+                if (!t->all_opt && !t->optional) goto fail;
                 continue;
             }
             skip_ws(src, &pos);
@@ -907,12 +1002,25 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
                 skip_ws(src, &pos);
 
             int s = pos;
-            if (nx && (nx->type == TOK_LITERAL || nx->type == TOK_BLOCK || nx->type == TOK_BLOCKSEQ)) {
+            if (nx && (nx->type == TOK_LITERAL || nx->type == TOK_BLOCK || nx->type == TOK_BLOCKSEQ || nx->type == TOK_OPTIONS)) {
                 while (src[pos]) {
                     if (src[pos] == '\n') break;
                     if (nx->type == TOK_LITERAL && sv_starts_with(src + pos, nx->value)) break;
                     if ((nx->type == TOK_BLOCK || nx->type == TOK_BLOCKSEQ) &&
                         sv_starts_with(src + pos, nx->open)) break;
+                    if (nx->type == TOK_OPTIONS) {
+                        /* stop if any alternative starts here */
+                        int found_alt = 0;
+                        for (int ai = 0; ai < nx->alt_count; ai++) {
+                            size_t alen = strlen(nx->alts[ai]);
+                            if ((size_t)(src_len - pos) >= alen &&
+                                memcmp(src + pos, nx->alts[ai], alen) == 0) {
+                                found_alt = 1;
+                                break;
+                            }
+                        }
+                        if (found_alt) break;
+                    }
                     pos++;
                 }
                 int end = pos;
@@ -929,6 +1037,9 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
                     { src + s, (size_t)(end - s) },
                     NULL
                 };
+                /* Reset pos to after the trimmed capture (before any trailing
+                 * whitespace) so the following TOK_WS token can consume it. */
+                pos = end;
                 continue;
             }
 
@@ -970,6 +1081,35 @@ int match_pattern(const char *src, int src_len, const Pattern *p, int start, Mat
             pos = extract_block(src, pos, t->open, t->close, &v);
             ensure_cap(m);
             m->cap[m->count++] = (Capture){ t->var, v, NULL };
+            continue;
+        }
+
+        if (t->type == TOK_OPTIONS) {
+            int matched_alt = 0;
+            for (int ai = 0; ai < t->alt_count; ai++) {
+                const char *alt = t->alts[ai];
+                size_t alt_len = strlen(alt);
+                if ((size_t)(src_len - pos) >= alt_len &&
+                    memcmp(src + pos, alt, alt_len) == 0) {
+                    pos += (int)alt_len;
+                    matched_alt = 1;
+                    break;
+                }
+            }
+            if (!matched_alt) {
+                if (!t->optional) goto fail;
+            }
+            continue;
+        }
+
+        if (t->type == TOK_OPTIONAL_LIT) {
+            /* Try to match the phrase; always succeeds (the optional flag is
+             * always set for this token type). */
+            if ((size_t)(src_len - pos) >= t->value.len &&
+                t->value.len > 0 &&
+                memcmp(src + pos, t->value.ptr, t->value.len) == 0) {
+                pos += (int)t->value.len;
+            }
             continue;
         }
 

@@ -6,6 +6,13 @@
 -- paralelism.
 --- gpu computing optimizations.
 
+## 1.9.3
+- add `$options{a, b, c}` to papagaio patterns: matches any one of the comma-separated literal alternatives at that position in the pattern; supports multi-word alternatives (e.g. `somado a`).
+- add `$optional{phrase}` to papagaio patterns: the given literal phrase (which may contain spaces) is matched if present and silently skipped if absent; the overall pattern still succeeds either way.
+- whitespace tokens (`TOK_WS`) adjacent to optional tokens no longer fail the match when the optional term is absent.
+- fix pattern matching for `$var <literal> $var` forms: the variable scanner now correctly resets the position to the end of the trimmed capture (before trailing whitespace) so the following whitespace token can consume it.
+- `TOK_OPTIONS` is now recognised as a valid stopper for the preceding variable scan, mirroring the existing treatment of `TOK_LITERAL`.
+
 ## 1.9.2
 - add scalar-vector math helpers in `global.common`: `sadd`, `ssub`, `smul`, `sdiv`, `smod`, `spow`.
 - scalar-vector helpers support both call styles: function form (`sadd(vec, n)`) and method form (`vec.sadd(n)`).

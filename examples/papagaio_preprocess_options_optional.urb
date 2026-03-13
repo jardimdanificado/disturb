@@ -1,0 +1,19 @@
+// papagaio_preprocess_options_optional.urb
+// Demonstrates $options{a, b, c} and $optional{word} in pattern matching.
+
+// $options{...} - matches any one of the comma-separated alternatives.
+$pattern{
+    SOMA $a $options{mais, somado a, adicionado a} $b
+}{println($a + $b),}
+
+// $optional{...} - the phrase inside is optional; the pattern still matches
+// whether or not it appears in the source.
+$pattern{
+    SOMA $a $optional{e} $b somados
+}{println($a + $b),}
+
+SOMA 1 mais 2
+SOMA 3 somado a 4
+SOMA 5 adicionado a 6
+SOMA 7 e 8 somados
+SOMA 9 10 somados
