@@ -85,6 +85,18 @@ Behavior:
 - language labels on fences are ignored; all fenced code is considered Disturb.
 - non-fenced Markdown blocks like headings, lists and tables are securely parsed into native Disturb AST constructs under the `global.md` table.
 
+### Generating Markdown from `global.md`
+
+Disturb provides a native helper `mdGenerate(obj)` which takes a `global.md`-style table and produces a Markdown string. This is useful for tools that programmatically manipulate and re-emit Markdown.
+
+Example:
+
+```disturb
+md = import("tests/cases/markdown_parser_data.md"),
+md_text = mdGenerate(md),
+println(md_text),
+```
+
 ## First Script
 
 ```disturb

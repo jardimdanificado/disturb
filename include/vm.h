@@ -211,5 +211,6 @@ int vm_compile_source_with_vm(VM *vm, const char *src, Bytecode *out, char *err,
 ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len);
 
 char *disturb_md_extract_urb(const char *md_source);
+ObjEntry *disturb_md_generate(VM *vm, ObjEntry *md_table);
 
 #endif

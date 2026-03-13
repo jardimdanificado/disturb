@@ -1,0 +1,7 @@
+println("start"),
+md = import("tests/cases/markdown_parser_data.md"),
+println("imported"),
+out = mdGenerate(md),
+println("generated"),
+println(len(out)),
+println(out),

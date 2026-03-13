@@ -8,6 +8,7 @@
 
 ## 1.10.1
 - refactor duplicate Markdown extraction logic across the codebase into a centralized native `disturb_md_extract_urb` routine in the VM.
+- add native `mdGenerate()` helper to serialize `global.md` tables back into Markdown text (new regression test: `tests/cases/mdgen_test.urb`).
 - modify `import()` and `mdisturb` to automatically parse extended Markdown syntax (`# headings`, `- lists`, `| tables |`), mapping them to AST objects natively dynamically allocated in `global.md.<heading>`.
 - add papagaio pattern variable modifiers via `$name$modifier` syntax: type-constrained captures `$int`, `$float`, `$number`, `$hex`, `$binary`, `$percent`; text-constrained captures `$upper`, `$lower`, `$capitalized`, `$word`, `$identifier`, `$path`.
 - add parameterized papagaio modifiers: `$name$aliases{a, b, c}` (match one alternative and capture), `$name$optional{text}` (optionally match literal and capture), `$name$starts{prefix}` (match content starting with prefix), `$name$ends{suffix}` (match content ending with suffix).

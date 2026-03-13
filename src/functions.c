@@ -1423,6 +1423,18 @@ static void native_len(VM *vm, List *stack, List *global)
     push_number(vm, stack, (Float)length);
 }
 
+static void native_md_generate(VM *vm, List *stack, List *global)
+{
+    uint32_t argc = native_argc(vm, global);
+    ObjEntry *target = native_target(vm, stack, argc);
+    if (!target) {
+        fprintf(stderr, "mdGenerate expects a table (global.md)\n");
+        return;
+    }
+    ObjEntry *out = disturb_md_generate(vm, target);
+    stack = push_entry(vm, stack, out);
+}
+
 static void native_pretty(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -3563,6 +3575,7 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "println") == 0) return native_println;
     if (strcmp(name, "len") == 0) return native_len;
     if (strcmp(name, "pretty") == 0) return native_pretty;
+    if (strcmp(name, "mdGenerate") == 0) return native_md_generate;
     if (strcmp(name, "clone") == 0) return native_clone;
     if (strcmp(name, "copy") == 0) return native_copy;
     if (strcmp(name, "toInt") == 0) return native_to_int;

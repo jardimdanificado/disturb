@@ -91,6 +91,7 @@ else
 fi
 run_case basic
 run_case markdown_parser
+run_case mdgen_test
 run_case varargs_prefix
 run_case call_local_lambda
 # run_case asm

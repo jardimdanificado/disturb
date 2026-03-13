@@ -2634,6 +2634,8 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "pretty", "pretty");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
+    entry = vm_define_native(vm, "mdGenerate", "mdGenerate");
+    if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "clone", "clone");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "copy", "copy");
@@ -6768,3 +6770,150 @@ char *disturb_md_extract_urb(const char *md_source)
     return out;
 }
 
+/* ---------- Markdown generator: global.md -> .md text ---------- */
+
+static int md_gen_table_has_key(List *obj)
+{
+    for (Int i = 2; i < obj->size; i++) {
+        ObjEntry *child = (ObjEntry*)obj->data[i].p;
+        if (!child) continue;
+        ObjEntry *key = vm_entry_key(child);
+        if (key && entry_is_string(key)) return 1;
+    }
+    return 0;
+}
+
+ObjEntry *disturb_md_generate(VM *vm, ObjEntry *md_table)
+{
+    if (!md_table || disturb_obj_type(md_table->obj) != DISTURB_T_TABLE) {
+        return vm->null_entry;
+    }
+
+    StrBuf buf;
+    sb_init(&buf);
+    List *md_obj = md_table->obj;
+    int first_section = 1;
+
+    for (Int si = 2; si < md_obj->size; si++) {
+        ObjEntry *section_entry = (ObjEntry*)md_obj->data[si].p;
+        if (!section_entry) continue;
+
+        /* Get section name (heading) */
+        ObjEntry *section_key = vm_entry_key(section_entry);
+        const char *heading = NULL;
+        size_t heading_len = 0;
+        if (section_key && entry_is_string(section_key)) {
+            heading = disturb_bytes_data(section_key->obj);
+            heading_len = disturb_bytes_len(section_key->obj);
+        }
+
+        /* Skip "content" pseudo-heading, output directly */
+        int is_content = (heading && heading_len == 7 && memcmp(heading, "content", 7) == 0);
+
+        if (!is_content && heading && heading_len > 0) {
+            if (!first_section) sb_append_char(&buf, '\n');
+            sb_append_n(&buf, "# ", 2);
+            sb_append_n(&buf, heading, heading_len);
+            sb_append_char(&buf, '\n');
+        }
+        first_section = 0;
+
+        /* Iterate children of this section */
+        if (disturb_obj_type(section_entry->obj) != DISTURB_T_TABLE) continue;
+        List *section_obj = section_entry->obj;
+
+        for (Int ci = 2; ci < section_obj->size; ci++) {
+            ObjEntry *child = (ObjEntry*)section_obj->data[ci].p;
+            if (!child) continue;
+
+            Int child_type = disturb_obj_type(child->obj);
+
+            if (child_type == DISTURB_T_INT && entry_is_string(child)) {
+                /* Plain text paragraph */
+                sb_append_char(&buf, '\n');
+                sb_append_n(&buf, disturb_bytes_data(child->obj),
+                            disturb_bytes_len(child->obj));
+                sb_append_char(&buf, '\n');
+            } else if (child_type == DISTURB_T_TABLE) {
+                List *tbl = child->obj;
+                int has_key = md_gen_table_has_key(tbl);
+
+                if (!has_key) {
+                    /* List block: - item */
+                    sb_append_char(&buf, '\n');
+                    for (Int li = 2; li < tbl->size; li++) {
+                        ObjEntry *item = (ObjEntry*)tbl->data[li].p;
+                        if (!item) continue;
+                        sb_append_n(&buf, "- ", 2);
+                        if (entry_is_string(item)) {
+                            sb_append_n(&buf, disturb_bytes_data(item->obj),
+                                        disturb_bytes_len(item->obj));
+                        }
+                        sb_append_char(&buf, '\n');
+                    }
+                } else {
+                    /* Table block: | col1 | col2 | ... */
+                    /* Collect column names from first row */
+                    ObjEntry *first_row = NULL;
+                    for (Int ri = 2; ri < tbl->size; ri++) {
+                        if (tbl->data[ri].p) { first_row = (ObjEntry*)tbl->data[ri].p; break; }
+                    }
+                    if (!first_row || disturb_obj_type(first_row->obj) != DISTURB_T_TABLE) continue;
+
+                    /* Collect headers */
+                    #define MD_GEN_MAX_COLS 32
+                    const char *col_names[MD_GEN_MAX_COLS];
+                    size_t col_lens[MD_GEN_MAX_COLS];
+                    int ncols = 0;
+                    List *fr_obj = first_row->obj;
+                    for (Int ki = 2; ki < fr_obj->size && ncols < MD_GEN_MAX_COLS; ki++) {
+                        ObjEntry *field = (ObjEntry*)fr_obj->data[ki].p;
+                        if (!field) continue;
+                        ObjEntry *fkey = vm_entry_key(field);
+                        if (fkey && entry_is_string(fkey)) {
+                            col_names[ncols] = disturb_bytes_data(fkey->obj);
+                            col_lens[ncols] = disturb_bytes_len(fkey->obj);
+                            ncols++;
+                        }
+                    }
+                    if (ncols == 0) continue;
+
+                    /* Header row */
+                    sb_append_char(&buf, '\n');
+                    for (int c = 0; c < ncols; c++) {
+                        if (c > 0) sb_append_n(&buf, " | ", 3);
+                        sb_append_n(&buf, col_names[c], col_lens[c]);
+                    }
+                    sb_append_char(&buf, '\n');
+
+                    /* Separator row */
+                    for (int c = 0; c < ncols; c++) {
+                        if (c > 0) sb_append_n(&buf, " | ", 3);
+                        for (size_t d = 0; d < col_lens[c]; d++) sb_append_char(&buf, '-');
+                    }
+                    sb_append_char(&buf, '\n');
+
+                    /* Data rows */
+                    for (Int ri = 2; ri < tbl->size; ri++) {
+                        ObjEntry *row = (ObjEntry*)tbl->data[ri].p;
+                        if (!row || disturb_obj_type(row->obj) != DISTURB_T_TABLE) continue;
+                        for (int c = 0; c < ncols; c++) {
+                            if (c > 0) sb_append_n(&buf, " | ", 3);
+                            ObjEntry *cell = vm_global_find_by_key(row->obj, col_names[c]);
+                            if (cell && entry_is_string(cell)) {
+                                sb_append_n(&buf, disturb_bytes_data(cell->obj),
+                                            disturb_bytes_len(cell->obj));
+                            }
+                        }
+                        sb_append_char(&buf, '\n');
+                    }
+                    #undef MD_GEN_MAX_COLS
+                }
+            }
+        }
+    }
+
+    ObjEntry *result = vm_make_bytes_value(vm, buf.data, buf.len);
+    sb_free(&buf);
+    return result;
+}
