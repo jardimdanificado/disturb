@@ -3,12 +3,15 @@ cmake_minimum_required(VERSION 3.16)
 project(disturb C)
 
 option(DISABLE_SYSTEM "Disable system-dependent features (IO, import, dynamic FFI calls)" OFF)
+option(DISABLE_FFI_CALLS "Disable dynamic FFI calls (libffi/dlopen) even when system features are enabled" OFF)
 
 set(DISTURB_SOURCES
   src/vm.c
   src/bytecode.c
   src/syntax.c
   src/functions.c
+  src/host_io.c
+  src/disturb_wasm.c
   src/papagaio.c
   src/cli.c
   src/ffi.c
@@ -35,12 +38,14 @@ endif()
 
 if(NOT DISABLE_SYSTEM)
   target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_IO)
-  target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_FFI_CALLS)
+  if(NOT DISABLE_FFI_CALLS)
+    target_compile_definitions(disturb PRIVATE DISTURB_ENABLE_FFI_CALLS)
+  endif()
 else()
   target_compile_definitions(disturb PRIVATE DISTURB_EMBEDDED)
 endif()
 
-if(NOT DISABLE_SYSTEM)
+if(NOT DISABLE_SYSTEM AND NOT DISABLE_FFI_CALLS)
   if(WIN32)
     find_path(FFI_INCLUDE_DIR ffi.h)
     # Multi-config generators (MSVC): select per-config libffi to avoid
@@ -82,7 +87,7 @@ if(NOT DISABLE_SYSTEM)
 endif()
 
 if(UNIX AND NOT APPLE)
-  if(NOT DISABLE_SYSTEM)
+  if(NOT DISABLE_SYSTEM AND NOT DISABLE_FFI_CALLS)
     target_link_libraries(disturb PRIVATE dl)
   endif()
 endif()

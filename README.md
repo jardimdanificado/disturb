@@ -22,6 +22,8 @@ Optional flags:
 
 ```bash
 make DISABLE_SYSTEM=1
+# or: enable I/O but disable dynamic FFI calls
+make DISABLE_SYSTEM=0 DISABLE_FFI_CALLS=1
 ```
 
 Install:
@@ -38,7 +40,57 @@ Install options:
 
 Flag behavior summary:
 - `DISABLE_SYSTEM=0` (default/full): enables IO natives, `import`, and dynamic FFI calls (`C.ffi.open`/`C.ffi.sym`/`C.ffi.bind`/`C.ffi.callback`)
+- `DISABLE_SYSTEM=0 DISABLE_FFI_CALLS=1`: enables IO natives and `import` but disables dynamic FFI calls (no libffi/dlopen dependency required).
 - `DISABLE_SYSTEM=1` (embedded): disables features that depend on OS/file-system integration (IO natives, `import`, dynamic FFI calls), while keeping FFI core (`C`, `C.memory`, `C.typedef`/`C.struct`) available
+
+## WebAssembly (WASM) build (Emscripten)
+
+Disturb can be built as a **WASM module** for embedding (e.g., an Obsidian plugin or a web page) by compiling with Emscripten and *disabling dynamic FFI calls*.
+
+Build the WASM runtime:
+
+```bash
+make wasm
+```
+
+This produces `disturb.js` + `disturb.wasm` in the repository root.
+
+To build the Obsidian plugin example (copies runtime + plugin source into `disturb-obsidian/`):
+
+```bash
+make obsidian
+```
+
+The WASM build exposes a small runtime API (via `disturb_wasm.c`):
+
+- `disturb_wasm_init()` — initialize runtime (optional)
+- `disturb_wasm_eval(const char *src)` — evaluate Disturb source
+- `disturb_wasm_free()` — teardown runtime
+
+### JS host hooks (for file I/O)
+
+The WASM build uses a JS hook object `DisturbHost` for file operations. Your embedding environment must provide it before the module is instantiated:
+
+```js
+window.DisturbHost = {
+  readFile(path) {
+    // return file contents as string, or null on failure
+  },
+  writeFile(path, content) {
+    // return true on success, false otherwise
+  }
+};
+```
+
+This allows Disturb to read/write files when embedded in environments like Obsidian (Electron) or other hosts that can supply synchronous file access.
+
+### Example: Obsidian plugin
+
+An example plugin skeleton is provided under `examples/obsidian-plugin/` showing how to load the WASM module and expose a command to run the active note through Disturb.
+
+### Example: Browser (web)
+
+A minimal browser demo is provided under `examples/web/` that uses `disturb.js`/`disturb.wasm` to execute Disturb code inside a web page. See `examples/web/README.md` for details.
 
 MSVC build (Windows):
 

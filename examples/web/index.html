@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Disturb WASM Browser Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1.2rem; }
+    textarea { width: 100%; height: 240px; font-family: monospace; font-size: 14px; }
+    pre { background: #111; color: #d8d8d8; padding: 1rem; white-space: pre-wrap; }
+    button { padding: 0.5rem 0.9rem; font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Disturb WASM Browser Demo</h1>
+  <p>Paste Disturb code or Markdown containing a <code>```disturb</code> block, then click <strong>Run</strong>.</p>
+  <textarea id="source"># Disturb example
+
+```disturb
+println("Hello from Disturb in the browser!"),
+```
+</textarea>
+  <p><button id="run">Run</button></p>
+  <h2>Output</h2>
+  <pre id="output"></pre>
+
+  <script src="disturb.js"></script>
+  <script>
+    const outputEl = document.getElementById('output');
+    const sourceEl = document.getElementById('source');
+    const runBtn = document.getElementById('run');
+
+    function appendOutput(text) {
+      outputEl.textContent += text + '\n';
+    }
+
+    async function init() {
+      const module = await createDisturbModule({
+        locateFile: (file) => file,
+        print: (text) => appendOutput(text),
+        printErr: (text) => appendOutput(text),
+      });
+
+      const evalDisturb = module.cwrap('disturb_wasm_eval', 'number', ['string']);
+      const mdExtract = module.cwrap('disturb_md_extract_urb', 'number', ['string']);
+      const freePtr = module.cwrap('free', null, ['number']);
+
+      runBtn.addEventListener('click', () => {
+        outputEl.textContent = ''; // clear
+
+        const markdown = sourceEl.value;
+        const ptr = mdExtract(markdown);
+        const code = module.UTF8ToString(ptr);
+        freePtr(ptr);
+
+        if (!code.trim()) {
+          appendOutput('No Disturb code found.');
+          return;
+        }
+
+        evalDisturb(code);
+      });
+    }
+
+    init().catch((err) => {
+      appendOutput('Failed to load Disturb WASM: ' + err);
+    });
+  </script>
+</body>
+</html>

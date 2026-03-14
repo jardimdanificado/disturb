@@ -22,7 +22,35 @@ permissions:
   contents: write
 
 jobs:
+  plugin:
+    name: Build Obsidian plugin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libffi-dev
+
+      - name: Setup Emscripten
+        uses: emscripten-core/setup-emscripten@v3
+        with:
+          version: latest
+
+      - name: Build Disturb WASM plugin
+        run: |
+          make obsidian
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: disturb-obsidian
+          path: disturb-obsidian
+
   build:
+    needs: plugin
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -121,6 +149,12 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=x64-windows
           cmake --build build-msvc --config Release -j2
 
+      - name: Download Obsidian plugin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: disturb-obsidian
+          path: .
+
       - name: Package artifact (Linux)
         if: startsWith(matrix.target, 'linux')
         shell: bash
@@ -129,7 +163,8 @@ jobs:
           cp disturb dist/
           cp README.md CHANGELOG.md dist/
           cp -r examples dist/
-          tar -czf "dist/disturb-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist disturb README.md CHANGELOG.md examples
+          cp -r disturb-obsidian dist/
+          tar -czf "dist/disturb-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist disturb README.md CHANGELOG.md examples disturb-obsidian
 
       - name: Package artifact (macOS)
         if: startsWith(matrix.target, 'macos')
@@ -139,7 +174,14 @@ jobs:
           cp disturb dist/
           cp README.md CHANGELOG.md dist/
           cp -r examples dist/
-          tar -czf "dist/disturb-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist disturb README.md CHANGELOG.md examples
+          cp -r disturb-obsidian dist/
+          tar -czf "dist/disturb-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist disturb README.md CHANGELOG.md examples disturb-obsidian
+
+      - name: Download Obsidian plugin artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: disturb-obsidian
+          path: .
 
       - name: Package artifact (Windows MinGW)
         if: matrix.target == 'windows-mingw'
@@ -149,17 +191,21 @@ jobs:
           cp disturb.exe dist/
           cp README.md CHANGELOG.md dist/
           cp -r examples dist/
-          powershell -NoProfile -Command "Compress-Archive -Path dist\\disturb.exe,dist\\README.md,dist\\CHANGELOG.md,dist\\examples -DestinationPath dist\\disturb-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force"
+          cp -r disturb-obsidian dist/
+          powershell -NoProfile -Command "Compress-Archive -Path dist\\disturb.exe,dist\\README.md,dist\\CHANGELOG.md,dist\\examples,dist\\disturb-obsidian -DestinationPath dist\\disturb-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force"
 
       - name: Package artifact (Windows MSVC)
         if: matrix.target == 'windows-msvc'
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
+          New-Item -ItemType Directory -Force -Path dist/disturb-obsidian | Out-Null
           Copy-Item build-msvc/Release/disturb.exe dist/
           Copy-Item README.md,CHANGELOG.md dist/
           Copy-Item -Recurse examples dist/
-          Compress-Archive -Path dist/disturb.exe,dist/README.md,dist/CHANGELOG.md,dist/examples -DestinationPath dist/disturb-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force
+          Copy-Item manifest.json,main.js,output-modal.js dist/disturb-obsidian/
+          Copy-Item disturb.js,disturb.wasm dist/disturb-obsidian/
+          Compress-Archive -Path dist/disturb.exe,dist/README.md,dist/CHANGELOG.md,dist/examples,dist/disturb-obsidian -DestinationPath dist/disturb-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

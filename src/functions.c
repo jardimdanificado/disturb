@@ -1,6 +1,7 @@
 #include "vm.h"
 #include "papagaio.h"
 #include "papagaio_internal.h"
+#include "host_io.h"
 #include <ctype.h>
 #include <math.h>
 #include <stdint.h>
@@ -1094,46 +1095,6 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
     return 1;
 }
 
-static char *read_file_bytes(const char *path, size_t *out_len)
-{
-    FILE *fp = fopen(path, "rb");
-    if (!fp) return NULL;
-    size_t cap = 4096;
-    size_t len = 0;
-    char *buf = (char*)malloc(cap);
-    if (!buf) {
-        fclose(fp);
-        return NULL;
-    }
-    int c;
-    while ((c = fgetc(fp)) != EOF) {
-        if (len + 1 > cap) {
-            size_t next = cap * 2;
-            char *tmp = (char*)realloc(buf, next);
-            if (!tmp) {
-                free(buf);
-                fclose(fp);
-                return NULL;
-            }
-            buf = tmp;
-            cap = next;
-        }
-        buf[len++] = (char)c;
-    }
-    fclose(fp);
-    *out_len = len;
-    return buf;
-}
-
-static int write_file_bytes(const char *path, const char *data, size_t len)
-{
-    FILE *fp = fopen(path, "wb");
-    if (!fp) return 0;
-    size_t wrote = fwrite(data, 1, len, fp);
-    fclose(fp);
-    return wrote == len;
-}
-
 static int ends_with_script_ext(const char *s, size_t len)
 {
     static const char ext[] = ".urb";
@@ -1265,7 +1226,7 @@ static void native_import(VM *vm, List *stack, List *global)
     }
 
     size_t src_len = 0;
-    char *src = read_file_bytes(resolved, &src_len);
+    char *src = disturb_host_read_file(resolved, &src_len);
     if (!src && src_len == 0 && ends_with_script_ext(resolved, resolved_len)) {
         size_t md_len = 0;
         char *md_path = path_replace_ext(resolved, resolved_len, ".urb", ".md", &md_len);
@@ -1277,7 +1238,7 @@ static void native_import(VM *vm, List *stack, List *global)
                 free(resolved);
                 return;
             }
-            src = read_file_bytes(md_path, &src_len);
+            src = disturb_host_read_file(md_path, &src_len);
             if (src || src_len > 0) {
                 free(resolved);
                 resolved = md_path;
@@ -1541,7 +1502,7 @@ static void native_read(VM *vm, List *stack, List *global)
     memcpy(path_buf, path, path_len);
     path_buf[path_len] = 0;
     size_t len = 0;
-    char *data = read_file_bytes(path_buf, &len);
+    char *data = disturb_host_read_file(path_buf, &len);
     free(path_buf);
     if (!data && len == 0) {
         fprintf(stderr, "read failed\n");
@@ -1584,7 +1545,7 @@ static void native_write(VM *vm, List *stack, List *global)
     }
     memcpy(path_buf, path, path_len);
     path_buf[path_len] = 0;
-    int ok = write_file_bytes(path_buf, data, data_len);
+    int ok = disturb_host_write_file(path_buf, data, data_len);
     free(path_buf);
     push_number(vm, stack, ok ? 1.0f : 0.0f);
 }

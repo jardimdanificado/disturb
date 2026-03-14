@@ -7,3 +7,10 @@ tests/asm/out.asm
 tmp_*.txt
 tests/tmp_*.txt
 tmp/
+/disturb.js
+/disturb.wasm
+/disturb-obsidian
+/examples/obsidian-plugin/disturb.js
+/examples/obsidian-plugin/disturb.wasm
+/examples/web/disturb.js
+/examples/web/disturb.wasm
