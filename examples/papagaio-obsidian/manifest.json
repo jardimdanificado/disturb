@@ -1,0 +1,11 @@
+{
+  "id": "papagaio-obsidian",
+  "name": "papagaio (WASM) Runner",
+  "version": "0.0.1",
+  "minAppVersion": "1.0.0",
+  "description": "Run papagaio scripts from inside Obsidian using a WASM runtime.",
+  "author": "papagaio",
+  "authorUrl": "https://github.com/papagaio",
+  "isDesktopOnly": false,
+  "main": "main.js"
+}

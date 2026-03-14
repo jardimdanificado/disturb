@@ -1,10 +1,10 @@
 #!/bin/sh
 set -eu
 
-BIN=${BIN:-./disturb}
+BIN=${BIN:-./papagaio}
 
 if [ ! -x "$BIN" ]; then
-  echo "disturb binary not found: $BIN" >&2
+  echo "papagaio binary not found: $BIN" >&2
   exit 1
 fi
 

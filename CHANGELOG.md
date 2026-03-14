@@ -2,15 +2,19 @@
 
 ## TODO
 - rebrand everything...
--- optimize the switch case stuff to not be just a ifelse alias.
--- optimize all vector stuff with SIMD.
---- paralelism.
----- gpu computing optimizations.
+- wasm and obsidian targets for github release action.
+- .urb extension must not be checked anymore
+-- write a wrapper for wasm to be easily used from browser...
+--- optimize the switch case stuff to not be just a ifelse alias.
+--- optimize all vector stuff with SIMD.
+---- paralelism.
+----- gpu computing optimizations.
 
 ## 2.0.1
 - add host I/O abstraction (`host_io.h` + `src/host_io.c`) to support WASM builds and external host file APIs.
 - add optional `DISABLE_FFI_CALLS` build flag to disable dynamic FFI calls (`libffi`/`dlopen`) while keeping IO/import enabled.
-- add WASM runtime wrapper (`src/disturb_wasm.c`) exposing `disturb_wasm_init()`, `disturb_wasm_eval()`, and `disturb_wasm_free()`.
+- add WASM runtime wrapper (`src/papagaio_wasm.c`) exposing `disturb_wasm_init()`, `disturb_wasm_eval()`, and `disturb_wasm_free()`.
+- disturb is now available on browser, check examples/web/... as web is not our focus for now there is no wrapper or such just the `make wasm' which just compile a wasm.
 
 ## 1.10.1
 - refactor duplicate Markdown extraction logic across the codebase into a centralized native `disturb_md_extract_urb` routine in the VM.

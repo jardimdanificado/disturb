@@ -50,13 +50,13 @@ jobs:
         run: |
           make clean
           make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" DISABLE_SYSTEM=1
-          BIN=./disturb SKIP_FFI=1 tests/run.sh
+          BIN=./papagaio SKIP_FFI=1 tests/run.sh
 
       - name: Build + tests (DISABLE_SYSTEM=1 + embedded mode)
         run: |
           make clean
           make -j"$(getconf _NPROCESSORS_ONLN || echo 2)" DISABLE_SYSTEM=1
-          BIN=./disturb SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
+          BIN=./papagaio SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
 
   windows:
     name: Windows x64 (MSYS2/MinGW64)
@@ -82,22 +82,22 @@ jobs:
         run: |
           make clean
           make -j2
-          BIN=./disturb.exe tests/run.sh
-          BIN=./disturb.exe tests/run_examples.sh
+          BIN=./papagaio.exe tests/run.sh
+          BIN=./papagaio.exe tests/run_examples.sh
 
       - name: Build + tests (DISABLE_SYSTEM=1)
         shell: msys2 {0}
         run: |
           make clean
           make -j2 DISABLE_SYSTEM=1
-          BIN=./disturb.exe SKIP_FFI=1 tests/run.sh
+          BIN=./papagaio.exe SKIP_FFI=1 tests/run.sh
 
       - name: Build + tests (DISABLE_SYSTEM=1 + embedded mode)
         shell: msys2 {0}
         run: |
           make clean
           make -j2 DISABLE_SYSTEM=1
-          BIN=./disturb.exe SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
+          BIN=./papagaio.exe SKIP_FFI=1 EMBEDDED_MODE=1 tests/run.sh
 
   windows-msvc:
     name: Windows x64 (MSVC)
@@ -140,7 +140,7 @@ jobs:
           @"
           println(C.ffi.bind.type);
           "@ | Set-Content -Encoding ASCII $probe
-          $out = & .\build-msvc\Release\disturb.exe $probe
+          $out = & .\build-msvc\Release\papagaio.exe $probe
           if ($out -notmatch "native") {
             throw "ffi probe failed: expected 'native' in output; got: $out"
           }
@@ -149,4 +149,4 @@ jobs:
       - name: Tests
         shell: bash
         run: |
-          BIN=./build-msvc/Release/disturb.exe SKIP_FFI_NATIVE=1 tests/run.sh
+          BIN=./build-msvc/Release/papagaio.exe SKIP_FFI_NATIVE=1 tests/run.sh

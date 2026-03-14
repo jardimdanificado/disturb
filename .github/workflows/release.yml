@@ -39,15 +39,15 @@ jobs:
         with:
           version: latest
 
-      - name: Build Disturb WASM plugin
+      - name: Build papagaio WASM plugin
         run: |
           make obsidian
 
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
         with:
-          name: disturb-obsidian
-          path: disturb-obsidian
+          name: papagaio-obsidian
+          path: papagaio-obsidian
 
   build:
     needs: plugin
@@ -152,7 +152,7 @@ jobs:
       - name: Download Obsidian plugin artifact
         uses: actions/download-artifact@v4
         with:
-          name: disturb-obsidian
+          name: papagaio-obsidian
           path: .
 
       - name: Package artifact (Linux)
@@ -160,27 +160,27 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp disturb dist/
+          cp papagaio dist/
           cp README.md CHANGELOG.md dist/
           cp -r examples dist/
-          cp -r disturb-obsidian dist/
-          tar -czf "dist/disturb-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist disturb README.md CHANGELOG.md examples disturb-obsidian
+          cp -r papagaio-obsidian dist/
+          tar -czf "dist/papagaio-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist papagaio README.md CHANGELOG.md examples papagaio-obsidian
 
       - name: Package artifact (macOS)
         if: startsWith(matrix.target, 'macos')
         shell: bash
         run: |
           mkdir -p dist
-          cp disturb dist/
+          cp papagaio dist/
           cp README.md CHANGELOG.md dist/
           cp -r examples dist/
-          cp -r disturb-obsidian dist/
-          tar -czf "dist/disturb-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist disturb README.md CHANGELOG.md examples disturb-obsidian
+          cp -r papagaio-obsidian dist/
+          tar -czf "dist/papagaio-v${{ inputs.version }}-${{ matrix.archive }}.tar.gz" -C dist papagaio README.md CHANGELOG.md examples papagaio-obsidian
 
       - name: Download Obsidian plugin artifact
         uses: actions/download-artifact@v4
         with:
-          name: disturb-obsidian
+          name: papagaio-obsidian
           path: .
 
       - name: Package artifact (Windows MinGW)
@@ -188,30 +188,30 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p dist
-          cp disturb.exe dist/
+          cp papagaio.exe dist/
           cp README.md CHANGELOG.md dist/
           cp -r examples dist/
-          cp -r disturb-obsidian dist/
-          powershell -NoProfile -Command "Compress-Archive -Path dist\\disturb.exe,dist\\README.md,dist\\CHANGELOG.md,dist\\examples,dist\\disturb-obsidian -DestinationPath dist\\disturb-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force"
+          cp -r papagaio-obsidian dist/
+          powershell -NoProfile -Command "Compress-Archive -Path dist\\papagaio.exe,dist\\README.md,dist\\CHANGELOG.md,dist\\examples,dist\\papagaio-obsidian -DestinationPath dist\\papagaio-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force"
 
       - name: Package artifact (Windows MSVC)
         if: matrix.target == 'windows-msvc'
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          New-Item -ItemType Directory -Force -Path dist/disturb-obsidian | Out-Null
-          Copy-Item build-msvc/Release/disturb.exe dist/
+          New-Item -ItemType Directory -Force -Path dist/papagaio-obsidian | Out-Null
+          Copy-Item build-msvc/Release/papagaio.exe dist/
           Copy-Item README.md,CHANGELOG.md dist/
           Copy-Item -Recurse examples dist/
-          Copy-Item manifest.json,main.js,output-modal.js dist/disturb-obsidian/
-          Copy-Item disturb.js,disturb.wasm dist/disturb-obsidian/
-          Compress-Archive -Path dist/disturb.exe,dist/README.md,dist/CHANGELOG.md,dist/examples,dist/disturb-obsidian -DestinationPath dist/disturb-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force
+          Copy-Item manifest.json,main.js,output-modal.js dist/papagaio-obsidian/
+          Copy-Item papagaio.js,papagaio.wasm dist/papagaio-obsidian/
+          Compress-Archive -Path dist/papagaio.exe,dist/README.md,dist/CHANGELOG.md,dist/examples,dist/papagaio-obsidian -DestinationPath dist/papagaio-v${{ inputs.version }}-${{ matrix.archive }}.zip -Force
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: disturb-${{ matrix.target }}
-          path: dist/disturb-v${{ inputs.version }}-*
+          name: papagaio-${{ matrix.target }}
+          path: dist/papagaio-v${{ inputs.version }}-*
           if-no-files-found: error
 
   release:
@@ -279,4 +279,4 @@ jobs:
           name: v${{ inputs.version }}
           body: ${{ steps.notes.outputs.body }}
           prerelease: ${{ inputs.prerelease }}
-          files: artifacts/**/disturb-v${{ inputs.version }}-*
+          files: artifacts/**/papagaio-v${{ inputs.version }}-*

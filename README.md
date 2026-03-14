@@ -1,6 +1,6 @@
-# Disturb
+# papagaio.md
 
-Disturb is a stack-based VM and language with C-like syntax that compiles to compact RPN bytecode.
+papagaio.md is a stack-based VM and language with C-like syntax that compiles to compact RPN bytecode.
 
 This README now includes the full function reference.
 
@@ -15,7 +15,7 @@ Build:
 
 ```bash
 make
-./disturb --help
+./papagaio --help
 ```
 
 Optional flags:
@@ -33,10 +33,10 @@ make install
 ```
 
 Install options:
-- change output binary name: `make TARGET=disturb-dev`
+- change output binary name: `make TARGET=papagaio-dev`
 - change install path: `make install PREFIX=$HOME/.local`
 - stage install root (packaging): `make install DESTDIR=/tmp/pkgroot`
-- change installed file name: `make install INSTALL_TARGET=disturb`
+- change installed file name: `make install INSTALL_TARGET=papagaio`
 
 Flag behavior summary:
 - `DISABLE_SYSTEM=0` (default/full): enables IO natives, `import`, and dynamic FFI calls (`C.ffi.open`/`C.ffi.sym`/`C.ffi.bind`/`C.ffi.callback`)
@@ -53,15 +53,15 @@ Build the WASM runtime:
 make wasm
 ```
 
-This produces `disturb.js` + `disturb.wasm` in the repository root.
+This produces `papagaio.js` + `papagaio.wasm` in the repository root.
 
-To build the Obsidian plugin example (copies runtime + plugin source into `disturb-obsidian/`):
+To build the Obsidian plugin example (copies runtime + plugin source into `papagaio-obsidian/`):
 
 ```bash
 make obsidian
 ```
 
-The WASM build exposes a small runtime API (via `disturb_wasm.c`):
+The WASM build exposes a small runtime API (via `papagaio_wasm.c`):
 
 - `disturb_wasm_init()` — initialize runtime (optional)
 - `disturb_wasm_eval(const char *src)` — evaluate Disturb source
@@ -90,7 +90,7 @@ An example plugin skeleton is provided under `examples/obsidian-plugin/` showing
 
 ### Example: Browser (web)
 
-A minimal browser demo is provided under `examples/web/` that uses `disturb.js`/`disturb.wasm` to execute Disturb code inside a web page. See `examples/web/README.md` for details.
+A minimal browser demo is provided under `examples/web/` that uses `papagaio.js`/`papagaio.wasm` to execute papagaio code inside a web page. See `examples/web/README.md` for details.
 
 MSVC build (Windows):
 
