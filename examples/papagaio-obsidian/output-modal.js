@@ -1,6 +1,6 @@
 const { Modal } = require('obsidian');
 
-module.exports = class DisturbOutputModal extends Modal {
+module.exports = class PapagaioOutputModal extends Modal {
   constructor(app, title, content) {
     super(app);
     this.title = title;

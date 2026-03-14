@@ -9,7 +9,7 @@
 #endif
 
 // Default host I/O implementation (native filesystem).
-// For WASM (Emscripten) builds, the default implementation delegates to JS via DisturbHost.
+// For WASM (Emscripten) builds, the default implementation delegates to JS via `PapagaioHost`.
 
 static char *default_read_file(const char *path, size_t *out_len)
 {
@@ -54,19 +54,19 @@ static int default_write_file(const char *path, const char *data, size_t len)
 }
 
 #if defined(__EMSCRIPTEN__)
-// In Emscripten builds, delegate to JS hooks exposed as `DisturbHost.readFile` / `writeFile`.
+// In Emscripten builds, delegate to JS hooks exposed as `PapagaioHost.readFile` / `writeFile`.
 static char *emscripten_read_file(const char *path, size_t *out_len);
 static int emscripten_write_file(const char *path, const char *data, size_t len);
 
 EM_JS(char *, emscripten_read_file, (const char *path, size_t *out_len), {
     if (!path || !out_len) return 0;
     var s = UTF8ToString(path);
-    if (typeof DisturbHost !== "object" || typeof DisturbHost.readFile !== "function") {
+    if (typeof PapagaioHost !== "object" || typeof PapagaioHost.readFile !== "function") {
         setValue(out_len, 0, 'i32');
         return 0;
     }
 
-    var res = DisturbHost.readFile(s);
+    var res = PapagaioHost.readFile(s);
     if (res === null || res === undefined) {
         setValue(out_len, 0, 'i32');
         return 0;
@@ -83,35 +83,35 @@ EM_JS(int, emscripten_write_file, (const char *path, const char *data, size_t le
     if (!path) return 0;
     var p = UTF8ToString(path);
     var str = data ? UTF8ToString(data, len) : "";
-    if (typeof DisturbHost !== "object" || typeof DisturbHost.writeFile !== "function") {
+    if (typeof PapagaioHost !== "object" || typeof PapagaioHost.writeFile !== "function") {
         return 0;
     }
     try {
-        return DisturbHost.writeFile(p, str) ? 1 : 0;
+        return PapagaioHost.writeFile(p, str) ? 1 : 0;
     } catch (e) {
         return 0;
     }
 });
 
-static DisturbHostReadFileFn g_read_fn = emscripten_read_file;
-static DisturbHostWriteFileFn g_write_fn = emscripten_write_file;
+static PapagaioHostReadFileFn g_read_fn = emscripten_read_file;
+static PapagaioHostWriteFileFn g_write_fn = emscripten_write_file;
 #else
-static DisturbHostReadFileFn g_read_fn = default_read_file;
-static DisturbHostWriteFileFn g_write_fn = default_write_file;
+static PapagaioHostReadFileFn g_read_fn = default_read_file;
+static PapagaioHostWriteFileFn g_write_fn = default_write_file;
 #endif
 
-void disturb_host_set_io_handlers(DisturbHostReadFileFn read_fn, DisturbHostWriteFileFn write_fn)
+void papagaio_host_set_io_handlers(PapagaioHostReadFileFn read_fn, PapagaioHostWriteFileFn write_fn)
 {
-    g_read_fn = read_fn ? read_fn : (DisturbHostReadFileFn)default_read_file;
-    g_write_fn = write_fn ? write_fn : (DisturbHostWriteFileFn)default_write_file;
+    g_read_fn = read_fn ? read_fn : (PapagaioHostReadFileFn)default_read_file;
+    g_write_fn = write_fn ? write_fn : (PapagaioHostWriteFileFn)default_write_file;
 }
 
-char *disturb_host_read_file(const char *path, size_t *out_len)
+char *papagaio_host_read_file(const char *path, size_t *out_len)
 {
     return g_read_fn(path, out_len);
 }
 
-int disturb_host_write_file(const char *path, const char *data, size_t len)
+int papagaio_host_write_file(const char *path, const char *data, size_t len)
 {
     return g_write_fn(path, data, len);
 }

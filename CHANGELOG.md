@@ -1,23 +1,33 @@
 # Changelog
 
 ## TODO
+### now
 - rebrand everything...
 - wasm and obsidian targets for github release action.
 - .urb extension must not be checked anymore
--- write a wrapper for wasm to be easily used from browser...
---- optimize the switch case stuff to not be just a ifelse alias.
---- optimize all vector stuff with SIMD.
----- paralelism.
------ gpu computing optimizations.
+
+### later
+- optimize the switch case stuff to not be just a ifelse alias, really small gain but not so much work really
+
+### future
+- optimize all vector stuff with SIMD, papagaio was written from ground with the exact idea of a fully SIMD-optimized language, is not only useful but really ESSENTIAL for a serious/non-experimental version...
+
+### far-future
+- paralelism, almost essential for papagaio later versions, but not really useful right now...
+- gpu computing, perfect for papagaio but i know nothing about gpu computing yet...
+
+### uncertain
+- write a wrapper for wasm to be easily used from browser... REALLY useful but i dont want to use papagaio on the browser again any soon...
+- arduino version with small overhead and small ram footprint... i am pretty sure i will NEVER write this for papagaio, but there was early plans for doing so... prefer the pure urb.h interpreter for arduinos.
 
 ## 2.0.1
 - add host I/O abstraction (`host_io.h` + `src/host_io.c`) to support WASM builds and external host file APIs.
 - add optional `DISABLE_FFI_CALLS` build flag to disable dynamic FFI calls (`libffi`/`dlopen`) while keeping IO/import enabled.
-- add WASM runtime wrapper (`src/papagaio_wasm.c`) exposing `disturb_wasm_init()`, `disturb_wasm_eval()`, and `disturb_wasm_free()`.
-- disturb is now available on browser, check examples/web/... as web is not our focus for now there is no wrapper or such just the `make wasm' which just compile a wasm.
+- add WASM runtime wrapper (`src/papagaio_wasm.c`) exposing `papagaio_wasm_init()`, `papagaio_wasm_eval()`, and `papagaio_wasm_free()`.
+- papagaio is now available on browser, check examples/web/... as web is not our focus for now there is no wrapper or such just the `make wasm' which just compile a wasm.
 
 ## 1.10.1
-- refactor duplicate Markdown extraction logic across the codebase into a centralized native `disturb_md_extract_urb` routine in the VM.
+- refactor duplicate Markdown extraction logic across the codebase into a centralized native `papagaio_md_extract` routine in the VM.
 - add native `mdGenerate()` helper to serialize `global.md` tables back into Markdown text (new regression test: `tests/cases/mdgen_test.urb`).
 - modify `import()` and `mdisturb` to automatically parse extended Markdown syntax (`# headings`, `- lists`, `| tables |`), mapping them to AST objects natively dynamically allocated in `global.md.<heading>`.
 - add papagaio pattern variable modifiers via `$name$modifier` syntax: type-constrained captures `$int`, `$float`, `$number`, `$hex`, `$binary`, `$percent`; text-constrained captures `$upper`, `$lower`, `$capitalized`, `$word`, `$identifier`, `$path`.

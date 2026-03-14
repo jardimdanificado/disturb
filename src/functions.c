@@ -1097,10 +1097,18 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
 
 static int ends_with_script_ext(const char *s, size_t len)
 {
-    static const char ext[] = ".urb";
-    size_t ext_len = sizeof(ext) - 1;
-    if (len < ext_len) return 0;
-    return memcmp(s + (len - ext_len), ext, ext_len) == 0;
+    static const char papagaio_ext[] = ".papagaio";
+    static const char urb_ext[] = ".urb";
+    size_t papagaio_len = sizeof(papagaio_ext) - 1;
+    size_t urb_len = sizeof(urb_ext) - 1;
+
+    if (len >= papagaio_len && memcmp(s + (len - papagaio_len), papagaio_ext, papagaio_len) == 0) {
+        return 1;
+    }
+    if (len >= urb_len && memcmp(s + (len - urb_len), urb_ext, urb_len) == 0) {
+        return 1;
+    }
+    return 0;
 }
 
 static int ends_with_markdown_ext(const char *s, size_t len)
@@ -1166,7 +1174,7 @@ static char *module_resolve_path(const char *path, size_t path_len, size_t *out_
     size_t base_len = len - base_start;
     if (base_len == 0) return NULL;
 
-    size_t out_size = len + 1 + base_len + (sizeof(".urb") - 1);
+    size_t out_size = len + 1 + base_len + (sizeof(".papagaio") - 1);
     char *out = (char*)malloc(out_size + 1);
     if (!out) return NULL;
     size_t at = 0;
@@ -1175,8 +1183,8 @@ static char *module_resolve_path(const char *path, size_t path_len, size_t *out_
     out[at++] = '/';
     memcpy(out + at, path + base_start, base_len);
     at += base_len;
-    memcpy(out + at, ".urb", sizeof(".urb") - 1);
-    at += sizeof(".urb") - 1;
+    memcpy(out + at, ".papagaio", sizeof(".papagaio") - 1);
+    at += sizeof(".papagaio") - 1;
     out[at] = 0;
     if (out_len) *out_len = at;
     return out;
@@ -1226,26 +1234,54 @@ static void native_import(VM *vm, List *stack, List *global)
     }
 
     size_t src_len = 0;
-    char *src = disturb_host_read_file(resolved, &src_len);
+    char *src = papagaio_host_read_file(resolved, &src_len);
     if (!src && src_len == 0 && ends_with_script_ext(resolved, resolved_len)) {
-        size_t md_len = 0;
-        char *md_path = path_replace_ext(resolved, resolved_len, ".urb", ".md", &md_len);
-        if (md_path) {
-            ObjEntry *cached_md = module_cache_get(vm, global, md_path, md_len);
-            if (cached_md) {
-                push_entry(vm, stack, cached_md);
+        /* Backwards compatibility: if a module path was given without extension, we
+           first try `.papagaio`, then fall back to `.urb` before giving up.
+
+           Then, if neither source file exists, try a Markdown variant (.md).
+        */
+
+        size_t alt_len = 0;
+        char *alt_path = path_replace_ext(resolved, resolved_len, ".papagaio", ".urb", &alt_len);
+        if (!alt_path) {
+            alt_path = path_replace_ext(resolved, resolved_len, ".urb", ".papagaio", &alt_len);
+        }
+        if (alt_path) {
+            char *alt_src = papagaio_host_read_file(alt_path, &src_len);
+            if (alt_src || src_len > 0) {
+                free(resolved);
+                resolved = alt_path;
+                resolved_len = alt_len;
+                src = alt_src;
+                alt_path = NULL;
+            }
+            free(alt_path);
+        }
+
+        if (!src && src_len == 0) {
+            size_t md_len = 0;
+            char *md_path = path_replace_ext(resolved, resolved_len, ".papagaio", ".md", &md_len);
+            if (!md_path) {
+                md_path = path_replace_ext(resolved, resolved_len, ".urb", ".md", &md_len);
+            }
+            if (md_path) {
+                ObjEntry *cached_md = module_cache_get(vm, global, md_path, md_len);
+                if (cached_md) {
+                    push_entry(vm, stack, cached_md);
+                    free(md_path);
+                    free(resolved);
+                    return;
+                }
+                src = papagaio_host_read_file(md_path, &src_len);
+                if (src || src_len > 0) {
+                    free(resolved);
+                    resolved = md_path;
+                    resolved_len = md_len;
+                    md_path = NULL;
+                }
                 free(md_path);
-                free(resolved);
-                return;
             }
-            src = disturb_host_read_file(md_path, &src_len);
-            if (src || src_len > 0) {
-                free(resolved);
-                resolved = md_path;
-                resolved_len = md_len;
-                md_path = NULL;
-            }
-            free(md_path);
         }
     }
     if (!src && src_len == 0) {
@@ -1265,7 +1301,7 @@ static void native_import(VM *vm, List *stack, List *global)
         if (src_len) memcpy(md_text, src, src_len);
         md_text[src_len] = 0;
 
-        char *urb_src = disturb_md_extract_urb(md_text);
+        char *urb_src = papagaio_md_extract(md_text);
         free(md_text);
         free(src);
         if (!urb_src) {
@@ -1392,7 +1428,7 @@ static void native_md_generate(VM *vm, List *stack, List *global)
         fprintf(stderr, "mdGenerate expects a table (global.md)\n");
         return;
     }
-    ObjEntry *out = disturb_md_generate(vm, target);
+    ObjEntry *out = papagaio_md_generate(vm, target);
     stack = push_entry(vm, stack, out);
 }
 
@@ -1502,7 +1538,7 @@ static void native_read(VM *vm, List *stack, List *global)
     memcpy(path_buf, path, path_len);
     path_buf[path_len] = 0;
     size_t len = 0;
-    char *data = disturb_host_read_file(path_buf, &len);
+    char *data = papagaio_host_read_file(path_buf, &len);
     free(path_buf);
     if (!data && len == 0) {
         fprintf(stderr, "read failed\n");
@@ -1545,7 +1581,7 @@ static void native_write(VM *vm, List *stack, List *global)
     }
     memcpy(path_buf, path, path_len);
     path_buf[path_len] = 0;
-    int ok = disturb_host_write_file(path_buf, data, data_len);
+    int ok = papagaio_host_write_file(path_buf, data, data_len);
     free(path_buf);
     push_number(vm, stack, ok ? 1.0f : 0.0f);
 }

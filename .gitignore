@@ -1,6 +1,5 @@
 *.o
 *.so
-disturb
 papagaio
 tests/bench/*_c
 tests/asm/out.bin
@@ -8,14 +7,10 @@ tests/asm/out.asm
 tmp_*.txt
 tests/tmp_*.txt
 tmp/
-/disturb.js
-/disturb.wasm
 /papagaio.js
 /papagaio.wasm
 /papagaio-obsidian
 /examples/papagaio-obsidian/papagaio.js
 /examples/papagaio-obsidian/papagaio.wasm
-/examples/web/disturb.js
-/examples/web/disturb.wasm
 /examples/web/papagaio.js
 /examples/web/papagaio.wasm

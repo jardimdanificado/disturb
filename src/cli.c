@@ -85,12 +85,12 @@ static unsigned char *read_all_bytes(FILE *fp, size_t *out_len)
 static void print_help(void)
 {
     puts("usage:");
-    puts("  disturb [options] [script.urb|script.md] [args...]");
-    puts("  disturb --compile-bytecode script.urb|script.md output.bytecode");
-    puts("  disturb --run-bytecode output.bytecode [args...]");
-    puts("  disturb --md-extract script.md [output.urb]");
-    puts("  disturb --markdown script [args...]   (force markdown mode)");
-    puts("  disturb --help");
+    puts("  papagaio [options] [script.papagaio|script.md] [args...]");
+    puts("  papagaio --compile-bytecode script.papagaio|script.md output.bytecode");
+    puts("  papagaio --run-bytecode output.bytecode [args...]");
+    puts("  papagaio --md-extract script.md [output.papagaio]");
+    puts("  papagaio --markdown script [args...]   (force markdown mode)");
+    puts("  papagaio --help");
     puts("");
     puts("notes:");
     puts("  .md files are detected automatically and code fences are extracted.");
@@ -211,7 +211,7 @@ static int repl_run(int argc, char **argv)
     int escape = 0;
 
     while (1) {
-        fputs(depth == 0 ? "disturb> " : "....> ", stdout);
+        fputs(depth == 0 ? "papagaio> " : "....> ", stdout);
         fflush(stdout);
         if (!fgets(line, sizeof(line), stdin)) break;
         if (depth == 0 && (strcmp(line, "exit\n") == 0 || strcmp(line, "quit\n") == 0)) break;
@@ -247,7 +247,7 @@ static int repl_run(int argc, char **argv)
     return 0;
 }
 
-static int run_disturb_script(const char *path, int script_argc, char **script_argv)
+static int run_papagaio_script(const char *path, int script_argc, char **script_argv)
 {
     VM vm;
     vm_init(&vm);
@@ -271,10 +271,10 @@ static int run_markdown_script(const char *path, int script_argc, char **script_
     char *md_src = read_file_text(path);
     if (!md_src) return 1;
 
-    char *urb_src = disturb_md_extract_urb(md_src);
+    char *urb_src = papagaio_md_extract(md_src);
     free(md_src);
     if (!urb_src) {
-        fprintf(stderr, "disturb: failed to extract code from %s\n", path);
+        fprintf(stderr, "papagaio: failed to extract code from %s\n", path);
         return 1;
     }
 
@@ -300,10 +300,10 @@ static int compile_bytecode_file(const char *src_path, const char *out_path)
 
     char *src;
     if (path_is_markdown(src_path)) {
-        src = disturb_md_extract_urb(raw);
+        src = papagaio_md_extract(raw);
         free(raw);
         if (!src) {
-            fprintf(stderr, "disturb: failed to extract code from %s\n", src_path);
+            fprintf(stderr, "papagaio: failed to extract code from %s\n", src_path);
             vm_free(&vm);
             return 1;
         }
@@ -369,7 +369,7 @@ static int run_bytecode_file(const char *path, int script_argc, char **script_ar
     return result;
 }
 
-static int disturb_main(int argc, char **argv)
+static int papagaio_main(int argc, char **argv)
 {
     if (argc <= 1) {
         return repl_run(argc, argv);
@@ -384,7 +384,7 @@ static int disturb_main(int argc, char **argv)
 
     int argi = 1;
     if (argc <= argi) {
-        fprintf(stderr, "disturb expects a source or bytecode file\n");
+        fprintf(stderr, "papagaio expects a source or bytecode file\n");
         return 1;
     }
 
@@ -394,7 +394,7 @@ static int disturb_main(int argc, char **argv)
     if (strcmp(cmd, "--markdown") == 0 || strcmp(cmd, "-md") == 0) {
         argi++;
         if (argc <= argi) {
-            fprintf(stderr, "disturb: --markdown requires a file argument\n");
+            fprintf(stderr, "papagaio: --markdown requires a file argument\n");
             return 1;
         }
         const char *md_path = argv[argi];
@@ -403,20 +403,20 @@ static int disturb_main(int argc, char **argv)
         return run_markdown_script(md_path, script_argc, script_argv);
     }
 
-    /* --md-extract file.md [output.urb] */
+    /* --md-extract file.md [output.papagaio] */
     if (strcmp(cmd, "--md-extract") == 0) {
         argi++;
         if (argc <= argi) {
-            fprintf(stderr, "usage: disturb --md-extract script.md [output.urb]\n");
+            fprintf(stderr, "usage: papagaio --md-extract script.md [output.papagaio]\n");
             return 1;
         }
         const char *md_path = argv[argi];
         char *md_src = read_file_text(md_path);
         if (!md_src) return 1;
-        char *urb_src = disturb_md_extract_urb(md_src);
+        char *papagaio_src = papagaio_md_extract(md_src);
         free(md_src);
-        if (!urb_src) {
-            fprintf(stderr, "disturb: failed to extract code from %s\n", md_path);
+        if (!papagaio_src) {
+            fprintf(stderr, "papagaio: failed to extract code from %s\n", md_path);
             return 1;
         }
 
@@ -426,54 +426,54 @@ static int disturb_main(int argc, char **argv)
             FILE *fp = fopen(out_path, "w");
             if (!fp) {
                 perror(out_path);
-                free(urb_src);
+                free(papagaio_src);
                 return 1;
             }
-            fputs(urb_src, fp);
+            fputs(papagaio_src, fp);
             fclose(fp);
-            fprintf(stderr, "disturb: extracted to %s\n", out_path);
+            fprintf(stderr, "papagaio: extracted to %s\n", out_path);
         } else {
-            /* Derive output path: replace .md with .urb */
+            /* Derive output path: replace .md with .papagaio */
             size_t plen = strlen(md_path);
             char *out_path;
             if (plen > 3 &&
                 (md_path[plen-3] == '.') &&
                 (md_path[plen-2] == 'm' || md_path[plen-2] == 'M') &&
                 (md_path[plen-1] == 'd' || md_path[plen-1] == 'D')) {
-                out_path = (char*)malloc(plen + 2);
+                out_path = (char*)malloc(plen + 9);
                 memcpy(out_path, md_path, plen - 2);
-                strcpy(out_path + plen - 2, "urb");
+                strcpy(out_path + plen - 2, "papagaio");
             } else {
-                out_path = (char*)malloc(plen + 5);
+                out_path = (char*)malloc(plen + 11);
                 memcpy(out_path, md_path, plen);
-                strcpy(out_path + plen, ".urb");
+                strcpy(out_path + plen, ".papagaio");
             }
             FILE *fp = fopen(out_path, "w");
             if (!fp) {
                 perror(out_path);
-                free(urb_src);
+                free(papagaio_src);
                 free(out_path);
                 return 1;
             }
-            fputs(urb_src, fp);
+            fputs(papagaio_src, fp);
             fclose(fp);
-            fprintf(stderr, "disturb: extracted to %s\n", out_path);
+            fprintf(stderr, "papagaio: extracted to %s\n", out_path);
             free(out_path);
         }
-        free(urb_src);
+        free(papagaio_src);
         return 0;
     }
 
     if (strcmp(cmd, "--compile-bytecode") == 0) {
         if (argc - argi < 3) {
-            fprintf(stderr, "usage: disturb --compile-bytecode script.urb output.bytecode\n");
+            fprintf(stderr, "usage: papagaio --compile-bytecode script.papagaio output.bytecode\n");
             return 1;
         }
         return compile_bytecode_file(argv[argi + 1], argv[argi + 2]);
     }
     if (strcmp(cmd, "--run-bytecode") == 0) {
         if (argc - argi < 2) {
-            fprintf(stderr, "disturb expects a bytecode file\n");
+            fprintf(stderr, "papagaio expects a bytecode file\n");
             return 1;
         }
         const char *bytecode_path = argv[argi + 1];
@@ -489,13 +489,13 @@ static int disturb_main(int argc, char **argv)
     if (path_is_markdown(cmd)) {
         return run_markdown_script(cmd, script_argc, script_argv);
     }
-    return run_disturb_script(cmd, script_argc, script_argv);
+    return run_papagaio_script(cmd, script_argc, script_argv);
 }
 
 int main(int argc, char **argv)
 {
     setvbuf(stdout, NULL, _IOFBF, 1 << 20);
-    int code = disturb_main(argc, argv);
+    int code = papagaio_main(argc, argv);
     fflush(stdout);
     setvbuf(stdout, NULL, _IONBF, 0);
     return code;

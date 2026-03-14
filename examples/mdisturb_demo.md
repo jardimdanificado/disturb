@@ -1,9 +1,9 @@
 # MDisturb Demo
 
-Este arquivo demonstra que todos os blocos de código cercados por crases triplas são considerados código Disturb.
+Este arquivo demonstra que todos os blocos de código cercados por crases triplas são considerados código papagaio.
 
-```disturb
-name = "Disturb",
+```papagaio
+name = "papagaio",
 println("hello from " + name),
 ```
 

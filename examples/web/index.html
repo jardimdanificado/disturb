@@ -41,8 +41,8 @@ println("Hello from papagaio in the browser!"),
         printErr: (text) => appendOutput(text),
       });
 
-      const evalPapagaio = module.cwrap('disturb_wasm_eval', 'number', ['string']);
-      const mdExtract = module.cwrap('disturb_md_extract_urb', 'number', ['string']);
+      const evalPapagaio = module.cwrap('papagaio_wasm_eval', 'number', ['string']);
+      const mdExtract = module.cwrap('papagaio_md_extract', 'number', ['string']);
       const freePtr = module.cwrap('free', null, ['number']);
 
       runBtn.addEventListener('click', () => {

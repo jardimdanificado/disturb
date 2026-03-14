@@ -22,7 +22,7 @@ permissions:
   contents: write
 
 jobs:
-  plugin:
+  obsidian:
     name: Build Obsidian plugin
     runs-on: ubuntu-latest
     steps:
@@ -43,14 +43,53 @@ jobs:
         run: |
           make obsidian
 
+      - name: Package plugin artifact
+        run: |
+          mkdir -p dist
+          cp -r papagaio-obsidian dist/
+          tar -czf "dist/papagaio-v${{ inputs.version }}-obsidian.tar.gz" -C dist papagaio-obsidian
+
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
         with:
           name: papagaio-obsidian
-          path: papagaio-obsidian
+          path: dist/papagaio-v${{ inputs.version }}-obsidian.tar.gz
+
+  wasm:
+    name: Build WASM runtime
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Ubuntu)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libffi-dev
+
+      - name: Setup Emscripten
+        uses: emscripten-core/setup-emscripten@v3
+        with:
+          version: latest
+
+      - name: Build WASM module
+        run: |
+          make wasm
+
+      - name: Package WASM artifact
+        run: |
+          mkdir -p dist
+          cp papagaio.js papagaio.wasm dist/
+          tar -czf "dist/papagaio-v${{ inputs.version }}-wasm.tar.gz" -C dist papagaio.js papagaio.wasm
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: papagaio-wasm
+          path: dist/papagaio-v${{ inputs.version }}-wasm.tar.gz
 
   build:
-    needs: plugin
+    needs: obsidian
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -217,7 +256,7 @@ jobs:
   release:
     name: Publish release
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, wasm, obsidian]
     steps:
       - name: Checkout
         uses: actions/checkout@v4

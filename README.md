@@ -63,16 +63,16 @@ make obsidian
 
 The WASM build exposes a small runtime API (via `papagaio_wasm.c`):
 
-- `disturb_wasm_init()` — initialize runtime (optional)
-- `disturb_wasm_eval(const char *src)` — evaluate Disturb source
-- `disturb_wasm_free()` — teardown runtime
+- `papagaio_wasm_init()` — initialize runtime (optional)
+- `papagaio_wasm_eval(const char *src)` — evaluate papagaio source
+- `papagaio_wasm_free()` — teardown runtime
 
 ### JS host hooks (for file I/O)
 
-The WASM build uses a JS hook object `DisturbHost` for file operations. Your embedding environment must provide it before the module is instantiated:
+The WASM build uses a JS hook object `PapagaioHost` for file operations. Your embedding environment must provide it before the module is instantiated:
 
 ```js
-window.DisturbHost = {
+window.PapagaioHost = {
   readFile(path) {
     // return file contents as string, or null on failure
   },
@@ -107,10 +107,10 @@ Notes:
 ## CLI
 
 ```text
-disturb [script.urb] [args...]
-disturb --compile-bytecode script.urb output.bytecode
-disturb --run-bytecode output.bytecode [args...]
-disturb --help
+papagaio [script.papagaio] [args...]
+papagaio --compile-bytecode script.papagaio output.bytecode
+papagaio --run-bytecode output.bytecode [args...]
+papagaio --help
 ```
 
 Notes:
@@ -125,9 +125,9 @@ Notes:
 Commands:
 
 ```bash
-./disturb mdisturb.urb print docs.md
-./disturb mdisturb.urb extract docs.md [output.urb]
-./disturb mdisturb.urb run docs.md
+./papagaio mdisturb.urb print docs.md
+./papagaio mdisturb.urb extract docs.md [output.papagaio]
+./papagaio mdisturb.urb run docs.md
 ```
 
 Behavior:
@@ -159,7 +159,7 @@ if msg.size > 0 { println(msg) }
 Run:
 
 ```bash
-./disturb file.urb
+./papagaio file.papagaio
 ```
 
 ## Language Model

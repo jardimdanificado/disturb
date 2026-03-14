@@ -210,7 +210,7 @@ int vm_compile_source(const char *src, Bytecode *out, char *err, size_t err_cap)
 int vm_compile_source_with_vm(VM *vm, const char *src, Bytecode *out, char *err, size_t err_cap);
 ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len);
 
-char *disturb_md_extract_urb(const char *md_source);
-ObjEntry *disturb_md_generate(VM *vm, ObjEntry *md_table);
+char *papagaio_md_extract(const char *md_source);
+ObjEntry *papagaio_md_generate(VM *vm, ObjEntry *md_table);
 
 #endif

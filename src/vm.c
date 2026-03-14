@@ -6603,7 +6603,7 @@ static char *trim_string(const char *str, int *len) {
     return (char*)(str + start);
 }
 
-char *disturb_md_extract_urb(const char *md_source)
+char *papagaio_md_extract(const char *md_source)
 {
     size_t out_cap = 4096;
     size_t out_len = 0;
@@ -6783,7 +6783,7 @@ static int md_gen_table_has_key(List *obj)
     return 0;
 }
 
-ObjEntry *disturb_md_generate(VM *vm, ObjEntry *md_table)
+ObjEntry *papagaio_md_generate(VM *vm, ObjEntry *md_table)
 {
     if (!md_table || disturb_obj_type(md_table->obj) != DISTURB_T_TABLE) {
         return vm->null_entry;

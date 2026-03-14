@@ -22,5 +22,5 @@ This produces `papagaio-obsidian/` with `papagaio.js` + `papagaio.wasm` included
 
 ## Notes
 
-- The plugin uses a `DisturbHost` hook object for file I/O. The example implementation uses `fs` (Electron) to read/write vault files.
+- The plugin uses a `PapagaioHost` hook object for file I/O. The example implementation uses `fs` (Electron) to read/write vault files.
 - This example is minimal and intended as a starting point. For production use, add error handling, security considerations, and UI feedback.

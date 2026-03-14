@@ -98,10 +98,10 @@ module.exports = class PapagaioPlugin extends Plugin {
 
       // Load the WASM binary directly (avoid fetch/file:// issues).
       let moduleArg = {};
-      this._disturbOutput = '';
+      this._papagaioOutput = '';
       const appendOutput = (text) => {
         if (typeof text !== 'string') text = String(text);
-        this._disturbOutput += text + '\n';
+        this._papagaioOutput += text + '\n';
       };
 
       if (typeof require === 'function' && pluginDir) {
@@ -121,15 +121,15 @@ module.exports = class PapagaioPlugin extends Plugin {
       moduleArg.printErr = (text) => appendOutput(text);
 
       this._module = await createPapagaioModule(moduleArg);
-      this._disturbEval = this._module.cwrap('disturb_wasm_eval', 'number', ['string']);
-      this._disturbInit = this._module.cwrap('disturb_wasm_init', null, []);
-      this._disturbFree = this._module.cwrap('disturb_wasm_free', null, []);
+      this._papagaioEval = this._module.cwrap('papagaio_wasm_eval', 'number', ['string']);
+      this._papagaioInit = this._module.cwrap('papagaio_wasm_init', null, []);
+      this._papagaioFree = this._module.cwrap('papagaio_wasm_free', null, []);
 
-      // Expose markdown-to-urb extractor from the native runtime
-      this._disturbMdExtractUrb = this._module.cwrap('disturb_md_extract_urb', 'number', ['string']);
-      this._disturbFreePtr = this._module.cwrap('free', null, ['number']);
+      // Expose markdown extractor from the native runtime
+      this._papagaioMdExtract = this._module.cwrap('papagaio_md_extract', 'number', ['string']);
+      this._papagaioFreePtr = this._module.cwrap('free', null, ['number']);
 
-      if (this._disturbInit) this._disturbInit();
+      if (this._papagaioInit) this._papagaioInit();
     } catch (err) {
       console.error('Failed to initialize papagaio WASM runtime:', err);
       new Notice('papagaio: failed to initialize WASM runtime (see console)');
@@ -146,40 +146,40 @@ module.exports = class PapagaioPlugin extends Plugin {
         }
 
         const content = await this.app.vault.read(view.file);
-        if (!this._disturbEval) {
+        if (!this._papagaioEval) {
           new Notice('papagaio runtime not initialized');
           return;
         }
 
         // Use the native markdown extractor to handle all supported MD syntax.
-        if (!this._disturbMdExtractUrb) {
+        if (!this._papagaioMdExtract) {
           new Notice('papagaio runtime missing markdown parser');
           return;
         }
 
-        const ptr = this._disturbMdExtractUrb(content);
+        const ptr = this._papagaioMdExtract(content);
         if (!ptr) {
           new Notice('Failed to parse markdown');
           return;
         }
 
         const code = this._module.UTF8ToString(ptr);
-        this._disturbFreePtr(ptr);
+        this._papagaioFreePtr(ptr);
 
         if (!code.trim()) {
-          new Notice('No Disturb code found in markdown');
+          new Notice('No papagaio code found in markdown');
           return;
         }
 
-        this._disturbOutput = '';
-        this._disturbEval(code);
+        this._papagaioOutput = '';
+        this._papagaioEval(code);
 
-        new PapagaioOutputModal(this.app, 'papagaio Output', this._disturbOutput).open();
+        new PapagaioOutputModal(this.app, 'papagaio Output', this._papagaioOutput).open();
       },
     });
   }
 
   onunload() {
-    if (this._disturbFree) this._disturbFree();
+    if (this._papagaioFree) this._papagaioFree();
   }
 }

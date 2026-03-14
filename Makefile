@@ -21,7 +21,7 @@ LDFLAGS = -lm
 WASM_TARGET ?= papagaio.js
 WASM_CFLAGS = -O2 -std=c99 -Wall -Wextra -pedantic -Iinclude
 WASM_EMFLAGS = -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME=createPapagaioModule \
-	-s EXPORTED_FUNCTIONS=['_disturb_wasm_init','_disturb_wasm_eval','_disturb_wasm_free','_disturb_md_extract_urb','_malloc','_free'] \
+	-s EXPORTED_FUNCTIONS=['_papagaio_wasm_init','_papagaio_wasm_eval','_papagaio_wasm_free','_papagaio_md_extract','_malloc','_free'] \
 	-s EXPORTED_RUNTIME_METHODS=['cwrap','UTF8ToString','stringToUTF8']
 
 ifeq ($(DISABLE_SYSTEM),1)
@@ -70,7 +70,7 @@ clean:
 	rm -f examples/web/disturb.js examples/web/disturb.wasm
 	rm -f examples/papagaio-obsidian/papagaio.js examples/papagaio-obsidian/papagaio.wasm
 	rm -f examples/obsidian-plugin/disturb.js examples/obsidian-plugin/disturb.wasm
-	rm -rf papagaio-obsidian disturb-obsidian
+	rm -rf papagaio-obsidian
 
 OBSIDIAN_PLUGIN_DIR ?= papagaio-obsidian
 OBSIDIAN_PLUGIN_SRC = examples/papagaio-obsidian
