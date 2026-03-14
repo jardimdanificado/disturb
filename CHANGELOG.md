@@ -15,6 +15,9 @@
 - write a wrapper for wasm to be easily used from browser... REALLY useful but i dont want to use papagaio on the browser again any soon...
 - arduino version with small overhead and small ram footprint... i am pretty sure i will NEVER write this for papagaio, but there was early plans for doing so... prefer the pure urb.h interpreter for arduinos.
 
+## 2.0.2
+- `.type` now casts instead pun
+
 ## 2.0.1
 - COMPLETE REBRAND, disturb is now called papagaio.md... "so it's everything papagaio now? no, its always been.."
 - add host I/O abstraction (`host_io.h` + `src/host_io.c`) to support WASM builds and external host file APIs.

@@ -775,14 +775,14 @@ Return conventions:
 ### `copy(target)` / `target.copy()`
 - Returns deep copy.
 
-### `toInt(floatList)` / `floatList.toInt()`
-- Converts float list to int list.
-- Errors if target is not float list.
-
-### `toFloat(intListOrString)` / `intList.toFloat()`
-- Converts int list to float list.
-- Strings are converted byte-by-byte to float values.
-- Errors if target is not int-based list.
+### `.type` metadata conversion
+- Assigning to `.type` converts the value into the requested type when possible.
+- Supported type names: `null`, `int`, `float`, `string` (or `char`), `table`, `native`, `lambda`.
+- Examples:
+  - `"123".type = "int"` → `123`
+  - `123.type = "string"` → `"123"`
+  - `myList.type = "float"` converts numeric lists to float lists.
+  - `myTable.type = "string"` produces a pretty-printed string representation.
 
 ## IO (requires `DISABLE_SYSTEM=0`)
 

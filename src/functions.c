@@ -3575,8 +3575,6 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "mdGenerate") == 0) return native_md_generate;
     if (strcmp(name, "clone") == 0) return native_clone;
     if (strcmp(name, "copy") == 0) return native_copy;
-    if (strcmp(name, "toInt") == 0) return native_to_int;
-    if (strcmp(name, "toFloat") == 0) return native_to_float;
     #ifdef PAPAGAIO_ENABLE_IO
     if (strcmp(name, "read") == 0) return native_read;
     if (strcmp(name, "write") == 0) return native_write;
