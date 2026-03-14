@@ -1,4 +1,55 @@
-const { Plugin, MarkdownView, Notice, Modal } = require('obsidian');
+const { Plugin, MarkdownView, Notice, Modal, ItemView, WorkspaceLeaf } = require('obsidian');
+
+const PAPAGAIO_OUTPUT_VIEW = 'papagaio-output-view';
+
+class PapagaioOutputView extends ItemView {
+  constructor(leaf) {
+    super(leaf);
+    this._output = '';
+    this._sourceFile = '';
+  }
+
+  getViewType() {
+    return PAPAGAIO_OUTPUT_VIEW;
+  }
+
+  getDisplayText() {
+    return this._sourceFile ? `papagaio: ${this._sourceFile}` : 'papagaio output';
+  }
+
+  getIcon() {
+    return 'code';
+  }
+
+  setContent(output, sourceFile) {
+    this._output = output;
+    this._sourceFile = sourceFile || '';
+    this._render();
+    // Update the tab title
+    this.titleEl && (this.titleEl.textContent = this.getDisplayText());
+  }
+
+  _render() {
+    const { contentEl } = this;
+    contentEl.empty();
+
+    const header = contentEl.createEl('div', { cls: 'papagaio-output-header' });
+    header.createEl('span', { text: this.getDisplayText(), cls: 'papagaio-output-title' });
+
+    const pre = contentEl.createEl('pre', { cls: 'papagaio-output-pre' });
+    const code = pre.createEl('code', { cls: 'papagaio-output-code' });
+    code.setText(this._output || '(no output)');
+  }
+
+  async onOpen() {
+    this._render();
+  }
+
+  async onClose() {
+    this.contentEl.empty();
+  }
+}
+
 
 class PapagaioOutputModal extends Modal {
   constructor(app, title, content) {
@@ -25,12 +76,17 @@ module.exports = class PapagaioPlugin extends Plugin {
   async onload() {
     console.log('papagaio plugin onload');
 
-    // Determine the vault root path (desktop + mobile).
+    this.registerView(PAPAGAIO_OUTPUT_VIEW, (leaf) => new PapagaioOutputView(leaf));
+
+    // Determine the vault root path (desktop only; undefined/empty on mobile).
     const vaultRoot = ((this.app.vault && this.app.vault.adapter) ? (this.app.vault.adapter.basePath || (typeof this.app.vault.adapter.getBasePath === 'function' ? this.app.vault.adapter.getBasePath() : '')) : '') || '';
 
-    // Determine plugin directory for loading runtime assets.
-    // On mobile there is no Node `path`/`fs`, so we use the vault path directly.
-    const pluginDir = vaultRoot ? `${vaultRoot}/.obsidian/plugins/${this.manifest.id}` : '';
+    // Vault-relative path for the plugin dir — works on both desktop and mobile
+    // because adapter.read / adapter.readBinary expect vault-relative paths.
+    const pluginRelDir = `.obsidian/plugins/${this.manifest.id}`;
+
+    // Absolute path — only valid on desktop (Electron/Node).
+    const pluginDir = vaultRoot ? `${vaultRoot}/${pluginRelDir}` : '';
 
     // Setup host I/O hooks for papagaio.
     // In desktop (Electron) this can use Node FS.
@@ -87,17 +143,17 @@ module.exports = class PapagaioPlugin extends Plugin {
       if (!createPapagaioModule) {
         // Dynamic import fallback (works in ESM-like environments).
         // On mobile, try to load the runtime from the plugin folder.
-        if (pluginDir) {
-          try {
-            const runtimeJs = await this.app.vault.adapter.read(`${pluginDir}/papagaio.js`);
-            const blob = new Blob([runtimeJs], { type: 'application/javascript' });
-            const blobUrl = URL.createObjectURL(blob);
-            const mod = await import(blobUrl);
-            URL.revokeObjectURL(blobUrl);
-            createPapagaioModule = mod.default || mod;
-          } catch (e) {
-            console.warn('papagaio-obsidian: failed to import runtime via vault adapter', e);
-          }
+        // Use vault-relative path — adapter.read expects relative paths on mobile.
+        try {
+          const runtimeJs = await this.app.vault.adapter.read(`${pluginRelDir}/papagaio.js`);
+          // Blob URL dynamic import is blocked by CSP on Android WebView.
+          // Use indirect eval via Function constructor instead.
+          const mod = {};
+          const fn = new Function('module', 'exports', 'require', runtimeJs);
+          fn(mod, mod.exports = {}, typeof require === 'function' ? require : () => { throw new Error('require not available'); });
+          createPapagaioModule = mod.exports.default || mod.exports;
+        } catch (e) {
+          console.warn('papagaio-obsidian: failed to load runtime via vault adapter', e);
         }
 
         if (!createPapagaioModule) {
@@ -117,54 +173,64 @@ module.exports = class PapagaioPlugin extends Plugin {
 
       // Load the WASM binary directly (avoid fetch/file:// issues).
       let moduleArg = {};
+      let wasmUrl = null;
       this._papagaioOutput = '';
       const appendOutput = (text) => {
         if (typeof text !== 'string') text = String(text);
         this._papagaioOutput += text + '\n';
       };
 
-      if (typeof require === 'function' && pluginDir) {
+      // Detect a real Node.js environment: on Android, require() exists but returns
+      // undefined for Node built-ins like 'path' and 'fs'. Guard explicitly.
+      const _nodePath = (() => { try { const p = (typeof require === 'function') && require('path'); return (p && typeof p.join === 'function') ? p : null; } catch(e) { return null; } })();
+      const _nodeFs   = (() => { try { const f = (typeof require === 'function') && require('fs');   return (f && typeof f.readFileSync === 'function') ? f : null; } catch(e) { return null; } })();
+      const isNodeEnv = Boolean(_nodePath && _nodeFs && pluginDir);
+
+      const makeLocateFile = (url) => (file) => {
+        if (file.endsWith('.wasm') && url) return url;
+        if (isNodeEnv) return _nodePath.join(pluginDir, file);
+        return file;
+      };
+
+      if (isNodeEnv) {
         try {
-          const fs = require('fs');
-          const path = require('path');
-          const wasmPath = path.join(pluginDir, 'papagaio.wasm');
-          moduleArg.wasmBinary = fs.readFileSync(wasmPath);
-          moduleArg.locateFile = (file) => path.join(pluginDir, file);
+          const wasmPath = _nodePath.join(pluginDir, 'papagaio.wasm');
+          moduleArg.wasmBinary = _nodeFs.readFileSync(wasmPath);
         } catch (e) {
           console.warn('papagaio-obsidian: failed to pre-load WASM binary', e);
         }
-      } else if (pluginDir) {
+      } else if (this.app.vault.adapter && typeof this.app.vault.adapter.readBinary === 'function') {
         try {
-          const wasmBinary = await this.app.vault.adapter.readBinary(`${pluginDir}/papagaio.wasm`);
+          // Use vault-relative path — adapter.readBinary does NOT accept absolute paths on mobile.
+          const wasmBinary = await this.app.vault.adapter.readBinary(`${pluginRelDir}/papagaio.wasm`);
           moduleArg.wasmBinary = wasmBinary;
-          const wasmUrl = URL.createObjectURL(new Blob([wasmBinary]));
+          wasmUrl = URL.createObjectURL(new Blob([wasmBinary]));
           this._papagaioWasmUrl = wasmUrl;
-          moduleArg.locateFile = (file) => {
-            if (file.endsWith('.wasm')) return wasmUrl;
-            return file;
-          };
         } catch (e) {
           console.warn('papagaio-obsidian: failed to load WASM binary via vault adapter', e);
         }
       }
 
-      // Last-resort fallback: relative fetch from the plugin directory (works in some environments).
+      // Last-resort fallback: relative fetch — unreliable on Android WebView (no base URL for plugin dir).
+      // Only reached if both Node fs and vault adapter failed.
       if (!moduleArg.wasmBinary && typeof fetch === 'function') {
         try {
           const resp = await fetch('./papagaio.wasm');
           if (resp.ok) {
             const wasmBinary = await resp.arrayBuffer();
             moduleArg.wasmBinary = wasmBinary;
-            const wasmUrl = URL.createObjectURL(new Blob([wasmBinary]));
+            wasmUrl = URL.createObjectURL(new Blob([wasmBinary]));
             this._papagaioWasmUrl = wasmUrl;
-            moduleArg.locateFile = (file) => {
-              if (file.endsWith('.wasm')) return wasmUrl;
-              return file;
-            };
           }
         } catch (e) {
           console.warn('papagaio-obsidian: failed to load WASM via fetch', e);
         }
+      }
+
+      moduleArg.locateFile = makeLocateFile(wasmUrl);
+
+      if (!moduleArg.wasmBinary) {
+        console.warn('papagaio-obsidian: no WASM binary available; runtime will likely fail to initialize');
       }
 
       // Capture stdout/stderr from the WASM runtime to show in the UI.
@@ -183,12 +249,13 @@ module.exports = class PapagaioPlugin extends Plugin {
       if (this._papagaioInit) this._papagaioInit();
     } catch (err) {
       console.error('Failed to initialize papagaio WASM runtime:', err);
-      new Notice('papagaio: failed to initialize WASM runtime (see console)');
+      const msg = err && err.message ? err.message : String(err);
+      new Notice(`papagaio: failed to initialize WASM runtime: ${msg}`);
     }
 
     this.addCommand({
       id: 'papagaio-run-active-note',
-      name: 'Run papagaio (active note)',
+      name: 'run active note',
       callback: async () => {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view || !view.file) {
@@ -225,9 +292,29 @@ module.exports = class PapagaioPlugin extends Plugin {
         this._papagaioOutput = '';
         this._papagaioEval(code);
 
-        new PapagaioOutputModal(this.app, 'papagaio Output', this._papagaioOutput).open();
+        await this._showOutputView(this._papagaioOutput, view.file.basename);
       },
     });
+  }
+
+  async _showOutputView(output, sourceFile) {
+    const { workspace } = this.app;
+
+    // Reuse an existing output leaf if one is already open.
+    let leaf = workspace.getLeavesOfType(PAPAGAIO_OUTPUT_VIEW)[0];
+
+    if (!leaf) {
+      // Open a new leaf to the right of the current editor.
+      leaf = workspace.getLeaf('split', 'vertical');
+      await leaf.setViewState({ type: PAPAGAIO_OUTPUT_VIEW, active: true });
+    }
+
+    const outputView = leaf.view;
+    if (outputView instanceof PapagaioOutputView) {
+      outputView.setContent(output, sourceFile);
+    }
+
+    workspace.revealLeaf(leaf);
   }
 
   onunload() {
