@@ -67,7 +67,7 @@ std_ptr = lib.get_add_stdcall_i32_ptr(),
 std_default = ffi.bind(std_ptr, "abi(default) i32 std_default(i32, i32)"),
 println("stdcall pointer via default abi:", std_default(20, 22)),
 
-println("cstr_len(string):", lib.cstr_len("disturb")),
+println("cstr_len(string):", lib.cstr_len("papagaio")),
 println("ffi_test_name() as string:", lib.ffi_test_name()),
 
 name_ptr = ffi.sym(lib.__lib, "ffi_test_name"),

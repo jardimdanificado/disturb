@@ -1,7 +1,7 @@
-#ifdef DISTURB_ENABLE_FFI
+#ifdef PAPAGAIO_ENABLE_FFI
 
 #include "vm.h"
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 #include <ffi.h>
 #endif
 #include <stdint.h>
@@ -20,14 +20,14 @@
 #endif
 
 #if defined(_MSC_VER)
-#define DISTURB_ALIGNOF(T) __alignof(T)
+#define PAPAGAIO_ALIGNOF(T) __alignof(T)
 #elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
-#define DISTURB_ALIGNOF(T) _Alignof(T)
+#define PAPAGAIO_ALIGNOF(T) _Alignof(T)
 #else
-#define DISTURB_ALIGNOF(T) __alignof__(T)
+#define PAPAGAIO_ALIGNOF(T) __alignof__(T)
 #endif
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -61,7 +61,7 @@ static int ffi_is_main_thread(void) {
     return !ffi_main_thread_set || pthread_equal(pthread_self(), ffi_main_thread_id);
 }
 #endif
-#endif /* DISTURB_ENABLE_FFI_CALLS */
+#endif /* PAPAGAIO_ENABLE_FFI_CALLS */
 
 typedef enum {
     FFI_BASE_VOID = 0,
@@ -85,7 +85,7 @@ typedef enum {
     FFI_BASE_PTR
 } FfiBase;
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 typedef enum {
     FFI_CALL_ABI_DEFAULT = 0,
     FFI_CALL_ABI_CDECL,
@@ -116,7 +116,7 @@ typedef struct {
     char *fn_ptr_sig; /* non-NULL => function(sig) in signature; inner sig string */
 } FfiType;
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 typedef struct {
     int refcount;
     void *handle;
@@ -211,7 +211,7 @@ typedef struct FfiLayoutCacheNode {
 } FfiLayoutCacheNode;
 
 typedef struct FfiDynTypeNode {
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
     ffi_type type;
     ffi_type **elements;
 #endif
@@ -267,7 +267,7 @@ enum {
     FFI_LIB_HANDLE_MAGIC = 0x46464944U /* FFID */
 };
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 typedef struct {
     uint32_t magic;
     int refcount;
@@ -276,16 +276,16 @@ typedef struct {
 } FfiLibHandle;
 
 enum {
-    DISTURB_RTLD_LAZY     = 1 << 0,
-    DISTURB_RTLD_NOW      = 1 << 1,
-    DISTURB_RTLD_LOCAL    = 1 << 2,
-    DISTURB_RTLD_GLOBAL   = 1 << 3,
-    DISTURB_RTLD_NODELETE = 1 << 4,
-    DISTURB_RTLD_NOLOAD   = 1 << 5,
+    PAPAGAIO_RTLD_LAZY     = 1 << 0,
+    PAPAGAIO_RTLD_NOW      = 1 << 1,
+    PAPAGAIO_RTLD_LOCAL    = 1 << 2,
+    PAPAGAIO_RTLD_GLOBAL   = 1 << 3,
+    PAPAGAIO_RTLD_NODELETE = 1 << 4,
+    PAPAGAIO_RTLD_NOLOAD   = 1 << 5,
 };
 #endif
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 enum {
     FFI_CALLBACK_MAGIC = 0x46464943U /* FFIC */
 };
@@ -294,7 +294,7 @@ static int g_ffi_callback_seq = 1;
 
 static FfiLayoutCacheNode *g_ffi_layout_cache = NULL;
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 static char *ffi_strdup(const char *s); /* forward decl for call-signature parser */
 #endif
 
@@ -406,7 +406,7 @@ static void native_ffi_handle_noop(VM *vm, List *stack, List *global);
 static int parse_base_type(const char *name, FfiBase *out);
 static int entry_is_string(ObjEntry *entry);
 static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_len);
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 static FfiCallback *ffi_callback_from_entry(ObjEntry *entry);
 static ObjEntry *ffi_bind_ptr_sig_entry(VM *vm, uintptr_t addr, const char *sig, char *err, size_t err_cap);
 static int ffi_call_abi_resolve(FfiCallAbi abi, ffi_abi *out_abi, char *err, size_t err_cap);
@@ -417,7 +417,7 @@ static int ffi_trace_mouse_enabled(void)
     static int initialized = 0;
     static int enabled = 0;
     if (!initialized) {
-        const char *env = getenv("DISTURB_FFI_TRACE_MOUSE");
+        const char *env = getenv("PAPAGAIO_FFI_TRACE_MOUSE");
         enabled = (env && env[0] && !(env[0] == '0' && env[1] == '\0')) ? 1 : 0;
         initialized = 1;
     }
@@ -483,14 +483,14 @@ static int ffi_alloc_track_is_valid(uintptr_t ptr)
 static const char *ffi_entry_type_name(ObjEntry *e)
 {
     if (!e) return "null";
-    switch (disturb_obj_type(e->obj)) {
-    case DISTURB_T_NULL:   return "null";
-    case DISTURB_T_INT:    return "int";
-    case DISTURB_T_FLOAT:  return "float";
-    case DISTURB_T_TABLE:  return entry_is_string(e) ? "string" : "table";
-    case DISTURB_T_NATIVE: return "native";
-    case DISTURB_T_LAMBDA: return "lambda";
-    case DISTURB_T_VIEW:   return "view";
+    switch (papagaio_obj_type(e->obj)) {
+    case PAPAGAIO_T_NULL:   return "null";
+    case PAPAGAIO_T_INT:    return "int";
+    case PAPAGAIO_T_FLOAT:  return "float";
+    case PAPAGAIO_T_TABLE:  return entry_is_string(e) ? "string" : "table";
+    case PAPAGAIO_T_NATIVE: return "native";
+    case PAPAGAIO_T_LAMBDA: return "lambda";
+    case PAPAGAIO_T_VIEW:   return "view";
     default:               return "unknown";
     }
 }
@@ -498,10 +498,10 @@ static const char *ffi_entry_type_name(ObjEntry *e)
 static char *ffi_dup_entry_cstr(ObjEntry *entry)
 {
     if (!entry || !entry_is_string(entry)) return NULL;
-    size_t len = disturb_bytes_len(entry->obj);
+    size_t len = papagaio_bytes_len(entry->obj);
     char *s = (char*)malloc(len + 1);
     if (!s) return NULL;
-    if (len) memcpy(s, disturb_bytes_data(entry->obj), len);
+    if (len) memcpy(s, papagaio_bytes_data(entry->obj), len);
     s[len] = '\0';
     return s;
 }
@@ -513,7 +513,7 @@ static void ffi_dyn_type_node_free(FfiDynTypeNode *node)
         ffi_dyn_type_node_free(node->owned_children[i]);
     }
     free(node->owned_children);
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
     free(node->elements);
 #endif
     free(node);
@@ -526,7 +526,7 @@ static void ffi_type_release_runtime(FfiType *t)
     t->schema_name = NULL;
     t->schema_is_pointer = 0;
     t->schema_is_union = 0;
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
     if (t->schema_ffi_owner) {
         ffi_dyn_type_node_free((FfiDynTypeNode*)t->schema_ffi_owner);
         t->schema_ffi_owner = NULL;
@@ -549,7 +549,7 @@ static void ffi_types_release_array(FfiType *arr, int count)
     }
 }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 static char g_ffi_dl_error[256];
 
 static void ffi_dl_clear_error(void)
@@ -661,10 +661,10 @@ static int ffi_translate_dlopen_flags(int flags)
     dlerror();
 
 #ifdef RTLD_NOW
-    if (flags & DISTURB_RTLD_NOW) native_flags |= RTLD_NOW;
+    if (flags & PAPAGAIO_RTLD_NOW) native_flags |= RTLD_NOW;
 #endif
 #ifdef RTLD_LAZY
-    if (flags & DISTURB_RTLD_LAZY) native_flags |= RTLD_LAZY;
+    if (flags & PAPAGAIO_RTLD_LAZY) native_flags |= RTLD_LAZY;
     if ((native_flags & (RTLD_LAZY
 #ifdef RTLD_NOW
         | RTLD_NOW
@@ -674,16 +674,16 @@ static int ffi_translate_dlopen_flags(int flags)
     }
 #endif
 #ifdef RTLD_LOCAL
-    if (flags & DISTURB_RTLD_LOCAL) native_flags |= RTLD_LOCAL;
+    if (flags & PAPAGAIO_RTLD_LOCAL) native_flags |= RTLD_LOCAL;
 #endif
 #ifdef RTLD_GLOBAL
-    if (flags & DISTURB_RTLD_GLOBAL) native_flags |= RTLD_GLOBAL;
+    if (flags & PAPAGAIO_RTLD_GLOBAL) native_flags |= RTLD_GLOBAL;
 #endif
 #ifdef RTLD_NODELETE
-    if (flags & DISTURB_RTLD_NODELETE) native_flags |= RTLD_NODELETE;
+    if (flags & PAPAGAIO_RTLD_NODELETE) native_flags |= RTLD_NODELETE;
 #endif
 #ifdef RTLD_NOLOAD
-    if (flags & DISTURB_RTLD_NOLOAD) native_flags |= RTLD_NOLOAD;
+    if (flags & PAPAGAIO_RTLD_NOLOAD) native_flags |= RTLD_NOLOAD;
 #endif
 
     return native_flags;
@@ -762,9 +762,9 @@ static const char *ffi_dlerror_msg(void)
 }
 #endif
 
-#endif /* DISTURB_ENABLE_FFI_CALLS */
+#endif /* PAPAGAIO_ENABLE_FFI_CALLS */
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 static void ffi_function_retain(void *data)
 {
     FfiFunction *fn = (FfiFunction*)data;
@@ -790,7 +790,7 @@ static void ffi_function_release(void *data)
 
 static FfiCallback *ffi_callback_from_entry(ObjEntry *entry)
 {
-    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    if (!entry || papagaio_obj_type(entry->obj) != PAPAGAIO_T_NATIVE || entry->obj->size < 3) return NULL;
     NativeBox *box = (NativeBox*)entry->obj->data[2].p;
     if (!box || !box->data) return NULL;
     FfiCallback *cb = (FfiCallback*)box->data;
@@ -879,7 +879,7 @@ static ObjEntry *ffi_callback_arg_to_entry(VM *vm, const FfiType *t, void *argp)
         ObjEntry *list = vm_make_float_list(vm, 2);
         if (list) {
             Float re = (Float)parts[0], im = (Float)parts[1];
-            char *dst = disturb_bytes_data(list->obj);
+            char *dst = papagaio_bytes_data(list->obj);
             memcpy(dst, &re, sizeof(Float));
             memcpy(dst + sizeof(Float), &im, sizeof(Float));
         }
@@ -891,7 +891,7 @@ static ObjEntry *ffi_callback_arg_to_entry(VM *vm, const FfiType *t, void *argp)
         ObjEntry *list = vm_make_float_list(vm, 2);
         if (list) {
             Float re = (Float)parts[0], im = (Float)parts[1];
-            char *dst = disturb_bytes_data(list->obj);
+            char *dst = papagaio_bytes_data(list->obj);
             memcpy(dst, &re, sizeof(Float));
             memcpy(dst + sizeof(Float), &im, sizeof(Float));
         }
@@ -905,7 +905,7 @@ static ObjEntry *ffi_callback_arg_to_entry(VM *vm, const FfiType *t, void *argp)
         memcpy(&hi, (const char*)argp + 8, 8);
         ObjEntry *list = vm_make_int_list(vm, 2);
         if (list) {
-            char *dst = disturb_bytes_data(list->obj);
+            char *dst = papagaio_bytes_data(list->obj);
             Int hi_v = (Int)hi, lo_v = (Int)lo;
             memcpy(dst, &hi_v, sizeof(Int));
             memcpy(dst + sizeof(Int), &lo_v, sizeof(Int));
@@ -1089,27 +1089,27 @@ static void ffi_callback_dispatch(ffi_cif *cif, void *ret, void **args, void *us
 
 static int entry_is_string(ObjEntry *entry)
 {
-    return entry && entry->is_string && disturb_obj_type(entry->obj) == DISTURB_T_INT;
+    return entry && entry->is_string && papagaio_obj_type(entry->obj) == PAPAGAIO_T_INT;
 }
 
 static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *out_is_float)
 {
     if (!entry || !entry->in_use) return 0;
-    Int type = disturb_obj_type(entry->obj);
-    if (type == DISTURB_T_INT) {
+    Int type = papagaio_obj_type(entry->obj);
+    if (type == PAPAGAIO_T_INT) {
         if (entry_is_string(entry)) return 0;
-        if (disturb_bytes_len(entry->obj) != sizeof(Int)) return 0;
+        if (papagaio_bytes_len(entry->obj) != sizeof(Int)) return 0;
         Int v = 0;
-        memcpy(&v, disturb_bytes_data(entry->obj), sizeof(Int));
+        memcpy(&v, papagaio_bytes_data(entry->obj), sizeof(Int));
         if (out_i) *out_i = v;
         if (out_f) *out_f = (Float)v;
         if (out_is_float) *out_is_float = 0;
         return 1;
     }
-    if (type == DISTURB_T_FLOAT) {
-        if (disturb_bytes_len(entry->obj) != sizeof(Float)) return 0;
+    if (type == PAPAGAIO_T_FLOAT) {
+        if (papagaio_bytes_len(entry->obj) != sizeof(Float)) return 0;
         Float v = 0;
-        memcpy(&v, disturb_bytes_data(entry->obj), sizeof(Float));
+        memcpy(&v, papagaio_bytes_data(entry->obj), sizeof(Float));
         if (out_i) *out_i = (Int)v;
         if (out_f) *out_f = v;
         if (out_is_float) *out_is_float = 1;
@@ -1121,7 +1121,7 @@ static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *o
 static int entry_as_cstr(ObjEntry *entry, const char **out)
 {
     if (!entry || !entry_is_string(entry)) return 0;
-    *out = disturb_bytes_data(entry->obj);
+    *out = papagaio_bytes_data(entry->obj);
     return 1;
 }
 
@@ -1129,13 +1129,13 @@ static int ffi_entry_to_ptr(ObjEntry *entry, uintptr_t *out_ptr)
 {
     if (!out_ptr) return 0;
     *out_ptr = 0;
-    if (!entry || !entry->in_use || disturb_obj_type(entry->obj) == DISTURB_T_NULL) return 1;
+    if (!entry || !entry->in_use || papagaio_obj_type(entry->obj) == PAPAGAIO_T_NULL) return 1;
     FfiPtrHandle *ph = ffi_ptr_handle_from_entry(entry);
     if (ph) {
         *out_ptr = ph->ptr;
         return 1;
     }
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
     FfiCallback *cb = ffi_callback_from_entry(entry);
     if (cb) {
         *out_ptr = (uintptr_t)cb->code_ptr;
@@ -1183,7 +1183,7 @@ static int ffi_entry_to_schema_addr(ObjEntry *entry, FfiLayout *layout, uintptr_
     return 0;
 }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 static int ffi_call_abi_resolve(FfiCallAbi abi, ffi_abi *out_abi, char *err, size_t err_cap)
 {
     if (!out_abi) return 0;
@@ -1385,13 +1385,13 @@ UNUSED_FN static void ffi_sigbuf_free(FfiSigBuf *b)
 
 static ObjEntry *ffi_table_find_field(List *obj, const char *name, size_t name_len)
 {
-    if (!obj || disturb_obj_type(obj) != DISTURB_T_TABLE) return NULL;
+    if (!obj || papagaio_obj_type(obj) != PAPAGAIO_T_TABLE) return NULL;
     for (Int i = 2; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         ObjEntry *key = vm_entry_key(entry);
         if (!key || !entry_is_string(key)) continue;
-        if (disturb_bytes_len(key->obj) != name_len) continue;
-        if (memcmp(disturb_bytes_data(key->obj), name, name_len) == 0) return entry;
+        if (papagaio_bytes_len(key->obj) != name_len) continue;
+        if (memcmp(papagaio_bytes_data(key->obj), name, name_len) == 0) return entry;
     }
     return NULL;
 }
@@ -1400,9 +1400,9 @@ static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_l
 {
     if (!vm || !name || name_len == 0) return NULL;
     if (vm->local_entry && vm->local_entry->obj &&
-        disturb_obj_type(vm->local_entry->obj) == DISTURB_T_TABLE) {
+        papagaio_obj_type(vm->local_entry->obj) == PAPAGAIO_T_TABLE) {
         ObjEntry *local_hit = ffi_table_find_field(vm->local_entry->obj, name, name_len);
-        if (local_hit && disturb_obj_type(local_hit->obj) != DISTURB_T_NULL) return local_hit;
+        if (local_hit && papagaio_obj_type(local_hit->obj) != PAPAGAIO_T_NULL) return local_hit;
     }
     char tmp[96];
     char *q = tmp;
@@ -1413,8 +1413,8 @@ static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_l
     memcpy(q, name, name_len);
     q[name_len] = 0;
     ObjEntry *global_hit = vm_global_find_by_key(vm->global_entry ? vm->global_entry->obj : NULL, q);
-    if (!global_hit || disturb_obj_type(global_hit->obj) == DISTURB_T_NULL ||
-        disturb_obj_type(global_hit->obj) != DISTURB_T_TABLE) {
+    if (!global_hit || papagaio_obj_type(global_hit->obj) == PAPAGAIO_T_NULL ||
+        papagaio_obj_type(global_hit->obj) != PAPAGAIO_T_TABLE) {
         /* Fase 2: try typedef -> schema resolution */
         ObjEntry *typedef_schema = ffi_typedef_resolve_schema(q);
         if (typedef_schema) {
@@ -1423,7 +1423,7 @@ static ObjEntry *ffi_lookup_schema_entry(VM *vm, const char *name, size_t name_l
         }
     }
     if (q != tmp) free(q);
-    if (global_hit && disturb_obj_type(global_hit->obj) == DISTURB_T_NULL) return NULL;
+    if (global_hit && papagaio_obj_type(global_hit->obj) == PAPAGAIO_T_NULL) return NULL;
     return global_hit;
 }
 
@@ -1448,10 +1448,10 @@ static int ffi_parse_schema_meta(ObjEntry *schema, FfiSchemaMeta *meta, char *er
     meta->align = 0;
     meta->is_union = 0;
     meta->bf_gcc = 0;
-    if (!schema || disturb_obj_type(schema->obj) != DISTURB_T_TABLE) return 1;
+    if (!schema || papagaio_obj_type(schema->obj) != PAPAGAIO_T_TABLE) return 1;
     ObjEntry *meta_entry = ffi_table_find_field(schema->obj, "__meta", 6);
-    if (!meta_entry || disturb_obj_type(meta_entry->obj) == DISTURB_T_NULL) return 1;
-    if (disturb_obj_type(meta_entry->obj) != DISTURB_T_TABLE) {
+    if (!meta_entry || papagaio_obj_type(meta_entry->obj) == PAPAGAIO_T_NULL) return 1;
+    if (papagaio_obj_type(meta_entry->obj) != PAPAGAIO_T_TABLE) {
         snprintf(err, err_cap, "ffi: schema.__meta must be a table");
         return 0;
     }
@@ -1526,7 +1526,7 @@ static int ffi_schema_collect_fields(ObjEntry *schema, FfiSchemaFieldRef **out_f
 {
     *out_fields = NULL;
     *out_count = 0;
-    if (!schema || disturb_obj_type(schema->obj) != DISTURB_T_TABLE) {
+    if (!schema || papagaio_obj_type(schema->obj) != PAPAGAIO_T_TABLE) {
         snprintf(err, err_cap, "ffi: schema struct must be a table");
         return 0;
     }
@@ -1536,8 +1536,8 @@ static int ffi_schema_collect_fields(ObjEntry *schema, FfiSchemaFieldRef **out_f
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         ObjEntry *key = vm_entry_key(entry);
         if (!key || !entry_is_string(key)) continue;
-        size_t klen = disturb_bytes_len(key->obj);
-        const char *k = disturb_bytes_data(key->obj);
+        size_t klen = papagaio_bytes_len(key->obj);
+        const char *k = papagaio_bytes_data(key->obj);
         if ((klen == 6 && memcmp(k, "__meta", 6) == 0) ||
             (klen == 7 && memcmp(k, "__order", 7) == 0)) {
             continue;
@@ -1564,8 +1564,8 @@ static int ffi_schema_collect_fields(ObjEntry *schema, FfiSchemaFieldRef **out_f
 
     int out = 0;
     ObjEntry *order_entry = ffi_table_find_field(obj, "__order", 7);
-    if (order_entry && disturb_obj_type(order_entry->obj) != DISTURB_T_NULL) {
-        if (disturb_obj_type(order_entry->obj) != DISTURB_T_TABLE) {
+    if (order_entry && papagaio_obj_type(order_entry->obj) != PAPAGAIO_T_NULL) {
+        if (papagaio_obj_type(order_entry->obj) != PAPAGAIO_T_TABLE) {
             free(used);
             free(fields);
             snprintf(err, err_cap, "ffi: schema.__order must be a table of field names");
@@ -1579,8 +1579,8 @@ static int ffi_schema_collect_fields(ObjEntry *schema, FfiSchemaFieldRef **out_f
                 snprintf(err, err_cap, "ffi: schema.__order expects only string names");
                 return 0;
             }
-            const char *name = disturb_bytes_data(name_entry->obj);
-            size_t name_len = disturb_bytes_len(name_entry->obj);
+            const char *name = papagaio_bytes_data(name_entry->obj);
+            size_t name_len = papagaio_bytes_len(name_entry->obj);
             ObjEntry *field = ffi_table_find_field(obj, name, name_len);
             if (!field) {
                 free(used);
@@ -1607,8 +1607,8 @@ static int ffi_schema_collect_fields(ObjEntry *schema, FfiSchemaFieldRef **out_f
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         ObjEntry *key = vm_entry_key(entry);
         if (!key || !entry_is_string(key)) continue;
-        const char *name = disturb_bytes_data(key->obj);
-        size_t name_len = disturb_bytes_len(key->obj);
+        const char *name = papagaio_bytes_data(key->obj);
+        size_t name_len = papagaio_bytes_len(key->obj);
         if ((name_len == 6 && memcmp(name, "__meta", 6) == 0) ||
             (name_len == 7 && memcmp(name, "__order", 7) == 0)) {
             continue;
@@ -1928,7 +1928,7 @@ static int ffi_type_spec_from_entry(ObjEntry *entry, FfiBase *out_base, int *out
 {
     const char *name = NULL;
     if (!entry_as_cstr(entry, &name)) return 0;
-    return ffi_parse_schema_type_string(name, disturb_bytes_len(entry->obj),
+    return ffi_parse_schema_type_string(name, papagaio_bytes_len(entry->obj),
                                         out_base, out_is_array, out_len, NULL, out_is_const, NULL);
 }
 
@@ -1939,7 +1939,7 @@ static int ffi_schema_ref_spec_from_entry(ObjEntry *entry, int *out_is_pointer,
 {
     const char *name = NULL;
     if (!entry_as_cstr(entry, &name)) return 0;
-    return ffi_parse_schema_ref_string(name, disturb_bytes_len(entry->obj),
+    return ffi_parse_schema_ref_string(name, papagaio_bytes_len(entry->obj),
                                        out_is_pointer, out_is_union, out_is_const, out_schema, out_cap);
 }
 
@@ -1983,14 +1983,14 @@ static int ffi_prim_size_align(FfiBase base, size_t *out_size, size_t *out_align
         *out_size = 8; *out_align = 8; return 1;
     case FFI_BASE_LDOUBLE:
         *out_size = sizeof(long double);
-        *out_align = DISTURB_ALIGNOF(long double);
+        *out_align = PAPAGAIO_ALIGNOF(long double);
         return 1;
     case FFI_BASE_BOOL:
         *out_size = 1; *out_align = 1; return 1;
     case FFI_BASE_COMPLEX_FLOAT:
-        *out_size = 2 * sizeof(float); *out_align = DISTURB_ALIGNOF(float); return 1;
+        *out_size = 2 * sizeof(float); *out_align = PAPAGAIO_ALIGNOF(float); return 1;
     case FFI_BASE_COMPLEX_DOUBLE:
-        *out_size = 2 * sizeof(double); *out_align = DISTURB_ALIGNOF(double); return 1;
+        *out_size = 2 * sizeof(double); *out_align = PAPAGAIO_ALIGNOF(double); return 1;
     case FFI_BASE_INT128:
     case FFI_BASE_UINT128:
         *out_size = 16; *out_align = 16; return 1;
@@ -2025,7 +2025,7 @@ UNUSED_FN static int ffi_build_schema_sig(VM *vm, ObjEntry *schema, FfiSigBuf *s
         char fn_sig[192];
         int fn_const = 0;
         if (entry_as_cstr(schema, &fn_decl) &&
-            ffi_parse_schema_fnptr_string(fn_decl, disturb_bytes_len(schema->obj), &fn_const,
+            ffi_parse_schema_fnptr_string(fn_decl, papagaio_bytes_len(schema->obj), &fn_const,
                                           fn_sig, sizeof(fn_sig))) {
             return ffi_sigbuf_append_cstr(sig, "Fnptr(") &&
                    ffi_sigbuf_append_cstr(sig, fn_sig) &&
@@ -2082,10 +2082,10 @@ UNUSED_FN static int ffi_build_schema_sig(VM *vm, ObjEntry *schema, FfiSigBuf *s
         }
     }
 
-    if (!schema || disturb_obj_type(schema->obj) != DISTURB_T_TABLE) {
-        Int type = (!schema || !schema->obj) ? DISTURB_T_NULL : disturb_obj_type(schema->obj);
+    if (!schema || papagaio_obj_type(schema->obj) != PAPAGAIO_T_TABLE) {
+        Int type = (!schema || !schema->obj) ? PAPAGAIO_T_NULL : papagaio_obj_type(schema->obj);
         snprintf(err, err_cap, "ffi: schema field must be type string (got %s)",
-                 disturb_type_name(type));
+                 papagaio_type_name(type));
         return 0;
     }
     FfiSchemaMeta meta;
@@ -2135,7 +2135,7 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
         char fn_sig[192];
         int fn_const = 0;
         if (entry_as_cstr(schema, &fn_decl) &&
-            ffi_parse_schema_fnptr_string(fn_decl, disturb_bytes_len(schema->obj), &fn_const,
+            ffi_parse_schema_fnptr_string(fn_decl, papagaio_bytes_len(schema->obj), &fn_const,
                                           fn_sig, sizeof(fn_sig))) {
             size_t size = sizeof(void*);
             FfiLayout *layout = (FfiLayout*)calloc(1, sizeof(FfiLayout));
@@ -2159,7 +2159,7 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
         int field_alignas = 0;
         const char *type_name = NULL;
         if (entry_as_cstr(schema, &type_name) &&
-            ffi_parse_schema_type_string(type_name, disturb_bytes_len(schema->obj),
+            ffi_parse_schema_type_string(type_name, papagaio_bytes_len(schema->obj),
                                          &base, &is_array, &array_len, &bit_width, &is_const, &field_alignas)) {
             if (!is_array || array_len < 0) {
                 FfiBase out_base = (!is_array) ? base : FFI_BASE_PTR;
@@ -2264,10 +2264,10 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
         }
     }
 
-    if (!schema || disturb_obj_type(schema->obj) != DISTURB_T_TABLE) {
-        Int type = (!schema || !schema->obj) ? DISTURB_T_NULL : disturb_obj_type(schema->obj);
+    if (!schema || papagaio_obj_type(schema->obj) != PAPAGAIO_T_TABLE) {
+        Int type = (!schema || !schema->obj) ? PAPAGAIO_T_NULL : papagaio_obj_type(schema->obj);
         snprintf(err, err_cap, "ffi: schema field must be type string (got %s)",
-                 disturb_type_name(type));
+                 papagaio_type_name(type));
         return NULL;
     }
     FfiSchemaMeta meta;
@@ -2446,7 +2446,7 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
             char fn_sig[192];
             int fn_const = 0;
             if (field_decl &&
-                ffi_parse_schema_fnptr_string(field_decl, disturb_bytes_len(fields_ref[i].value->obj),
+                ffi_parse_schema_fnptr_string(field_decl, papagaio_bytes_len(fields_ref[i].value->obj),
                                               &fn_const, fn_sig, sizeof(fn_sig))) {
                 size_t n = strlen(fn_sig);
                 layout->fields[i].fn_sig = (char*)malloc(n + 1);
@@ -2460,7 +2460,7 @@ static FfiLayout *ffi_compile_schema_layout(VM *vm, ObjEntry *schema, int depth,
             }
         }
         layout->fields[i].is_const = (child->is_const ||
-                                      (field_decl && ffi_decl_has_const_prefix(field_decl, disturb_bytes_len(fields_ref[i].value->obj)))) ? 1 : 0;
+                                      (field_decl && ffi_decl_has_const_prefix(field_decl, papagaio_bytes_len(fields_ref[i].value->obj)))) ? 1 : 0;
         layout->fields[i].bit_width = bit_width;
         layout->fields[i].bit_shift = bit_shift;
         if (field_align > max_align) max_align = field_align;
@@ -2545,7 +2545,7 @@ static void ffi_layout_handle_free(void *data)
 
 static FfiLayoutHandle *ffi_layout_handle_from_entry(ObjEntry *entry)
 {
-    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    if (!entry || papagaio_obj_type(entry->obj) != PAPAGAIO_T_NATIVE || entry->obj->size < 3) return NULL;
     NativeBox *box = (NativeBox*)entry->obj->data[2].p;
     if (!box || !box->data) return NULL;
     FfiLayoutHandle *h = (FfiLayoutHandle*)box->data;
@@ -2589,7 +2589,7 @@ static void ffi_view_handle_free(void *data)
 
 static FfiViewHandle *ffi_view_handle_from_entry(ObjEntry *entry)
 {
-    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    if (!entry || papagaio_obj_type(entry->obj) != PAPAGAIO_T_NATIVE || entry->obj->size < 3) return NULL;
     NativeBox *box = (NativeBox*)entry->obj->data[2].p;
     if (!box || !box->data) return NULL;
     FfiViewHandle *h = (FfiViewHandle*)box->data;
@@ -2645,7 +2645,7 @@ static void ffi_ptr_handle_free(void *data)
 
 static FfiPtrHandle *ffi_ptr_handle_from_entry(ObjEntry *entry)
 {
-    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    if (!entry || papagaio_obj_type(entry->obj) != PAPAGAIO_T_NATIVE || entry->obj->size < 3) return NULL;
     NativeBox *box = (NativeBox*)entry->obj->data[2].p;
     if (!box || !box->data) return NULL;
     FfiPtrHandle *h = (FfiPtrHandle*)box->data;
@@ -2666,7 +2666,7 @@ static ObjEntry *ffi_make_ptr_handle_entry(VM *vm, uintptr_t ptr, int owned)
     return entry;
 }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 static FfiLibHandle *ffi_lib_handle_new(void *handle)
 {
     FfiLibHandle *h = (FfiLibHandle*)calloc(1, sizeof(FfiLibHandle));
@@ -2721,7 +2721,7 @@ static void ffi_lib_handle_free(void *data)
 
 static FfiLibHandle *ffi_lib_handle_from_entry(ObjEntry *entry)
 {
-    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    if (!entry || papagaio_obj_type(entry->obj) != PAPAGAIO_T_NATIVE || entry->obj->size < 3) return NULL;
     NativeBox *box = (NativeBox*)entry->obj->data[2].p;
     if (!box || !box->data) return NULL;
     FfiLibHandle *h = (FfiLibHandle*)box->data;
@@ -2754,7 +2754,7 @@ static void ffi_array_view_handle_free(void *data)
 
 static FfiArrayViewHandle *ffi_array_view_handle_from_entry(ObjEntry *entry)
 {
-    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    if (!entry || papagaio_obj_type(entry->obj) != PAPAGAIO_T_NATIVE || entry->obj->size < 3) return NULL;
     NativeBox *box = (NativeBox*)entry->obj->data[2].p;
     if (!box || !box->data) return NULL;
     FfiArrayViewHandle *h = (FfiArrayViewHandle*)box->data;
@@ -2772,7 +2772,7 @@ static FfiLayoutField *ffi_layout_find_field(FfiLayout *layout, const char *name
     return NULL;
 }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 typedef struct {
     const char *src;
     size_t pos;
@@ -3443,7 +3443,7 @@ static FfiFunction *ffi_parse_signature(const char *sig, char *err, size_t err_c
 }
 #endif
 
-#ifndef DISTURB_ENABLE_FFI_CALLS
+#ifndef PAPAGAIO_ENABLE_FFI_CALLS
 static int parse_base_type(const char *name, FfiBase *out)
 {
     if (strcmp(name, "void") == 0) { *out = FFI_BASE_VOID; return 1; }
@@ -3554,7 +3554,7 @@ static void ffi_fill_int_list(ObjEntry *entry, const void *ptr, int count, size_
 {
     (void)is_signed;
     if (!entry || !ptr || count <= 0) return;
-    char *dst = disturb_bytes_data(entry->obj);
+    char *dst = papagaio_bytes_data(entry->obj);
     for (int i = 0; i < count; i++) {
         int64_t v = 0;
         memcpy(&v, (const char*)ptr + (size_t)i * elem_size, elem_size);
@@ -3565,7 +3565,7 @@ static void ffi_fill_int_list(ObjEntry *entry, const void *ptr, int count, size_
 static void ffi_fill_float_list(ObjEntry *entry, const void *ptr, int count, size_t elem_size)
 {
     if (!entry || !ptr || count <= 0) return;
-    char *dst = disturb_bytes_data(entry->obj);
+    char *dst = papagaio_bytes_data(entry->obj);
     for (int i = 0; i < count; i++) {
         double v = 0.0;
         memcpy(&v, (const char*)ptr + (size_t)i * elem_size, elem_size);
@@ -3574,7 +3574,7 @@ static void ffi_fill_float_list(ObjEntry *entry, const void *ptr, int count, siz
     }
 }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 static int ffi_arg_is_float(const FfiType *t)
 {
     return t->base == FFI_BASE_F32 || t->base == FFI_BASE_F64 || t->base == FFI_BASE_LDOUBLE;
@@ -3598,20 +3598,20 @@ static int ffi_arg_is_int(const FfiType *t)
     }
 }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 static ffi_type *ffi_type_for_vararg_entry(ObjEntry *arg, int *out_kind)
 {
     if (out_kind) *out_kind = 0; /* 1=int64,2=double,3=ptr */
-    if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+    if (!arg || papagaio_obj_type(arg->obj) == PAPAGAIO_T_NULL) {
         if (out_kind) *out_kind = 3;
         return &ffi_type_pointer;
     }
-    Int t = disturb_obj_type(arg->obj);
-    if (t == DISTURB_T_FLOAT) {
+    Int t = papagaio_obj_type(arg->obj);
+    if (t == PAPAGAIO_T_FLOAT) {
         if (out_kind) *out_kind = 2;
         return &ffi_type_double;
     }
-    if (t == DISTURB_T_INT) {
+    if (t == PAPAGAIO_T_INT) {
         if (entry_is_string(arg)) {
             if (out_kind) *out_kind = 3;
             return &ffi_type_pointer;
@@ -3629,7 +3629,7 @@ static void ffi_push_entry(VM *vm, ObjEntry *entry)
 {
     if (!vm || !vm->stack_entry || !entry) return;
     List *old_stack = vm->stack_entry->obj;
-    List *stack = disturb_table_add(old_stack, entry);
+    List *stack = papagaio_table_add(old_stack, entry);
     stack = vm_update_shared_obj(vm, old_stack, stack);
     vm->stack_entry->obj = stack;
 }
@@ -3708,7 +3708,7 @@ static FfiLayout *ffi_layout_from_elem_spec(VM *vm, ObjEntry *entry, char *err, 
         int len = 0;
         int bits = 0;
         int is_const = 0;
-        if (ffi_parse_schema_type_string(s, disturb_bytes_len(entry->obj),
+        if (ffi_parse_schema_type_string(s, papagaio_bytes_len(entry->obj),
                                          &base, &is_array, &len, &bits, &is_const, NULL)) {
             if (is_array || bits > 0) {
                 snprintf(err, err_cap, "memory.viewArray element type must be scalar or struct schema");
@@ -3881,7 +3881,7 @@ static ObjEntry *ffi_load_prim_value(VM *vm, uintptr_t addr, FfiBase base)
         ObjEntry *list = vm_make_float_list(vm, 2);
         if (list) {
             Float re = (Float)parts[0], im = (Float)parts[1];
-            char *dst = disturb_bytes_data(list->obj);
+            char *dst = papagaio_bytes_data(list->obj);
             memcpy(dst, &re, sizeof(Float));
             memcpy(dst + sizeof(Float), &im, sizeof(Float));
         }
@@ -3893,7 +3893,7 @@ static ObjEntry *ffi_load_prim_value(VM *vm, uintptr_t addr, FfiBase base)
         ObjEntry *list = vm_make_float_list(vm, 2);
         if (list) {
             Float re = (Float)parts[0], im = (Float)parts[1];
-            char *dst = disturb_bytes_data(list->obj);
+            char *dst = papagaio_bytes_data(list->obj);
             memcpy(dst, &re, sizeof(Float));
             memcpy(dst + sizeof(Float), &im, sizeof(Float));
         }
@@ -3908,7 +3908,7 @@ static ObjEntry *ffi_load_prim_value(VM *vm, uintptr_t addr, FfiBase base)
         memcpy(&hi, (void*)((char*)addr + 8), 8);
         ObjEntry *list = vm_make_int_list(vm, 2);
         if (list) {
-            char *dst = disturb_bytes_data(list->obj);
+            char *dst = papagaio_bytes_data(list->obj);
             Int hi_v = (Int)hi, lo_v = (Int)lo;
             memcpy(dst, &hi_v, sizeof(Int));
             memcpy(dst + sizeof(Int), &lo_v, sizeof(Int));
@@ -3941,10 +3941,10 @@ static int ffi_store_prim_value(FfiBase base, uintptr_t addr, ObjEntry *value)
     }
     if (base == FFI_BASE_COMPLEX_FLOAT || base == FFI_BASE_COMPLEX_DOUBLE) {
         /* Expect a list [re, im] */
-        if (!value || !value->obj || disturb_obj_type(value->obj) != DISTURB_T_FLOAT) return 0;
-        size_t list_len = disturb_bytes_len(value->obj) / sizeof(Float);
+        if (!value || !value->obj || papagaio_obj_type(value->obj) != PAPAGAIO_T_FLOAT) return 0;
+        size_t list_len = papagaio_bytes_len(value->obj) / sizeof(Float);
         if (list_len < 2) return 0;
-        const char *src = disturb_bytes_data(value->obj);
+        const char *src = papagaio_bytes_data(value->obj);
         Float re = 0, im = 0;
         memcpy(&re, src, sizeof(Float));
         memcpy(&im, src + sizeof(Float), sizeof(Float));
@@ -3959,10 +3959,10 @@ static int ffi_store_prim_value(FfiBase base, uintptr_t addr, ObjEntry *value)
     }
     if (base == FFI_BASE_INT128 || base == FFI_BASE_UINT128) {
         /* Expect an int list [hi, lo] */
-        if (!value || !value->obj || disturb_obj_type(value->obj) != DISTURB_T_INT) return 0;
-        size_t list_len = disturb_bytes_len(value->obj) / sizeof(Int);
+        if (!value || !value->obj || papagaio_obj_type(value->obj) != PAPAGAIO_T_INT) return 0;
+        size_t list_len = papagaio_bytes_len(value->obj) / sizeof(Int);
         if (list_len < 2) return 0;
-        const char *src = disturb_bytes_data(value->obj);
+        const char *src = papagaio_bytes_data(value->obj);
         Int hi_v = 0, lo_v = 0;
         memcpy(&hi_v, src, sizeof(Int));
         memcpy(&lo_v, src + sizeof(Int), sizeof(Int));
@@ -4100,8 +4100,8 @@ int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
     /* Handle array view pseudo-fields */
     FfiArrayViewHandle *av = ffi_array_view_handle_from_entry(target);
     if (av) {
-        const char *fname = disturb_bytes_data(index->obj);
-        size_t flen = disturb_bytes_len(index->obj);
+        const char *fname = papagaio_bytes_data(index->obj);
+        size_t flen = papagaio_bytes_len(index->obj);
         if (flen == 8 && memcmp(fname, "byteSize", 8) == 0) {
             size_t bs = (size_t)av->len * (av->elem_layout ? av->elem_layout->size : 0);
             if (out) *out = vm_make_int_value(vm, (Int)bs);
@@ -4125,8 +4125,8 @@ int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
         return 1;
     }
 
-    const char *name = disturb_bytes_data(index->obj);
-    size_t name_len = disturb_bytes_len(index->obj);
+    const char *name = papagaio_bytes_data(index->obj);
+    size_t name_len = papagaio_bytes_len(index->obj);
 
     /* Pseudo-field: .byteSize — total byte size of the view */
     if (name_len == 8 && memcmp(name, "byteSize", 8) == 0) {
@@ -4179,7 +4179,7 @@ int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out)
                 if (out) *out = vm->null_entry;
                 return 1;
             }
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
             char err[160] = {0};
             ObjEntry *fn = ffi_bind_ptr_sig_entry(vm, ptr, field->fn_sig, err, sizeof(err));
             if (!fn) {
@@ -4227,8 +4227,8 @@ int ffi_view_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value
         return -1;
     }
 
-    const char *name = disturb_bytes_data(index->obj);
-    size_t name_len = disturb_bytes_len(index->obj);
+    const char *name = papagaio_bytes_data(index->obj);
+    size_t name_len = papagaio_bytes_len(index->obj);
     FfiLayoutField *field = ffi_layout_find_field(layout, name, name_len);
     if (!field) {
         fprintf(stderr, "memory.view: unknown field '%.*s'\n", (int)name_len, name);
@@ -4340,7 +4340,7 @@ int ffi_native_index_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *va
     return 1;
 }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 static int ffi_layout_is_byvalue_compatible(FfiLayout *layout, char *err, size_t err_cap)
 {
     if (!layout) {
@@ -4533,7 +4533,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         }
     }
     ObjEntry *self = vm && vm->call_entry ? vm->call_entry : NULL;
-    if (!self || disturb_obj_type(self->obj) != DISTURB_T_NATIVE || self->obj->size < 3) {
+    if (!self || papagaio_obj_type(self->obj) != PAPAGAIO_T_NATIVE || self->obj->size < 3) {
         fprintf(stderr, "ffi: invalid function\n");
         return;
     }
@@ -4548,8 +4548,8 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
     size_t self_name_len = 0;
     int trace_slot = -1;
     if (self_key && entry_is_string(self_key)) {
-        self_name = disturb_bytes_data(self_key->obj);
-        self_name_len = disturb_bytes_len(self_key->obj);
+        self_name = papagaio_bytes_data(self_key->obj);
+        self_name_len = papagaio_bytes_len(self_key->obj);
         if (ffi_trace_mouse_enabled()) trace_slot = ffi_trace_mouse_slot(self_name, self_name_len);
     }
     if ((!fn->has_varargs && (int)argc != fn->argc) ||
@@ -4603,7 +4603,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                 }
                 argv[i] = &values[i].i;
             } else {
-                if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+                if (!arg || papagaio_obj_type(arg->obj) == PAPAGAIO_T_NULL) {
                     values[i].p = NULL;
                 } else if (entry_is_string(arg)) {
                     char *dup = ffi_dup_entry_cstr(arg);
@@ -4621,7 +4621,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                 } else {
                     uintptr_t ptr = 0;
                     if (ffi_entry_to_ptr(arg, &ptr)) values[i].p = (void*)ptr;
-                    else values[i].p = disturb_bytes_data(arg->obj);
+                    else values[i].p = papagaio_bytes_data(arg->obj);
                 }
                 argv[i] = &values[i].p;
             }
@@ -4631,7 +4631,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         call_types[i] = fn->arg_types ? fn->arg_types[i] : NULL;
         if (t->schema_name) {
             if (t->schema_is_pointer) {
-                if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+                if (!arg || papagaio_obj_type(arg->obj) == PAPAGAIO_T_NULL) {
                     values[i].p = NULL;
                 } else {
                     uintptr_t ptr = 0;
@@ -4671,14 +4671,14 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
                     owned_cstr[i] = dup;
                     values[i].p = (void*)dup;
                 } else {
-                    if (arg && disturb_obj_type(arg->obj) != DISTURB_T_NULL) {
+                    if (arg && papagaio_obj_type(arg->obj) != PAPAGAIO_T_NULL) {
                         fprintf(stderr, "warning: ffi call '%.*s': arg %d expected string, got %s (coerced to NULL)\n",
                                 (int)self_name_len, self_name ? self_name : "<ffi>", i, ffi_entry_type_name(arg));
                     }
                     values[i].p = NULL;
                 }
             } else {
-                if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+                if (!arg || papagaio_obj_type(arg->obj) == PAPAGAIO_T_NULL) {
                     values[i].p = NULL;
                 } else if (entry_is_string(arg)) {
                     char *dup = ffi_dup_entry_cstr(arg);
@@ -4704,9 +4704,9 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
         }
         if (t->base == FFI_BASE_PTR && t->fn_ptr_sig) {
             /* Fase 5: function(sig) — auto-wrap lambda as callback */
-            if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+            if (!arg || papagaio_obj_type(arg->obj) == PAPAGAIO_T_NULL) {
                 values[i].p = NULL;
-            } else if (disturb_obj_type(arg->obj) == DISTURB_T_LAMBDA) {
+            } else if (papagaio_obj_type(arg->obj) == PAPAGAIO_T_LAMBDA) {
                 /* Auto-create callback from lambda using the inner signature */
                 char cb_err[160] = {0};
                 const char *cb_name = NULL;
@@ -4829,7 +4829,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             continue;
         }
         if (t->base == FFI_BASE_PTR) {
-            if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+            if (!arg || papagaio_obj_type(arg->obj) == PAPAGAIO_T_NULL) {
                 values[i].p = NULL;
             } else {
                 uintptr_t ptr = 0;
@@ -4845,7 +4845,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             continue;
         }
         if (t->is_ptr || t->is_array) {
-            if (!arg || disturb_obj_type(arg->obj) == DISTURB_T_NULL) {
+            if (!arg || papagaio_obj_type(arg->obj) == PAPAGAIO_T_NULL) {
                 values[i].p = NULL;
             } else {
                 uintptr_t ptr = 0;
@@ -4865,7 +4865,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             double val = 0.0;
             if (arg && entry_number_scalar(arg, &iv, &fv, &is_float)) {
                 val = is_float ? (double)fv : (double)iv;
-            } else if (arg && disturb_obj_type(arg->obj) != DISTURB_T_NULL) {
+            } else if (arg && papagaio_obj_type(arg->obj) != PAPAGAIO_T_NULL) {
                 fprintf(stderr, "warning: ffi call '%.*s': arg %d expected float, got %s (coerced to 0.0)\n",
                         (int)self_name_len, self_name ? self_name : "<ffi>", i, ffi_entry_type_name(arg));
             }
@@ -4886,7 +4886,7 @@ static void native_ffi_call(VM *vm, List *stack, List *global)
             int64_t v = 0;
             if (arg && entry_number_scalar(arg, &iv, NULL, NULL)) {
                 v = (int64_t)iv;
-            } else if (arg && disturb_obj_type(arg->obj) != DISTURB_T_NULL) {
+            } else if (arg && papagaio_obj_type(arg->obj) != PAPAGAIO_T_NULL) {
                 fprintf(stderr, "warning: ffi call '%.*s': arg %d expected integer, got %s (coerced to 0)\n",
                         (int)self_name_len, self_name ? self_name : "<ffi>", i, ffi_entry_type_name(arg));
             }
@@ -5266,7 +5266,7 @@ void native_ffi_callback(VM *vm, List *stack, List *global)
     }
     ObjEntry *sig_entry = ffi_native_arg(stack, argc, 0);
     ObjEntry *lambda_entry = ffi_native_arg(stack, argc, 1);
-    if (!lambda_entry || disturb_obj_type(lambda_entry->obj) != DISTURB_T_LAMBDA) {
+    if (!lambda_entry || papagaio_obj_type(lambda_entry->obj) != PAPAGAIO_T_LAMBDA) {
         fprintf(stderr, "ffi.callback expects lambda as second argument\n");
         return;
     }
@@ -5506,8 +5506,8 @@ void native_ffi_sym(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi.sym expects string symbol name\n");
         return;
     }
-    size_t name_len = disturb_bytes_len(name_entry->obj);
-    const char *name_src = disturb_bytes_data(name_entry->obj);
+    size_t name_len = papagaio_bytes_len(name_entry->obj);
+    const char *name_src = papagaio_bytes_data(name_entry->obj);
     char *name = (char*)calloc(1, name_len + 1);
     if (!name) {
         fprintf(stderr, "ffi: out of memory\n");
@@ -5543,8 +5543,8 @@ void native_ffi_sym_self(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi.symSelf expects string symbol name\n");
         return;
     }
-    size_t name_len = disturb_bytes_len(name_entry->obj);
-    const char *name_src = disturb_bytes_data(name_entry->obj);
+    size_t name_len = papagaio_bytes_len(name_entry->obj);
+    const char *name_src = papagaio_bytes_data(name_entry->obj);
     char *name = (char*)calloc(1, name_len + 1);
     if (!name) {
         fprintf(stderr, "ffi: out of memory\n");
@@ -5588,37 +5588,37 @@ static void native_ffi_dlerror(VM *vm, List *stack, List *global)
 void native_ffi_callback(VM *vm, List *stack, List *global)
 {
     (void)vm; (void)stack; (void)global;
-    fprintf(stderr, "ffi.callback unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+    fprintf(stderr, "ffi.callback unavailable: build without PAPAGAIO_ENABLE_FFI_CALLS\n");
 }
 
 void native_ffi_bind(VM *vm, List *stack, List *global)
 {
     (void)vm; (void)stack; (void)global;
-    fprintf(stderr, "ffi.bind unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+    fprintf(stderr, "ffi.bind unavailable: build without PAPAGAIO_ENABLE_FFI_CALLS\n");
 }
 
 void native_ffi_open(VM *vm, List *stack, List *global)
 {
     (void)vm; (void)stack; (void)global;
-    fprintf(stderr, "ffi.open unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+    fprintf(stderr, "ffi.open unavailable: build without PAPAGAIO_ENABLE_FFI_CALLS\n");
 }
 
 void native_ffi_close(VM *vm, List *stack, List *global)
 {
     (void)vm; (void)stack; (void)global;
-    fprintf(stderr, "ffi.close unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+    fprintf(stderr, "ffi.close unavailable: build without PAPAGAIO_ENABLE_FFI_CALLS\n");
 }
 
 void native_ffi_sym(VM *vm, List *stack, List *global)
 {
     (void)vm; (void)stack; (void)global;
-    fprintf(stderr, "ffi.sym unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+    fprintf(stderr, "ffi.sym unavailable: build without PAPAGAIO_ENABLE_FFI_CALLS\n");
 }
 
 void native_ffi_sym_self(VM *vm, List *stack, List *global)
 {
     (void)vm; (void)stack; (void)global;
-    fprintf(stderr, "ffi.symSelf unavailable: build without DISTURB_ENABLE_FFI_CALLS\n");
+    fprintf(stderr, "ffi.symSelf unavailable: build without PAPAGAIO_ENABLE_FFI_CALLS\n");
 }
 #endif
 
@@ -5695,7 +5695,7 @@ void native_ffi_free(VM *vm, List *stack, List *global)
         return;
     }
     ObjEntry *ptr_entry = ffi_native_arg(stack, argc, 0);
-    if (!ptr_entry || disturb_obj_type(ptr_entry->obj) == DISTURB_T_NULL) {
+    if (!ptr_entry || papagaio_obj_type(ptr_entry->obj) == PAPAGAIO_T_NULL) {
         ffi_push_entry(vm, vm->null_entry);
         return;
     }
@@ -5860,7 +5860,7 @@ void native_ffi_offsetof(VM *vm, List *stack, List *global)
         fprintf(stderr, "memory.offsetof expects string path\n");
         return;
     }
-    size_t path_len = disturb_bytes_len(path_entry->obj);
+    size_t path_len = papagaio_bytes_len(path_entry->obj);
 
     char err[160] = {0};
     FfiLayout *layout = ffi_layout_from_schema_or_layout(vm, schema_or_layout, err, sizeof(err));
@@ -5977,30 +5977,30 @@ void native_memory_point(VM *vm, List *stack, List *global)
     }
 
     ObjEntry *value = ffi_native_arg(stack, argc, 0);
-    if (!value || !value->in_use || disturb_obj_type(value->obj) == DISTURB_T_NULL) {
+    if (!value || !value->in_use || papagaio_obj_type(value->obj) == PAPAGAIO_T_NULL) {
         ffi_push_entry(vm, vm_make_int_value(vm, 0));
         return;
     }
 
-    Int type = disturb_obj_type(value->obj);
-    if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
-        uintptr_t ptr = (uintptr_t)disturb_bytes_data(value->obj);
+    Int type = papagaio_obj_type(value->obj);
+    if (type == PAPAGAIO_T_INT || type == PAPAGAIO_T_FLOAT) {
+        uintptr_t ptr = (uintptr_t)papagaio_bytes_data(value->obj);
         ffi_push_entry(vm, vm_make_int_value(vm, (Int)ptr));
         return;
     }
 
-    if (type == DISTURB_T_VIEW) {
+    if (type == PAPAGAIO_T_VIEW) {
         ObjEntry *base = (ObjEntry*)value->obj->data[2].p;
         if (!base || !base->in_use) {
             ffi_push_entry(vm, vm_make_int_value(vm, 0));
             return;
         }
-        Int bt = disturb_obj_type(base->obj);
-        if (bt != DISTURB_T_INT && bt != DISTURB_T_FLOAT) {
+        Int bt = papagaio_obj_type(base->obj);
+        if (bt != PAPAGAIO_T_INT && bt != PAPAGAIO_T_FLOAT) {
             ffi_push_entry(vm, vm_make_int_value(vm, 0));
             return;
         }
-        uintptr_t ptr = (uintptr_t)disturb_bytes_data(base->obj);
+        uintptr_t ptr = (uintptr_t)papagaio_bytes_data(base->obj);
         ffi_push_entry(vm, vm_make_int_value(vm, (Int)ptr));
         return;
     }
@@ -6429,7 +6429,7 @@ static void native_ffi_typedef(VM *vm, List *stack, List *global)
         char *target = ffi_dup_entry_cstr(target_entry);
         ffi_typedef_register(alias, target, NULL);
         free(target);
-    } else if (target_entry && disturb_obj_type(target_entry->obj) == DISTURB_T_TABLE) {
+    } else if (target_entry && papagaio_obj_type(target_entry->obj) == PAPAGAIO_T_TABLE) {
         /* typedef pointing to a struct schema */
         ffi_typedef_register(alias, NULL, target_entry);
     } else {
@@ -6455,7 +6455,7 @@ static void native_ffi_enum(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi.enum: name must be a string\n");
         return;
     }
-    if (!table_entry || disturb_obj_type(table_entry->obj) != DISTURB_T_TABLE) {
+    if (!table_entry || papagaio_obj_type(table_entry->obj) != PAPAGAIO_T_TABLE) {
         fprintf(stderr, "ffi.enum: second arg must be a table { KEY = val, ... }\n");
         return;
     }
@@ -6499,7 +6499,7 @@ static void native_ffi_define(VM *vm, List *stack, List *global)
     if (!c_entry) { free(name); return; }
 
     ObjEntry *defines_entry = ffi_table_find_field(c_entry->obj, "defines", 7);
-    if (!defines_entry || disturb_obj_type(defines_entry->obj) != DISTURB_T_TABLE) {
+    if (!defines_entry || papagaio_obj_type(defines_entry->obj) != PAPAGAIO_T_TABLE) {
         /* create C.defines table */
         defines_entry = vm_make_table_value(vm, 16);
         if (!defines_entry) { free(name); return; }
@@ -6532,7 +6532,7 @@ static void native_ffi_trace(VM *vm, List *stack, List *global)
     if (arg && entry_number_scalar(arg, &iv, &fv, &is_float)) {
         g_ffi_trace_enabled = is_float ? (fv != 0.0) : (iv != 0);
     } else {
-        g_ffi_trace_enabled = (arg && disturb_obj_type(arg->obj) != DISTURB_T_NULL) ? 1 : 0;
+        g_ffi_trace_enabled = (arg && papagaio_obj_type(arg->obj) != PAPAGAIO_T_NULL) ? 1 : 0;
     }
     ffi_push_entry(vm, vm_make_int_value(vm, g_ffi_trace_enabled ? 1 : 0));
 }
@@ -6556,7 +6556,7 @@ static void native_memory_valid(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, vm_make_int_value(vm, valid ? 1 : 0));
 }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 /* 8.1: ffi.global(lib, name, type) — access C global variable via view */
 static void native_ffi_global(VM *vm, List *stack, List *global)
 {
@@ -6579,8 +6579,8 @@ static void native_ffi_global(VM *vm, List *stack, List *global)
         fprintf(stderr, "ffi.global expects string symbol name\n");
         return;
     }
-    size_t name_len = disturb_bytes_len(name_entry->obj);
-    const char *name_src = disturb_bytes_data(name_entry->obj);
+    size_t name_len = papagaio_bytes_len(name_entry->obj);
+    const char *name_src = papagaio_bytes_data(name_entry->obj);
     char *name = (char*)calloc(1, name_len + 1);
     if (!name) { fprintf(stderr, "ffi: out of memory\n"); return; }
     memcpy(name, name_src, name_len);
@@ -6600,7 +6600,7 @@ static void native_ffi_global(VM *vm, List *stack, List *global)
     /* Check if type is a string representing a primitive type */
     const char *type_str = NULL;
     if (entry_as_cstr(type_entry, &type_str)) {
-        size_t type_len = disturb_bytes_len(type_entry->obj);
+        size_t type_len = papagaio_bytes_len(type_entry->obj);
         FfiBase base = FFI_BASE_VOID;
         int is_array = 0, array_len_v = 0, bits = 0, is_const = 0;
         if (ffi_parse_schema_type_string(type_str, type_len,
@@ -6752,14 +6752,14 @@ static void native_memory_struct(VM *vm, List *stack, List *global)
 
     /* Apply init values from the table */
     if (init_table && init_table->obj &&
-        disturb_obj_type(init_table->obj) == DISTURB_T_TABLE) {
+        papagaio_obj_type(init_table->obj) == PAPAGAIO_T_TABLE) {
         List *obj = init_table->obj;
         for (Int i = 2; i < obj->size; i++) {
             ObjEntry *kv = (ObjEntry*)obj->data[i].p;
             ObjEntry *key = vm_entry_key(kv);
             if (!key || !entry_is_string(key)) continue;
-            const char *fname = disturb_bytes_data(key->obj);
-            size_t flen = disturb_bytes_len(key->obj);
+            const char *fname = papagaio_bytes_data(key->obj);
+            size_t flen = papagaio_bytes_len(key->obj);
 
             /* Find field in layout */
             int found = 0;
@@ -6789,7 +6789,7 @@ static void native_memory_struct(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, view);
 }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
 
 /* 6.4: ffi.auto(lib, sig) — sym + bind in one step with cache */
 static void native_ffi_auto(VM *vm, List *stack, List *global)
@@ -6807,7 +6807,7 @@ static void native_ffi_auto(VM *vm, List *stack, List *global)
     if (!h) {
         /* Also accept ffi.lib proxy table: look for __handle field */
         if (lib_entry && lib_entry->obj &&
-            disturb_obj_type(lib_entry->obj) == DISTURB_T_TABLE) {
+            papagaio_obj_type(lib_entry->obj) == PAPAGAIO_T_TABLE) {
             ObjEntry *hfield = ffi_table_find_field(lib_entry->obj, "__handle", 8);
             if (hfield) h = ffi_lib_handle_from_entry(hfield);
         }
@@ -6896,7 +6896,7 @@ static void ffi_lib_proxy_clone(void *data)
 #if 0
 static FfiLibProxy *ffi_lib_proxy_from_entry(ObjEntry *entry)
 {
-    if (!entry || disturb_obj_type(entry->obj) != DISTURB_T_NATIVE || entry->obj->size < 3) return NULL;
+    if (!entry || papagaio_obj_type(entry->obj) != PAPAGAIO_T_NATIVE || entry->obj->size < 3) return NULL;
     NativeBox *box = (NativeBox*)entry->obj->data[2].p;
     if (!box || !box->data) return NULL;
     FfiLibProxy *p = (FfiLibProxy*)box->data;
@@ -6921,7 +6921,7 @@ static void native_ffi_lib_call(VM *vm, List *stack, List *global)
     /* Go up: self is the "call" function on the table. We need the table's __handle.
      * We can't easily traverse up, so we store the proxy directly on the call native. */
     FfiLibProxy *proxy = NULL;
-    if (self && disturb_obj_type(self->obj) == DISTURB_T_NATIVE && self->obj->size >= 3) {
+    if (self && papagaio_obj_type(self->obj) == PAPAGAIO_T_NATIVE && self->obj->size >= 3) {
         NativeBox *box = (NativeBox*)self->obj->data[2].p;
         if (box && box->data) {
             FfiLibProxy *p = (FfiLibProxy*)box->data;
@@ -7192,7 +7192,7 @@ static void native_ffi_lib(VM *vm, List *stack, List *global)
     ffi_push_entry(vm, table);
 }
 
-#endif /* DISTURB_ENABLE_FFI_CALLS */
+#endif /* PAPAGAIO_ENABLE_FFI_CALLS */
 
 void c_module_install(VM *vm, ObjEntry *c_entry)
 {
@@ -7206,14 +7206,14 @@ void c_module_install(VM *vm, ObjEntry *c_entry)
 void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
 {
     if (!vm || !ffi_entry) return;
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
     ffi_set_main_thread(); /* 5.3: record main thread for callback safety check */
-    ffi_add_module_int(vm, ffi_entry, "RTLD_LAZY", DISTURB_RTLD_LAZY);
-    ffi_add_module_int(vm, ffi_entry, "RTLD_NOW", DISTURB_RTLD_NOW);
-    ffi_add_module_int(vm, ffi_entry, "RTLD_LOCAL", DISTURB_RTLD_LOCAL);
-    ffi_add_module_int(vm, ffi_entry, "RTLD_GLOBAL", DISTURB_RTLD_GLOBAL);
-    ffi_add_module_int(vm, ffi_entry, "RTLD_NODELETE", DISTURB_RTLD_NODELETE);
-    ffi_add_module_int(vm, ffi_entry, "RTLD_NOLOAD", DISTURB_RTLD_NOLOAD);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_LAZY", PAPAGAIO_RTLD_LAZY);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_NOW", PAPAGAIO_RTLD_NOW);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_LOCAL", PAPAGAIO_RTLD_LOCAL);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_GLOBAL", PAPAGAIO_RTLD_GLOBAL);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_NODELETE", PAPAGAIO_RTLD_NODELETE);
+    ffi_add_module_int(vm, ffi_entry, "RTLD_NOLOAD", PAPAGAIO_RTLD_NOLOAD);
     ffi_add_module_fn(vm, ffi_entry, "open", native_ffi_open);
     ffi_add_module_fn(vm, ffi_entry, "close", native_ffi_close);
     ffi_add_module_fn(vm, ffi_entry, "sym", native_ffi_sym);
@@ -7228,7 +7228,7 @@ void ffi_module_install(VM *vm, ObjEntry *ffi_entry)
 #endif
     /* Fase 7: ffi.trace */
     ffi_add_module_fn(vm, ffi_entry, "trace", native_ffi_trace);
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
     /* Fase 8: ffi.global */
     ffi_add_module_fn(vm, ffi_entry, "global", native_ffi_global);
 #endif

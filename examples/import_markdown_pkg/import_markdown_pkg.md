@@ -2,7 +2,7 @@
 
 This module is imported via package path fallback: `import("examples/import_markdown_pkg")`.
 
-```disturb
+```papagaio
 counter = 0,
 counter++,
 return {

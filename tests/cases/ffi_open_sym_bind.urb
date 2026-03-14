@@ -38,7 +38,7 @@ if (strlen_ptr == null) {
   fail++,
 } else {
   strlen = C.ffi.bind(strlen_ptr, "u64 strlen(cstring)"),
-  if (strlen("disturb") != 7) { fail++, }
+  if (strlen("papagaio") != 8) { fail++, }
 }
 
 bad = C.ffi.open("./tests/ffi/definitely_missing_library.so", C.ffi.RTLD_NOW),

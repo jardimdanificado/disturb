@@ -9,33 +9,33 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef DISTURB_ENABLE_FFI
+#ifdef PAPAGAIO_ENABLE_FFI
 void native_ffi_open(VM *vm, List *stack, List *global);
 #endif
 
 static int entry_is_string(ObjEntry *entry)
 {
-    return entry && entry->is_string && disturb_obj_type(entry->obj) == DISTURB_T_INT;
+    return entry && entry->is_string && papagaio_obj_type(entry->obj) == PAPAGAIO_T_INT;
 }
 
 static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *out_is_float)
 {
     if (!entry || !entry->in_use) return 0;
-    Int type = disturb_obj_type(entry->obj);
-    if (type == DISTURB_T_INT) {
+    Int type = papagaio_obj_type(entry->obj);
+    if (type == PAPAGAIO_T_INT) {
         if (entry_is_string(entry)) return 0;
-        if (disturb_bytes_len(entry->obj) != sizeof(Int)) return 0;
+        if (papagaio_bytes_len(entry->obj) != sizeof(Int)) return 0;
         Int v = 0;
-        memcpy(&v, disturb_bytes_data(entry->obj), sizeof(Int));
+        memcpy(&v, papagaio_bytes_data(entry->obj), sizeof(Int));
         if (out_i) *out_i = v;
         if (out_f) *out_f = (Float)v;
         if (out_is_float) *out_is_float = 0;
         return 1;
     }
-    if (type == DISTURB_T_FLOAT) {
-        if (disturb_bytes_len(entry->obj) != sizeof(Float)) return 0;
+    if (type == PAPAGAIO_T_FLOAT) {
+        if (papagaio_bytes_len(entry->obj) != sizeof(Float)) return 0;
         Float v = 0;
-        memcpy(&v, disturb_bytes_data(entry->obj), sizeof(Float));
+        memcpy(&v, papagaio_bytes_data(entry->obj), sizeof(Float));
         if (out_i) *out_i = (Int)v;
         if (out_f) *out_f = v;
         if (out_is_float) *out_is_float = 1;
@@ -46,12 +46,12 @@ static int entry_number_scalar(ObjEntry *entry, Int *out_i, Float *out_f, int *o
 
 static void write_int_bytes(List *obj, Int index, Int value)
 {
-    memcpy(disturb_bytes_data(obj) + (size_t)index * sizeof(Int), &value, sizeof(Int));
+    memcpy(papagaio_bytes_data(obj) + (size_t)index * sizeof(Int), &value, sizeof(Int));
 }
 
 static void write_float_bytes(List *obj, Int index, Float value)
 {
-    memcpy(disturb_bytes_data(obj) + (size_t)index * sizeof(Float), &value, sizeof(Float));
+    memcpy(papagaio_bytes_data(obj) + (size_t)index * sizeof(Float), &value, sizeof(Float));
 }
 
 static uint32_t native_argc(VM *vm, List *global)
@@ -87,8 +87,8 @@ static ObjEntry *native_target(VM *vm, List *stack, uint32_t argc)
 {
     ObjEntry *self = native_this(vm);
     if (self) {
-        Int type = disturb_obj_type(self->obj);
-        if (type == DISTURB_T_TABLE || type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
+        Int type = papagaio_obj_type(self->obj);
+        if (type == PAPAGAIO_T_TABLE || type == PAPAGAIO_T_INT || type == PAPAGAIO_T_FLOAT) {
             return self;
         }
     }
@@ -108,15 +108,15 @@ static int entry_as_number(ObjEntry *entry, Float *out)
 static int entry_as_string(ObjEntry *entry, const char **out, size_t *len)
 {
     if (!entry || !entry_is_string(entry)) return 0;
-    *out = disturb_bytes_data(entry->obj);
-    *len = disturb_bytes_len(entry->obj);
+    *out = papagaio_bytes_data(entry->obj);
+    *len = papagaio_bytes_len(entry->obj);
     return 1;
 }
 
 static List *push_entry(VM *vm, List *stack, ObjEntry *entry)
 {
     List *old_stack = stack;
-    stack = disturb_table_add(stack, entry);
+    stack = papagaio_table_add(stack, entry);
     stack = vm_update_shared_obj(vm, old_stack, stack);
     if (vm && vm->stack_entry) vm->stack_entry->obj = stack;
     return stack;
@@ -142,14 +142,14 @@ static int number_to_int(ObjEntry *entry, Int *out);
 
 static ObjEntry *object_find_by_key_len(List *obj, const char *name, size_t len)
 {
-    if (!obj || disturb_obj_type(obj) != DISTURB_T_TABLE) return NULL;
+    if (!obj || papagaio_obj_type(obj) != PAPAGAIO_T_TABLE) return NULL;
     for (Int i = 2; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         if (!entry) continue;
         ObjEntry *key = vm_entry_key(entry);
         if (!key || !entry_is_string(key)) continue;
-        if (disturb_bytes_len(key->obj) == len &&
-            memcmp(disturb_bytes_data(key->obj), name, len) == 0) {
+        if (papagaio_bytes_len(key->obj) == len &&
+            memcmp(papagaio_bytes_data(key->obj), name, len) == 0) {
             return entry;
         }
     }
@@ -182,7 +182,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
         ast_err(err, err_cap, "emit expects an AST table");
         return 0;
     }
-    if (disturb_obj_type(ast->obj) != DISTURB_T_TABLE) {
+    if (papagaio_obj_type(ast->obj) != PAPAGAIO_T_TABLE) {
         ast_err(err, err_cap, "emit expects an AST table");
         return 0;
     }
@@ -199,7 +199,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
     }
 
     ObjEntry *ops_entry = object_find_by_key(ast->obj, "ops");
-    if (!ops_entry || disturb_obj_type(ops_entry->obj) != DISTURB_T_TABLE) {
+    if (!ops_entry || papagaio_obj_type(ops_entry->obj) != PAPAGAIO_T_TABLE) {
         ast_err(err, err_cap, "emit expects ops array");
         return 0;
     }
@@ -209,7 +209,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
     List *ops = ops_entry->obj;
     for (Int i = 2; i < ops->size; i++) {
         ObjEntry *op_entry = (ObjEntry*)ops->data[i].p;
-        if (!op_entry || disturb_obj_type(op_entry->obj) != DISTURB_T_TABLE) {
+        if (!op_entry || papagaio_obj_type(op_entry->obj) != PAPAGAIO_T_TABLE) {
             ast_err(err, err_cap, "emit expects op tables");
             bc_free(out);
             return 0;
@@ -352,7 +352,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
         } else if ((op_len == 13 && memcmp(op_name, "BUILD_INT_LIT", 13) == 0) ||
                    (op_len == 15 && memcmp(op_name, "BUILD_FLOAT_LIT", 15) == 0)) {
             ObjEntry *values_entry = object_find_by_key(op_entry->obj, "values");
-            if (!values_entry || disturb_obj_type(values_entry->obj) != DISTURB_T_TABLE) {
+            if (!values_entry || papagaio_obj_type(values_entry->obj) != PAPAGAIO_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_*_LIT expects values");
                 bc_free(out);
                 return 0;
@@ -421,7 +421,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 bc_free(out);
                 return 0;
             }
-            if (disturb_obj_type(args_entry->obj) != DISTURB_T_TABLE) {
+            if (papagaio_obj_type(args_entry->obj) != PAPAGAIO_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_FUNCTION expects args array");
                 bc_free(out);
                 return 0;
@@ -443,7 +443,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
             }
             for (uint32_t j = 0; j < argc; j++) {
                 ObjEntry *arg = (ObjEntry*)args->data[2 + j].p;
-                if (!arg || disturb_obj_type(arg->obj) != DISTURB_T_TABLE) {
+                if (!arg || papagaio_obj_type(arg->obj) != PAPAGAIO_T_TABLE) {
                     ast_err(err, err_cap, "BUILD_FUNCTION arg must be table");
                     bc_free(out);
                     return 0;
@@ -459,7 +459,7 @@ static int ast_to_bytecode(VM *vm, ObjEntry *ast, Bytecode *out, char *err, size
                 ObjEntry *def_entry = object_find_by_key(arg->obj, "default");
                 const char *def = NULL;
                 size_t def_len = 0;
-                if (def_entry && disturb_obj_type(def_entry->obj) != DISTURB_T_NULL) {
+                if (def_entry && papagaio_obj_type(def_entry->obj) != PAPAGAIO_T_NULL) {
                     if (!entry_as_string(def_entry, &def, &def_len)) {
                         ast_err(err, err_cap, "BUILD_FUNCTION default must be bytes");
                         bc_free(out);
@@ -799,19 +799,19 @@ static void sb_append_escaped(StrBuf *b, const char *s, size_t len, char quote)
 
 static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t err_cap)
 {
-    if (!vm || !ast || disturb_obj_type(ast->obj) != DISTURB_T_TABLE) {
+    if (!vm || !ast || papagaio_obj_type(ast->obj) != PAPAGAIO_T_TABLE) {
         ast_err(err, err_cap, "astToSource expects AST object");
         return 0;
     }
     ObjEntry *ops_entry = object_find_by_key(ast->obj, "ops");
-    if (!ops_entry || disturb_obj_type(ops_entry->obj) != DISTURB_T_TABLE) {
+    if (!ops_entry || papagaio_obj_type(ops_entry->obj) != PAPAGAIO_T_TABLE) {
         ast_err(err, err_cap, "astToSource expects ops array");
         return 0;
     }
     List *ops = ops_entry->obj;
     for (Int i = 2; i < ops->size; i++) {
         ObjEntry *op_entry = (ObjEntry*)ops->data[i].p;
-        if (!op_entry || disturb_obj_type(op_entry->obj) != DISTURB_T_TABLE) {
+        if (!op_entry || papagaio_obj_type(op_entry->obj) != PAPAGAIO_T_TABLE) {
             ast_err(err, err_cap, "astToSource expects op objects");
             return 0;
         }
@@ -922,7 +922,7 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
         } else if ((op_len == 13 && memcmp(op_name, "BUILD_INT_LIT", 13) == 0) ||
                    (op_len == 15 && memcmp(op_name, "BUILD_FLOAT_LIT", 15) == 0)) {
             ObjEntry *values_entry = object_find_by_key(op_entry->obj, "values");
-            if (!values_entry || disturb_obj_type(values_entry->obj) != DISTURB_T_TABLE) {
+            if (!values_entry || papagaio_obj_type(values_entry->obj) != PAPAGAIO_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_*_LIT expects values");
                 return 0;
             }
@@ -973,14 +973,14 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
             snprintf(head, sizeof(head), " %u %u %u", (unsigned)argc, (unsigned)vararg, (unsigned)code_len);
             sb_append_n(out, head, strlen(head));
 
-            if (disturb_obj_type(args_entry->obj) != DISTURB_T_TABLE) {
+            if (papagaio_obj_type(args_entry->obj) != PAPAGAIO_T_TABLE) {
                 ast_err(err, err_cap, "BUILD_FUNCTION expects args array");
                 return 0;
             }
             List *args = args_entry->obj;
             for (uint32_t j = 0; j < argc; j++) {
                 ObjEntry *arg = (ObjEntry*)args->data[2 + j].p;
-                if (!arg || disturb_obj_type(arg->obj) != DISTURB_T_TABLE) {
+                if (!arg || papagaio_obj_type(arg->obj) != PAPAGAIO_T_TABLE) {
                     ast_err(err, err_cap, "BUILD_FUNCTION arg must be object");
                     return 0;
                 }
@@ -993,7 +993,7 @@ static int ast_to_source(VM *vm, ObjEntry *ast, StrBuf *out, char *err, size_t e
                 }
                 ObjEntry *def_entry = object_find_by_key(arg->obj, "default");
                 size_t def_len = 0;
-                if (def_entry && disturb_obj_type(def_entry->obj) != DISTURB_T_NULL) {
+                if (def_entry && papagaio_obj_type(def_entry->obj) != PAPAGAIO_T_NULL) {
                     const char *def = NULL;
                     if (!entry_as_string(def_entry, &def, &def_len)) {
                         ast_err(err, err_cap, "BUILD_FUNCTION default must be bytes");
@@ -1143,7 +1143,7 @@ static char *path_replace_ext(const char *path, size_t path_len,
     return out;
 }
 
-#ifndef DISTURB_EMBEDDED
+#ifndef PAPAGAIO_EMBEDDED
 
 
 static char *module_resolve_path(const char *path, size_t path_len, size_t *out_len)
@@ -1194,14 +1194,14 @@ static ObjEntry *module_cache_get(VM *vm, List *global, const char *path, size_t
 {
     (void)vm;
     ObjEntry *cache = vm_global_find_by_key(global, "__modules");
-    if (!cache || disturb_obj_type(cache->obj) != DISTURB_T_TABLE) return NULL;
+    if (!cache || papagaio_obj_type(cache->obj) != PAPAGAIO_T_TABLE) return NULL;
     return object_find_by_key_len(cache->obj, path, path_len);
 }
 
 static ObjEntry *module_cache_ensure(VM *vm, List *global)
 {
     ObjEntry *cache = vm_global_find_by_key(global, "__modules");
-    if (cache && disturb_obj_type(cache->obj) == DISTURB_T_TABLE) return cache;
+    if (cache && papagaio_obj_type(cache->obj) == PAPAGAIO_T_TABLE) return cache;
     cache = vm_make_table_value(vm, 8);
     if (!cache) return NULL;
     if (!vm_object_set_by_key(vm, vm->global_entry, "__modules", 9, cache)) return NULL;
@@ -1319,7 +1319,7 @@ static void native_import(VM *vm, List *stack, List *global)
     if (!ret) ret = module_vm.null_entry;
 
     ObjEntry *exported = NULL;
-    if (ret == module_vm.null_entry || disturb_obj_type(ret->obj) == DISTURB_T_NULL) {
+    if (ret == module_vm.null_entry || papagaio_obj_type(ret->obj) == PAPAGAIO_T_NULL) {
         exported = vm->null_entry;
     } else {
         exported = vm_clone_entry_deep(vm, ret, NULL);
@@ -1474,7 +1474,7 @@ static void native_to_int(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || disturb_obj_type(target->obj) != DISTURB_T_FLOAT) {
+    if (!target || papagaio_obj_type(target->obj) != PAPAGAIO_T_FLOAT) {
         fprintf(stderr, "toInt expects a float list\n");
         return;
     }
@@ -1484,7 +1484,7 @@ static void native_to_int(VM *vm, List *stack, List *global)
     List *obj = entry->obj;
     for (Int i = 0; i < count; i++) {
         Float v = 0;
-        memcpy(&v, disturb_bytes_data(target->obj) + (size_t)i * sizeof(Float), sizeof(Float));
+        memcpy(&v, papagaio_bytes_data(target->obj) + (size_t)i * sizeof(Float), sizeof(Float));
         write_int_bytes(obj, i, (Int)v);
     }
     stack = push_entry(vm, stack, entry);
@@ -1494,32 +1494,32 @@ static void native_to_float(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || disturb_obj_type(target->obj) != DISTURB_T_INT) {
+    if (!target || papagaio_obj_type(target->obj) != PAPAGAIO_T_INT) {
         fprintf(stderr, "toFloat expects an int list\n");
         return;
     }
-    size_t bytes_len = disturb_bytes_len(target->obj);
+    size_t bytes_len = papagaio_bytes_len(target->obj);
     Int count = entry_is_string(target) ? (Int)bytes_len : (Int)(bytes_len / sizeof(Int));
     ObjEntry *entry = vm_make_float_list(vm, count);
     if (!entry) return;
     List *obj = entry->obj;
     if (entry_is_string(target)) {
         for (Int i = 0; i < count; i++) {
-            unsigned char b = (unsigned char)disturb_bytes_data(target->obj)[i];
+            unsigned char b = (unsigned char)papagaio_bytes_data(target->obj)[i];
             Float v = (Float)b;
             write_float_bytes(obj, i, v);
         }
     } else {
         for (Int i = 0; i < count; i++) {
             Int v = 0;
-            memcpy(&v, disturb_bytes_data(target->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+            memcpy(&v, papagaio_bytes_data(target->obj) + (size_t)i * sizeof(Int), sizeof(Int));
             write_float_bytes(obj, i, (Float)v);
         }
     }
     stack = push_entry(vm, stack, entry);
 }
 
-#ifdef DISTURB_ENABLE_IO
+#ifdef PAPAGAIO_ENABLE_IO
 static void native_read(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
@@ -1571,8 +1571,8 @@ static void native_write(VM *vm, List *stack, List *global)
     size_t data_len = 0;
     if (!entry_as_string(data_entry, &data, &data_len)) {
         string_entry = vm_stringify_value(vm, data_entry, 1);
-        data = disturb_bytes_data(string_entry->obj);
-        data_len = disturb_bytes_len(string_entry->obj);
+        data = papagaio_bytes_data(string_entry->obj);
+        data_len = papagaio_bytes_len(string_entry->obj);
     }
     char *path_buf = (char*)malloc(path_len + 1);
     if (!path_buf) {
@@ -1667,7 +1667,7 @@ static void native_emit(VM *vm, List *stack, List *global)
         return;
     }
 
-    if (target && target->obj && disturb_obj_type(target->obj) == DISTURB_T_TABLE) {
+    if (target && target->obj && papagaio_obj_type(target->obj) == PAPAGAIO_T_TABLE) {
         Bytecode bc;
         char err[256];
         err[0] = 0;
@@ -1746,7 +1746,7 @@ static void native_gc_free(VM *vm, List *stack, List *global)
     if (target->obj) {
         vm_free_list(vm, target->obj);
     }
-    target->obj = vm_alloc_list(vm, DISTURB_T_NULL, key_entry, 0);
+    target->obj = vm_alloc_list(vm, PAPAGAIO_T_NULL, key_entry, 0);
     target->key = key_entry;
     target->mark = 0;
     push_number(vm, stack, 1);
@@ -1769,7 +1769,7 @@ static void native_gc_sweep(VM *vm, List *stack, List *global)
     if (target->obj && !gc_entry_shared(vm, target)) {
         vm_reuse_list(vm, target->obj);
     }
-    target->obj = vm_alloc_list(vm, DISTURB_T_NULL, key_entry, 0);
+    target->obj = vm_alloc_list(vm, PAPAGAIO_T_NULL, key_entry, 0);
     target->key = key_entry;
     target->mark = 0;
     push_number(vm, stack, 1);
@@ -1909,7 +1909,7 @@ static void native_runtime_info(VM *vm, List *stack, List *global)
         vm_object_set_by_key(vm, table, "endian", 6, vm_make_bytes_value(vm, endian, strlen(endian)));
     }
 
-#ifdef DISTURB_ENABLE_FFI_CALLS
+#ifdef PAPAGAIO_ENABLE_FFI_CALLS
     vm_object_set_by_key(vm, table, "ffi_calls", 9, vm_make_int_value(vm, 1));
 #else
     vm_object_set_by_key(vm, table, "ffi_calls", 9, vm_make_int_value(vm, 0));
@@ -1926,8 +1926,8 @@ static double numeric_entry_read_at(ObjEntry *entry, Int i, int is_float);
 static int entry_is_data_value(ObjEntry *e)
 {
     if (!e) return 0;
-    Int t = disturb_obj_type(e->obj);
-    return t == DISTURB_T_TABLE || t == DISTURB_T_INT || t == DISTURB_T_FLOAT;
+    Int t = papagaio_obj_type(e->obj);
+    return t == PAPAGAIO_T_TABLE || t == PAPAGAIO_T_INT || t == PAPAGAIO_T_FLOAT;
 }
 
 static void native_append(VM *vm, List *stack, List *global)
@@ -1951,32 +1951,32 @@ static void native_append(VM *vm, List *stack, List *global)
     /* String append (original behaviour) */
     if (entry_is_string(dst) && entry_is_string(src)) {
         dst->obj = vm_update_shared_obj(vm, dst->obj,
-                                        disturb_bytes_append(dst->obj,
-                                                         disturb_bytes_data(src->obj),
-                                                         disturb_bytes_len(src->obj)));
+                                        papagaio_bytes_append(dst->obj,
+                                                         papagaio_bytes_data(src->obj),
+                                                         papagaio_bytes_len(src->obj)));
         return;
     }
 
     /* Numeric array append */
-    Int dst_type = disturb_obj_type(dst->obj);
-    Int src_type = disturb_obj_type(src->obj);
-    int dst_is_num = ((dst_type == DISTURB_T_INT && !entry_is_string(dst)) || dst_type == DISTURB_T_FLOAT);
-    int src_is_num = ((src_type == DISTURB_T_INT && !entry_is_string(src)) || src_type == DISTURB_T_FLOAT);
+    Int dst_type = papagaio_obj_type(dst->obj);
+    Int src_type = papagaio_obj_type(src->obj);
+    int dst_is_num = ((dst_type == PAPAGAIO_T_INT && !entry_is_string(dst)) || dst_type == PAPAGAIO_T_FLOAT);
+    int src_is_num = ((src_type == PAPAGAIO_T_INT && !entry_is_string(src)) || src_type == PAPAGAIO_T_FLOAT);
 
     if (dst_is_num && src_is_num) {
-        int dst_float = (dst_type == DISTURB_T_FLOAT);
-        int src_float = (src_type == DISTURB_T_FLOAT);
+        int dst_float = (dst_type == PAPAGAIO_T_FLOAT);
+        int src_float = (src_type == PAPAGAIO_T_FLOAT);
 
         if (dst_float == src_float) {
             /* Same element type: raw bytes concat */
-            size_t src_bytes = disturb_bytes_len(src->obj);
+            size_t src_bytes = papagaio_bytes_len(src->obj);
             dst->obj = vm_update_shared_obj(vm, dst->obj,
-                                            disturb_bytes_append(dst->obj,
-                                                             disturb_bytes_data(src->obj),
+                                            papagaio_bytes_append(dst->obj,
+                                                             papagaio_bytes_data(src->obj),
                                                              src_bytes));
         } else {
             /* Mismatched types: promote dst to float if needed, then append as floats */
-            Int src_elem = (Int)(disturb_bytes_len(src->obj) / (src_float ? sizeof(Float) : sizeof(Int)));
+            Int src_elem = (Int)(papagaio_bytes_len(src->obj) / (src_float ? sizeof(Float) : sizeof(Int)));
             if (!dst_float) {
                 /* Convert dst from int to float */
                 Int dst_elem = bytes_list_count(dst, sizeof(Int));
@@ -1984,7 +1984,7 @@ static void native_append(VM *vm, List *stack, List *global)
                 if (!new_dst) { fprintf(stderr, "append: allocation failed\n"); return; }
                 for (Int i = 0; i < dst_elem; i++) {
                     Int iv = 0;
-                    memcpy(&iv, disturb_bytes_data(dst->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+                    memcpy(&iv, papagaio_bytes_data(dst->obj) + (size_t)i * sizeof(Int), sizeof(Int));
                     Float fv = (Float)iv;
                     write_float_bytes(new_dst->obj, i, fv);
                 }
@@ -2000,10 +2000,10 @@ static void native_append(VM *vm, List *stack, List *global)
                 /* dst is float, src is int: convert src elements to float and append */
                 for (Int i = 0; i < src_elem; i++) {
                     Int iv = 0;
-                    memcpy(&iv, disturb_bytes_data(src->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+                    memcpy(&iv, papagaio_bytes_data(src->obj) + (size_t)i * sizeof(Int), sizeof(Int));
                     Float fv = (Float)iv;
                     dst->obj = vm_update_shared_obj(vm, dst->obj,
-                                                    disturb_bytes_append(dst->obj,
+                                                    papagaio_bytes_append(dst->obj,
                                                                      (const char *)&fv, sizeof(Float)));
                 }
             }
@@ -2012,13 +2012,13 @@ static void native_append(VM *vm, List *stack, List *global)
     }
 
     /* Table append: copy all elements from src into dst */
-    if (dst_type == DISTURB_T_TABLE && src_type == DISTURB_T_TABLE) {
+    if (dst_type == PAPAGAIO_T_TABLE && src_type == PAPAGAIO_T_TABLE) {
         for (Int i = 2; i < src->obj->size; i++) {
             ObjEntry *elem = (ObjEntry*)src->obj->data[i].p;
             if (!elem) continue;
             ObjEntry *cloned = vm_clone_entry_shallow(vm, elem, NULL);
             dst->obj = vm_update_shared_obj(vm, dst->obj,
-                                            disturb_table_add(dst->obj, cloned));
+                                            papagaio_table_add(dst->obj, cloned));
         }
         return;
     }
@@ -2165,8 +2165,8 @@ static void native_apply_scalar_math(VM *vm, List *stack, List *global,
     ObjEntry *scalar_entry = NULL;
 
     if (self) {
-        Int self_type = disturb_obj_type(self->obj);
-        if ((self_type == DISTURB_T_INT && !entry_is_string(self)) || self_type == DISTURB_T_FLOAT) {
+        Int self_type = papagaio_obj_type(self->obj);
+        if ((self_type == PAPAGAIO_T_INT && !entry_is_string(self)) || self_type == PAPAGAIO_T_FLOAT) {
             vec_entry = self;
             scalar_entry = native_arg(stack, argc, 0);
         }
@@ -2194,7 +2194,7 @@ static void native_apply_scalar_math(VM *vm, List *stack, List *global,
         return;
     }
 
-    int out_is_float = vec_is_float || disturb_obj_type(scalar_entry->obj) == DISTURB_T_FLOAT;
+    int out_is_float = vec_is_float || papagaio_obj_type(scalar_entry->obj) == PAPAGAIO_T_FLOAT;
     ObjEntry *res = out_is_float ? vm_make_float_list(vm, vec_count) : vm_make_int_list(vm, vec_count);
     if (!res) {
         fprintf(stderr, "%s: allocation failed\n", name);
@@ -2255,9 +2255,9 @@ static void native_spow(VM *vm, List *stack, List *global)
 static Int numeric_entry_count(ObjEntry *entry, int *out_is_float)
 {
     if (!entry) return 0;
-    Int t = disturb_obj_type(entry->obj);
-    if (t == DISTURB_T_FLOAT) { if (out_is_float) *out_is_float = 1; return bytes_list_count(entry, sizeof(Float)); }
-    if (t == DISTURB_T_INT && !entry_is_string(entry)) { if (out_is_float) *out_is_float = 0; return bytes_list_count(entry, sizeof(Int)); }
+    Int t = papagaio_obj_type(entry->obj);
+    if (t == PAPAGAIO_T_FLOAT) { if (out_is_float) *out_is_float = 1; return bytes_list_count(entry, sizeof(Float)); }
+    if (t == PAPAGAIO_T_INT && !entry_is_string(entry)) { if (out_is_float) *out_is_float = 0; return bytes_list_count(entry, sizeof(Int)); }
     return 0;
 }
 
@@ -2265,11 +2265,11 @@ static double numeric_entry_read_at(ObjEntry *entry, Int i, int is_float)
 {
     if (is_float) {
         Float fv = 0;
-        memcpy(&fv, disturb_bytes_data(entry->obj) + (size_t)i * sizeof(Float), sizeof(Float));
+        memcpy(&fv, papagaio_bytes_data(entry->obj) + (size_t)i * sizeof(Float), sizeof(Float));
         return (double)fv;
     } else {
         Int iv = 0;
-        memcpy(&iv, disturb_bytes_data(entry->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+        memcpy(&iv, papagaio_bytes_data(entry->obj) + (size_t)i * sizeof(Int), sizeof(Int));
         return (double)iv;
     }
 }
@@ -2402,8 +2402,8 @@ static void native_apply_unary_math(VM *vm, List *stack, List *global,
     {
         ObjEntry *self = native_this(vm);
         if (self) {
-            Int t = disturb_obj_type(self->obj);
-            if ((t == DISTURB_T_INT && !entry_is_string(self)) || t == DISTURB_T_FLOAT)
+            Int t = papagaio_obj_type(self->obj);
+            if ((t == PAPAGAIO_T_INT && !entry_is_string(self)) || t == PAPAGAIO_T_FLOAT)
                 entry = self;
         }
     }
@@ -2412,22 +2412,22 @@ static void native_apply_unary_math(VM *vm, List *stack, List *global,
         fprintf(stderr, "%s expects a number\n", name);
         return;
     }
-    Int type = disturb_obj_type(entry->obj);
-    if ((type == DISTURB_T_INT && !entry_is_string(entry)) || type == DISTURB_T_FLOAT) {
-        size_t elem_size = (type == DISTURB_T_FLOAT) ? sizeof(Float) : sizeof(Int);
+    Int type = papagaio_obj_type(entry->obj);
+    if ((type == PAPAGAIO_T_INT && !entry_is_string(entry)) || type == PAPAGAIO_T_FLOAT) {
+        size_t elem_size = (type == PAPAGAIO_T_FLOAT) ? sizeof(Float) : sizeof(Int);
         Int count = bytes_list_count(entry, elem_size);
         if (count > 1) {
             ObjEntry *res = vm_make_float_list(vm, count);
             if (!res) { fprintf(stderr, "%s: allocation failed\n", name); return; }
             for (Int i = 0; i < count; i++) {
                 double v = 0.0;
-                if (type == DISTURB_T_FLOAT) {
+                if (type == PAPAGAIO_T_FLOAT) {
                     Float fv = 0;
-                    memcpy(&fv, disturb_bytes_data(entry->obj) + (size_t)i * sizeof(Float), sizeof(Float));
+                    memcpy(&fv, papagaio_bytes_data(entry->obj) + (size_t)i * sizeof(Float), sizeof(Float));
                     v = (double)fv;
                 } else {
                     Int iv = 0;
-                    memcpy(&iv, disturb_bytes_data(entry->obj) + (size_t)i * sizeof(Int), sizeof(Int));
+                    memcpy(&iv, papagaio_bytes_data(entry->obj) + (size_t)i * sizeof(Int), sizeof(Int));
                     v = (double)iv;
                 }
                 Float result = (Float)fn(v);
@@ -2550,7 +2550,7 @@ static int list_index_valid(List *obj, Int index)
 
 static Int bytes_list_count(const ObjEntry *entry, size_t elem_size)
 {
-    size_t len = disturb_bytes_len(entry->obj);
+    size_t len = papagaio_bytes_len(entry->obj);
     if (elem_size == 0) return 0;
     return (Int)(len / elem_size);
 }
@@ -2574,15 +2574,15 @@ static Int bytes_list_insert_index(Int count, Int index)
 static List *bytes_list_insert(VM *vm, ObjEntry *target, size_t offset, const void *data, size_t len)
 {
     (void)vm;
-    size_t old_len = disturb_bytes_len(target->obj);
+    size_t old_len = papagaio_bytes_len(target->obj);
     size_t new_len = old_len + len;
     size_t bytes = 2 * sizeof(Value) + new_len;
     Value *next = (Value*)realloc(target->obj->data, bytes);
     if (!next && bytes > 0) return NULL;
     if (next) target->obj->data = next;
     List *obj = target->obj;
-    memmove(disturb_bytes_data(obj) + offset + len, disturb_bytes_data(obj) + offset, old_len - offset);
-    memcpy(disturb_bytes_data(obj) + offset, data, len);
+    memmove(papagaio_bytes_data(obj) + offset + len, papagaio_bytes_data(obj) + offset, old_len - offset);
+    memcpy(papagaio_bytes_data(obj) + offset, data, len);
     obj->size = (UHalf)(new_len + 2);
     obj->capacity = obj->size;
     target->obj = obj;
@@ -2592,11 +2592,11 @@ static List *bytes_list_insert(VM *vm, ObjEntry *target, size_t offset, const vo
 static int bytes_list_remove(VM *vm, ObjEntry *target, size_t offset, void *out, size_t len)
 {
     (void)vm;
-    size_t old_len = disturb_bytes_len(target->obj);
+    size_t old_len = papagaio_bytes_len(target->obj);
     if (offset + len > old_len) return 0;
-    if (out) memcpy(out, disturb_bytes_data(target->obj) + offset, len);
-    memmove(disturb_bytes_data(target->obj) + offset,
-            disturb_bytes_data(target->obj) + offset + len,
+    if (out) memcpy(out, papagaio_bytes_data(target->obj) + offset, len);
+    memmove(papagaio_bytes_data(target->obj) + offset,
+            papagaio_bytes_data(target->obj) + offset + len,
             old_len - offset - len);
     size_t new_len = old_len - len;
     target->obj->size = (UHalf)(new_len + 2);
@@ -2625,10 +2625,10 @@ static void native_slice(VM *vm, List *stack, List *global)
         return;
     }
 
-    Int type = disturb_obj_type(target->obj);
+    Int type = papagaio_obj_type(target->obj);
 
     /* ---- TABLE slice: return new table with elements [start, end) ---- */
-    if (type == DISTURB_T_TABLE) {
+    if (type == PAPAGAIO_T_TABLE) {
         Int size = (Int)(target->obj->size - 2);
         Int start = 0;
         Int end = size;
@@ -2653,15 +2653,15 @@ static void native_slice(VM *vm, List *stack, List *global)
             ObjEntry *elem = (ObjEntry*)target->obj->data[2 + i].p;
             if (!elem) continue;
             ObjEntry *cloned = vm_clone_entry_shallow(vm, elem, NULL);
-            res->obj = disturb_table_add(res->obj, cloned);
+            res->obj = papagaio_table_add(res->obj, cloned);
         }
         push_entry(vm, stack, res);
         return;
     }
 
     /* ---- NUMERIC ARRAY slice ---- */
-    if ((type == DISTURB_T_INT && !entry_is_string(target)) || type == DISTURB_T_FLOAT) {
-        int is_float = (type == DISTURB_T_FLOAT);
+    if ((type == PAPAGAIO_T_INT && !entry_is_string(target)) || type == PAPAGAIO_T_FLOAT) {
+        int is_float = (type == PAPAGAIO_T_FLOAT);
         size_t elem_size = is_float ? sizeof(Float) : sizeof(Int);
         Int count = bytes_list_count(target, elem_size);
         Int start = 0;
@@ -2685,8 +2685,8 @@ static void native_slice(VM *vm, List *stack, List *global)
         ObjEntry *res = is_float ? vm_make_float_list(vm, out_count) : vm_make_int_list(vm, out_count);
         if (!res) { fprintf(stderr, "slice: allocation failed\n"); return; }
         if (out_count > 0) {
-            memcpy(disturb_bytes_data(res->obj),
-                   disturb_bytes_data(target->obj) + (size_t)start * elem_size,
+            memcpy(papagaio_bytes_data(res->obj),
+                   papagaio_bytes_data(target->obj) + (size_t)start * elem_size,
                    (size_t)out_count * elem_size);
         }
         push_entry(vm, stack, res);
@@ -2698,8 +2698,8 @@ static void native_slice(VM *vm, List *stack, List *global)
         fprintf(stderr, "slice expects a string, table or numeric array\n");
         return;
     }
-    const char *s = disturb_bytes_data(target->obj);
-    size_t len = disturb_bytes_len(target->obj);
+    const char *s = papagaio_bytes_data(target->obj);
+    size_t len = papagaio_bytes_len(target->obj);
     Int start = 0;
     Int end = (Int)len;
     if (argc > arg_off) {
@@ -2728,8 +2728,8 @@ static void native_substr(VM *vm, List *stack, List *global)
         fprintf(stderr, "substr expects a string target\n");
         return;
     }
-    const char *s = disturb_bytes_data(target->obj);
-    size_t len = disturb_bytes_len(target->obj);
+    const char *s = papagaio_bytes_data(target->obj);
+    size_t len = papagaio_bytes_len(target->obj);
     Int start = 0;
     Int count = (Int)len;
     if (argc >= 1) {
@@ -2763,10 +2763,10 @@ static void native_upper(VM *vm, List *stack, List *global)
         fprintf(stderr, "upper expects a string target\n");
         return;
     }
-    size_t len = disturb_bytes_len(target->obj);
+    size_t len = papagaio_bytes_len(target->obj);
     char *buf = (char*)malloc(len);
     for (size_t i = 0; i < len; i++) {
-        buf[i] = (char)toupper((unsigned char)disturb_bytes_data(target->obj)[i]);
+        buf[i] = (char)toupper((unsigned char)papagaio_bytes_data(target->obj)[i]);
     }
     push_string(vm, stack, buf, len);
     free(buf);
@@ -2780,10 +2780,10 @@ static void native_lower(VM *vm, List *stack, List *global)
         fprintf(stderr, "lower expects a string target\n");
         return;
     }
-    size_t len = disturb_bytes_len(target->obj);
+    size_t len = papagaio_bytes_len(target->obj);
     char *buf = (char*)malloc(len);
     for (size_t i = 0; i < len; i++) {
-        buf[i] = (char)tolower((unsigned char)disturb_bytes_data(target->obj)[i]);
+        buf[i] = (char)tolower((unsigned char)papagaio_bytes_data(target->obj)[i]);
     }
     push_string(vm, stack, buf, len);
     free(buf);
@@ -2797,8 +2797,8 @@ static void native_trim(VM *vm, List *stack, List *global)
         fprintf(stderr, "trim expects a string target\n");
         return;
     }
-    const char *s = disturb_bytes_data(target->obj);
-    size_t len = disturb_bytes_len(target->obj);
+    const char *s = papagaio_bytes_data(target->obj);
+    size_t len = papagaio_bytes_len(target->obj);
     size_t start = 0;
     size_t end = len;
     while (start < len && isspace((unsigned char)s[start])) start++;
@@ -2821,8 +2821,8 @@ static void native_starts_with(VM *vm, List *stack, List *global)
         fprintf(stderr, "startsWith expects a string\n");
         return;
     }
-    const char *s = disturb_bytes_data(target->obj);
-    size_t len = disturb_bytes_len(target->obj);
+    const char *s = papagaio_bytes_data(target->obj);
+    size_t len = papagaio_bytes_len(target->obj);
     int ok = nlen <= len && memcmp(s, needle, nlen) == 0;
     push_number(vm, stack, ok ? 1 : 0);
 }
@@ -2842,8 +2842,8 @@ static void native_ends_with(VM *vm, List *stack, List *global)
         fprintf(stderr, "endsWith expects a string\n");
         return;
     }
-    const char *s = disturb_bytes_data(target->obj);
-    size_t len = disturb_bytes_len(target->obj);
+    const char *s = papagaio_bytes_data(target->obj);
+    size_t len = papagaio_bytes_len(target->obj);
     int ok = nlen <= len && memcmp(s + (len - nlen), needle, nlen) == 0;
     push_number(vm, stack, ok ? 1 : 0);
 }
@@ -2856,8 +2856,8 @@ static void native_split(VM *vm, List *stack, List *global)
         fprintf(stderr, "split expects a string target\n");
         return;
     }
-    const char *s = disturb_bytes_data(target->obj);
-    size_t len = disturb_bytes_len(target->obj);
+    const char *s = papagaio_bytes_data(target->obj);
+    size_t len = papagaio_bytes_len(target->obj);
     const char *delim = "";
     size_t dlen = 0;
     if (argc >= 1) {
@@ -2872,7 +2872,7 @@ static void native_split(VM *vm, List *stack, List *global)
     if (dlen == 0) {
         for (size_t i = 0; i < len; i++) {
             ObjEntry *part = vm_make_byte_value(vm, s + i, 1);
-            out->obj = disturb_table_add(out->obj, part);
+            out->obj = papagaio_table_add(out->obj, part);
         }
         stack = push_entry(vm, stack, out);
         return;
@@ -2883,7 +2883,7 @@ static void native_split(VM *vm, List *stack, List *global)
         size_t next = pos;
         while (next + dlen <= len && memcmp(s + next, delim, dlen) != 0) next++;
         ObjEntry *part = vm_make_byte_value(vm, s + pos, next - pos);
-        out->obj = disturb_table_add(out->obj, part);
+        out->obj = papagaio_table_add(out->obj, part);
         pos = next + dlen;
         if (next + dlen > len) break;
     }
@@ -2894,7 +2894,7 @@ static void native_join(VM *vm, List *stack, List *global)
 {
     uint32_t argc = native_argc(vm, global);
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || disturb_obj_type(target->obj) != DISTURB_T_TABLE) {
+    if (!target || papagaio_obj_type(target->obj) != PAPAGAIO_T_TABLE) {
         fprintf(stderr, "join expects a table/array target\n");
         return;
     }
@@ -2902,8 +2902,8 @@ static void native_join(VM *vm, List *stack, List *global)
     size_t dlen = 0;
     ObjEntry *arg0 = native_arg(stack, argc, 0);
     if (arg0 && entry_is_string(arg0)) {
-        delim = disturb_bytes_data(arg0->obj);
-        dlen = disturb_bytes_len(arg0->obj);
+        delim = papagaio_bytes_data(arg0->obj);
+        dlen = papagaio_bytes_len(arg0->obj);
     }
 
     StrBuf buf;
@@ -2912,7 +2912,7 @@ static void native_join(VM *vm, List *stack, List *global)
         ObjEntry *entry = (ObjEntry*)target->obj->data[i].p;
         if (i > 2 && dlen) sb_append_n(&buf, delim, dlen);
         ObjEntry *str = vm_stringify_value(vm, entry, 1);
-        sb_append_n(&buf, disturb_bytes_data(str->obj), disturb_bytes_len(str->obj));
+        sb_append_n(&buf, papagaio_bytes_data(str->obj), papagaio_bytes_len(str->obj));
     }
     push_string(vm, stack, buf.data, buf.len);
     sb_free(&buf);
@@ -2951,8 +2951,8 @@ static void native_replace_impl(VM *vm, List *stack, List *global, int replace_a
         return;
     }
 
-    const char *hay = disturb_bytes_data(target->obj);
-    size_t hlen = disturb_bytes_len(target->obj);
+    const char *hay = papagaio_bytes_data(target->obj);
+    size_t hlen = papagaio_bytes_len(target->obj);
     if (nlen == 0 || hlen == 0) {
         push_string(vm, stack, hay, hlen);
         return;
@@ -3006,8 +3006,8 @@ static void native_papagaio(VM *vm, List *stack, List *global)
         fprintf(stderr, "papagaio expects a string target\n");
         return;
     }
-    const char *input = disturb_bytes_data(target->obj);
-    size_t input_len = disturb_bytes_len(target->obj);
+    const char *input = papagaio_bytes_data(target->obj);
+    size_t input_len = papagaio_bytes_len(target->obj);
     char *out = papagaio_process_text(vm, input, input_len);
     if (!out) {
         fprintf(stderr, "papagaio failed\n");
@@ -3020,7 +3020,7 @@ static void native_papagaio(VM *vm, List *stack, List *global)
 static ObjEntry *native_object_target(VM *vm, List *stack, uint32_t argc)
 {
     ObjEntry *target = native_target(vm, stack, argc);
-    if (!target || disturb_obj_type(target->obj) != DISTURB_T_TABLE) return NULL;
+    if (!target || papagaio_obj_type(target->obj) != PAPAGAIO_T_TABLE) return NULL;
     return target;
 }
 
@@ -3037,8 +3037,8 @@ static void native_keys(VM *vm, List *stack, List *global)
         ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
         ObjEntry *key = vm_entry_key(child);
         if (!key || !entry_is_string(key)) continue;
-        ObjEntry *entry = vm_make_byte_value(vm, disturb_bytes_data(key->obj), disturb_bytes_len(key->obj));
-        out->obj = disturb_table_add(out->obj, entry);
+        ObjEntry *entry = vm_make_byte_value(vm, papagaio_bytes_data(key->obj), papagaio_bytes_len(key->obj));
+        out->obj = papagaio_table_add(out->obj, entry);
     }
     stack = push_entry(vm, stack, out);
 }
@@ -3055,7 +3055,7 @@ static void native_values(VM *vm, List *stack, List *global)
     for (Int i = 2; i < target->obj->size; i++) {
         ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
         if (!child) continue;
-        out->obj = disturb_table_add(out->obj, child);
+        out->obj = papagaio_table_add(out->obj, child);
     }
     stack = push_entry(vm, stack, out);
 }
@@ -3070,15 +3070,15 @@ static void native_has(VM *vm, List *stack, List *global)
         return;
     }
 
-    Int type = disturb_obj_type(target->obj);
-    if (entry_is_string(idx) && type == DISTURB_T_TABLE) {
-        const char *key = disturb_bytes_data(idx->obj);
-        size_t len = disturb_bytes_len(idx->obj);
+    Int type = papagaio_obj_type(target->obj);
+    if (entry_is_string(idx) && type == PAPAGAIO_T_TABLE) {
+        const char *key = papagaio_bytes_data(idx->obj);
+        size_t len = papagaio_bytes_len(idx->obj);
         for (Int i = 2; i < target->obj->size; i++) {
             ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
             ObjEntry *k = vm_entry_key(child);
             if (!k || !entry_is_string(k)) continue;
-            if (disturb_bytes_len(k->obj) == len && memcmp(disturb_bytes_data(k->obj), key, len) == 0) {
+            if (papagaio_bytes_len(k->obj) == len && memcmp(papagaio_bytes_data(k->obj), key, len) == 0) {
                 push_number(vm, stack, 1);
                 return;
             }
@@ -3087,7 +3087,7 @@ static void native_has(VM *vm, List *stack, List *global)
         return;
     }
 
-    if (disturb_obj_type(idx->obj) == DISTURB_T_INT || disturb_obj_type(idx->obj) == DISTURB_T_FLOAT) {
+    if (papagaio_obj_type(idx->obj) == PAPAGAIO_T_INT || papagaio_obj_type(idx->obj) == PAPAGAIO_T_FLOAT) {
         Int i = 0;
         if (!number_to_int(idx, &i)) {
             fprintf(stderr, "has expects integer index\n");
@@ -3116,15 +3116,15 @@ static void native_delete(VM *vm, List *stack, List *global)
         return;
     }
 
-    Int type = disturb_obj_type(target->obj);
-    if (entry_is_string(idx) && type == DISTURB_T_TABLE) {
-        const char *key = disturb_bytes_data(idx->obj);
-        size_t len = disturb_bytes_len(idx->obj);
+    Int type = papagaio_obj_type(target->obj);
+    if (entry_is_string(idx) && type == PAPAGAIO_T_TABLE) {
+        const char *key = papagaio_bytes_data(idx->obj);
+        size_t len = papagaio_bytes_len(idx->obj);
         for (Int i = 2; i < target->obj->size; i++) {
             ObjEntry *child = (ObjEntry*)target->obj->data[i].p;
             ObjEntry *k = vm_entry_key(child);
             if (!k || !entry_is_string(k)) continue;
-            if (disturb_bytes_len(k->obj) == len && memcmp(disturb_bytes_data(k->obj), key, len) == 0) {
+            if (papagaio_bytes_len(k->obj) == len && memcmp(papagaio_bytes_data(k->obj), key, len) == 0) {
                 urb_remove(target->obj, i);
                 push_number(vm, stack, 1);
                 return;
@@ -3134,7 +3134,7 @@ static void native_delete(VM *vm, List *stack, List *global)
         return;
     }
 
-    if (disturb_obj_type(idx->obj) == DISTURB_T_INT || disturb_obj_type(idx->obj) == DISTURB_T_FLOAT) {
+    if (papagaio_obj_type(idx->obj) == PAPAGAIO_T_INT || papagaio_obj_type(idx->obj) == PAPAGAIO_T_FLOAT) {
         Int i = 0;
         if (!number_to_int(idx, &i)) {
             fprintf(stderr, "delete expects integer index\n");
@@ -3144,12 +3144,12 @@ static void native_delete(VM *vm, List *stack, List *global)
             push_number(vm, stack, 0);
             return;
         }
-        if (type == DISTURB_T_TABLE) {
+        if (type == PAPAGAIO_T_TABLE) {
             urb_remove(target->obj, list_pos_from_index(target->obj, i));
             push_number(vm, stack, 1);
             return;
         }
-        if (type == DISTURB_T_INT) {
+        if (type == PAPAGAIO_T_INT) {
             Int count = bytes_list_count(target, entry_is_string(target) ? 1 : sizeof(Int));
             Int pos = 0;
             if (!bytes_list_index(count, i, &pos)) {
@@ -3164,7 +3164,7 @@ static void native_delete(VM *vm, List *stack, List *global)
             push_number(vm, stack, 1);
             return;
         }
-        if (type == DISTURB_T_FLOAT) {
+        if (type == PAPAGAIO_T_FLOAT) {
             Int count = bytes_list_count(target, sizeof(Float));
             Int pos = 0;
             if (!bytes_list_index(count, i, &pos)) {
@@ -3189,23 +3189,23 @@ static void native_push(VM *vm, List *stack, List *global)
         return;
     }
     uint32_t start = native_this(vm) ? 0 : 1;
-    Int type = disturb_obj_type(target->obj);
+    Int type = papagaio_obj_type(target->obj);
     for (uint32_t i = start; i < argc; i++) {
         ObjEntry *arg = native_arg(stack, argc, i);
         if (!arg) continue;
-        if (type == DISTURB_T_TABLE) {
+        if (type == PAPAGAIO_T_TABLE) {
             target->obj = vm_update_shared_obj(vm, target->obj,
-                                               disturb_table_add(target->obj, arg));
-        } else if (type == DISTURB_T_INT && entry_is_string(target)) {
+                                               papagaio_table_add(target->obj, arg));
+        } else if (type == PAPAGAIO_T_INT && entry_is_string(target)) {
             if (!entry_is_string(arg)) {
                 fprintf(stderr, "push expects string values\n");
                 return;
             }
             target->obj = vm_update_shared_obj(vm, target->obj,
-                                               disturb_bytes_append(target->obj,
-                                                                disturb_bytes_data(arg->obj),
-                                                                disturb_bytes_len(arg->obj)));
-        } else if (type == DISTURB_T_INT) {
+                                               papagaio_bytes_append(target->obj,
+                                                                papagaio_bytes_data(arg->obj),
+                                                                papagaio_bytes_len(arg->obj)));
+        } else if (type == PAPAGAIO_T_INT) {
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;
@@ -3217,12 +3217,12 @@ static void native_push(VM *vm, List *stack, List *global)
                 /* Auto-convert float → int (truncate) */
                 iv = (Int)fv;
             }
-            size_t offset = disturb_bytes_len(target->obj);
+            size_t offset = papagaio_bytes_len(target->obj);
             if (!bytes_list_insert(vm, target, offset, &iv, sizeof(Int))) {
                 fprintf(stderr, "push failed to grow list\n");
                 return;
             }
-        } else if (type == DISTURB_T_FLOAT) {
+        } else if (type == PAPAGAIO_T_FLOAT) {
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;
@@ -3231,7 +3231,7 @@ static void native_push(VM *vm, List *stack, List *global)
                 return;
             }
             Float out = is_float ? fv : (Float)iv;
-            size_t offset = disturb_bytes_len(target->obj);
+            size_t offset = papagaio_bytes_len(target->obj);
             if (!bytes_list_insert(vm, target, offset, &out, sizeof(Float))) {
                 fprintf(stderr, "push failed to grow list\n");
                 return;
@@ -3248,8 +3248,8 @@ static void native_pop(VM *vm, List *stack, List *global)
         fprintf(stderr, "pop expects target\n");
         return;
     }
-    Int type = disturb_obj_type(target->obj);
-    if (type == DISTURB_T_TABLE) {
+    Int type = papagaio_obj_type(target->obj);
+    if (type == PAPAGAIO_T_TABLE) {
         if (target->obj->size <= 2) return;
         Value v = urb_pop(target->obj);
         ObjEntry *entry = (ObjEntry*)v.p;
@@ -3258,16 +3258,16 @@ static void native_pop(VM *vm, List *stack, List *global)
         }
         return;
     }
-    if (type == DISTURB_T_INT && entry_is_string(target)) {
-        size_t len = disturb_bytes_len(target->obj);
+    if (type == PAPAGAIO_T_INT && entry_is_string(target)) {
+        size_t len = papagaio_bytes_len(target->obj);
         if (!len) return;
-        char c = disturb_bytes_data(target->obj)[len - 1];
+        char c = papagaio_bytes_data(target->obj)[len - 1];
         target->obj->size = (UHalf)(len - 1 + 2);
         target->obj->capacity = target->obj->size;
         push_string(vm, stack, &c, 1);
         return;
     }
-    if (type == DISTURB_T_INT) {
+    if (type == PAPAGAIO_T_INT) {
         Int count = bytes_list_count(target, sizeof(Int));
         if (count <= 0) return;
         Int idx = count - 1;
@@ -3277,7 +3277,7 @@ static void native_pop(VM *vm, List *stack, List *global)
         push_number(vm, stack, (double)iv);
         return;
     }
-    if (type == DISTURB_T_FLOAT) {
+    if (type == PAPAGAIO_T_FLOAT) {
         Int count = bytes_list_count(target, sizeof(Float));
         if (count <= 0) return;
         Int idx = count - 1;
@@ -3297,8 +3297,8 @@ static void native_shift(VM *vm, List *stack, List *global)
         fprintf(stderr, "shift expects target\n");
         return;
     }
-    Int type = disturb_obj_type(target->obj);
-    if (type == DISTURB_T_TABLE) {
+    Int type = papagaio_obj_type(target->obj);
+    if (type == PAPAGAIO_T_TABLE) {
         if (target->obj->size <= 2) return;
         Value v = urb_remove(target->obj, 2);
         ObjEntry *entry = (ObjEntry*)v.p;
@@ -3307,17 +3307,17 @@ static void native_shift(VM *vm, List *stack, List *global)
         }
         return;
     }
-    if (type == DISTURB_T_INT && entry_is_string(target)) {
-        size_t len = disturb_bytes_len(target->obj);
+    if (type == PAPAGAIO_T_INT && entry_is_string(target)) {
+        size_t len = papagaio_bytes_len(target->obj);
         if (!len) return;
-        char c = disturb_bytes_data(target->obj)[0];
-        memmove(disturb_bytes_data(target->obj), disturb_bytes_data(target->obj) + 1, len - 1);
+        char c = papagaio_bytes_data(target->obj)[0];
+        memmove(papagaio_bytes_data(target->obj), papagaio_bytes_data(target->obj) + 1, len - 1);
         target->obj->size = (UHalf)(len - 1 + 2);
         target->obj->capacity = target->obj->size;
         push_string(vm, stack, &c, 1);
         return;
     }
-    if (type == DISTURB_T_INT) {
+    if (type == PAPAGAIO_T_INT) {
         Int count = bytes_list_count(target, sizeof(Int));
         if (count <= 0) return;
         Int iv = 0;
@@ -3325,7 +3325,7 @@ static void native_shift(VM *vm, List *stack, List *global)
         push_number(vm, stack, (double)iv);
         return;
     }
-    if (type == DISTURB_T_FLOAT) {
+    if (type == PAPAGAIO_T_FLOAT) {
         Int count = bytes_list_count(target, sizeof(Float));
         if (count <= 0) return;
         Float fv = 0;
@@ -3344,21 +3344,21 @@ static void native_unshift(VM *vm, List *stack, List *global)
         return;
     }
     uint32_t start = native_this(vm) ? 0 : 1;
-    Int type = disturb_obj_type(target->obj);
+    Int type = papagaio_obj_type(target->obj);
     for (uint32_t i = argc; i-- > start;) {
         ObjEntry *arg = native_arg(stack, argc, i);
         if (!arg) continue;
-        if (type == DISTURB_T_TABLE) {
+        if (type == PAPAGAIO_T_TABLE) {
             Value v;
             v.p = arg;
             urb_insert(target->obj, 2, v);
-        } else if (type == DISTURB_T_INT && entry_is_string(target)) {
+        } else if (type == PAPAGAIO_T_INT && entry_is_string(target)) {
             if (!entry_is_string(arg)) {
                 fprintf(stderr, "unshift expects string values\n");
                 return;
             }
-            size_t len = disturb_bytes_len(target->obj);
-            size_t add = disturb_bytes_len(arg->obj);
+            size_t len = papagaio_bytes_len(target->obj);
+            size_t add = papagaio_bytes_len(arg->obj);
             size_t bytes = 2 * sizeof(Value) + len + add;
             Value *data = (Value*)realloc(target->obj->data, bytes);
             if (!data && bytes > 0) {
@@ -3366,11 +3366,11 @@ static void native_unshift(VM *vm, List *stack, List *global)
                 return;
             }
             if (data) target->obj->data = data;
-            memmove(disturb_bytes_data(target->obj) + add, disturb_bytes_data(target->obj), len);
-            memcpy(disturb_bytes_data(target->obj), disturb_bytes_data(arg->obj), add);
+            memmove(papagaio_bytes_data(target->obj) + add, papagaio_bytes_data(target->obj), len);
+            memcpy(papagaio_bytes_data(target->obj), papagaio_bytes_data(arg->obj), add);
             target->obj->size = (UHalf)(len + add + 2);
             target->obj->capacity = target->obj->size;
-        } else if (type == DISTURB_T_INT) {
+        } else if (type == PAPAGAIO_T_INT) {
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;
@@ -3390,7 +3390,7 @@ static void native_unshift(VM *vm, List *stack, List *global)
                 fprintf(stderr, "unshift failed to grow list\n");
                 return;
             }
-        } else if (type == DISTURB_T_FLOAT) {
+        } else if (type == PAPAGAIO_T_FLOAT) {
             Int iv = 0;
             Float fv = 0;
             int is_float = 0;
@@ -3422,28 +3422,28 @@ static void native_insert(VM *vm, List *stack, List *global)
         fprintf(stderr, "insert expects integer index\n");
         return;
     }
-    Int type = disturb_obj_type(target->obj);
-    if (type == DISTURB_T_TABLE) {
+    Int type = papagaio_obj_type(target->obj);
+    if (type == PAPAGAIO_T_TABLE) {
         Value v;
         v.p = val;
         urb_insert(target->obj, list_pos_from_index(target->obj, index), v);
         return;
     }
-    if (type == DISTURB_T_INT && entry_is_string(target)) {
+    if (type == PAPAGAIO_T_INT && entry_is_string(target)) {
         if (!entry_is_string(val)) {
             fprintf(stderr, "insert expects string value\n");
             return;
         }
-        size_t len = disturb_bytes_len(target->obj);
-        size_t add = disturb_bytes_len(val->obj);
+        size_t len = papagaio_bytes_len(target->obj);
+        size_t add = papagaio_bytes_len(val->obj);
         Int insert_at = bytes_list_insert_index((Int)len, index);
-        if (!bytes_list_insert(vm, target, (size_t)insert_at, disturb_bytes_data(val->obj), add)) {
+        if (!bytes_list_insert(vm, target, (size_t)insert_at, papagaio_bytes_data(val->obj), add)) {
             fprintf(stderr, "insert failed to grow string\n");
             return;
         }
         return;
     }
-    if (type == DISTURB_T_INT) {
+    if (type == PAPAGAIO_T_INT) {
         Int iv = 0;
         Float fv = 0;
         int is_float = 0;
@@ -3468,7 +3468,7 @@ static void native_insert(VM *vm, List *stack, List *global)
         }
         return;
     }
-    if (type == DISTURB_T_FLOAT) {
+    if (type == PAPAGAIO_T_FLOAT) {
         Int iv = 0;
         Float fv = 0;
         int is_float = 0;
@@ -3497,16 +3497,16 @@ static void native_remove(VM *vm, List *stack, List *global)
         fprintf(stderr, "remove expects target and index\n");
         return;
     }
-    Int type = disturb_obj_type(target->obj);
-    if (type == DISTURB_T_TABLE) {
+    Int type = papagaio_obj_type(target->obj);
+    if (type == PAPAGAIO_T_TABLE) {
         if (entry_is_string(idx)) {
-            size_t key_len = disturb_bytes_len(idx->obj);
+            size_t key_len = papagaio_bytes_len(idx->obj);
             for (Int i = 2; i < target->obj->size; i++) {
                 ObjEntry *entry = (ObjEntry*)target->obj->data[i].p;
                 ObjEntry *key = vm_entry_key(entry);
                 if (!key || !entry_is_string(key)) continue;
-                if (disturb_bytes_len(key->obj) != key_len ||
-                    memcmp(disturb_bytes_data(key->obj), disturb_bytes_data(idx->obj), key_len) != 0) {
+                if (papagaio_bytes_len(key->obj) != key_len ||
+                    memcmp(papagaio_bytes_data(key->obj), papagaio_bytes_data(idx->obj), key_len) != 0) {
                     continue;
                 }
                 Value v = urb_remove(target->obj, i);
@@ -3536,8 +3536,8 @@ static void native_remove(VM *vm, List *stack, List *global)
         fprintf(stderr, "remove expects integer index\n");
         return;
     }
-    if (type == DISTURB_T_INT && entry_is_string(target)) {
-        size_t len = disturb_bytes_len(target->obj);
+    if (type == PAPAGAIO_T_INT && entry_is_string(target)) {
+        size_t len = papagaio_bytes_len(target->obj);
         Int pos = 0;
         if (!bytes_list_index((Int)len, index, &pos)) return;
         char c = 0;
@@ -3545,7 +3545,7 @@ static void native_remove(VM *vm, List *stack, List *global)
         push_string(vm, stack, &c, 1);
         return;
     }
-    if (type == DISTURB_T_INT) {
+    if (type == PAPAGAIO_T_INT) {
         Int count = bytes_list_count(target, sizeof(Int));
         Int pos = 0;
         if (!bytes_list_index(count, index, &pos)) return;
@@ -3554,7 +3554,7 @@ static void native_remove(VM *vm, List *stack, List *global)
         push_number(vm, stack, (double)iv);
         return;
     }
-    if (type == DISTURB_T_FLOAT) {
+    if (type == PAPAGAIO_T_FLOAT) {
         Int count = bytes_list_count(target, sizeof(Float));
         Int pos = 0;
         if (!bytes_list_index(count, index, &pos)) return;
@@ -3577,14 +3577,14 @@ NativeFn vm_lookup_native(const char *name)
     if (strcmp(name, "copy") == 0) return native_copy;
     if (strcmp(name, "toInt") == 0) return native_to_int;
     if (strcmp(name, "toFloat") == 0) return native_to_float;
-    #ifdef DISTURB_ENABLE_IO
+    #ifdef PAPAGAIO_ENABLE_IO
     if (strcmp(name, "read") == 0) return native_read;
     if (strcmp(name, "write") == 0) return native_write;
     #endif
-    #ifndef DISTURB_EMBEDDED
+    #ifndef PAPAGAIO_EMBEDDED
     if (strcmp(name, "import") == 0) return native_import;
     #endif
-    #ifdef DISTURB_ENABLE_FFI
+    #ifdef PAPAGAIO_ENABLE_FFI
     if (strcmp(name, "ffiOpen") == 0) return native_ffi_open;
 #endif
     if (strcmp(name, "eval") == 0) return native_eval;

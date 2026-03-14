@@ -100,32 +100,32 @@ static void sb_free(StrBuf *b)
     b->cap = 0;
 }
 
-static size_t disturb_bytes_max(void)
+static size_t papagaio_bytes_max(void)
 {
     return (size_t)(~(UHalf)0);
 }
 
-const char *disturb_type_name(Int type)
+const char *papagaio_type_name(Int type)
 {
     switch (type) {
-    case DISTURB_T_NULL: return "null";
-    case DISTURB_T_INT: return "int";
-    case DISTURB_T_FLOAT: return "float";
-    case DISTURB_T_TABLE: return "table";
+    case PAPAGAIO_T_NULL: return "null";
+    case PAPAGAIO_T_INT: return "int";
+    case PAPAGAIO_T_FLOAT: return "float";
+    case PAPAGAIO_T_TABLE: return "table";
     
-    case DISTURB_T_NATIVE: return "native";
-    case DISTURB_T_LAMBDA: return "lambda";
-    case DISTURB_T_VIEW: return "view";
+    case PAPAGAIO_T_NATIVE: return "native";
+    case PAPAGAIO_T_LAMBDA: return "lambda";
+    case PAPAGAIO_T_VIEW: return "view";
     default: return "unknown";
     }
 }
 
-Int disturb_obj_type(const List *obj)
+Int papagaio_obj_type(const List *obj)
 {
     return obj->data[0].i;
 }
 
-ObjEntry *disturb_obj_key(const List *obj)
+ObjEntry *papagaio_obj_key(const List *obj)
 {
     return (ObjEntry*)obj->data[1].p;
 }
@@ -135,7 +135,7 @@ ObjEntry *vm_entry_key(const ObjEntry *entry)
     if (!entry) return NULL;
     if (entry->key) return entry->key;
     if (!entry->obj) return NULL;
-    return disturb_obj_key(entry->obj);
+    return papagaio_obj_key(entry->obj);
 }
 
 List *vm_update_shared_obj(VM *vm, List *old_obj, List *new_obj)
@@ -150,26 +150,26 @@ List *vm_update_shared_obj(VM *vm, List *old_obj, List *new_obj)
     return new_obj;
 }
 
-char *disturb_bytes_data(List *obj)
+char *papagaio_bytes_data(List *obj)
 {
     return (char*)(obj->data + 2);
 }
 
-size_t disturb_bytes_len(const List *obj)
+size_t papagaio_bytes_len(const List *obj)
 {
     if (obj->size < 2) return 0;
     return (size_t)obj->size - 2;
 }
 
-static int disturb_bytes_eq_bytes(const List *obj, const char *s, size_t len)
+static int papagaio_bytes_eq_bytes(const List *obj, const char *s, size_t len)
 {
-    if (disturb_bytes_len(obj) != len) return 0;
-    return memcmp(disturb_bytes_data((List*)obj), s, len) == 0;
+    if (papagaio_bytes_len(obj) != len) return 0;
+    return memcmp(papagaio_bytes_data((List*)obj), s, len) == 0;
 }
 
 static int entry_is_string(const ObjEntry *entry)
 {
-    return entry && entry->is_string && disturb_obj_type(entry->obj) == DISTURB_T_INT;
+    return entry && entry->is_string && papagaio_obj_type(entry->obj) == PAPAGAIO_T_INT;
 }
 
 static int vm_obj_is_cached_int(const VM *vm, const List *obj)
@@ -185,8 +185,8 @@ static int vm_entry_is_cached_int(const VM *vm, const ObjEntry *entry)
 
 static size_t vm_elem_size(Int type)
 {
-    if (type == DISTURB_T_INT) return sizeof(Int);
-    if (type == DISTURB_T_FLOAT) return sizeof(Float);
+    if (type == PAPAGAIO_T_INT) return sizeof(Int);
+    if (type == PAPAGAIO_T_FLOAT) return sizeof(Float);
     return 1;
 }
 
@@ -200,40 +200,40 @@ static Int vm_bytes_to_count(size_t bytes_len, Int type)
 static int vm_read_int_at(const List *obj, Int index, Int *out)
 {
     if (!obj || index < 0) return 0;
-    size_t bytes_len = disturb_bytes_len((List*)obj);
+    size_t bytes_len = papagaio_bytes_len((List*)obj);
     size_t offset = (size_t)index * sizeof(Int);
     if (offset + sizeof(Int) > bytes_len) return 0;
-    memcpy(out, disturb_bytes_data((List*)obj) + offset, sizeof(Int));
+    memcpy(out, papagaio_bytes_data((List*)obj) + offset, sizeof(Int));
     return 1;
 }
 
 static int vm_write_int_at(List *obj, Int index, Int value)
 {
     if (!obj || index < 0) return 0;
-    size_t bytes_len = disturb_bytes_len(obj);
+    size_t bytes_len = papagaio_bytes_len(obj);
     size_t offset = (size_t)index * sizeof(Int);
     if (offset + sizeof(Int) > bytes_len) return 0;
-    memcpy(disturb_bytes_data(obj) + offset, &value, sizeof(Int));
+    memcpy(papagaio_bytes_data(obj) + offset, &value, sizeof(Int));
     return 1;
 }
 
 static int vm_read_float_at(const List *obj, Int index, Float *out)
 {
     if (!obj || index < 0) return 0;
-    size_t bytes_len = disturb_bytes_len((List*)obj);
+    size_t bytes_len = papagaio_bytes_len((List*)obj);
     size_t offset = (size_t)index * sizeof(Float);
     if (offset + sizeof(Float) > bytes_len) return 0;
-    memcpy(out, disturb_bytes_data((List*)obj) + offset, sizeof(Float));
+    memcpy(out, papagaio_bytes_data((List*)obj) + offset, sizeof(Float));
     return 1;
 }
 
 static int vm_write_float_at(List *obj, Int index, Float value)
 {
     if (!obj || index < 0) return 0;
-    size_t bytes_len = disturb_bytes_len(obj);
+    size_t bytes_len = papagaio_bytes_len(obj);
     size_t offset = (size_t)index * sizeof(Float);
     if (offset + sizeof(Float) > bytes_len) return 0;
-    memcpy(disturb_bytes_data(obj) + offset, &value, sizeof(Float));
+    memcpy(papagaio_bytes_data(obj) + offset, &value, sizeof(Float));
     return 1;
 }
 
@@ -243,7 +243,7 @@ static void vm_set_int_single(List *obj, Int value)
     size_t len = sizeof(Int);
     if ((size_t)obj->capacity < len + 2) return;
     obj->size = (UHalf)(len + 2);
-    memcpy(disturb_bytes_data(obj), &value, sizeof(Int));
+    memcpy(papagaio_bytes_data(obj), &value, sizeof(Int));
 }
 
 static void vm_set_float_single(List *obj, Float value)
@@ -252,7 +252,7 @@ static void vm_set_float_single(List *obj, Float value)
     size_t len = sizeof(Float);
     if ((size_t)obj->capacity < len + 2) return;
     obj->size = (UHalf)(len + 2);
-    memcpy(disturb_bytes_data(obj), &value, sizeof(Float));
+    memcpy(papagaio_bytes_data(obj), &value, sizeof(Float));
 }
 
 static int vm_view_from_name(const char *name, size_t len, ViewType *out)
@@ -404,7 +404,7 @@ static void free_data_node_put(VM *vm, FreeDataNode *node)
     vm->free_data_node_pool = node;
 }
 
-static List *disturb_obj_new_list(Int type, ObjEntry *key_entry, Int reserve)
+static List *papagaio_obj_new_list(Int type, ObjEntry *key_entry, Int reserve)
 {
     List *obj = urb_new(2 + reserve);
     Value v;
@@ -477,9 +477,9 @@ List *vm_alloc_list(VM *vm, Int type, ObjEntry *key_entry, Int reserve)
     return obj;
 }
 
-static List *disturb_obj_new_bytes(Int type, ObjEntry *key_entry, const char *s, size_t len)
+static List *papagaio_obj_new_bytes(Int type, ObjEntry *key_entry, const char *s, size_t len)
 {
-    if (len > disturb_bytes_max() - 2) {
+    if (len > papagaio_bytes_max() - 2) {
         PANIC("byte object too large.");
     }
 
@@ -496,17 +496,17 @@ static List *disturb_obj_new_bytes(Int type, ObjEntry *key_entry, const char *s,
     obj->data[0].i = type;
     obj->data[1].p = key_entry;
     if (len && s) {
-        memcpy(disturb_bytes_data(obj), s, len);
+        memcpy(papagaio_bytes_data(obj), s, len);
     }
-    disturb_bytes_data(obj)[len] = '\0';  /* NUL-terminate for FFI safety */
+    papagaio_bytes_data(obj)[len] = '\0';  /* NUL-terminate for FFI safety */
     return obj;
 }
 
 
 
-static void disturb_obj_clear(List *obj)
+static void papagaio_obj_clear(List *obj)
 {
-    if (disturb_obj_type(obj) == DISTURB_T_NATIVE && obj->size >= 3) {
+    if (papagaio_obj_type(obj) == PAPAGAIO_T_NATIVE && obj->size >= 3) {
         NativeBox *box = (NativeBox*)obj->data[2].p;
         if (box) {
             if (box->free_data && box->data) {
@@ -515,7 +515,7 @@ static void disturb_obj_clear(List *obj)
             free(box);
         }
     }
-    if (disturb_obj_type(obj) == DISTURB_T_LAMBDA && obj->size >= 3) {
+    if (papagaio_obj_type(obj) == PAPAGAIO_T_LAMBDA && obj->size >= 3) {
         FunctionBox *box = (FunctionBox*)obj->data[2].p;
         if (box) {
             free(box->code);
@@ -537,9 +537,9 @@ static void disturb_obj_clear(List *obj)
 
 static void vm_pool_push(VM *vm, List *obj);
 
-static void disturb_obj_free(VM *vm, List *obj)
+static void papagaio_obj_free(VM *vm, List *obj)
 {
-    disturb_obj_clear(obj);
+    papagaio_obj_clear(obj);
     if (obj) {
         free(obj->data);
         if (!list_in_slabs(vm, obj)) free(obj);
@@ -552,7 +552,7 @@ void vm_free_list(VM *vm, List *obj)
         vm_pool_push(vm, obj);
         return;
     }
-    disturb_obj_free(NULL, obj);
+    papagaio_obj_free(NULL, obj);
 }
 
 static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s, size_t len)
@@ -614,8 +614,8 @@ static List *vm_alloc_bytes(VM *vm, Int type, ObjEntry *key_entry, const char *s
     obj->size = (UHalf)(len + 2);
     obj->data[0].i = type;
     obj->data[1].p = key_entry;
-    if (len && s) memcpy(disturb_bytes_data(obj), s, len);
-    disturb_bytes_data(obj)[len] = '\0';  /* NUL-terminate for FFI safety */
+    if (len && s) memcpy(papagaio_bytes_data(obj), s, len);
+    papagaio_bytes_data(obj)[len] = '\0';  /* NUL-terminate for FFI safety */
     return obj;
 }
 
@@ -623,11 +623,11 @@ static void vm_pool_push(VM *vm, List *obj)
 {
     if (!vm || !obj) return;
     if (vm_obj_is_cached_int(vm, obj)) return;
-    disturb_obj_clear(obj);
+    papagaio_obj_clear(obj);
     size_t data_bytes = 0;
     if (obj->data) {
-        Int type = disturb_obj_type(obj);
-        if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
+        Int type = papagaio_obj_type(obj);
+        if (type == PAPAGAIO_T_INT || type == PAPAGAIO_T_FLOAT) {
             size_t bytes_len = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
             data_bytes = 2 * sizeof(Value) + bytes_len;
         } else {
@@ -708,8 +708,8 @@ void vm_flush_reuse(VM *vm)
 static size_t vm_obj_alloc_bytes(const List *obj)
 {
     if (!obj) return 0;
-    Int type = disturb_obj_type(obj);
-    if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
+    Int type = papagaio_obj_type(obj);
+    if (type == PAPAGAIO_T_INT || type == PAPAGAIO_T_FLOAT) {
         size_t bytes_len = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
         return sizeof(List) + 2 * sizeof(Value) + bytes_len;
     }
@@ -767,8 +767,8 @@ int vm_gc_stats(VM *vm, GcStats *out)
                 urb_push(mark_stack, kv);
             }
             if (!entry->obj) continue;
-            Int type = disturb_obj_type(entry->obj);
-            if (type == DISTURB_T_TABLE) {
+            Int type = papagaio_obj_type(entry->obj);
+            if (type == PAPAGAIO_T_TABLE) {
                 List *obj = entry->obj;
                 for (Int j = 2; j < obj->size; j++) {
                     ObjEntry *child = (ObjEntry*)obj->data[j].p;
@@ -858,10 +858,10 @@ static void vm_table_add_entry(VM *vm, ObjEntry *target, ObjEntry *entry)
 {
     if (!target) return;
     List *old_obj = target->obj;
-    vm_entry_set_obj(vm, target, vm_update_shared_obj(vm, old_obj, disturb_table_add(old_obj, entry)));
+    vm_entry_set_obj(vm, target, vm_update_shared_obj(vm, old_obj, papagaio_table_add(old_obj, entry)));
 }
 
-List *disturb_table_add(List *obj, ObjEntry *entry)
+List *papagaio_table_add(List *obj, ObjEntry *entry)
 {
     Value v;
     v.p = entry;
@@ -869,11 +869,11 @@ List *disturb_table_add(List *obj, ObjEntry *entry)
     return obj;
 }
 
-List *disturb_bytes_append(List *obj, const char *bytes, size_t len)
+List *papagaio_bytes_append(List *obj, const char *bytes, size_t len)
 {
-    size_t old_len = disturb_bytes_len(obj);
+    size_t old_len = papagaio_bytes_len(obj);
     size_t new_len = old_len + len;
-    if (new_len > disturb_bytes_max() - 2) {
+    if (new_len > papagaio_bytes_max() - 2) {
         PANIC("byte object too large.");
     }
     size_t bytes_size = 2 * sizeof(Value) + new_len + 1;  /* +1 for NUL sentinel */
@@ -883,17 +883,17 @@ List *disturb_bytes_append(List *obj, const char *bytes, size_t len)
     }
     if (data) obj->data = data;
     if (len) {
-        memcpy(disturb_bytes_data(obj) + old_len, bytes, len);
+        memcpy(papagaio_bytes_data(obj) + old_len, bytes, len);
     }
-    disturb_bytes_data(obj)[new_len] = '\0';  /* NUL-terminate for FFI safety */
+    papagaio_bytes_data(obj)[new_len] = '\0';  /* NUL-terminate for FFI safety */
     obj->size = (UHalf)(new_len + 2);
     obj->capacity = (UHalf)(new_len + 2);
     return obj;
 }
 
-static int disturb_bytes_eq_cstr(const List *obj, const char *s)
+static int papagaio_bytes_eq_cstr(const List *obj, const char *s)
 {
-    return disturb_bytes_eq_bytes(obj, s, strlen(s));
+    return papagaio_bytes_eq_bytes(obj, s, strlen(s));
 }
 
 static uint32_t vm_hash_bytes(const char *bytes, size_t len)
@@ -984,7 +984,7 @@ static ObjEntry *vm_intern_lookup_hashed(VM *vm, const char *bytes, size_t len, 
         ObjEntry *entry = slot->key_entry;
         if (!entry) return NULL;
         if (slot->hash == hash && slot->len == (uint32_t)len &&
-            entry->obj && disturb_bytes_eq_bytes(entry->obj, bytes, len)) {
+            entry->obj && papagaio_bytes_eq_bytes(entry->obj, bytes, len)) {
             return entry;
         }
         idx = (idx + 1) & mask;
@@ -1030,7 +1030,7 @@ static ObjEntry *vm_intern_insert_hashed(VM *vm, ObjEntry *key_entry, const char
         }
         if (slot->hash == hash && slot->len == (uint32_t)len &&
             slot->key_entry->obj &&
-            disturb_bytes_eq_bytes(slot->key_entry->obj, bytes, len)) {
+            papagaio_bytes_eq_bytes(slot->key_entry->obj, bytes, len)) {
             return slot->key_entry;
         }
         idx = (idx + 1) & mask;
@@ -1228,7 +1228,7 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
             ObjEntry *entry = vm->reg[idx];
             if (entry) {
                 vm_entry_set_obj(vm, entry, obj);
-                entry->key = obj ? disturb_obj_key(obj) : NULL;
+                entry->key = obj ? papagaio_obj_key(obj) : NULL;
                 entry->in_use = 1;
                 entry->mark = 0;
                 entry->is_string = 0;
@@ -1252,7 +1252,7 @@ static ObjEntry *vm_reg_alloc(VM *vm, List *obj)
     entry->reg_index = vm->reg_count;
     vm->reg[vm->reg_count++] = entry;
     vm_entry_set_obj(vm, entry, obj);
-    entry->key = obj ? disturb_obj_key(obj) : NULL;
+    entry->key = obj ? papagaio_obj_key(obj) : NULL;
     entry->in_use = 1;
     entry->mark = 0;
     entry->is_string = 0;
@@ -1292,7 +1292,7 @@ static ObjEntry *vm_make_native_entry(VM *vm, const char *key, const char *fn_na
         fprintf(stderr, "unknown native: %s\n", fn_name);
         return NULL;
     }
-    List *obj = vm_alloc_list(vm, DISTURB_T_NATIVE, key_entry, 1);
+    List *obj = vm_alloc_list(vm, PAPAGAIO_T_NATIVE, key_entry, 1);
     NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
     box->fn = fn;
     box->data = NULL;
@@ -1309,7 +1309,7 @@ ObjEntry *vm_make_native_entry_data(VM *vm, const char *key, NativeFn fn, void *
 {
     ObjEntry *key_entry = key ? vm_make_key(vm, key) : NULL;
     if (!fn) return NULL;
-    List *obj = vm_alloc_list(vm, DISTURB_T_NATIVE, key_entry, 1);
+    List *obj = vm_alloc_list(vm, PAPAGAIO_T_NATIVE, key_entry, 1);
     NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
     box->fn = fn;
     box->data = data;
@@ -1330,7 +1330,7 @@ static ObjEntry *vm_make_key_len(VM *vm, const char *name, size_t len)
         hash = vm_hash_bytes(name, len);
     }
 
-    List *key_obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, name, len);
+    List *key_obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, name, len);
     ObjEntry *entry = vm_reg_alloc(vm, key_obj);
     if (entry) {
         entry->is_string = 1;
@@ -1357,7 +1357,7 @@ static ObjEntry *vm_find_by_key(VM *vm, const char *name)
         if (!key) continue;
         if (!entry_is_string(key)) continue;
         if (wanted && key == wanted) return entry;
-        if (disturb_bytes_eq_bytes(key->obj, name, len)) return entry;
+        if (papagaio_bytes_eq_bytes(key->obj, name, len)) return entry;
     }
     return NULL;
 }
@@ -1377,7 +1377,7 @@ int vm_global_remove_by_key(VM *vm, const char *name)
         ObjEntry *key = vm_entry_key(entry);
         if (!key) continue;
         if (!entry_is_string(key)) continue;
-        if ((wanted && key == wanted) || disturb_bytes_eq_bytes(key->obj, name, len)) {
+        if ((wanted && key == wanted) || papagaio_bytes_eq_bytes(key->obj, name, len)) {
             urb_remove(global, i);
             return 1;
         }
@@ -1404,8 +1404,8 @@ static void vm_mark_entry_root(VM *vm, ObjEntry *root)
             urb_push(mark_stack, kv);
         }
         if (!entry->obj) continue;
-        Int type = disturb_obj_type(entry->obj);
-        if (type == DISTURB_T_TABLE) {
+        Int type = papagaio_obj_type(entry->obj);
+        if (type == PAPAGAIO_T_TABLE) {
             List *obj = entry->obj;
             for (Int j = 2; j < obj->size; j++) {
                 ObjEntry *child = (ObjEntry*)obj->data[j].p;
@@ -1495,7 +1495,7 @@ ObjEntry *vm_global_find_by_key(List *global, const char *name)
         ObjEntry *key = vm_entry_key(entry);
         if (!key) continue;
         if (!entry_is_string(key)) continue;
-        if (disturb_bytes_eq_cstr(key->obj, name)) return entry;
+        if (papagaio_bytes_eq_cstr(key->obj, name)) return entry;
     }
     return NULL;
 }
@@ -1505,8 +1505,8 @@ static ObjEntry *vm_object_find_direct(VM *vm, List *obj, const char *name, size
     if (!obj) return NULL;
     ObjEntry *wanted = (vm && vm->keyintern_enabled) ? vm_intern_lookup(vm, name, len) : NULL;
     Int start = 2;
-    Int type = disturb_obj_type(obj);
-    if (type == DISTURB_T_NATIVE || type == DISTURB_T_LAMBDA) start = 3;
+    Int type = papagaio_obj_type(obj);
+    if (type == PAPAGAIO_T_NATIVE || type == PAPAGAIO_T_LAMBDA) start = 3;
     for (Int i = start; i < obj->size; i++) {
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         if (!entry) continue;
@@ -1514,7 +1514,7 @@ static ObjEntry *vm_object_find_direct(VM *vm, List *obj, const char *name, size
         if (!key) continue;
         if (!entry_is_string(key)) continue;
         if (wanted && key == wanted) return entry;
-        if (disturb_bytes_eq_bytes(key->obj, name, len)) return entry;
+        if (papagaio_bytes_eq_bytes(key->obj, name, len)) return entry;
     }
     return NULL;
 }
@@ -1535,22 +1535,22 @@ Int vm_value_len_entry(const ObjEntry *entry)
 {
     if (!entry || !entry->in_use) return 0;
     List *obj = entry->obj;
-    Int type = disturb_obj_type(obj);
+    Int type = papagaio_obj_type(obj);
     switch (type) {
-    case DISTURB_T_NULL:
+    case PAPAGAIO_T_NULL:
         return 0;
-    case DISTURB_T_INT:
+    case PAPAGAIO_T_INT:
         if (entry_is_string(entry)) {
-            return (Int)disturb_bytes_len(obj);
+            return (Int)papagaio_bytes_len(obj);
         }
-        return vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_INT);
-    case DISTURB_T_FLOAT:
-        return vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_FLOAT);
-    case DISTURB_T_TABLE:
+        return vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_INT);
+    case PAPAGAIO_T_FLOAT:
+        return vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_FLOAT);
+    case PAPAGAIO_T_TABLE:
         return obj->size - 2;
-    case DISTURB_T_NATIVE:
-    case DISTURB_T_LAMBDA:
-    case DISTURB_T_VIEW:
+    case PAPAGAIO_T_NATIVE:
+    case PAPAGAIO_T_LAMBDA:
+    case PAPAGAIO_T_VIEW:
         return obj->size > 2 ? 1 : 0;
     default:
         return obj->size - 2;
@@ -1568,16 +1568,16 @@ Int vm_value_len_entry(const ObjEntry *entry)
 static int vm_entry_truthy(const ObjEntry *entry)
 {
     if (!entry || !entry->in_use) return 0;
-    Int type = disturb_obj_type(entry->obj);
-    if (type == DISTURB_T_NULL) return 0;
+    Int type = papagaio_obj_type(entry->obj);
+    if (type == PAPAGAIO_T_NULL) return 0;
     /* empty string is false; non-empty string is true */
-    if (entry_is_string(entry)) return disturb_bytes_len(entry->obj) > 0 ? 1 : 0;
-    if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
-        Int count = vm_bytes_to_count(disturb_bytes_len(entry->obj), type);
+    if (entry_is_string(entry)) return papagaio_bytes_len(entry->obj) > 0 ? 1 : 0;
+    if (type == PAPAGAIO_T_INT || type == PAPAGAIO_T_FLOAT) {
+        Int count = vm_bytes_to_count(papagaio_bytes_len(entry->obj), type);
         if (count <= 0) return 0;
         Int zeros = 0, nonzeros = 0;
         for (Int i = 0; i < count; i++) {
-            if (type == DISTURB_T_INT) {
+            if (type == PAPAGAIO_T_INT) {
                 Int v = 0;
                 vm_read_int_at(entry->obj, i, &v);
                 if (v == 0) zeros++; else nonzeros++;
@@ -1599,13 +1599,13 @@ static int vm_entry_number(const ObjEntry *entry, Int *out_i, Float *out_f, int 
         fprintf(stderr, "bytecode error at pc %zu: %s expects number\n", pc, op);
         return 0;
     }
-    Int type = disturb_obj_type(entry->obj);
-    if (type == DISTURB_T_INT) {
+    Int type = papagaio_obj_type(entry->obj);
+    if (type == PAPAGAIO_T_INT) {
         if (entry_is_string(entry)) {
             fprintf(stderr, "bytecode error at pc %zu: %s expects number\n", pc, op);
             return 0;
         }
-        size_t len = disturb_bytes_len(entry->obj);
+        size_t len = papagaio_bytes_len(entry->obj);
         if (len != sizeof(Int)) {
             fprintf(stderr, "bytecode error at pc %zu: %s expects number\n", pc, op);
             return 0;
@@ -1617,8 +1617,8 @@ static int vm_entry_number(const ObjEntry *entry, Int *out_i, Float *out_f, int 
         if (out_is_float) *out_is_float = 0;
         return 1;
     }
-    if (type == DISTURB_T_FLOAT) {
-        size_t len = disturb_bytes_len(entry->obj);
+    if (type == PAPAGAIO_T_FLOAT) {
+        size_t len = papagaio_bytes_len(entry->obj);
         if (len != sizeof(Float)) {
             fprintf(stderr, "bytecode error at pc %zu: %s expects number\n", pc, op);
             return 0;
@@ -1695,7 +1695,7 @@ static void vm_append_key_text(StrBuf *b, ObjEntry *entry)
         sb_append_char(b, '_');
         return;
     }
-    sb_append_n(b, disturb_bytes_data(key->obj), disturb_bytes_len(key->obj));
+    sb_append_n(b, papagaio_bytes_data(key->obj), papagaio_bytes_len(key->obj));
 }
 
 static void vm_append_value_text(VM *vm, ObjEntry *entry, StrBuf *b, int raw_string)
@@ -1706,30 +1706,30 @@ static void vm_append_value_text(VM *vm, ObjEntry *entry, StrBuf *b, int raw_str
     }
 
     List *obj = entry->obj;
-    Int type = disturb_obj_type(obj);
+    Int type = papagaio_obj_type(obj);
     switch (type) {
-    case DISTURB_T_NULL:
+    case PAPAGAIO_T_NULL:
         sb_append_n(b, "null", 4);
         break;
-    case DISTURB_T_INT: {
+    case PAPAGAIO_T_INT: {
         if (entry_is_string(entry)) {
-            size_t len = disturb_bytes_len(obj);
+            size_t len = papagaio_bytes_len(obj);
             if (raw_string) {
-                sb_append_n(b, disturb_bytes_data(obj), len);
+                sb_append_n(b, papagaio_bytes_data(obj), len);
                 break;
             }
             if (len == 1) {
                 sb_append_char(b, '\'');
-                sb_append_escaped(b, disturb_bytes_data(obj), len);
+                sb_append_escaped(b, papagaio_bytes_data(obj), len);
                 sb_append_char(b, '\'');
             } else {
                 sb_append_char(b, '"');
-                sb_append_escaped(b, disturb_bytes_data(obj), len);
+                sb_append_escaped(b, papagaio_bytes_data(obj), len);
                 sb_append_char(b, '"');
             }
             break;
         }
-        Int count = vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_INT);
+        Int count = vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_INT);
         if (count == 0) {
             sb_append_n(b, "[]", 2);
             break;
@@ -1756,8 +1756,8 @@ static void vm_append_value_text(VM *vm, ObjEntry *entry, StrBuf *b, int raw_str
         sb_append_char(b, ']');
         break;
     }
-    case DISTURB_T_FLOAT: {
-        Int count = vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_FLOAT);
+    case PAPAGAIO_T_FLOAT: {
+        Int count = vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_FLOAT);
         if (count == 0) {
             sb_append_n(b, "[]", 2);
             break;
@@ -1784,7 +1784,7 @@ static void vm_append_value_text(VM *vm, ObjEntry *entry, StrBuf *b, int raw_str
         sb_append_char(b, ']');
         break;
     }
-    case DISTURB_T_TABLE: {
+    case PAPAGAIO_T_TABLE: {
         sb_append_char(b, '{');
         int first = 1;
         for (Int i = 2; i < obj->size; i++) {
@@ -1799,10 +1799,10 @@ static void vm_append_value_text(VM *vm, ObjEntry *entry, StrBuf *b, int raw_str
         sb_append_char(b, '}');
         break;
     }
-    case DISTURB_T_NATIVE:
+    case PAPAGAIO_T_NATIVE:
         sb_append_n(b, "<native>", 8);
         break;
-    case DISTURB_T_LAMBDA:
+    case PAPAGAIO_T_LAMBDA:
         sb_append_n(b, "<function>", 10);
         break;
     default:
@@ -1869,17 +1869,17 @@ static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int inden
     }
 
     List *obj = entry->obj;
-    Int type = disturb_obj_type(obj);
+    Int type = papagaio_obj_type(obj);
     switch (type) {
-    case DISTURB_T_NULL:
+    case PAPAGAIO_T_NULL:
         sb_append_n(b, "null", 4);
         break;
-    case DISTURB_T_INT: {
+    case PAPAGAIO_T_INT: {
         if (entry_is_string(entry)) {
             vm_append_value_text(vm, entry, b, 0);
             break;
         }
-        Int count = vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_INT);
+        Int count = vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_INT);
         if (count <= 1) {
             vm_append_value_text(vm, entry, b, 0);
             break;
@@ -1901,8 +1901,8 @@ static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int inden
         sb_append_char(b, ']');
         break;
     }
-    case DISTURB_T_FLOAT: {
-        Int count = vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_FLOAT);
+    case PAPAGAIO_T_FLOAT: {
+        Int count = vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_FLOAT);
         if (count <= 1) {
             vm_append_value_text(vm, entry, b, 0);
             break;
@@ -1924,7 +1924,7 @@ static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int inden
         sb_append_char(b, ']');
         break;
     }
-    case DISTURB_T_TABLE: {
+    case PAPAGAIO_T_TABLE: {
         if (pretty_seen_has(seen, obj)) {
             sb_append_n(b, "<cycle>", 7);
             break;
@@ -1960,10 +1960,10 @@ static void vm_append_pretty_value(VM *vm, ObjEntry *entry, StrBuf *b, int inden
         pretty_seen_pop(seen);
         break;
     }
-    case DISTURB_T_NATIVE:
+    case PAPAGAIO_T_NATIVE:
         sb_append_n(b, "<native>", 8);
         break;
-    case DISTURB_T_LAMBDA:
+    case PAPAGAIO_T_LAMBDA:
         sb_append_n(b, "<function>", 10);
         break;
     default:
@@ -2153,29 +2153,29 @@ static int vm_entry_equal_value_rec(ObjEntry *a, ObjEntry *b, EqCtx *ctx, int de
     if (a == b) return 1;
     if (!a || !b || !a->in_use || !b->in_use) return 0;
     if (!ctx || depth > ctx->depth_limit) return -1;
-    Int at = disturb_obj_type(a->obj);
-    Int bt = disturb_obj_type(b->obj);
-    if ((at == DISTURB_T_INT && entry_is_string(a)) ||
-        (bt == DISTURB_T_INT && entry_is_string(b))) {
-        if (!(at == DISTURB_T_INT && entry_is_string(a) &&
-              bt == DISTURB_T_INT && entry_is_string(b))) {
+    Int at = papagaio_obj_type(a->obj);
+    Int bt = papagaio_obj_type(b->obj);
+    if ((at == PAPAGAIO_T_INT && entry_is_string(a)) ||
+        (bt == PAPAGAIO_T_INT && entry_is_string(b))) {
+        if (!(at == PAPAGAIO_T_INT && entry_is_string(a) &&
+              bt == PAPAGAIO_T_INT && entry_is_string(b))) {
             return 0;
         }
-        size_t al = disturb_bytes_len(a->obj);
-        size_t bl = disturb_bytes_len(b->obj);
+        size_t al = papagaio_bytes_len(a->obj);
+        size_t bl = papagaio_bytes_len(b->obj);
         if (al != bl) return 0;
-        return memcmp(disturb_bytes_data(a->obj), disturb_bytes_data(b->obj), al) == 0;
+        return memcmp(papagaio_bytes_data(a->obj), papagaio_bytes_data(b->obj), al) == 0;
     }
-    if ((at == DISTURB_T_INT || at == DISTURB_T_FLOAT) &&
-        (bt == DISTURB_T_INT || bt == DISTURB_T_FLOAT)) {
-        size_t al = disturb_bytes_len(a->obj);
-        size_t bl = disturb_bytes_len(b->obj);
+    if ((at == PAPAGAIO_T_INT || at == PAPAGAIO_T_FLOAT) &&
+        (bt == PAPAGAIO_T_INT || bt == PAPAGAIO_T_FLOAT)) {
+        size_t al = papagaio_bytes_len(a->obj);
+        size_t bl = papagaio_bytes_len(b->obj);
         size_t asz = vm_elem_size(at);
         size_t bsz = vm_elem_size(bt);
         if (al == asz && bl == bsz) {
             double av = 0.0;
             double bv = 0.0;
-            if (at == DISTURB_T_INT) {
+            if (at == PAPAGAIO_T_INT) {
                 Int v = 0;
                 if (!vm_read_int_at(a->obj, 0, &v)) return 0;
                 av = (double)v;
@@ -2184,7 +2184,7 @@ static int vm_entry_equal_value_rec(ObjEntry *a, ObjEntry *b, EqCtx *ctx, int de
                 if (!vm_read_float_at(a->obj, 0, &v)) return 0;
                 av = (double)v;
             }
-            if (bt == DISTURB_T_INT) {
+            if (bt == PAPAGAIO_T_INT) {
                 Int v = 0;
                 if (!vm_read_int_at(b->obj, 0, &v)) return 0;
                 bv = (double)v;
@@ -2199,7 +2199,7 @@ static int vm_entry_equal_value_rec(ObjEntry *a, ObjEntry *b, EqCtx *ctx, int de
         Int ac = vm_bytes_to_count(al, at);
         Int bc = vm_bytes_to_count(bl, bt);
         if (ac != bc) return 0;
-        if (at == DISTURB_T_INT) {
+        if (at == PAPAGAIO_T_INT) {
             for (Int i = 0; i < ac; i++) {
                 Int av = 0;
                 Int bv = 0;
@@ -2219,9 +2219,9 @@ static int vm_entry_equal_value_rec(ObjEntry *a, ObjEntry *b, EqCtx *ctx, int de
         return 1;
     }
     if (at != bt) return 0;
-    if (at == DISTURB_T_NULL) return 1;
-    if (at == DISTURB_T_TABLE) return vm_table_equal_value(a, b, ctx, depth);
-    if (at == DISTURB_T_LAMBDA || at == DISTURB_T_NATIVE || at == DISTURB_T_VIEW) {
+    if (at == PAPAGAIO_T_NULL) return 1;
+    if (at == PAPAGAIO_T_TABLE) return vm_table_equal_value(a, b, ctx, depth);
+    if (at == PAPAGAIO_T_LAMBDA || at == PAPAGAIO_T_NATIVE || at == PAPAGAIO_T_VIEW) {
         return a->obj == b->obj;
     }
     return 0;
@@ -2241,17 +2241,17 @@ static int vm_entry_equal_strict(ObjEntry *a, ObjEntry *b)
 {
     if (a == b) return 1;
     if (!a || !b || !a->in_use || !b->in_use) return 0;
-    Int at = disturb_obj_type(a->obj);
-    Int bt = disturb_obj_type(b->obj);
+    Int at = papagaio_obj_type(a->obj);
+    Int bt = papagaio_obj_type(b->obj);
     if (at != bt) return 0;
-    if (at == DISTURB_T_NULL) return 1;
-    if (at == DISTURB_T_INT && entry_is_string(a)) {
+    if (at == PAPAGAIO_T_NULL) return 1;
+    if (at == PAPAGAIO_T_INT && entry_is_string(a)) {
         if (!entry_is_string(b)) return 0;
         return a->obj == b->obj;
     }
-    if (at == DISTURB_T_INT) {
-        size_t al = disturb_bytes_len(a->obj);
-        size_t bl = disturb_bytes_len(b->obj);
+    if (at == PAPAGAIO_T_INT) {
+        size_t al = papagaio_bytes_len(a->obj);
+        size_t bl = papagaio_bytes_len(b->obj);
         if (al == sizeof(Int) && bl == sizeof(Int)) {
             Int av = 0;
             Int bv = 0;
@@ -2260,9 +2260,9 @@ static int vm_entry_equal_strict(ObjEntry *a, ObjEntry *b)
         }
         return a->obj == b->obj;
     }
-    if (at == DISTURB_T_FLOAT) {
-        size_t al = disturb_bytes_len(a->obj);
-        size_t bl = disturb_bytes_len(b->obj);
+    if (at == PAPAGAIO_T_FLOAT) {
+        size_t al = papagaio_bytes_len(a->obj);
+        size_t bl = papagaio_bytes_len(b->obj);
         if (al == sizeof(Float) && bl == sizeof(Float)) {
             Float av = 0;
             Float bv = 0;
@@ -2271,8 +2271,8 @@ static int vm_entry_equal_strict(ObjEntry *a, ObjEntry *b)
         }
         return a->obj == b->obj;
     }
-    if (at == DISTURB_T_TABLE || at == DISTURB_T_LAMBDA ||
-        at == DISTURB_T_NATIVE || at == DISTURB_T_VIEW) {
+    if (at == PAPAGAIO_T_TABLE || at == PAPAGAIO_T_LAMBDA ||
+        at == PAPAGAIO_T_NATIVE || at == PAPAGAIO_T_VIEW) {
         return a->obj == b->obj;
     }
     return a->obj == b->obj;
@@ -2281,17 +2281,17 @@ static int vm_entry_equal_strict(ObjEntry *a, ObjEntry *b)
 static int vm_entry_compare(ObjEntry *a, ObjEntry *b, int *out)
 {
     if (!a || !b || !a->in_use || !b->in_use) return 0;
-    Int at = disturb_obj_type(a->obj);
-    Int bt = disturb_obj_type(b->obj);
-    if ((at == DISTURB_T_INT && entry_is_string(a)) ||
-        (bt == DISTURB_T_INT && entry_is_string(b))) {
-        if (!(at == DISTURB_T_INT && entry_is_string(a) && bt == DISTURB_T_INT && entry_is_string(b))) {
+    Int at = papagaio_obj_type(a->obj);
+    Int bt = papagaio_obj_type(b->obj);
+    if ((at == PAPAGAIO_T_INT && entry_is_string(a)) ||
+        (bt == PAPAGAIO_T_INT && entry_is_string(b))) {
+        if (!(at == PAPAGAIO_T_INT && entry_is_string(a) && bt == PAPAGAIO_T_INT && entry_is_string(b))) {
             return 0;
         }
-        size_t al = disturb_bytes_len(a->obj);
-        size_t bl = disturb_bytes_len(b->obj);
+        size_t al = papagaio_bytes_len(a->obj);
+        size_t bl = papagaio_bytes_len(b->obj);
         size_t min = al < bl ? al : bl;
-        int cmp = memcmp(disturb_bytes_data(a->obj), disturb_bytes_data(b->obj), min);
+        int cmp = memcmp(papagaio_bytes_data(a->obj), papagaio_bytes_data(b->obj), min);
         if (cmp < 0) *out = -1;
         else if (cmp > 0) *out = 1;
         else if (al < bl) *out = -1;
@@ -2299,16 +2299,16 @@ static int vm_entry_compare(ObjEntry *a, ObjEntry *b, int *out)
         else *out = 0;
         return 1;
     }
-    if ((at == DISTURB_T_INT || at == DISTURB_T_FLOAT) &&
-        (bt == DISTURB_T_INT || bt == DISTURB_T_FLOAT)) {
-        size_t al = disturb_bytes_len(a->obj);
-        size_t bl = disturb_bytes_len(b->obj);
+    if ((at == PAPAGAIO_T_INT || at == PAPAGAIO_T_FLOAT) &&
+        (bt == PAPAGAIO_T_INT || bt == PAPAGAIO_T_FLOAT)) {
+        size_t al = papagaio_bytes_len(a->obj);
+        size_t bl = papagaio_bytes_len(b->obj);
         size_t asz = vm_elem_size(at);
         size_t bsz = vm_elem_size(bt);
         if (al == asz && bl == bsz) {
             double av = 0.0;
             double bv = 0.0;
-            if (at == DISTURB_T_INT) {
+            if (at == PAPAGAIO_T_INT) {
                 Int v = 0;
                 if (!vm_read_int_at(a->obj, 0, &v)) return 0;
                 av = (double)v;
@@ -2317,7 +2317,7 @@ static int vm_entry_compare(ObjEntry *a, ObjEntry *b, int *out)
                 if (!vm_read_float_at(a->obj, 0, &v)) return 0;
                 av = (double)v;
             }
-            if (bt == DISTURB_T_INT) {
+            if (bt == PAPAGAIO_T_INT) {
                 Int v = 0;
                 if (!vm_read_int_at(b->obj, 0, &v)) return 0;
                 bv = (double)v;
@@ -2348,7 +2348,7 @@ static void print_key(FILE *out, ObjEntry *entry)
         fputs("<?>", out);
         return;
     }
-    fwrite(disturb_bytes_data(key_obj), 1, disturb_bytes_len(key_obj), out);
+    fwrite(papagaio_bytes_data(key_obj), 1, papagaio_bytes_len(key_obj), out);
 }
 
 void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry)
@@ -2360,20 +2360,20 @@ void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry)
     }
 
     List *obj = entry->obj;
-    Int type = disturb_obj_type(obj);
+    Int type = papagaio_obj_type(obj);
     int print_as_string = entry_is_string(entry);
 
     switch (type) {
-    case DISTURB_T_NULL:
+    case PAPAGAIO_T_NULL:
         fputs("null", out);
         break;
-    case DISTURB_T_INT:
+    case PAPAGAIO_T_INT:
         if (print_as_string) {
-            fwrite(disturb_bytes_data(obj), 1, disturb_bytes_len(obj), out);
+            fwrite(papagaio_bytes_data(obj), 1, papagaio_bytes_len(obj), out);
             break;
         }
         {
-            Int count = vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_INT);
+            Int count = vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_INT);
             for (Int i = 0; i < count; i++) {
                 if (i > 0) fputs(" ", out);
                 Int v = 0;
@@ -2385,8 +2385,8 @@ void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry)
             }
         }
         break;
-    case DISTURB_T_FLOAT: {
-        Int count = vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_FLOAT);
+    case PAPAGAIO_T_FLOAT: {
+        Int count = vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_FLOAT);
         for (Int i = 0; i < count; i++) {
             if (i > 0) fputs(" ", out);
             Float v = 0;
@@ -2398,7 +2398,7 @@ void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry)
         }
         break;
     }
-    case DISTURB_T_TABLE:
+    case PAPAGAIO_T_TABLE:
         for (Int i = 2; i < obj->size; i++) {
             if (i > 2) fputs(" ", out);
             ObjEntry *child = (ObjEntry*)obj->data[i].p;
@@ -2409,7 +2409,7 @@ void print_plain_entry(FILE *out, VM *vm, ObjEntry *entry)
             print_key(out, child);
         }
         break;
-    case DISTURB_T_NATIVE:
+    case PAPAGAIO_T_NATIVE:
         fputs("<native>", out);
         break;
     default:
@@ -2427,27 +2427,27 @@ void print_entry(FILE *out, VM *vm, ObjEntry *entry)
     }
 
     List *obj = entry->obj;
-    Int type = disturb_obj_type(obj);
+    Int type = papagaio_obj_type(obj);
     int print_as_string = entry_is_string(entry);
 
     fputs("[", out);
-    fputs(disturb_type_name(type), out);
+    fputs(papagaio_type_name(type), out);
     fputs(" ", out);
     print_key(out, entry);
     fputs("] ", out);
 
     switch (type) {
-    case DISTURB_T_NULL:
+    case PAPAGAIO_T_NULL:
         fputs("null", out);
         break;
-    case DISTURB_T_INT:
+    case PAPAGAIO_T_INT:
         if (print_as_string) {
             fputs("\"", out);
-            fwrite(disturb_bytes_data(obj), 1, disturb_bytes_len(obj), out);
+            fwrite(papagaio_bytes_data(obj), 1, papagaio_bytes_len(obj), out);
             fputs("\"", out);
         } else {
             fputs("[", out);
-            Int count = vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_INT);
+            Int count = vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_INT);
             for (Int i = 0; i < count; i++) {
                 if (i > 0) fputs(" ", out);
                 Int v = 0;
@@ -2460,10 +2460,10 @@ void print_entry(FILE *out, VM *vm, ObjEntry *entry)
             fputs("]", out);
         }
         break;
-    case DISTURB_T_FLOAT:
+    case PAPAGAIO_T_FLOAT:
         fputs("[", out);
         {
-            Int count = vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_FLOAT);
+            Int count = vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_FLOAT);
             for (Int i = 0; i < count; i++) {
                 if (i > 0) fputs(" ", out);
                 Float v = 0;
@@ -2476,7 +2476,7 @@ void print_entry(FILE *out, VM *vm, ObjEntry *entry)
         }
         fputs("]", out);
         break;
-    case DISTURB_T_TABLE:
+    case PAPAGAIO_T_TABLE:
         fputs("[", out);
         for (Int i = 2; i < obj->size; i++) {
             if (i > 2) fputs(" ", out);
@@ -2489,7 +2489,7 @@ void print_entry(FILE *out, VM *vm, ObjEntry *entry)
         }
         fputs("]", out);
         break;
-    case DISTURB_T_NATIVE:
+    case PAPAGAIO_T_NATIVE:
         fputs("<native>", out);
         break;
     default:
@@ -2524,9 +2524,9 @@ void vm_init(VM *vm)
             obj->data = (Value*)bytes;
             obj->capacity = (UHalf)(sizeof(Int) + 2);
             obj->size = (UHalf)(sizeof(Int) + 2);
-            obj->data[0].i = DISTURB_T_INT;
+            obj->data[0].i = PAPAGAIO_T_INT;
             obj->data[1].p = NULL;
-            memcpy(disturb_bytes_data(obj), &v, sizeof(Int));
+            memcpy(papagaio_bytes_data(obj), &v, sizeof(Int));
             entry->obj = obj;
             entry->key = NULL;
             entry->reg_index = -1;
@@ -2546,18 +2546,18 @@ void vm_init(VM *vm)
     }
 
     ObjEntry *global_key = vm_make_key(vm, "global");
-    List *global_obj = vm_alloc_list(vm, DISTURB_T_TABLE, global_key, 8);
+    List *global_obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, global_key, 8);
     vm->global_entry = vm_reg_alloc(vm, global_obj);
 
     ObjEntry *stack_key = vm_make_key(vm, "stack");
-    List *stack_obj = vm_alloc_list(vm, DISTURB_T_TABLE, stack_key, 64);
+    List *stack_obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, stack_key, 64);
     vm->stack_entry = vm_reg_alloc(vm, stack_obj);
     vm_global_add(vm, vm->stack_entry);
 
     vm->local_entry = NULL;
 
     ObjEntry *null_key = vm_make_key(vm, "null");
-    List *null_obj = vm_alloc_list(vm, DISTURB_T_NULL, null_key, 0);
+    List *null_obj = vm_alloc_list(vm, PAPAGAIO_T_NULL, null_key, 0);
     vm->null_entry = vm_reg_alloc(vm, null_obj);
     vm_global_add(vm, vm->null_entry);
 
@@ -2569,12 +2569,12 @@ void vm_init(VM *vm)
     }
 
     ObjEntry *proto_key = vm_make_key(vm, "common");
-    List *proto_obj = vm_alloc_list(vm, DISTURB_T_TABLE, proto_key, 16);
+    List *proto_obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, proto_key, 16);
     vm->common_entry = vm_reg_alloc(vm, proto_obj);
     vm_global_add(vm, vm->common_entry);
 
     ObjEntry *argc_key = vm_make_key(vm, "__argc");
-    List *argc_obj = vm_alloc_bytes(vm, DISTURB_T_INT, argc_key, NULL, sizeof(Int));
+    List *argc_obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, argc_key, NULL, sizeof(Int));
     vm_set_int_single(argc_obj, 0);
     vm->argc_entry = vm_reg_alloc(vm, argc_obj);
     vm_global_add(vm, vm->argc_entry);
@@ -2582,44 +2582,44 @@ void vm_init(VM *vm)
     vm->this_entry = vm->null_entry;
 
     ObjEntry *len_key = vm_make_key(vm, "__len");
-    List *len_obj = vm_alloc_bytes(vm, DISTURB_T_INT, len_key, NULL, sizeof(Int));
+    List *len_obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, len_key, NULL, sizeof(Int));
     vm_set_int_single(len_obj, 0);
     ObjEntry *len_entry = vm_reg_alloc(vm, len_obj);
     vm_global_add(vm, len_entry);
 
     ObjEntry *gc_key = vm_make_key(vm, "gc");
-    List *gc_obj = vm_alloc_list(vm, DISTURB_T_TABLE, gc_key, 4);
+    List *gc_obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, gc_key, 4);
     vm->gc_entry = vm_reg_alloc(vm, gc_obj);
     vm_global_add(vm, vm->gc_entry);
 
     ObjEntry *collect_entry = vm_make_native_entry(vm, "collect", "gcCollect");
     if (collect_entry) {
-        gc_obj = disturb_table_add(gc_obj, collect_entry);
+        gc_obj = papagaio_table_add(gc_obj, collect_entry);
         vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *free_entry = vm_make_native_entry(vm, "free", "gcFree");
     if (free_entry) {
-        gc_obj = disturb_table_add(gc_obj, free_entry);
+        gc_obj = papagaio_table_add(gc_obj, free_entry);
         vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *sweep_entry = vm_make_native_entry(vm, "sweep", "gcSweep");
     if (sweep_entry) {
-        gc_obj = disturb_table_add(gc_obj, sweep_entry);
+        gc_obj = papagaio_table_add(gc_obj, sweep_entry);
         vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *new_entry = vm_make_native_entry(vm, "new", "gcNew");
     if (new_entry) {
-        gc_obj = disturb_table_add(gc_obj, new_entry);
+        gc_obj = papagaio_table_add(gc_obj, new_entry);
         vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *debug_entry = vm_make_native_entry(vm, "debug", "gcDebug");
     if (debug_entry) {
-        gc_obj = disturb_table_add(gc_obj, debug_entry);
+        gc_obj = papagaio_table_add(gc_obj, debug_entry);
         vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
     ObjEntry *stats_entry = vm_make_native_entry(vm, "stats", "gcStats");
     if (stats_entry) {
-        gc_obj = disturb_table_add(gc_obj, stats_entry);
+        gc_obj = papagaio_table_add(gc_obj, stats_entry);
         vm_entry_set_obj(vm, vm->gc_entry, gc_obj);
     }
 
@@ -2644,13 +2644,13 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "toFloat", "toFloat");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
-    #ifdef DISTURB_ENABLE_IO
+    #ifdef PAPAGAIO_ENABLE_IO
     entry = vm_define_native(vm, "read", "read");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     entry = vm_define_native(vm, "write", "write");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     #endif
-    #ifndef DISTURB_EMBEDDED
+    #ifndef PAPAGAIO_EMBEDDED
     entry = vm_define_native(vm, "import", "import");
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
     #endif
@@ -2764,23 +2764,23 @@ void vm_init(VM *vm)
     if (entry) vm_table_add_entry(vm, vm->common_entry, entry);
 
     ObjEntry *runtime_key = vm_make_key(vm, "C");
-    List *runtime_obj = vm_alloc_list(vm, DISTURB_T_TABLE, runtime_key, 24);
+    List *runtime_obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, runtime_key, 24);
     ObjEntry *runtime_entry = vm_reg_alloc(vm, runtime_obj);
     vm_global_add(vm, runtime_entry);
     ObjEntry *runtime_info = vm_define_native(vm, "info", "runtimeInfo");
     if (runtime_info) vm_object_set_by_key(vm, runtime_entry, "info", 4, runtime_info);
 
-    #ifdef DISTURB_ENABLE_FFI
+    #ifdef PAPAGAIO_ENABLE_FFI
     c_module_install(vm, runtime_entry);
 
     ObjEntry *ffi_key = vm_make_key(vm, "ffi");
-    List *ffi_obj = vm_alloc_list(vm, DISTURB_T_TABLE, ffi_key, 24);
+    List *ffi_obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, ffi_key, 24);
     ObjEntry *ffi_entry = vm_reg_alloc(vm, ffi_obj);
     ffi_module_install(vm, ffi_entry);
     vm_object_set_by_key(vm, runtime_entry, "ffi", 3, ffi_entry);
 
     ObjEntry *memory_key = vm_make_key(vm, "memory");
-    List *memory_obj = vm_alloc_list(vm, DISTURB_T_TABLE, memory_key, 24);
+    List *memory_obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, memory_key, 24);
     ObjEntry *memory_entry = vm_reg_alloc(vm, memory_obj);
     memory_module_install(vm, memory_entry);
     vm_object_set_by_key(vm, runtime_entry, "memory", 6, memory_entry);
@@ -2795,7 +2795,7 @@ void vm_free(VM *vm)
         if (entry->in_use && entry->obj) {
             List *obj = entry->obj;
             if (!vm_obj_is_cached_int(vm, obj)) {
-                disturb_obj_free(vm, obj);
+                papagaio_obj_free(vm, obj);
             }
             for (Int j = 0; j < vm->reg_count; j++) {
                 ObjEntry *other = vm->reg[j];
@@ -2868,7 +2868,7 @@ static ObjEntry *vm_clone_key_entry(VM *vm, ObjEntry *key_entry)
 {
     if (!key_entry) return NULL;
     if (!entry_is_string(key_entry)) return NULL;
-    return vm_make_key_len(vm, disturb_bytes_data(key_entry->obj), disturb_bytes_len(key_entry->obj));
+    return vm_make_key_len(vm, papagaio_bytes_data(key_entry->obj), papagaio_bytes_len(key_entry->obj));
 }
 
 static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced_key,
@@ -2884,36 +2884,36 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
 
     ObjEntry *key_entry = forced_key ? forced_key : vm_clone_key_entry(vm, vm_entry_key(src));
     List *obj = src->obj;
-    Int type = disturb_obj_type(obj);
+    Int type = papagaio_obj_type(obj);
 
     List *copy = NULL;
     ObjEntry *entry = NULL;
 
     switch (type) {
-    case DISTURB_T_NULL:
-        copy = vm_alloc_list(vm, DISTURB_T_NULL, key_entry, 0);
+    case PAPAGAIO_T_NULL:
+        copy = vm_alloc_list(vm, PAPAGAIO_T_NULL, key_entry, 0);
         break;
-    case DISTURB_T_INT:
-        copy = vm_alloc_bytes(vm, DISTURB_T_INT, key_entry, disturb_bytes_data(obj), disturb_bytes_len(obj));
+    case PAPAGAIO_T_INT:
+        copy = vm_alloc_bytes(vm, PAPAGAIO_T_INT, key_entry, papagaio_bytes_data(obj), papagaio_bytes_len(obj));
         break;
-    case DISTURB_T_FLOAT:
-        copy = vm_alloc_bytes(vm, DISTURB_T_FLOAT, key_entry, disturb_bytes_data(obj), disturb_bytes_len(obj));
+    case PAPAGAIO_T_FLOAT:
+        copy = vm_alloc_bytes(vm, PAPAGAIO_T_FLOAT, key_entry, papagaio_bytes_data(obj), papagaio_bytes_len(obj));
         break;
-    case DISTURB_T_VIEW: {
+    case PAPAGAIO_T_VIEW: {
         Int n = (Int)(obj->size - 2);
-        copy = vm_alloc_list(vm, DISTURB_T_VIEW, key_entry, n);
+        copy = vm_alloc_list(vm, PAPAGAIO_T_VIEW, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             urb_push(copy, obj->data[i]);
         }
         break;
     }
-    case DISTURB_T_TABLE: {
+    case PAPAGAIO_T_TABLE: {
         Int n = (Int)(obj->size - 2);
-        copy = vm_alloc_list(vm, DISTURB_T_TABLE, key_entry, n);
+        copy = vm_alloc_list(vm, PAPAGAIO_T_TABLE, key_entry, n);
         break;
     }
-    case DISTURB_T_NATIVE: {
-        copy = vm_alloc_list(vm, DISTURB_T_NATIVE, key_entry, 1);
+    case PAPAGAIO_T_NATIVE: {
+        copy = vm_alloc_list(vm, PAPAGAIO_T_NATIVE, key_entry, 1);
         NativeBox *src_box = obj->size >= 3 ? (NativeBox*)obj->data[2].p : NULL;
         NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
         box->fn = src_box ? src_box->fn : NULL;
@@ -2928,8 +2928,8 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
         urb_push(copy, v);
         break;
     }
-    case DISTURB_T_LAMBDA: {
-        copy = vm_alloc_list(vm, DISTURB_T_LAMBDA, key_entry, 1);
+    case PAPAGAIO_T_LAMBDA: {
+        copy = vm_alloc_list(vm, PAPAGAIO_T_LAMBDA, key_entry, 1);
         FunctionBox *src_box = obj->size >= 3 ? (FunctionBox*)obj->data[2].p : NULL;
         FunctionBox *box = (FunctionBox*)malloc(sizeof(FunctionBox));
         memset(box, 0, sizeof(*box));
@@ -2994,12 +2994,12 @@ static ObjEntry *vm_clone_entry_internal(VM *vm, ObjEntry *src, ObjEntry *forced
     (*pairs)[*count].dst = entry;
     (*count)++;
 
-    if (type == DISTURB_T_TABLE) {
+    if (type == PAPAGAIO_T_TABLE) {
         for (Int i = 2; i < obj->size; i++) {
             ObjEntry *child = (ObjEntry*)obj->data[i].p;
             ObjEntry *child_copy = vm_clone_entry_internal(vm, child, NULL, pairs, count, cap);
             if (child_copy) {
-                copy = disturb_table_add(copy, child_copy);
+                copy = papagaio_table_add(copy, child_copy);
             }
         }
     }
@@ -3033,38 +3033,38 @@ ObjEntry *vm_clone_entry_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *forced_ke
     if (!src || !src->in_use) return NULL;
     ObjEntry *key_entry = forced_key ? forced_key : vm_entry_key(src);
     List *obj = src->obj;
-    Int type = disturb_obj_type(obj);
+    Int type = papagaio_obj_type(obj);
     List *copy = NULL;
 
     switch (type) {
-    case DISTURB_T_NULL:
-        copy = vm_alloc_list(vm, DISTURB_T_NULL, key_entry, 0);
+    case PAPAGAIO_T_NULL:
+        copy = vm_alloc_list(vm, PAPAGAIO_T_NULL, key_entry, 0);
         break;
-    case DISTURB_T_INT:
-        copy = vm_alloc_bytes(vm, DISTURB_T_INT, key_entry, disturb_bytes_data(obj), disturb_bytes_len(obj));
+    case PAPAGAIO_T_INT:
+        copy = vm_alloc_bytes(vm, PAPAGAIO_T_INT, key_entry, papagaio_bytes_data(obj), papagaio_bytes_len(obj));
         break;
-    case DISTURB_T_FLOAT:
-        copy = vm_alloc_bytes(vm, DISTURB_T_FLOAT, key_entry, disturb_bytes_data(obj), disturb_bytes_len(obj));
+    case PAPAGAIO_T_FLOAT:
+        copy = vm_alloc_bytes(vm, PAPAGAIO_T_FLOAT, key_entry, papagaio_bytes_data(obj), papagaio_bytes_len(obj));
         break;
-    case DISTURB_T_VIEW: {
+    case PAPAGAIO_T_VIEW: {
         Int n = (Int)(obj->size - 2);
-        copy = vm_alloc_list(vm, DISTURB_T_VIEW, key_entry, n);
+        copy = vm_alloc_list(vm, PAPAGAIO_T_VIEW, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             urb_push(copy, obj->data[i]);
         }
         break;
     }
-    case DISTURB_T_TABLE: {
+    case PAPAGAIO_T_TABLE: {
         Int n = (Int)(obj->size - 2);
-        copy = vm_alloc_list(vm, DISTURB_T_TABLE, key_entry, n);
+        copy = vm_alloc_list(vm, PAPAGAIO_T_TABLE, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             Value v = obj->data[i];
             urb_push(copy, v);
         }
         break;
     }
-    case DISTURB_T_NATIVE:
-    case DISTURB_T_LAMBDA: {
+    case PAPAGAIO_T_NATIVE:
+    case PAPAGAIO_T_LAMBDA: {
         Int n = (Int)(obj->size - 2);
         copy = vm_alloc_list(vm, type, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
@@ -3098,7 +3098,7 @@ ObjEntry *vm_define_bytes(VM *vm, const char *key, const char *value)
         key_entry = vm_make_key(vm, key);
     }
 
-    List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, key_entry, value, strlen(value));
+    List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, key_entry, value, strlen(value));
     ObjEntry *entry = vm_reg_alloc(vm, obj);
     if (entry) {
         entry->is_string = 1;
@@ -3116,7 +3116,7 @@ ObjEntry *vm_define_byte(VM *vm, const char *key, char **items, int count, int s
     }
 
     size_t len = (size_t)(count - start);
-    List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, key_entry, NULL, len);
+    List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, key_entry, NULL, len);
     for (int i = start; i < count; i++) {
         char *end = NULL;
         long value = strtol(items[i], &end, 10);
@@ -3124,7 +3124,7 @@ ObjEntry *vm_define_byte(VM *vm, const char *key, char **items, int count, int s
             fprintf(stderr, "byte expects uint8 values: %s\n", items[i]);
             value = 0;
         }
-        disturb_bytes_data(obj)[i - start] = (char)(unsigned char)value;
+        papagaio_bytes_data(obj)[i - start] = (char)(unsigned char)value;
     }
     ObjEntry *entry = vm_reg_alloc(vm, obj);
     vm_global_add(vm, entry);
@@ -3151,7 +3151,7 @@ ObjEntry *vm_define_number(VM *vm, const char *key, char **items, int count, int
     }
 
     size_t elem_size = is_float ? sizeof(Float) : sizeof(Int);
-    List *obj = vm_alloc_bytes(vm, is_float ? DISTURB_T_FLOAT : DISTURB_T_INT, key_entry, NULL, (size_t)n * elem_size);
+    List *obj = vm_alloc_bytes(vm, is_float ? PAPAGAIO_T_FLOAT : PAPAGAIO_T_INT, key_entry, NULL, (size_t)n * elem_size);
     for (Int i = 0; i < n; i++) {
         double v = strtod(items[start + i], NULL);
         if (is_float) {
@@ -3176,14 +3176,14 @@ ObjEntry *vm_define_table(VM *vm, const char *key, char **items, int count, int 
     }
 
     Int n = (Int)(count - start);
-    List *obj = vm_alloc_list(vm, DISTURB_T_TABLE, key_entry, n);
+    List *obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, key_entry, n);
     for (int i = start; i < count; i++) {
         ObjEntry *child = vm_find_by_key(vm, items[i]);
         if (!child) {
             fprintf(stderr, "unknown key: %s\n", items[i]);
             continue;
         }
-        obj = disturb_table_add(obj, child);
+        obj = papagaio_table_add(obj, child);
     }
 
     ObjEntry *entry = vm_reg_alloc(vm, obj);
@@ -3204,7 +3204,7 @@ ObjEntry *vm_define_native(VM *vm, const char *key, const char *fn_name)
         return NULL;
     }
 
-    List *obj = vm_alloc_list(vm, DISTURB_T_NATIVE, key_entry, 1);
+    List *obj = vm_alloc_list(vm, PAPAGAIO_T_NATIVE, key_entry, 1);
     NativeBox *box = (NativeBox*)malloc(sizeof(NativeBox));
     box->fn = fn;
     box->data = NULL;
@@ -3245,7 +3245,7 @@ void vm_call_native(VM *vm, const char *key)
         fprintf(stderr, "unknown key: %s\n", key);
         return;
     }
-    if (disturb_obj_type(entry->obj) != DISTURB_T_NATIVE) {
+    if (papagaio_obj_type(entry->obj) != PAPAGAIO_T_NATIVE) {
         fprintf(stderr, "not a native: %s\n", key);
         return;
     }
@@ -3266,8 +3266,8 @@ int vm_call_entry(VM *vm, ObjEntry *target, uint32_t argc, ObjEntry **argv, ObjE
 {
     if (out_ret) *out_ret = NULL;
     if (!vm || !target || !target->obj) return 0;
-    Int t = disturb_obj_type(target->obj);
-    if (t != DISTURB_T_NATIVE && t != DISTURB_T_LAMBDA) return 0;
+    Int t = papagaio_obj_type(target->obj);
+    if (t != PAPAGAIO_T_NATIVE && t != PAPAGAIO_T_LAMBDA) return 0;
 
     ObjEntry *old_this = vm->this_entry;
     Int old_argc = 0;
@@ -3286,7 +3286,7 @@ int vm_call_entry(VM *vm, ObjEntry *target, uint32_t argc, ObjEntry **argv, ObjE
     }
     Int stack_before = vm->stack_entry->obj->size;
 
-    if (t == DISTURB_T_NATIVE) {
+    if (t == PAPAGAIO_T_NATIVE) {
         if (target->obj->size < 3) return 0;
         NativeBox *box = (NativeBox*)target->obj->data[2].p;
         NativeFn fn = box ? box->fn : NULL;
@@ -3504,7 +3504,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                         return NULL;
                     }
                     vm_entry_set_obj(vm, values, vm_update_shared_obj(vm, values->obj,
-                                                                      disturb_table_add(values->obj, vm_make_int_value(vm, (Int)v))));
+                                                                      papagaio_table_add(values->obj, vm_make_int_value(vm, (Int)v))));
                 } else {
                     double v = 0.0;
                     if (!bc_read_f64(data, len, &pc, &v)) {
@@ -3512,7 +3512,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                         return NULL;
                     }
                     vm_entry_set_obj(vm, values, vm_update_shared_obj(vm, values->obj,
-                                                                      disturb_table_add(values->obj, vm_make_float_value(vm, (Float)v))));
+                                                                      papagaio_table_add(values->obj, vm_make_float_value(vm, (Float)v))));
                 }
             }
             ast_set_kv(vm, node, "count", vm_make_int_value(vm, (Int)count));
@@ -3565,7 +3565,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
                 }
                 pc += def_len;
                 vm_entry_set_obj(vm, args, vm_update_shared_obj(vm, args->obj,
-                                                                disturb_table_add(args->obj, arg)));
+                                                                papagaio_table_add(args->obj, arg)));
                 free(name);
             }
 
@@ -3656,7 +3656,7 @@ ObjEntry *vm_bytecode_to_ast(VM *vm, const unsigned char *data, size_t len)
         }
 
         vm_entry_set_obj(vm, ops, vm_update_shared_obj(vm, ops->obj,
-                                                       disturb_table_add(ops->obj, node)));
+                                                       papagaio_table_add(ops->obj, node)));
     }
 
     ast_set_kv(vm, root, "type", vm_make_bytes_value(vm, "bytecode", 8));
@@ -3677,7 +3677,7 @@ static ObjEntry *vm_stack_pop_entry(VM *vm, const char *op, size_t pc)
 static int vm_key_is(ObjEntry *index, const char *name)
 {
     if (!index || !entry_is_string(index)) return 0;
-    return disturb_bytes_eq_bytes(index->obj, name, strlen(name));
+    return papagaio_bytes_eq_bytes(index->obj, name, strlen(name));
 }
 
 static ObjEntry *vm_make_type_name(VM *vm, ObjEntry *target)
@@ -3686,19 +3686,19 @@ static ObjEntry *vm_make_type_name(VM *vm, ObjEntry *target)
     if (!target) {
         name = "null";
     } else {
-        Int type = disturb_obj_type(target->obj);
-        if (type == DISTURB_T_INT && entry_is_string(target)) {
-            size_t len = disturb_bytes_len(target->obj);
+        Int type = papagaio_obj_type(target->obj);
+        if (type == PAPAGAIO_T_INT && entry_is_string(target)) {
+            size_t len = papagaio_bytes_len(target->obj);
             if (len == 1) {
                 name = "char";
             } else {
                 name = "string";
             }
         } else {
-            name = disturb_type_name(type);
+            name = papagaio_type_name(type);
         }
     }
-    ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, DISTURB_T_INT, NULL, name, strlen(name)));
+    ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, name, strlen(name)));
     if (entry) {
         entry->is_string = 1;
         entry->explicit_string = 1;
@@ -3719,14 +3719,14 @@ ObjEntry *vm_make_int_value(VM *vm, Int value)
 {
     ObjEntry *cached = vm_get_cached_int(vm, value);
     if (cached) return cached;
-    List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, sizeof(Int));
+    List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, sizeof(Int));
     vm_set_int_single(obj, value);
     return vm_reg_alloc(vm, obj);
 }
 
 ObjEntry *vm_make_float_value(VM *vm, Float value)
 {
-    List *obj = vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL, sizeof(Float));
+    List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_FLOAT, NULL, NULL, sizeof(Float));
     vm_set_float_single(obj, value);
     return vm_reg_alloc(vm, obj);
 }
@@ -3734,20 +3734,20 @@ ObjEntry *vm_make_float_value(VM *vm, Float value)
 ObjEntry *vm_make_int_list(VM *vm, Int count)
 {
     if (count < 0) return NULL;
-    List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
+    List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
     return vm_reg_alloc(vm, obj);
 }
 
 ObjEntry *vm_make_float_list(VM *vm, Int count)
 {
     if (count < 0) return NULL;
-    List *obj = vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float));
+    List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float));
     return vm_reg_alloc(vm, obj);
 }
 
 ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len)
 {
-    List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, s, len);
+    List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, s, len);
     ObjEntry *entry = vm_reg_alloc(vm, obj);
     if (entry) {
         entry->is_string = 1;
@@ -3758,7 +3758,7 @@ ObjEntry *vm_make_bytes_value(VM *vm, const char *s, size_t len)
 
 ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len)
 {
-    List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, s, len);
+    List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, s, len);
     ObjEntry *entry = vm_reg_alloc(vm, obj);
     if (entry) {
         entry->is_string = 1;
@@ -3769,14 +3769,14 @@ ObjEntry *vm_make_byte_value(VM *vm, const char *s, size_t len)
 
 ObjEntry *vm_make_table_value(VM *vm, Int reserve)
 {
-    List *obj = vm_alloc_list(vm, DISTURB_T_TABLE, NULL, reserve);
+    List *obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, NULL, reserve);
     return vm_reg_alloc(vm, obj);
 }
 
 static ObjEntry *vm_make_view(VM *vm, ObjEntry *base, ViewType view)
 {
     if (!base || !base->in_use) return NULL;
-    List *obj = vm_alloc_list(vm, DISTURB_T_VIEW, NULL, 2);
+    List *obj = vm_alloc_list(vm, PAPAGAIO_T_VIEW, NULL, 2);
     Value v;
     v.p = base;
     urb_push(obj, v);
@@ -3790,30 +3790,30 @@ static List *vm_clone_obj_shallow_copy(VM *vm, ObjEntry *src, ObjEntry *key_entr
 {
     if (!src || !src->in_use) return NULL;
     List *obj = src->obj;
-    Int type = disturb_obj_type(obj);
+    Int type = papagaio_obj_type(obj);
     List *copy = NULL;
 
     switch (type) {
-    case DISTURB_T_NULL:
-        copy = vm_alloc_list(vm, DISTURB_T_NULL, key_entry, 0);
+    case PAPAGAIO_T_NULL:
+        copy = vm_alloc_list(vm, PAPAGAIO_T_NULL, key_entry, 0);
         break;
-    case DISTURB_T_INT:
-        copy = vm_alloc_bytes(vm, DISTURB_T_INT, key_entry, disturb_bytes_data(obj), disturb_bytes_len(obj));
+    case PAPAGAIO_T_INT:
+        copy = vm_alloc_bytes(vm, PAPAGAIO_T_INT, key_entry, papagaio_bytes_data(obj), papagaio_bytes_len(obj));
         break;
-    case DISTURB_T_FLOAT:
-        copy = vm_alloc_bytes(vm, DISTURB_T_FLOAT, key_entry, disturb_bytes_data(obj), disturb_bytes_len(obj));
+    case PAPAGAIO_T_FLOAT:
+        copy = vm_alloc_bytes(vm, PAPAGAIO_T_FLOAT, key_entry, papagaio_bytes_data(obj), papagaio_bytes_len(obj));
         break;
-    case DISTURB_T_VIEW: {
+    case PAPAGAIO_T_VIEW: {
         Int n = (Int)(obj->size - 2);
-        copy = vm_alloc_list(vm, DISTURB_T_VIEW, key_entry, n);
+        copy = vm_alloc_list(vm, PAPAGAIO_T_VIEW, key_entry, n);
         for (Int i = 2; i < obj->size; i++) {
             urb_push(copy, obj->data[i]);
         }
         break;
     }
-    case DISTURB_T_TABLE:
-    case DISTURB_T_NATIVE:
-    case DISTURB_T_LAMBDA:
+    case PAPAGAIO_T_TABLE:
+    case PAPAGAIO_T_NATIVE:
+    case PAPAGAIO_T_LAMBDA:
     default: {
         Int n = (Int)(obj->size - 2);
         copy = vm_alloc_list(vm, type, key_entry, n);
@@ -3833,25 +3833,25 @@ static Int vm_meta_size_entry(const ObjEntry *entry)
 {
     if (!entry || !entry->in_use) return 0;
     List *obj = entry->obj;
-    Int type = disturb_obj_type(obj);
-    if (type == DISTURB_T_NULL) return 0;
-    if (type == DISTURB_T_TABLE) {
+    Int type = papagaio_obj_type(obj);
+    if (type == PAPAGAIO_T_NULL) return 0;
+    if (type == PAPAGAIO_T_TABLE) {
         if (obj->size < 2) return 0;
         return obj->size - 2;
     }
-    if (type == DISTURB_T_INT) {
-        if (entry_is_string(entry)) return (Int)strlen(disturb_bytes_data(obj));
-        return vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_INT);
+    if (type == PAPAGAIO_T_INT) {
+        if (entry_is_string(entry)) return (Int)strlen(papagaio_bytes_data(obj));
+        return vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_INT);
     }
-    if (type == DISTURB_T_FLOAT) {
-        return vm_bytes_to_count(disturb_bytes_len(obj), DISTURB_T_FLOAT);
+    if (type == PAPAGAIO_T_FLOAT) {
+        return vm_bytes_to_count(papagaio_bytes_len(obj), PAPAGAIO_T_FLOAT);
     }
-    if (type == DISTURB_T_VIEW && obj->size >= 4) {
+    if (type == PAPAGAIO_T_VIEW && obj->size >= 4) {
         ObjEntry *base = (ObjEntry*)obj->data[2].p;
         ViewType view = (ViewType)obj->data[3].i;
         if (base && base->in_use) {
             size_t stride = vm_view_stride(view);
-            return stride > 0 ? (Int)(disturb_bytes_len(base->obj) / stride) : 0;
+            return stride > 0 ? (Int)(papagaio_bytes_len(base->obj) / stride) : 0;
         }
         return 0;
     }
@@ -3863,22 +3863,22 @@ static Int vm_meta_capacity_entry(const ObjEntry *entry)
 {
     if (!entry || !entry->in_use) return 0;
     List *obj = entry->obj;
-    Int type = disturb_obj_type(obj);
-    if (type == DISTURB_T_NULL) return 0;
-    if (type == DISTURB_T_TABLE) {
+    Int type = papagaio_obj_type(obj);
+    if (type == PAPAGAIO_T_NULL) return 0;
+    if (type == PAPAGAIO_T_TABLE) {
         if (obj->capacity < 2) return 0;
         return obj->capacity - 2;
     }
-    if (type == DISTURB_T_INT) {
+    if (type == PAPAGAIO_T_INT) {
         size_t bytes = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
         if (entry_is_string(entry)) return (Int)bytes;
-        return vm_bytes_to_count(bytes, DISTURB_T_INT);
+        return vm_bytes_to_count(bytes, PAPAGAIO_T_INT);
     }
-    if (type == DISTURB_T_FLOAT) {
+    if (type == PAPAGAIO_T_FLOAT) {
         size_t bytes = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
-        return vm_bytes_to_count(bytes, DISTURB_T_FLOAT);
+        return vm_bytes_to_count(bytes, PAPAGAIO_T_FLOAT);
     }
-    if (type == DISTURB_T_VIEW && obj->size >= 4) {
+    if (type == PAPAGAIO_T_VIEW && obj->size >= 4) {
         ObjEntry *base = (ObjEntry*)obj->data[2].p;
         ViewType view = (ViewType)obj->data[3].i;
         if (base && base->in_use) {
@@ -3896,7 +3896,7 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
 {
     (void)pc;
     if (!target || !index || !entry_is_string(index)) return NULL;
-#ifdef DISTURB_ENABLE_FFI
+#ifdef PAPAGAIO_ENABLE_FFI
     ObjEntry *ffi_meta = NULL;
     int ffi_handled = ffi_view_meta_get(vm, target, index, &ffi_meta);
     if (ffi_handled) return ffi_meta;
@@ -3929,7 +3929,7 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
         return out;
     }
     if (vm_key_is(index, "string")) {
-        if (disturb_obj_type(target->obj) != DISTURB_T_INT) return NULL;
+        if (papagaio_obj_type(target->obj) != PAPAGAIO_T_INT) return NULL;
         ObjEntry *out = vm_reg_alloc(vm, target->obj);
         if (!out) return NULL;
         out->key = vm_entry_key(target);
@@ -3938,15 +3938,15 @@ static ObjEntry *vm_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t p
         return out;
     }
     {
-        const char *name = disturb_bytes_data(index->obj);
-        size_t len = disturb_bytes_len(index->obj);
+        const char *name = papagaio_bytes_data(index->obj);
+        size_t len = papagaio_bytes_len(index->obj);
         ViewType view;
         if (vm_view_from_name(name, len, &view)) {
-            Int type = disturb_obj_type(target->obj);
-            if (type == DISTURB_T_INT && !vm_view_is_float(view)) {
+            Int type = papagaio_obj_type(target->obj);
+            if (type == PAPAGAIO_T_INT && !vm_view_is_float(view)) {
                 return vm_make_view(vm, target, view);
             }
-            if (type == DISTURB_T_FLOAT && vm_view_is_float(view)) {
+            if (type == PAPAGAIO_T_FLOAT && vm_view_is_float(view)) {
                 return vm_make_view(vm, target, view);
             }
         }
@@ -3958,14 +3958,14 @@ static List *vm_resize_bytes(List *obj, Int new_size)
 {
     if (new_size < 0) return 0;
     size_t len = (size_t)new_size;
-    if (len > disturb_bytes_max() - 2) return NULL;
+    if (len > papagaio_bytes_max() - 2) return NULL;
     size_t bytes = 2 * sizeof(Value) + len;
     Value *data = (Value*)realloc(obj->data, bytes);
     if (!data && bytes > 0) return NULL;
     if (data) obj->data = data;
-    size_t old_len = disturb_bytes_len(obj);
+    size_t old_len = papagaio_bytes_len(obj);
     if (len > old_len) {
-        memset(disturb_bytes_data(obj) + old_len, 0, len - old_len);
+        memset(papagaio_bytes_data(obj) + old_len, 0, len - old_len);
     }
     obj->size = (UHalf)(len + 2);
     obj->capacity = (UHalf)(len + 2);
@@ -3976,9 +3976,9 @@ static List *vm_resize_bytes_capacity(List *obj, Int new_cap)
 {
     if (new_cap < 0) return NULL;
     size_t cap = (size_t)new_cap;
-    if (cap > disturb_bytes_max() - 2) return NULL;
+    if (cap > papagaio_bytes_max() - 2) return NULL;
     size_t bytes = 2 * sizeof(Value) + cap;
-    size_t old_len = disturb_bytes_len(obj);
+    size_t old_len = papagaio_bytes_len(obj);
     Value *data = (Value*)realloc(obj->data, bytes);
     if (!data && cap > 0) return NULL;
     if (data) obj->data = data;
@@ -4006,7 +4006,7 @@ static List *vm_resize_list(List *obj, Int new_size, ObjEntry *null_entry)
     if (obj->size < (UHalf)new_total) {
         for (size_t i = obj->size; i < new_total; i++) {
             Value v;
-            if (disturb_obj_type(obj) == DISTURB_T_TABLE) {
+            if (papagaio_obj_type(obj) == PAPAGAIO_T_TABLE) {
                 v.p = null_entry;
             } else {
                 v.f = 0;
@@ -4023,9 +4023,9 @@ static int vm_ensure_mutable_entry_obj(VM *vm, ObjEntry *entry)
     if (!vm || !entry || !entry->obj) return 0;
     if (!vm_entry_is_cached_int(vm, entry)) return 1;
     ObjEntry *key_entry = vm_entry_key(entry);
-    List *copy = vm_alloc_bytes(vm, DISTURB_T_INT, key_entry,
-                                disturb_bytes_data(entry->obj),
-                                disturb_bytes_len(entry->obj));
+    List *copy = vm_alloc_bytes(vm, PAPAGAIO_T_INT, key_entry,
+                                papagaio_bytes_data(entry->obj),
+                                papagaio_bytes_len(entry->obj));
     if (!copy) return 0;
     vm_entry_set_obj(vm, entry, copy);
     return 1;
@@ -4039,11 +4039,11 @@ static int vm_set_size_bytes(VM *vm, ObjEntry *target, Int new_size)
     List *obj = target->obj;
     List *old_obj = obj;
     size_t cap = obj->capacity >= 2 ? (size_t)obj->capacity - 2 : 0;
-    size_t old_len = disturb_bytes_len(obj);
+    size_t old_len = papagaio_bytes_len(obj);
     size_t len = (size_t)new_size;
     if (len <= cap) {
         if (len > old_len) {
-            memset(disturb_bytes_data(obj) + old_len, 0, len - old_len);
+            memset(papagaio_bytes_data(obj) + old_len, 0, len - old_len);
         }
         obj->size = (UHalf)(len + 2);
         return 1;
@@ -4068,7 +4068,7 @@ static int vm_set_size_list(VM *vm, ObjEntry *target, Int new_size, ObjEntry *nu
         if (len > old_size) {
             for (size_t i = old_size + 2; i < new_total; i++) {
                 Value v;
-                if (disturb_obj_type(obj) == DISTURB_T_TABLE) {
+                if (papagaio_obj_type(obj) == PAPAGAIO_T_TABLE) {
                     v.p = null_entry;
                 } else {
                     v.f = 0;
@@ -4151,7 +4151,7 @@ static void vm_release_local_scope(VM *vm, ObjEntry *local, List *stack)
         ObjEntry *entry = (ObjEntry*)obj->data[i].p;
         ObjEntry *key = vm_entry_key(entry);
         if (key && entry_is_string(key) &&
-            disturb_bytes_eq_cstr(key->obj, "local")) {
+            papagaio_bytes_eq_cstr(key->obj, "local")) {
             continue;
         }
         if (vm_entry_on_stack(stack, entry)) continue;
@@ -4187,7 +4187,7 @@ static int vm_bind_args(VM *vm, FunctionBox *box, List *stack, uint32_t argc, Ob
             ObjEntry *arg = vm_stack_arg(stack, argc, i);
             if (!arg) arg = vm->null_entry;
             vm_entry_set_obj(vm, list, vm_update_shared_obj(vm, list->obj,
-                                                            disturb_table_add(list->obj, arg)));
+                                                            papagaio_table_add(list->obj, arg)));
         }
         if (!local) return 0;
         if (!vm_object_set_by_key_len(vm, &local->obj,
@@ -4234,11 +4234,11 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
     ObjEntry *meta = vm_meta_get(vm, target, index, pc);
     if (meta) return meta;
 
-    Int type = disturb_obj_type(target->obj);
-    if (type == DISTURB_T_NULL) {
+    Int type = papagaio_obj_type(target->obj);
+    if (type == PAPAGAIO_T_NULL) {
         return vm->null_entry;
     }
-    if (type == DISTURB_T_VIEW) {
+    if (type == PAPAGAIO_T_VIEW) {
         if (!index) {
             fprintf(stderr, "bytecode error at pc %zu: INDEX missing view index\n", pc);
             return NULL;
@@ -4257,12 +4257,12 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
         }
         size_t stride = vm_view_stride(view);
         size_t offset = (size_t)idx * stride;
-        size_t len = disturb_bytes_len(base->obj);
+        size_t len = papagaio_bytes_len(base->obj);
         if (offset + stride > len) {
             fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
             return vm->null_entry;
         }
-        unsigned char *buf = (unsigned char*)disturb_bytes_data(base->obj) + offset;
+        unsigned char *buf = (unsigned char*)papagaio_bytes_data(base->obj) + offset;
         if (vm_view_is_float(view)) {
             if (view == VIEW_F32) {
                 float fv = 0.0f;
@@ -4332,15 +4332,15 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
         }
         return vm->null_entry;
     }
-    if (type == DISTURB_T_TABLE) {
+    if (type == PAPAGAIO_T_TABLE) {
         if (!index) {
             fprintf(stderr, "bytecode error at pc %zu: INDEX object missing key/index\n", pc);
             return NULL;
         }
         if (entry_is_string(index)) {
             return vm_object_find_by_key_len(vm, target->obj,
-                                             disturb_bytes_data(index->obj),
-                                             disturb_bytes_len(index->obj));
+                                             papagaio_bytes_data(index->obj),
+                                             papagaio_bytes_len(index->obj));
         }
         Int idx = 0;
         if (!vm_number_to_index(index, &idx, "INDEX", pc)) return NULL;
@@ -4352,13 +4352,13 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
         return (ObjEntry*)target->obj->data[pos].p;
     }
 
-    if (type == DISTURB_T_NATIVE && index && entry_is_string(index)) {
+    if (type == PAPAGAIO_T_NATIVE && index && entry_is_string(index)) {
         return vm_object_find_by_key_len(vm, target->obj,
-                                         disturb_bytes_data(index->obj),
-                                         disturb_bytes_len(index->obj));
+                                         papagaio_bytes_data(index->obj),
+                                         papagaio_bytes_len(index->obj));
     }
-#ifdef DISTURB_ENABLE_FFI
-    if (type == DISTURB_T_NATIVE) {
+#ifdef PAPAGAIO_ENABLE_FFI
+    if (type == PAPAGAIO_T_NATIVE) {
         ObjEntry *ffi_out = NULL;
         int handled = ffi_native_index_get(vm, target, index, &ffi_out, pc);
         if (handled < 0) return NULL;
@@ -4369,8 +4369,8 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
     if (index && entry_is_string(index)) {
         if (vm && vm->common_entry) {
             ObjEntry *method = vm_object_find_direct(vm, vm->common_entry->obj,
-                                                     disturb_bytes_data(index->obj),
-                                                     disturb_bytes_len(index->obj));
+                                                     papagaio_bytes_data(index->obj),
+                                                     papagaio_bytes_len(index->obj));
             if (method) return method;
         }
         return vm->null_entry;
@@ -4379,22 +4379,22 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
     Int idx = 0;
     if (!vm_number_to_index(index, &idx, "INDEX", pc)) return NULL;
 
-    if (type == DISTURB_T_INT) {
+    if (type == PAPAGAIO_T_INT) {
         if (entry_is_string(target)) {
-            size_t len = disturb_bytes_len(target->obj);
+            size_t len = papagaio_bytes_len(target->obj);
             if (idx < 0 || (size_t)idx >= len) {
                 fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
                 return vm->null_entry;
             }
-            char c = disturb_bytes_data(target->obj)[idx];
-            ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, DISTURB_T_INT, NULL, &c, 1));
+            char c = papagaio_bytes_data(target->obj)[idx];
+            ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, &c, 1));
             if (entry) {
                 entry->is_string = 1;
                 entry->explicit_string = target->explicit_string;
             }
             return entry;
         }
-        Int count = vm_bytes_to_count(disturb_bytes_len(target->obj), DISTURB_T_INT);
+        Int count = vm_bytes_to_count(papagaio_bytes_len(target->obj), PAPAGAIO_T_INT);
         if (idx < 0 || idx >= count) {
             fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
             return vm->null_entry;
@@ -4404,8 +4404,8 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
         return vm_make_int_value(vm, v);
     }
 
-    if (type == DISTURB_T_FLOAT) {
-        Int count = vm_bytes_to_count(disturb_bytes_len(target->obj), DISTURB_T_FLOAT);
+    if (type == PAPAGAIO_T_FLOAT) {
+        Int count = vm_bytes_to_count(papagaio_bytes_len(target->obj), PAPAGAIO_T_FLOAT);
         if (idx < 0 || idx >= count) {
             fprintf(stderr, "bytecode error at pc %zu: INDEX out of bounds\n", pc);
             return vm->null_entry;
@@ -4416,7 +4416,7 @@ static ObjEntry *vm_index_get(VM *vm, ObjEntry *target, ObjEntry *index, size_t 
     }
 
     fprintf(stderr, "bytecode error at pc %zu: INDEX unsupported type %s\n",
-            pc, disturb_type_name(type));
+            pc, papagaio_type_name(type));
     return NULL;
 }
 
@@ -4428,8 +4428,8 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
     }
     List *obj = *objp;
     Int start = 2;
-    Int type = disturb_obj_type(obj);
-    if (type == DISTURB_T_NATIVE || type == DISTURB_T_LAMBDA) start = 3;
+    Int type = papagaio_obj_type(obj);
+    if (type == PAPAGAIO_T_NATIVE || type == PAPAGAIO_T_LAMBDA) start = 3;
     ObjEntry *wanted = (vm && vm->keyintern_enabled) ? vm_intern_lookup(vm, name, len) : NULL;
     ObjEntry *found = NULL;
     for (Int i = start; i < obj->size; i++) {
@@ -4440,34 +4440,34 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
             found = entry;
             break;
         }
-        if (disturb_bytes_eq_bytes(key->obj, name, len)) {
+        if (papagaio_bytes_eq_bytes(key->obj, name, len)) {
             found = entry;
             break;
         }
     }
     if (found) {
         if (found->obj == value->obj) return 1;
-        Int found_type = disturb_obj_type(found->obj);
-        Int value_type = disturb_obj_type(value->obj);
+        Int found_type = papagaio_obj_type(found->obj);
+        Int value_type = papagaio_obj_type(value->obj);
         if (!vm_entry_is_cached_int(vm, found) &&
-            ((found_type == DISTURB_T_INT && value_type == DISTURB_T_INT) ||
-             (found_type == DISTURB_T_FLOAT && value_type == DISTURB_T_FLOAT))) {
+            ((found_type == PAPAGAIO_T_INT && value_type == PAPAGAIO_T_INT) ||
+             (found_type == PAPAGAIO_T_FLOAT && value_type == PAPAGAIO_T_FLOAT))) {
             List *dst = found->obj;
             List *src = value->obj;
-            size_t len_bytes = disturb_bytes_len(src);
+            size_t len_bytes = papagaio_bytes_len(src);
             List *old_dst = dst;
             dst = vm_resize_bytes(dst, (Int)len_bytes);
             if (!dst) return 0;
             dst = vm_update_shared_obj(vm, old_dst, dst);
             vm_entry_set_obj(vm, found, dst);
             if (len_bytes) {
-                memcpy(disturb_bytes_data(dst), disturb_bytes_data(src), len_bytes);
+                memcpy(papagaio_bytes_data(dst), papagaio_bytes_data(src), len_bytes);
             }
             found->is_string = value->is_string;
             found->explicit_string = value->explicit_string;
             return 1;
         }
-        if (found_type == DISTURB_T_TABLE && value_type == DISTURB_T_TABLE) {
+        if (found_type == PAPAGAIO_T_TABLE && value_type == PAPAGAIO_T_TABLE) {
             List *dst = found->obj;
             List *src = value->obj;
             size_t count = src->size >= 2 ? (size_t)(src->size - 2) : 0;
@@ -4496,7 +4496,7 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
         return 0;
     }
     List *old_obj = obj;
-    obj = disturb_table_add(obj, copy);
+    obj = papagaio_table_add(obj, copy);
     *objp = vm_update_shared_obj(vm, old_obj, obj);
     return 1;
 }
@@ -4504,15 +4504,15 @@ static int vm_object_set_by_key_len(VM *vm, List **objp, const char *name, size_
 int vm_object_set_by_key(VM *vm, ObjEntry *target, const char *name, size_t len, ObjEntry *value)
 {
     if (!target) return 0;
-    Int type = disturb_obj_type(target->obj);
-    if (type != DISTURB_T_TABLE && type != DISTURB_T_NATIVE) return 0;
+    Int type = papagaio_obj_type(target->obj);
+    if (type != PAPAGAIO_T_TABLE && type != PAPAGAIO_T_NATIVE) return 0;
     return vm_object_set_by_key_len(vm, &target->obj, name, len, value, 0);
 }
 
 static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc)
 {
     if (!target || !index || !entry_is_string(index)) return 0;
-#ifdef DISTURB_ENABLE_FFI
+#ifdef PAPAGAIO_ENABLE_FFI
     int ffi_handled = ffi_view_meta_set(vm, target, index, value, pc);
     if (ffi_handled != 0) return ffi_handled;
 #endif
@@ -4543,7 +4543,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
         }
     }
     if (vm_key_is(index, "name")) {
-        if (!value || disturb_obj_type(value->obj) == DISTURB_T_NULL) {
+        if (!value || papagaio_obj_type(value->obj) == PAPAGAIO_T_NULL) {
             target->key = NULL;
             return 1;
         }
@@ -4551,7 +4551,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             fprintf(stderr, "bytecode error at pc %zu: name expects string or null\n", pc);
             return -1;
         }
-        ObjEntry *key_entry = vm_make_key_len(vm, disturb_bytes_data(value->obj), disturb_bytes_len(value->obj));
+        ObjEntry *key_entry = vm_make_key_len(vm, papagaio_bytes_data(value->obj), papagaio_bytes_len(value->obj));
         target->key = key_entry;
         return 1;
     }
@@ -4564,26 +4564,26 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             fprintf(stderr, "bytecode error at pc %zu: type update failed\n", pc);
             return -1;
         }
-        const char *name = disturb_bytes_data(value->obj);
-        size_t len = disturb_bytes_len(value->obj);
+        const char *name = papagaio_bytes_data(value->obj);
+        size_t len = papagaio_bytes_len(value->obj);
         Int next = -1;
-        if (len == 4 && strncmp(name, "null", 4) == 0) next = DISTURB_T_NULL;
-        else if (len == 3 && strncmp(name, "int", 3) == 0) next = DISTURB_T_INT;
-        else if (len == 5 && strncmp(name, "float", 5) == 0) next = DISTURB_T_FLOAT;
-        else if (len == 5 && strncmp(name, "table", 5) == 0) next = DISTURB_T_TABLE;
-        else if (len == 4 && strncmp(name, "char", 4) == 0) next = DISTURB_T_INT;
-        else if (len == 6 && strncmp(name, "string", 6) == 0) next = DISTURB_T_INT;
-        else if (len == 6 && strncmp(name, "native", 6) == 0) next = DISTURB_T_NATIVE;
-        else if (len == 6 && strncmp(name, "lambda", 6) == 0) next = DISTURB_T_LAMBDA;
+        if (len == 4 && strncmp(name, "null", 4) == 0) next = PAPAGAIO_T_NULL;
+        else if (len == 3 && strncmp(name, "int", 3) == 0) next = PAPAGAIO_T_INT;
+        else if (len == 5 && strncmp(name, "float", 5) == 0) next = PAPAGAIO_T_FLOAT;
+        else if (len == 5 && strncmp(name, "table", 5) == 0) next = PAPAGAIO_T_TABLE;
+        else if (len == 4 && strncmp(name, "char", 4) == 0) next = PAPAGAIO_T_INT;
+        else if (len == 6 && strncmp(name, "string", 6) == 0) next = PAPAGAIO_T_INT;
+        else if (len == 6 && strncmp(name, "native", 6) == 0) next = PAPAGAIO_T_NATIVE;
+        else if (len == 6 && strncmp(name, "lambda", 6) == 0) next = PAPAGAIO_T_LAMBDA;
         else {
             fprintf(stderr, "bytecode error at pc %zu: unknown type '%.*s'\n", pc, (int)len, name);
             return -1;
         }
         target->obj->data[0].i = next;
-        if (next == DISTURB_T_INT && (len == 4 || len == 6)) {
+        if (next == PAPAGAIO_T_INT && (len == 4 || len == 6)) {
             target->is_string = 1;
             target->explicit_string = 1;
-        } else if (next == DISTURB_T_INT || next == DISTURB_T_FLOAT) {
+        } else if (next == PAPAGAIO_T_INT || next == PAPAGAIO_T_FLOAT) {
             target->is_string = 0;
             target->explicit_string = 0;
         }
@@ -4594,7 +4594,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             fprintf(stderr, "bytecode error at pc %zu: value expects a value\n", pc);
             return -1;
         }
-        if (value == vm->null_entry || disturb_obj_type(value->obj) == DISTURB_T_NULL) {
+        if (value == vm->null_entry || papagaio_obj_type(value->obj) == PAPAGAIO_T_NULL) {
             vm_entry_set_obj(vm, target, vm->null_entry->obj);
             target->is_string = 0;
             return 1;
@@ -4633,10 +4633,10 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             fprintf(stderr, "bytecode error at pc %zu: size expects integer\n", pc);
             return -1;
         }
-        Int type = disturb_obj_type(target->obj);
-        if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
+        Int type = papagaio_obj_type(target->obj);
+        if (type == PAPAGAIO_T_INT || type == PAPAGAIO_T_FLOAT) {
             Int bytes = new_size;
-            if (!(type == DISTURB_T_INT && entry_is_string(target))) {
+            if (!(type == PAPAGAIO_T_INT && entry_is_string(target))) {
                 bytes = (Int)((size_t)new_size * vm_elem_size(type));
             }
             if (!vm_set_size_bytes(vm, target, bytes)) {
@@ -4645,14 +4645,14 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             }
             return 1;
         }
-        if (type == DISTURB_T_TABLE) {
+        if (type == PAPAGAIO_T_TABLE) {
             if (!vm_set_size_list(vm, target, new_size, vm->null_entry)) {
                 fprintf(stderr, "bytecode error at pc %zu: failed to resize list\n", pc);
                 return -1;
             }
             return 1;
         }
-        fprintf(stderr, "bytecode error at pc %zu: size not supported on %s\n", pc, disturb_type_name(type));
+        fprintf(stderr, "bytecode error at pc %zu: size not supported on %s\n", pc, papagaio_type_name(type));
         return -1;
     }
     if (vm_key_is(index, "capacity")) {
@@ -4676,10 +4676,10 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             fprintf(stderr, "bytecode error at pc %zu: capacity expects integer\n", pc);
             return -1;
         }
-        Int type = disturb_obj_type(target->obj);
-        if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
+        Int type = papagaio_obj_type(target->obj);
+        if (type == PAPAGAIO_T_INT || type == PAPAGAIO_T_FLOAT) {
             Int bytes = new_cap;
-            if (!(type == DISTURB_T_INT && entry_is_string(target))) {
+            if (!(type == PAPAGAIO_T_INT && entry_is_string(target))) {
                 bytes = (Int)((size_t)new_cap * vm_elem_size(type));
             }
             if (!vm_ensure_mutable_entry_obj(vm, target)) {
@@ -4695,7 +4695,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             vm_entry_set_obj(vm, target, vm_update_shared_obj(vm, old_obj, resized));
             return 1;
         }
-        if (type == DISTURB_T_TABLE) {
+        if (type == PAPAGAIO_T_TABLE) {
             size_t payload = (size_t)new_cap;
             size_t new_total = payload + 2;
             size_t bytes = new_total * sizeof(Value);
@@ -4713,7 +4713,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             if (target->obj->size > target->obj->capacity) {
                 target->obj->size = target->obj->capacity;
             }
-            if (disturb_obj_type(target->obj) == DISTURB_T_TABLE) {
+            if (papagaio_obj_type(target->obj) == PAPAGAIO_T_TABLE) {
                 for (Int i = 2; i < target->obj->size; i++) {
                     if (!target->obj->data[i].p) {
                         target->obj->data[i].p = vm->null_entry;
@@ -4722,7 +4722,7 @@ static int vm_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *valu
             }
             return 1;
         }
-        fprintf(stderr, "bytecode error at pc %zu: capacity not supported on %s\n", pc, disturb_type_name(type));
+        fprintf(stderr, "bytecode error at pc %zu: capacity not supported on %s\n", pc, papagaio_type_name(type));
         return -1;
     }
     return 0;
@@ -4881,7 +4881,7 @@ BC_L_PUSH_STRING:
             }
             char *processed = papagaio_process_text(vm, (const char*)buf, slen);
             if (processed) {
-                List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, processed, strlen(processed));
+                List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, processed, strlen(processed));
                 free(processed);
                 free(buf);
                 ObjEntry *entry = vm_reg_alloc(vm, obj);
@@ -4892,7 +4892,7 @@ BC_L_PUSH_STRING:
                 vm_stack_push_entry(vm, entry);
                 break;
             }
-            List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, (const char*)buf, slen);
+            List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, (const char*)buf, slen);
             free(buf);
             ObjEntry *entry = vm_reg_alloc(vm, obj);
             if (entry) {
@@ -4915,7 +4915,7 @@ BC_L_PUSH_STRING_RAW:
                 fprintf(stderr, "bytecode error at pc %zu: truncated string\n", pc);
                 return 0;
             }
-            List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, (const char*)buf, slen);
+            List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, (const char*)buf, slen);
             free(buf);
             ObjEntry *entry = vm_reg_alloc(vm, obj);
             if (entry) {
@@ -4935,7 +4935,7 @@ BC_L_BUILD_INT:
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_INT\n", pc);
                 return 0;
             }
-            List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
+            List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
             for (uint32_t i = 0; i < count; i++) {
                 ObjEntry *entry = vm_stack_pop_entry(vm, "BUILD_INT", pc);
                 Int iv = 0;
@@ -4961,7 +4961,7 @@ BC_L_BUILD_FLOAT:
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_FLOAT\n", pc);
                 return 0;
             }
-            List *obj = vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float));
+            List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float));
             for (uint32_t i = 0; i < count; i++) {
                 ObjEntry *entry = vm_stack_pop_entry(vm, "BUILD_FLOAT", pc);
                 Int iv = 0;
@@ -4986,7 +4986,7 @@ BC_L_BUILD_INT_LIT:
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_INT_LIT\n", pc);
                 return 0;
             }
-            List *obj = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
+            List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
             for (uint32_t i = 0; i < count; i++) {
                 int64_t v = 0;
                 if (!bc_read_i64(data, len, &pc, &v)) {
@@ -5008,7 +5008,7 @@ BC_L_BUILD_FLOAT_LIT:
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_FLOAT_LIT\n", pc);
                 return 0;
             }
-            List *obj = vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float));
+            List *obj = vm_alloc_bytes(vm, PAPAGAIO_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float));
             for (uint32_t i = 0; i < count; i++) {
                 double v = 0.0;
                 if (!bc_read_f64(data, len, &pc, &v)) {
@@ -5030,7 +5030,7 @@ BC_L_BUILD_OBJECT:
                 fprintf(stderr, "bytecode error at pc %zu: truncated BUILD_OBJECT\n", pc);
                 return 0;
             }
-            List *obj = vm_alloc_list(vm, DISTURB_T_TABLE, NULL, (Int)count);
+            List *obj = vm_alloc_list(vm, PAPAGAIO_T_TABLE, NULL, (Int)count);
             ObjEntry **keys = (ObjEntry**)calloc(count, sizeof(ObjEntry*));
             ObjEntry **vals = (ObjEntry**)calloc(count, sizeof(ObjEntry*));
             if (!keys || !vals) {
@@ -5042,7 +5042,7 @@ BC_L_BUILD_OBJECT:
             for (uint32_t i = 0; i < count; i++) {
                 ObjEntry *val = vm_stack_pop_entry(vm, "BUILD_OBJECT", pc);
                 ObjEntry *key = vm_stack_pop_entry(vm, "BUILD_OBJECT", pc);
-                if (!key || (!entry_is_string(key) && disturb_obj_type(key->obj) != DISTURB_T_NULL)) {
+                if (!key || (!entry_is_string(key) && papagaio_obj_type(key->obj) != PAPAGAIO_T_NULL)) {
                     fprintf(stderr, "bytecode error at pc %zu: BUILD_OBJECT expects string or null keys\n", pc);
                     free(keys);
                     free(vals);
@@ -5055,8 +5055,8 @@ BC_L_BUILD_OBJECT:
                 ObjEntry *key_entry = NULL;
                 if (entry_is_string(keys[i])) {
                     key_entry = vm_make_key_len(vm,
-                                                disturb_bytes_data(keys[i]->obj),
-                                                disturb_bytes_len(keys[i]->obj));
+                                                papagaio_bytes_data(keys[i]->obj),
+                                                papagaio_bytes_len(keys[i]->obj));
                 }
                 ObjEntry *copy = vm_clone_entry_shallow(vm, vals[i], key_entry);
                 if (!copy) {
@@ -5065,7 +5065,7 @@ BC_L_BUILD_OBJECT:
                     free(vals);
                     return 0;
                 }
-                obj = disturb_table_add(obj, copy);
+                obj = papagaio_table_add(obj, copy);
             }
             free(keys);
             free(vals);
@@ -5188,7 +5188,7 @@ BC_L_BUILD_FUNCTION:
             box->default_code = default_code;
             box->default_lens = default_lens;
             box->has_default = has_default;
-            List *obj = vm_alloc_list(vm, DISTURB_T_LAMBDA, NULL, 1);
+            List *obj = vm_alloc_list(vm, PAPAGAIO_T_LAMBDA, NULL, 1);
             Value v;
             v.p = box;
             urb_push(obj, v);
@@ -5222,18 +5222,18 @@ BC_L_STORE_INDEX:
             if (meta < 0) return 0;
             if (meta > 0) break;
 
-            Int type = disturb_obj_type(target->obj);
-#ifdef DISTURB_ENABLE_FFI
-            if (type == DISTURB_T_NATIVE) {
+            Int type = papagaio_obj_type(target->obj);
+#ifdef PAPAGAIO_ENABLE_FFI
+            if (type == PAPAGAIO_T_NATIVE) {
                 int ffi_handled = ffi_native_index_set(vm, target, index, value, pc);
                 if (ffi_handled < 0) return 0;
                 if (ffi_handled > 0) break;
             }
 #endif
-            if (type == DISTURB_T_TABLE && entry_is_string(index)) {
+            if (type == PAPAGAIO_T_TABLE && entry_is_string(index)) {
                 if (!vm_object_set_by_key_len(vm, &target->obj,
-                                              disturb_bytes_data(index->obj),
-                                              disturb_bytes_len(index->obj),
+                                              papagaio_bytes_data(index->obj),
+                                              papagaio_bytes_len(index->obj),
                                               value, pc)) {
                     return 0;
                 }
@@ -5243,7 +5243,7 @@ BC_L_STORE_INDEX:
             Int idx = 0;
             if (!vm_number_to_index(index, &idx, "STORE_INDEX", pc)) return 0;
 
-            if (type == DISTURB_T_VIEW) {
+            if (type == PAPAGAIO_T_VIEW) {
                 ObjEntry *base = (ObjEntry*)target->obj->data[2].p;
                 ViewType view = (ViewType)target->obj->data[3].i;
                 if (!base || !base->in_use) {
@@ -5260,12 +5260,12 @@ BC_L_STORE_INDEX:
                 }
                 size_t stride = vm_view_stride(view);
                 size_t offset = (size_t)idx * stride;
-                size_t len = disturb_bytes_len(base->obj);
+                size_t len = papagaio_bytes_len(base->obj);
                 if (offset + stride > len) {
                     fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
                     return 0;
                 }
-                unsigned char *buf = (unsigned char*)disturb_bytes_data(base->obj) + offset;
+                unsigned char *buf = (unsigned char*)papagaio_bytes_data(base->obj) + offset;
                 Int iv = 0;
                 Float fv = 0;
                 int is_float = 0;
@@ -5332,19 +5332,19 @@ BC_L_STORE_INDEX:
                 break;
             }
 
-            if (type == DISTURB_T_INT) {
+            if (type == PAPAGAIO_T_INT) {
                 if (!vm_ensure_mutable_entry_obj(vm, target)) {
                     fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX mutation failed\n", pc);
                     return 0;
                 }
                 if (entry_is_string(target)) {
-                    size_t len = disturb_bytes_len(target->obj);
+                    size_t len = papagaio_bytes_len(target->obj);
                     if (idx < 0 || (size_t)idx >= len) {
                         fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
                         return 0;
                     }
-                    if (entry_is_string(value) && disturb_bytes_len(value->obj) == 1) {
-                        disturb_bytes_data(target->obj)[idx] = disturb_bytes_data(value->obj)[0];
+                    if (entry_is_string(value) && papagaio_bytes_len(value->obj) == 1) {
+                        papagaio_bytes_data(target->obj)[idx] = papagaio_bytes_data(value->obj)[0];
                         break;
                     }
                     Int iv = 0;
@@ -5365,10 +5365,10 @@ BC_L_STORE_INDEX:
                         fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX expects byte-sized number\n", pc);
                         return 0;
                     }
-                    disturb_bytes_data(target->obj)[idx] = (unsigned char)iv;
+                    papagaio_bytes_data(target->obj)[idx] = (unsigned char)iv;
                     break;
                 }
-                Int count = vm_bytes_to_count(disturb_bytes_len(target->obj), DISTURB_T_INT);
+                Int count = vm_bytes_to_count(papagaio_bytes_len(target->obj), PAPAGAIO_T_INT);
                 if (idx < 0 || idx >= count) {
                     fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
                     return 0;
@@ -5384,8 +5384,8 @@ BC_L_STORE_INDEX:
                 break;
             }
 
-            if (type == DISTURB_T_FLOAT) {
-                Int count = vm_bytes_to_count(disturb_bytes_len(target->obj), DISTURB_T_FLOAT);
+            if (type == PAPAGAIO_T_FLOAT) {
+                Int count = vm_bytes_to_count(papagaio_bytes_len(target->obj), PAPAGAIO_T_FLOAT);
                 if (idx < 0 || idx >= count) {
                     fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
                     return 0;
@@ -5400,7 +5400,7 @@ BC_L_STORE_INDEX:
                 break;
             }
 
-            if (type == DISTURB_T_TABLE) {
+            if (type == PAPAGAIO_T_TABLE) {
                 Int pos = idx + 2;
                 if (idx < 0 || pos >= target->obj->size) {
                     fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX out of bounds\n", pc);
@@ -5416,7 +5416,7 @@ BC_L_STORE_INDEX:
             }
 
             fprintf(stderr, "bytecode error at pc %zu: STORE_INDEX unsupported type %s\n",
-                    pc, disturb_type_name(type));
+                    pc, papagaio_type_name(type));
             return 0;
         }
         case BC_LOAD_ROOT:
@@ -5533,11 +5533,11 @@ BC_L_CALL_EX:
             ObjEntry *target = NULL;
             ObjEntry *old_call_entry = vm->call_entry;
             if (vm->this_entry && vm->this_entry->in_use) {
-                Int this_type = disturb_obj_type(vm->this_entry->obj);
-                if (this_type == DISTURB_T_TABLE) {
+                Int this_type = papagaio_obj_type(vm->this_entry->obj);
+                if (this_type == PAPAGAIO_T_TABLE) {
                     target = vm_object_find_by_key_len(vm, vm->this_entry->obj, (char*)name, name_len);
                     if (target == vm->null_entry) target = NULL;
-                } else if (this_type == DISTURB_T_INT || this_type == DISTURB_T_FLOAT || this_type == DISTURB_T_VIEW) {
+                } else if (this_type == PAPAGAIO_T_INT || this_type == PAPAGAIO_T_FLOAT || this_type == PAPAGAIO_T_VIEW) {
                     if (vm->common_entry) {
                         target = vm_object_find_direct(vm, vm->common_entry->obj, (char*)name, name_len);
                     }
@@ -5558,7 +5558,7 @@ BC_L_CALL_EX:
                 return 0;
             }
             free(name);
-            if (disturb_obj_type(target->obj) == DISTURB_T_NATIVE) {
+            if (papagaio_obj_type(target->obj) == PAPAGAIO_T_NATIVE) {
                 vm->call_entry = target;
                 if (target->obj->size < 3) {
                     fprintf(stderr, "bytecode error at pc %zu: CALL missing function\n", pc);
@@ -5571,7 +5571,7 @@ BC_L_CALL_EX:
                     return 0;
                 }
                 fn(vm, vm->stack_entry->obj, vm->global_entry->obj);
-            } else if (disturb_obj_type(target->obj) == DISTURB_T_LAMBDA) {
+            } else if (papagaio_obj_type(target->obj) == PAPAGAIO_T_LAMBDA) {
                 vm->call_entry = target;
                 if (target->obj->size < 3) {
                     fprintf(stderr, "bytecode error at pc %zu: CALL missing function\n", pc);
@@ -5714,7 +5714,7 @@ BC_L_OR:
                 sb_init(&buf);
                 vm_append_value_text(vm, left, &buf, 1);
                 vm_append_value_text(vm, right, &buf, 1);
-                ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, DISTURB_T_INT, NULL, buf.data, buf.len));
+                ObjEntry *entry = vm_reg_alloc(vm, vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, buf.data, buf.len));
                 if (entry) {
                     entry->is_string = 1;
                     entry->explicit_string = left->explicit_string || right->explicit_string;
@@ -5725,27 +5725,27 @@ BC_L_OR:
             }
             if (op == BC_AND || op == BC_OR) {
                 /* Vectorized AND/OR for numeric arrays */
-                Int lt = disturb_obj_type(left->obj);
-                Int rt = disturb_obj_type(right->obj);
-                int left_is_string = (lt == DISTURB_T_INT && entry_is_string(left));
-                int right_is_string = (rt == DISTURB_T_INT && entry_is_string(right));
+                Int lt = papagaio_obj_type(left->obj);
+                Int rt = papagaio_obj_type(right->obj);
+                int left_is_string = (lt == PAPAGAIO_T_INT && entry_is_string(left));
+                int right_is_string = (rt == PAPAGAIO_T_INT && entry_is_string(right));
 
                 if (!left_is_string && !right_is_string &&
-                    (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
-                    (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT)) {
+                    (lt == PAPAGAIO_T_INT || lt == PAPAGAIO_T_FLOAT) &&
+                    (rt == PAPAGAIO_T_INT || rt == PAPAGAIO_T_FLOAT)) {
 
-                    Int lc = (lt == DISTURB_T_INT)
-                             ? vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_INT)
-                             : vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_FLOAT);
-                    Int rc = (rt == DISTURB_T_INT)
-                             ? vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_INT)
-                             : vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_FLOAT);
+                    Int lc = (lt == PAPAGAIO_T_INT)
+                             ? vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_INT)
+                             : vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_FLOAT);
+                    Int rc = (rt == PAPAGAIO_T_INT)
+                             ? vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_INT)
+                             : vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_FLOAT);
 
                     if (lc > 1 || rc > 1) {
                         Int out_count = (lc > 1 && rc > 1)
                                         ? (lc > rc ? lc : rc)
                                         : (lc > 1 ? lc : rc);
-                        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL,
+                        List *result = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL,
                                                       (size_t)out_count * sizeof(Int));
                         if (!result) return 0;
 
@@ -5754,19 +5754,19 @@ BC_L_OR:
 
                             /* Get left element */
                             if (lc == 1) {
-                                if (lt == DISTURB_T_INT) { Int v = 0; vm_read_int_at(left->obj, 0, &v); lv = (double)v; }
+                                if (lt == PAPAGAIO_T_INT) { Int v = 0; vm_read_int_at(left->obj, 0, &v); lv = (double)v; }
                                 else { Float v = 0; vm_read_float_at(left->obj, 0, &v); lv = (double)v; }
                             } else if (i < lc) {
-                                if (lt == DISTURB_T_INT) { Int v = 0; vm_read_int_at(left->obj, i, &v); lv = (double)v; }
+                                if (lt == PAPAGAIO_T_INT) { Int v = 0; vm_read_int_at(left->obj, i, &v); lv = (double)v; }
                                 else { Float v = 0; vm_read_float_at(left->obj, i, &v); lv = (double)v; }
                             }
 
                             /* Get right element */
                             if (rc == 1) {
-                                if (rt == DISTURB_T_INT) { Int v = 0; vm_read_int_at(right->obj, 0, &v); rv = (double)v; }
+                                if (rt == PAPAGAIO_T_INT) { Int v = 0; vm_read_int_at(right->obj, 0, &v); rv = (double)v; }
                                 else { Float v = 0; vm_read_float_at(right->obj, 0, &v); rv = (double)v; }
                             } else if (i < rc) {
-                                if (rt == DISTURB_T_INT) { Int v = 0; vm_read_int_at(right->obj, i, &v); rv = (double)v; }
+                                if (rt == PAPAGAIO_T_INT) { Int v = 0; vm_read_int_at(right->obj, i, &v); rv = (double)v; }
                                 else { Float v = 0; vm_read_float_at(right->obj, i, &v); rv = (double)v; }
                             }
 
@@ -5791,25 +5791,25 @@ BC_L_OR:
             if (op == BC_BITAND || op == BC_BITOR || op == BC_BITXOR ||
                 op == BC_SHL || op == BC_SHR) {
                 /* Vectorization for bitwise operations */
-                Int lt = disturb_obj_type(left->obj);
-                Int rt = disturb_obj_type(right->obj);
-                int left_is_string = (lt == DISTURB_T_INT && entry_is_string(left));
-                int right_is_string = (rt == DISTURB_T_INT && entry_is_string(right));
+                Int lt = papagaio_obj_type(left->obj);
+                Int rt = papagaio_obj_type(right->obj);
+                int left_is_string = (lt == PAPAGAIO_T_INT && entry_is_string(left));
+                int right_is_string = (rt == PAPAGAIO_T_INT && entry_is_string(right));
                 
                 if (!left_is_string && !right_is_string &&
-                    (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
-                    (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT)) {
+                    (lt == PAPAGAIO_T_INT || lt == PAPAGAIO_T_FLOAT) &&
+                    (rt == PAPAGAIO_T_INT || rt == PAPAGAIO_T_FLOAT)) {
                     
                     Int lc = 0, rc = 0;
-                    if (lt == DISTURB_T_INT) lc = vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_INT);
-                    else if (lt == DISTURB_T_FLOAT) lc = vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_FLOAT);
-                    if (rt == DISTURB_T_INT) rc = vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_INT);
-                    else if (rt == DISTURB_T_FLOAT) rc = vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_FLOAT);
+                    if (lt == PAPAGAIO_T_INT) lc = vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_INT);
+                    else if (lt == PAPAGAIO_T_FLOAT) lc = vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_FLOAT);
+                    if (rt == PAPAGAIO_T_INT) rc = vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_INT);
+                    else if (rt == PAPAGAIO_T_FLOAT) rc = vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_FLOAT);
                     
                     /* Handle vectorization */
                     if (lc > 1 || rc > 1) {
                         Int out_count = (lc > 1 && rc > 1) ? (lc > rc ? lc : rc) : (lc > 1 ? lc : rc);
-                        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
+                        List *result = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
                         
                         if (!result) return 0;
                         
@@ -5818,7 +5818,7 @@ BC_L_OR:
                             
                             /* Get left value */
                             if (lc == 1) {
-                                if (lt == DISTURB_T_INT) {
+                                if (lt == PAPAGAIO_T_INT) {
                                     vm_read_int_at(left->obj, 0, &lv);
                                 } else {
                                     Float v = 0;
@@ -5826,7 +5826,7 @@ BC_L_OR:
                                     lv = (Int)v;
                                 }
                             } else if (i < lc) {
-                                if (lt == DISTURB_T_INT) {
+                                if (lt == PAPAGAIO_T_INT) {
                                     vm_read_int_at(left->obj, i, &lv);
                                 } else {
                                     Float v = 0;
@@ -5837,7 +5837,7 @@ BC_L_OR:
                             
                             /* Get right value */
                             if (rc == 1) {
-                                if (rt == DISTURB_T_INT) {
+                                if (rt == PAPAGAIO_T_INT) {
                                     vm_read_int_at(right->obj, 0, &rv);
                                 } else {
                                     Float v = 0;
@@ -5845,7 +5845,7 @@ BC_L_OR:
                                     rv = (Int)v;
                                 }
                             } else if (i < rc) {
-                                if (rt == DISTURB_T_INT) {
+                                if (rt == PAPAGAIO_T_INT) {
                                     vm_read_int_at(right->obj, i, &rv);
                                 } else {
                                     Float v = 0;
@@ -5932,25 +5932,25 @@ BC_L_OR:
             }
             if (op == BC_EQ || op == BC_SEQ || op == BC_SNEQ || op == BC_NEQ) {
                 /* Try vectorization first */
-                Int lt = disturb_obj_type(left->obj);
-                Int rt = disturb_obj_type(right->obj);
-                int left_is_string = (lt == DISTURB_T_INT && entry_is_string(left));
-                int right_is_string = (rt == DISTURB_T_INT && entry_is_string(right));
+                Int lt = papagaio_obj_type(left->obj);
+                Int rt = papagaio_obj_type(right->obj);
+                int left_is_string = (lt == PAPAGAIO_T_INT && entry_is_string(left));
+                int right_is_string = (rt == PAPAGAIO_T_INT && entry_is_string(right));
                 
                 if (!left_is_string && !right_is_string &&
-                    (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
-                    (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT)) {
+                    (lt == PAPAGAIO_T_INT || lt == PAPAGAIO_T_FLOAT) &&
+                    (rt == PAPAGAIO_T_INT || rt == PAPAGAIO_T_FLOAT)) {
                     
                     Int lc = 0, rc = 0;
-                    if (lt == DISTURB_T_INT) lc = vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_INT);
-                    else if (lt == DISTURB_T_FLOAT) lc = vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_FLOAT);
-                    if (rt == DISTURB_T_INT) rc = vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_INT);
-                    else if (rt == DISTURB_T_FLOAT) rc = vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_FLOAT);
+                    if (lt == PAPAGAIO_T_INT) lc = vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_INT);
+                    else if (lt == PAPAGAIO_T_FLOAT) lc = vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_FLOAT);
+                    if (rt == PAPAGAIO_T_INT) rc = vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_INT);
+                    else if (rt == PAPAGAIO_T_FLOAT) rc = vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_FLOAT);
                     
                     /* Handle vectorization */
                     if (lc > 1 || rc > 1) {
                         Int out_count = (lc > 1 && rc > 1) ? (lc > rc ? lc : rc) : (lc > 1 ? lc : rc);
-                        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
+                        List *result = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
                         
                         if (!result) return 0;
                         
@@ -5959,7 +5959,7 @@ BC_L_OR:
                             
                             /* Get left value */
                             if (lc == 1) {
-                                if (lt == DISTURB_T_INT) {
+                                if (lt == PAPAGAIO_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(left->obj, 0, &v);
                                     lv = (double)v;
@@ -5969,7 +5969,7 @@ BC_L_OR:
                                     lv = (double)v;
                                 }
                             } else if (i < lc) {
-                                if (lt == DISTURB_T_INT) {
+                                if (lt == PAPAGAIO_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(left->obj, i, &v);
                                     lv = (double)v;
@@ -5982,7 +5982,7 @@ BC_L_OR:
                             
                             /* Get right value */
                             if (rc == 1) {
-                                if (rt == DISTURB_T_INT) {
+                                if (rt == PAPAGAIO_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(right->obj, 0, &v);
                                     rv = (double)v;
@@ -5992,7 +5992,7 @@ BC_L_OR:
                                     rv = (double)v;
                                 }
                             } else if (i < rc) {
-                                if (rt == DISTURB_T_INT) {
+                                if (rt == PAPAGAIO_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(right->obj, i, &v);
                                     rv = (double)v;
@@ -6026,25 +6026,25 @@ BC_L_OR:
             }
             if (op == BC_LT || op == BC_LTE || op == BC_GT || op == BC_GTE) {
                 /* Try vectorization first */
-                Int lt = disturb_obj_type(left->obj);
-                Int rt = disturb_obj_type(right->obj);
-                int left_is_string = (lt == DISTURB_T_INT && entry_is_string(left));
-                int right_is_string = (rt == DISTURB_T_INT && entry_is_string(right));
+                Int lt = papagaio_obj_type(left->obj);
+                Int rt = papagaio_obj_type(right->obj);
+                int left_is_string = (lt == PAPAGAIO_T_INT && entry_is_string(left));
+                int right_is_string = (rt == PAPAGAIO_T_INT && entry_is_string(right));
                 
                 if (!left_is_string && !right_is_string &&
-                    (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
-                    (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT)) {
+                    (lt == PAPAGAIO_T_INT || lt == PAPAGAIO_T_FLOAT) &&
+                    (rt == PAPAGAIO_T_INT || rt == PAPAGAIO_T_FLOAT)) {
                     
                     Int lc = 0, rc = 0;
-                    if (lt == DISTURB_T_INT) lc = vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_INT);
-                    else if (lt == DISTURB_T_FLOAT) lc = vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_FLOAT);
-                    if (rt == DISTURB_T_INT) rc = vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_INT);
-                    else if (rt == DISTURB_T_FLOAT) rc = vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_FLOAT);
+                    if (lt == PAPAGAIO_T_INT) lc = vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_INT);
+                    else if (lt == PAPAGAIO_T_FLOAT) lc = vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_FLOAT);
+                    if (rt == PAPAGAIO_T_INT) rc = vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_INT);
+                    else if (rt == PAPAGAIO_T_FLOAT) rc = vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_FLOAT);
                     
                     /* Handle vectorization */
                     if (lc > 1 || rc > 1) {
                         Int out_count = (lc > 1 && rc > 1) ? (lc > rc ? lc : rc) : (lc > 1 ? lc : rc);
-                        List *result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
+                        List *result = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
                         
                         if (!result) return 0;
                         
@@ -6053,7 +6053,7 @@ BC_L_OR:
                             
                             /* Get left value */
                             if (lc == 1) {
-                                if (lt == DISTURB_T_INT) {
+                                if (lt == PAPAGAIO_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(left->obj, 0, &v);
                                     lv = (double)v;
@@ -6063,7 +6063,7 @@ BC_L_OR:
                                     lv = (double)v;
                                 }
                             } else if (i < lc) {
-                                if (lt == DISTURB_T_INT) {
+                                if (lt == PAPAGAIO_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(left->obj, i, &v);
                                     lv = (double)v;
@@ -6076,7 +6076,7 @@ BC_L_OR:
                             
                             /* Get right value */
                             if (rc == 1) {
-                                if (rt == DISTURB_T_INT) {
+                                if (rt == PAPAGAIO_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(right->obj, 0, &v);
                                     rv = (double)v;
@@ -6086,7 +6086,7 @@ BC_L_OR:
                                     rv = (double)v;
                                 }
                             } else if (i < rc) {
-                                if (rt == DISTURB_T_INT) {
+                                if (rt == PAPAGAIO_T_INT) {
                                     Int v = 0;
                                     vm_read_int_at(right->obj, i, &v);
                                     rv = (double)v;
@@ -6128,29 +6128,29 @@ BC_L_OR:
             }
 
             /* Vectorization support for arithmetic operations */
-            Int lt = disturb_obj_type(left->obj);
-            Int rt = disturb_obj_type(right->obj);
-            int left_is_string = (lt == DISTURB_T_INT && entry_is_string(left));
-            int right_is_string = (rt == DISTURB_T_INT && entry_is_string(right));
+            Int lt = papagaio_obj_type(left->obj);
+            Int rt = papagaio_obj_type(right->obj);
+            int left_is_string = (lt == PAPAGAIO_T_INT && entry_is_string(left));
+            int right_is_string = (rt == PAPAGAIO_T_INT && entry_is_string(right));
             
             if (!left_is_string && !right_is_string &&
-                (lt == DISTURB_T_INT || lt == DISTURB_T_FLOAT) &&
-                (rt == DISTURB_T_INT || rt == DISTURB_T_FLOAT)) {
+                (lt == PAPAGAIO_T_INT || lt == PAPAGAIO_T_FLOAT) &&
+                (rt == PAPAGAIO_T_INT || rt == PAPAGAIO_T_FLOAT)) {
                 
                 Int lc = 0, rc = 0;
-                if (lt == DISTURB_T_INT) lc = vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_INT);
-                else if (lt == DISTURB_T_FLOAT) lc = vm_bytes_to_count(disturb_bytes_len(left->obj), DISTURB_T_FLOAT);
-                if (rt == DISTURB_T_INT) rc = vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_INT);
-                else if (rt == DISTURB_T_FLOAT) rc = vm_bytes_to_count(disturb_bytes_len(right->obj), DISTURB_T_FLOAT);
+                if (lt == PAPAGAIO_T_INT) lc = vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_INT);
+                else if (lt == PAPAGAIO_T_FLOAT) lc = vm_bytes_to_count(papagaio_bytes_len(left->obj), PAPAGAIO_T_FLOAT);
+                if (rt == PAPAGAIO_T_INT) rc = vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_INT);
+                else if (rt == PAPAGAIO_T_FLOAT) rc = vm_bytes_to_count(papagaio_bytes_len(right->obj), PAPAGAIO_T_FLOAT);
                 
                 /* Handle vectorization if either has multiple elements */
                 if (lc > 1 || rc > 1) {
                     Int out_count = (lc > 1 && rc > 1) ? (lc > rc ? lc : rc) : (lc > 1 ? lc : rc);
-                    int out_is_float = (lt == DISTURB_T_FLOAT || rt == DISTURB_T_FLOAT);
+                    int out_is_float = (lt == PAPAGAIO_T_FLOAT || rt == PAPAGAIO_T_FLOAT);
                     
                     List *result = out_is_float 
-                        ? vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL, (size_t)out_count * sizeof(Float))
-                        : vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
+                        ? vm_alloc_bytes(vm, PAPAGAIO_T_FLOAT, NULL, NULL, (size_t)out_count * sizeof(Float))
+                        : vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, (size_t)out_count * sizeof(Int));
                     
                     if (!result) return 0;
                     
@@ -6160,7 +6160,7 @@ BC_L_OR:
                         
                         /* Get left value */
                         if (lc == 1) {
-                            if (lt == DISTURB_T_INT) {
+                            if (lt == PAPAGAIO_T_INT) {
                                 Int v = 0;
                                 vm_read_int_at(left->obj, 0, &v);
                                 lv = (double)v;
@@ -6170,7 +6170,7 @@ BC_L_OR:
                                 lv = (double)v;
                             }
                         } else if (i < lc) {
-                            if (lt == DISTURB_T_INT) {
+                            if (lt == PAPAGAIO_T_INT) {
                                 Int v = 0;
                                 vm_read_int_at(left->obj, i, &v);
                                 lv = (double)v;
@@ -6183,7 +6183,7 @@ BC_L_OR:
                         
                         /* Get right value */
                         if (rc == 1) {
-                            if (rt == DISTURB_T_INT) {
+                            if (rt == PAPAGAIO_T_INT) {
                                 Int v = 0;
                                 vm_read_int_at(right->obj, 0, &v);
                                 rv = (double)v;
@@ -6193,7 +6193,7 @@ BC_L_OR:
                                 rv = (double)v;
                             }
                         } else if (i < rc) {
-                            if (rt == DISTURB_T_INT) {
+                            if (rt == PAPAGAIO_T_INT) {
                                 Int v = 0;
                                 vm_read_int_at(right->obj, i, &v);
                                 rv = (double)v;
@@ -6268,22 +6268,22 @@ BC_L_BNOT:
             ObjEntry *value = vm_stack_pop_entry(vm, op_name, pc);
             if (!value) return 0;
             
-            Int type = disturb_obj_type(value->obj);
-            int value_is_string = (type == DISTURB_T_INT && entry_is_string(value));
+            Int type = papagaio_obj_type(value->obj);
+            int value_is_string = (type == PAPAGAIO_T_INT && entry_is_string(value));
             
-            if (!value_is_string && (type == DISTURB_T_INT || type == DISTURB_T_FLOAT)) {
+            if (!value_is_string && (type == PAPAGAIO_T_INT || type == PAPAGAIO_T_FLOAT)) {
                 Int count = 0;
-                if (type == DISTURB_T_INT) count = vm_bytes_to_count(disturb_bytes_len(value->obj), DISTURB_T_INT);
-                else if (type == DISTURB_T_FLOAT) count = vm_bytes_to_count(disturb_bytes_len(value->obj), DISTURB_T_FLOAT);
+                if (type == PAPAGAIO_T_INT) count = vm_bytes_to_count(papagaio_bytes_len(value->obj), PAPAGAIO_T_INT);
+                else if (type == PAPAGAIO_T_FLOAT) count = vm_bytes_to_count(papagaio_bytes_len(value->obj), PAPAGAIO_T_FLOAT);
                 
                 /* Vectorization for unary ops */
                 if (count > 1) {
                     List *result = NULL;
                     if (op == BC_BNOT) {
-                        result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
+                        result = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
                         for (Int i = 0; i < count; i++) {
                             Int v = 0;
-                            if (type == DISTURB_T_INT) {
+                            if (type == PAPAGAIO_T_INT) {
                                 vm_read_int_at(value->obj, i, &v);
                             } else {
                                 Float fv = 0;
@@ -6293,14 +6293,14 @@ BC_L_BNOT:
                             vm_write_int_at(result, i, ~v);
                         }
                     } else {  /* NEG */
-                        int out_is_float = (type == DISTURB_T_FLOAT);
+                        int out_is_float = (type == PAPAGAIO_T_FLOAT);
                         result = out_is_float
-                            ? vm_alloc_bytes(vm, DISTURB_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float))
-                            : vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
+                            ? vm_alloc_bytes(vm, PAPAGAIO_T_FLOAT, NULL, NULL, (size_t)count * sizeof(Float))
+                            : vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL, (size_t)count * sizeof(Int));
                         
                         for (Int i = 0; i < count; i++) {
                             double v = 0.0;
-                            if (type == DISTURB_T_INT) {
+                            if (type == PAPAGAIO_T_INT) {
                                 Int iv = 0;
                                 vm_read_int_at(value->obj, i, &iv);
                                 v = (double)iv;
@@ -6351,17 +6351,17 @@ BC_L_NOT:
             if (!value) return 0;
 
             /* Vectorized NOT for numeric arrays */
-            Int not_type = disturb_obj_type(value->obj);
-            int not_is_string = (not_type == DISTURB_T_INT && entry_is_string(value));
-            if (!not_is_string && (not_type == DISTURB_T_INT || not_type == DISTURB_T_FLOAT)) {
-                Int not_count = vm_bytes_to_count(disturb_bytes_len(value->obj), not_type);
+            Int not_type = papagaio_obj_type(value->obj);
+            int not_is_string = (not_type == PAPAGAIO_T_INT && entry_is_string(value));
+            if (!not_is_string && (not_type == PAPAGAIO_T_INT || not_type == PAPAGAIO_T_FLOAT)) {
+                Int not_count = vm_bytes_to_count(papagaio_bytes_len(value->obj), not_type);
                 if (not_count > 1) {
-                    List *not_result = vm_alloc_bytes(vm, DISTURB_T_INT, NULL, NULL,
+                    List *not_result = vm_alloc_bytes(vm, PAPAGAIO_T_INT, NULL, NULL,
                                                       (size_t)not_count * sizeof(Int));
                     if (!not_result) return 0;
                     for (Int i = 0; i < not_count; i++) {
                         int elem_true = 0;
-                        if (not_type == DISTURB_T_INT) {
+                        if (not_type == PAPAGAIO_T_INT) {
                             Int v = 0;
                             vm_read_int_at(value->obj, i, &v);
                             elem_true = (v != 0);
@@ -6390,21 +6390,21 @@ BC_L_TRUTH:
             ObjEntry *value = vm_stack_pop_entry(vm, "TRUTH", pc);
             if (!value) return 0;
             Float truth_ratio = 0.0;
-            Int tt = disturb_obj_type(value->obj);
-            if (tt == DISTURB_T_NULL) {
+            Int tt = papagaio_obj_type(value->obj);
+            if (tt == PAPAGAIO_T_NULL) {
                 truth_ratio = 0.0;
-            } else if (tt == DISTURB_T_TABLE || tt == DISTURB_T_NATIVE ||
-                       tt == DISTURB_T_LAMBDA || tt == DISTURB_T_VIEW) {
+            } else if (tt == PAPAGAIO_T_TABLE || tt == PAPAGAIO_T_NATIVE ||
+                       tt == PAPAGAIO_T_LAMBDA || tt == PAPAGAIO_T_VIEW) {
                 truth_ratio = 1.0;
-            } else if (tt == DISTURB_T_INT || tt == DISTURB_T_FLOAT) {
+            } else if (tt == PAPAGAIO_T_INT || tt == PAPAGAIO_T_FLOAT) {
                 if (entry_is_string(value)) {
                     /* strings: treat raw bytes as an int-8 array */
-                    size_t blen = disturb_bytes_len(value->obj);
+                    size_t blen = papagaio_bytes_len(value->obj);
                     if (blen == 0) {
                         truth_ratio = 0.0;
                     } else {
                         const unsigned char *bdata =
-                            (const unsigned char *)disturb_bytes_data(value->obj);
+                            (const unsigned char *)papagaio_bytes_data(value->obj);
                         Int nonzeros = 0;
                         for (size_t bi = 0; bi < blen; bi++) {
                             if (bdata[bi] != 0) nonzeros++;
@@ -6412,13 +6412,13 @@ BC_L_TRUTH:
                         truth_ratio = (Float)nonzeros / (Float)(Int)blen;
                     }
                 } else {
-                    Int count = vm_bytes_to_count(disturb_bytes_len(value->obj), tt);
+                    Int count = vm_bytes_to_count(papagaio_bytes_len(value->obj), tt);
                     if (count == 0) {
                         truth_ratio = 0.0;
                     } else {
                         Int nonzeros = 0;
                         for (Int i = 0; i < count; i++) {
-                            if (tt == DISTURB_T_INT) {
+                            if (tt == PAPAGAIO_T_INT) {
                                 Int v = 0;
                                 vm_read_int_at(value->obj, i, &v);
                                 if (v != 0) nonzeros++;
@@ -6451,8 +6451,8 @@ BC_L_DUP:
                 fprintf(stderr, "bytecode error at pc %zu: DUP empty stack\n", pc);
                 return 0;
             }
-            Int type = disturb_obj_type(top->obj);
-            if (type == DISTURB_T_INT || type == DISTURB_T_FLOAT) {
+            Int type = papagaio_obj_type(top->obj);
+            if (type == PAPAGAIO_T_INT || type == PAPAGAIO_T_FLOAT) {
                 ObjEntry *dup = vm_clone_entry_deep(vm, top, NULL);
                 if (!dup) return 0;
                 vm_stack_push_entry(vm, dup);
@@ -6785,7 +6785,7 @@ static int md_gen_table_has_key(List *obj)
 
 ObjEntry *papagaio_md_generate(VM *vm, ObjEntry *md_table)
 {
-    if (!md_table || disturb_obj_type(md_table->obj) != DISTURB_T_TABLE) {
+    if (!md_table || papagaio_obj_type(md_table->obj) != PAPAGAIO_T_TABLE) {
         return vm->null_entry;
     }
 
@@ -6803,8 +6803,8 @@ ObjEntry *papagaio_md_generate(VM *vm, ObjEntry *md_table)
         const char *heading = NULL;
         size_t heading_len = 0;
         if (section_key && entry_is_string(section_key)) {
-            heading = disturb_bytes_data(section_key->obj);
-            heading_len = disturb_bytes_len(section_key->obj);
+            heading = papagaio_bytes_data(section_key->obj);
+            heading_len = papagaio_bytes_len(section_key->obj);
         }
 
         /* Skip "content" pseudo-heading, output directly */
@@ -6819,22 +6819,22 @@ ObjEntry *papagaio_md_generate(VM *vm, ObjEntry *md_table)
         first_section = 0;
 
         /* Iterate children of this section */
-        if (disturb_obj_type(section_entry->obj) != DISTURB_T_TABLE) continue;
+        if (papagaio_obj_type(section_entry->obj) != PAPAGAIO_T_TABLE) continue;
         List *section_obj = section_entry->obj;
 
         for (Int ci = 2; ci < section_obj->size; ci++) {
             ObjEntry *child = (ObjEntry*)section_obj->data[ci].p;
             if (!child) continue;
 
-            Int child_type = disturb_obj_type(child->obj);
+            Int child_type = papagaio_obj_type(child->obj);
 
-            if (child_type == DISTURB_T_INT && entry_is_string(child)) {
+            if (child_type == PAPAGAIO_T_INT && entry_is_string(child)) {
                 /* Plain text paragraph */
                 sb_append_char(&buf, '\n');
-                sb_append_n(&buf, disturb_bytes_data(child->obj),
-                            disturb_bytes_len(child->obj));
+                sb_append_n(&buf, papagaio_bytes_data(child->obj),
+                            papagaio_bytes_len(child->obj));
                 sb_append_char(&buf, '\n');
-            } else if (child_type == DISTURB_T_TABLE) {
+            } else if (child_type == PAPAGAIO_T_TABLE) {
                 List *tbl = child->obj;
                 int has_key = md_gen_table_has_key(tbl);
 
@@ -6846,8 +6846,8 @@ ObjEntry *papagaio_md_generate(VM *vm, ObjEntry *md_table)
                         if (!item) continue;
                         sb_append_n(&buf, "- ", 2);
                         if (entry_is_string(item)) {
-                            sb_append_n(&buf, disturb_bytes_data(item->obj),
-                                        disturb_bytes_len(item->obj));
+                            sb_append_n(&buf, papagaio_bytes_data(item->obj),
+                                        papagaio_bytes_len(item->obj));
                         }
                         sb_append_char(&buf, '\n');
                     }
@@ -6858,7 +6858,7 @@ ObjEntry *papagaio_md_generate(VM *vm, ObjEntry *md_table)
                     for (Int ri = 2; ri < tbl->size; ri++) {
                         if (tbl->data[ri].p) { first_row = (ObjEntry*)tbl->data[ri].p; break; }
                     }
-                    if (!first_row || disturb_obj_type(first_row->obj) != DISTURB_T_TABLE) continue;
+                    if (!first_row || papagaio_obj_type(first_row->obj) != PAPAGAIO_T_TABLE) continue;
 
                     /* Collect headers */
                     #define MD_GEN_MAX_COLS 32
@@ -6871,8 +6871,8 @@ ObjEntry *papagaio_md_generate(VM *vm, ObjEntry *md_table)
                         if (!field) continue;
                         ObjEntry *fkey = vm_entry_key(field);
                         if (fkey && entry_is_string(fkey)) {
-                            col_names[ncols] = disturb_bytes_data(fkey->obj);
-                            col_lens[ncols] = disturb_bytes_len(fkey->obj);
+                            col_names[ncols] = papagaio_bytes_data(fkey->obj);
+                            col_lens[ncols] = papagaio_bytes_len(fkey->obj);
                             ncols++;
                         }
                     }
@@ -6896,13 +6896,13 @@ ObjEntry *papagaio_md_generate(VM *vm, ObjEntry *md_table)
                     /* Data rows */
                     for (Int ri = 2; ri < tbl->size; ri++) {
                         ObjEntry *row = (ObjEntry*)tbl->data[ri].p;
-                        if (!row || disturb_obj_type(row->obj) != DISTURB_T_TABLE) continue;
+                        if (!row || papagaio_obj_type(row->obj) != PAPAGAIO_T_TABLE) continue;
                         for (int c = 0; c < ncols; c++) {
                             if (c > 0) sb_append_n(&buf, " | ", 3);
                             ObjEntry *cell = vm_global_find_by_key(row->obj, col_names[c]);
                             if (cell && entry_is_string(cell)) {
-                                sb_append_n(&buf, disturb_bytes_data(cell->obj),
-                                            disturb_bytes_len(cell->obj));
+                                sb_append_n(&buf, papagaio_bytes_data(cell->obj),
+                                            papagaio_bytes_len(cell->obj));
                             }
                         }
                         sb_append_char(&buf, '\n');

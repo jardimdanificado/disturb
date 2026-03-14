@@ -190,7 +190,7 @@ if (lib.read_i32_ptrptr(pp) != 1234) { fail++, }
 lib.free_i32_ptrptr(pp),
 
 if (lib.cstr_len("abcd") != 4) { fail++, } // string marshals as owned C string.
-if (lib.ffi_test_name() != "ffi-test") { fail++, } // string return marshals back to Disturb string.
+if (lib.ffi_test_name() != "ffi-test") { fail++, } // string return marshals back to Papagaio string.
 
 name_ptr = C.ffi.sym(lib.__lib, "ffi_test_name"),
 if (name_ptr != null) {

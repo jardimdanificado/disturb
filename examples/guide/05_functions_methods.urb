@@ -8,7 +8,7 @@ println(add(2, 3)),
 // Default arguments and optional args.
 greet = (name = "world"){ return "hi " + name, },
 println(greet()),
-println(greet("disturb")),
+println(greet("papagaio")),
 
 // Varargs must be named and come last.
 sum = (head, ...rest){

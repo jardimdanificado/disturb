@@ -11,7 +11,7 @@ println(global.common.type),
 obj = {a = 1, show = (){ println(this.a), }},
 obj.show(),
 
-// Stringification uses Disturb literal style.
+// Stringification uses Papagaio literal style.
 println({a = 1, b = "x"}),
 
 // pretty gives a multiline formatted table.

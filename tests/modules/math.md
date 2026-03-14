@@ -2,7 +2,7 @@
 
 This module is authored in Markdown and exported from a fenced block.
 
-```disturb
+```papagaio
 secret = 17,
 module_only_md = 456,
 return {

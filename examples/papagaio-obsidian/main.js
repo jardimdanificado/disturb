@@ -45,7 +45,7 @@ module.exports = class PapagaioPlugin extends Plugin {
         return path.join(vaultRoot, p);
       };
 
-      window.PapagaioHost = window.DisturbHost = {
+      window.PapagaioHost = {
         readFile: (p) => {
           try {
             return fs.readFileSync(resolvePath(p), 'utf8');
@@ -64,7 +64,7 @@ module.exports = class PapagaioPlugin extends Plugin {
       };
     } else {
       // No synchronous file I/O available (e.g., mobile). Provide no-op hooks.
-      window.PapagaioHost = window.DisturbHost = {
+      window.PapagaioHost = {
         readFile: () => null,
         writeFile: () => false,
       };

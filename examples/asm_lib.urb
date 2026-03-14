@@ -1,5 +1,5 @@
 // asm_lib.urb
-// Pure Disturb assembler/disassembler for bytecode text format.
+// Pure Papagaio assembler/disassembler for bytecode text format.
 
 asm_unescape = (s){
   out = "",

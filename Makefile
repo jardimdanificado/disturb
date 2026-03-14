@@ -14,7 +14,7 @@ EMCC ?= emcc
 
 # Native build flags (gcc/clang)
 CFLAGS = -O2 -std=c99 -Wall -Wextra -pedantic -Iinclude
-CFLAGS += -DDISTURB_ENABLE_FFI
+CFLAGS += -DPAPAGAIO_ENABLE_FFI
 LDFLAGS = -lm
 
 # WebAssembly build flags (Emscripten)
@@ -25,13 +25,13 @@ WASM_EMFLAGS = -s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME
 	-s EXPORTED_RUNTIME_METHODS=['cwrap','UTF8ToString','stringToUTF8']
 
 ifeq ($(DISABLE_SYSTEM),1)
-	CFLAGS += -DDISTURB_EMBEDDED
+	CFLAGS += -DPAPAGAIO_EMBEDDED
 endif
 
 ifeq ($(DISABLE_SYSTEM),0)
-	CFLAGS += -DDISTURB_ENABLE_IO
+	CFLAGS += -DPAPAGAIO_ENABLE_IO
 	ifeq ($(DISABLE_FFI_CALLS),0)
-		CFLAGS += -DDISTURB_ENABLE_FFI_CALLS
+		CFLAGS += -DPAPAGAIO_ENABLE_FFI_CALLS
 		LDFLAGS += -lffi
 		ifeq ($(IS_WINDOWS),)
 		ifneq ($(UNAME_S),Darwin)
@@ -65,11 +65,11 @@ install: $(TARGET)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(TARGET) papagaio.js papagaio.wasm disturb.js disturb.wasm
+	rm -f $(OBJ) $(TARGET) papagaio.js papagaio.wasm papagaio.js papagaio.wasm
 	rm -f examples/web/papagaio.js examples/web/papagaio.wasm
-	rm -f examples/web/disturb.js examples/web/disturb.wasm
+	rm -f examples/web/papagaio.js examples/web/papagaio.wasm
 	rm -f examples/papagaio-obsidian/papagaio.js examples/papagaio-obsidian/papagaio.wasm
-	rm -f examples/obsidian-plugin/disturb.js examples/obsidian-plugin/disturb.wasm
+	rm -f examples/obsidian-plugin/papagaio.js examples/obsidian-plugin/papagaio.wasm
 	rm -rf papagaio-obsidian
 
 OBSIDIAN_PLUGIN_DIR ?= papagaio-obsidian

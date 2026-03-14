@@ -54,7 +54,7 @@ if (lib == null) {
   return 0,
 }
 
-n1 = lib.printf("hello from disturb + printf"),
+n1 = lib.printf("hello from papagaio + printf"),
 n2 = lib.printf(" | int=%d float=%.2f str=%s", 42, 3.14159, "ok"),
 
 println("printf return bytes:", n1, n2),

@@ -45,7 +45,7 @@ Flag behavior summary:
 
 ## WebAssembly (WASM) build (Emscripten)
 
-Disturb can be built as a **WASM module** for embedding (e.g., an Obsidian plugin or a web page) by compiling with Emscripten and *disabling dynamic FFI calls*.
+Papagaio can be built as a **WASM module** for embedding (e.g., an Obsidian plugin or a web page) by compiling with Emscripten and *disabling dynamic FFI calls*.
 
 Build the WASM runtime:
 
@@ -82,11 +82,11 @@ window.PapagaioHost = {
 };
 ```
 
-This allows Disturb to read/write files when embedded in environments like Obsidian (Electron) or other hosts that can supply synchronous file access.
+This allows Papagaio to read/write files when embedded in environments like Obsidian (Electron) or other hosts that can supply synchronous file access.
 
 ### Example: Obsidian plugin
 
-An example plugin skeleton is provided under `examples/obsidian-plugin/` showing how to load the WASM module and expose a command to run the active note through Disturb.
+An example plugin skeleton is provided under `examples/obsidian-plugin/` showing how to load the WASM module and expose a command to run the active note through Papagaio.
 
 ### Example: Browser (web)
 
@@ -97,7 +97,7 @@ MSVC build (Windows):
 ```powershell
 cmake -S . -B build-msvc -A x64 -DDISABLE_SYSTEM=1
 cmake --build build-msvc --config Release
-.\build-msvc\Release\disturb.exe --help
+.\build-msvc\Release\papagaio.exe --help
 ```
 
 Notes:
@@ -118,32 +118,32 @@ Notes:
 - `--compile-bytecode` emits raw bytecode.
 - `--run-bytecode` runs raw bytecode.
 
-## MDisturb (Markdown -> Disturb)
+## MDpapagaio (Markdown -> Papagaio)
 
-`MDisturb` is a Disturb script that reads `.md` files and treats fenced code blocks (```...``` or ~~~...~~~) as Disturb source.
+`MDpapagaio` is a Papagaio script that reads `.md` files and treats fenced code blocks (```...``` or ~~~...~~~) as Papagaio source.
 
 Commands:
 
 ```bash
-./papagaio mdisturb.urb print docs.md
-./papagaio mdisturb.urb extract docs.md [output.papagaio]
-./papagaio mdisturb.urb run docs.md
+./papagaio mdpapagaio.urb print docs.md
+./papagaio mdpapagaio.urb extract docs.md [output.papagaio]
+./papagaio mdpapagaio.urb run docs.md
 ```
 
 Behavior:
-- `print`: prints the extracted Disturb source.
+- `print`: prints the extracted Papagaio source.
 - `extract`: writes extracted source to `.urb` (`docs.md -> docs.urb` by default).
 - `run`: evaluates extracted source directly with `eval`.
-- language labels on fences are ignored; all fenced code is considered Disturb.
-- non-fenced Markdown blocks like headings, lists and tables are securely parsed into native Disturb AST constructs under the `global.md` table.
+- language labels on fences are ignored; all fenced code is considered Papagaio.
+- non-fenced Markdown blocks like headings, lists and tables are securely parsed into native Papagaio AST constructs under the `global.md` table.
 
 ### Generating Markdown from `global.md`
 
-Disturb provides a native helper `mdGenerate(obj)` which takes a `global.md`-style table and produces a Markdown string. This is useful for tools that programmatically manipulate and re-emit Markdown.
+Papagaio provides a native helper `mdGenerate(obj)` which takes a `global.md`-style table and produces a Markdown string. This is useful for tools that programmatically manipulate and re-emit Markdown.
 
 Example:
 
-```disturb
+```papagaio
 md = import("tests/cases/markdown_parser_data.md"),
 md_text = mdGenerate(md),
 println(md_text),
@@ -151,7 +151,7 @@ println(md_text),
 
 ## First Script
 
-```disturb
+```papagaio
 msg = "hello",
 if msg.size > 0 { println(msg) }
 ```
@@ -188,7 +188,7 @@ Statements are separated by commas; the final comma in a sequence is optional (y
 
 Comments:
 
-```disturb
+```papagaio
 // line comment
 /* block comment */
 ```
@@ -220,7 +220,7 @@ List behavior:
 
 Numeric list shorthand example:
 
-```disturb
+```papagaio
 a = 1 2 3,
 b = 4 5 6,
 println(a + b),
@@ -306,7 +306,7 @@ Rules:
 
 ### Function/lambda definition
 
-```disturb
+```papagaio
 add = (a, b){ return a + b, }
 ```
 
@@ -347,7 +347,7 @@ Switch behavior:
 
 Assignment shares references:
 
-```disturb
+```papagaio
 a = {x = 1, y = {z = 2}},
 b = a,
 b.y.z = 9,
@@ -358,7 +358,7 @@ Copy helpers:
 - `clone()` shallow copy
 - `copy()` deep copy
 
-```disturb
+```papagaio
 c = a.clone(),
 d = a.copy(),
 ```
@@ -396,7 +396,7 @@ Important constraints:
 
 ## Built-in Functions and Methods
 
-Disturb installs common functions in `global.common`, so they are callable as methods and as globals.
+Papagaio installs common functions in `global.common`, so they are callable as methods and as globals.
 
 ### Core
 - `describe`
@@ -471,7 +471,7 @@ CLI arguments are exposed as globals:
 
 Example:
 
-```disturb
+```papagaio
 println(argc),
 println(args.pretty()),
 println(arg_0),
@@ -481,7 +481,7 @@ println(arg_0),
 
 `import(path)` behavior:
 - if `path` ends with `.urb`, loads that file directly
-- if `path` ends with `.md`, extracts fenced code blocks and loads the extracted Disturb source directly
+- if `path` ends with `.md`, extracts fenced code blocks and loads the extracted Papagaio source directly
 - otherwise loads package entry: `path/<basename(path)>.urb`
 - if package `.urb` entry is missing, falls back to `path/<basename(path)>.md` and extracts fenced code blocks
 - module runs in isolated VM
@@ -498,7 +498,7 @@ Examples:
 
 Compile and run from source text:
 
-```disturb
+```papagaio
 bc = parse("println(1 + 2),"),
 println(emit(bc)),
 evalBytecode(bc),
@@ -573,7 +573,7 @@ $name$modifier
 
 #### Examples
 
-```disturb
+```papagaio
 // Type modifiers
 println(papagaio("price is 42", "price is $v$int", "$v")),       // 42
 println(papagaio("temp 36.6", "temp $t$float", "$t")),           // 36.6
@@ -673,7 +673,7 @@ Signature struct typing:
 - raw/generic pointer stays `void*`
 - pointer depth in signatures must use nested `pointer(...)` (example: `pointer(pointer(i32))`)
 - string-ish types:
-  - `string`: marshals to/from Disturb strings
+  - `string`: marshals to/from Papagaio strings
   - `cstring`: raw C pointer semantics (use `C.memory.string(ptr)` when needed)
 - optional ABI prefix in signatures: `abi(name)` or bare ABI name (`cdecl`, `stdcall`, `fastcall`, `thiscall`, `win64`, `unix64`, `sysv`)
 
@@ -725,7 +725,7 @@ Run all examples:
 tests/run_examples.sh
 ```
 
-[![CI](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml/badge.svg)](https://github.com/jardimdanificado/disturb/actions/workflows/ci.yml)
+[![CI](https://github.com/jardimdanificado/papagaio/actions/workflows/ci.yml/badge.svg)](https://github.com/jardimdanificado/papagaio/actions/workflows/ci.yml)
 
 ## Function Reference (Detailed)
 
@@ -1065,7 +1065,7 @@ Primary APIs used by examples/tests:
 - `C.memory.compile(schema)` is optional in common flows; schema tables are auto-compiled/cached when passed to `C.memory.view`, `C.memory.sizeof`, `C.memory.alignof`, `C.memory.offsetof`, and `C.memory.new`.
 - signatures support: `struct(schema)` (by-value struct), `union(schema)` (by-value union), `pointer(schema)` (typed pointer), `void*` (raw pointer), pointer depth via `pointer(pointer(...))`
 - string-like types in signatures:
-  - `string`: marshaled as Disturb string
+  - `string`: marshaled as Papagaio string
   - `cstring`: raw C pointer value
 - optional ABI prefix in signature: `abi(name)` or bare ABI keyword (`cdecl`, `stdcall`, `fastcall`, `thiscall`, `win64`, `unix64`, `sysv`)
 - schema field declarations are strings only; compose with `"struct(name)"`, `"union(name)"`, and `"pointer(name)"`

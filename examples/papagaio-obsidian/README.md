@@ -7,7 +7,7 @@ This folder contains a minimal example of an **Obsidian plugin** that runs papag
 1. Build the WASM runtime and package the plugin:
 
 ```bash
-cd /path/to/disturb
+cd /path/to/papagaio
 make obsidian
 ```
 

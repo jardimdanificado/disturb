@@ -4,9 +4,9 @@
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-#define DISTURB_KEEPALIVE EMSCRIPTEN_KEEPALIVE
+#define PAPAGAIO_KEEPALIVE EMSCRIPTEN_KEEPALIVE
 #else
-#define DISTURB_KEEPALIVE
+#define PAPAGAIO_KEEPALIVE
 #endif
 
 static VM *g_papagaio_vm = NULL;
@@ -21,7 +21,7 @@ static void papagaio_wasm_ensure_vm(void)
 }
 
 /// Initialize the papagaio runtime (optional; called automatically on first eval).
-DISTURB_KEEPALIVE void papagaio_wasm_init(void)
+PAPAGAIO_KEEPALIVE void papagaio_wasm_init(void)
 {
     papagaio_wasm_ensure_vm();
 }
@@ -29,7 +29,7 @@ DISTURB_KEEPALIVE void papagaio_wasm_init(void)
 /// Evaluate a papagaio source string.
 ///
 /// Returns 1 on success, 0 on error.
-DISTURB_KEEPALIVE int papagaio_wasm_eval(const char *src)
+PAPAGAIO_KEEPALIVE int papagaio_wasm_eval(const char *src)
 {
     if (!src) return 0;
     papagaio_wasm_ensure_vm();
@@ -39,7 +39,7 @@ DISTURB_KEEPALIVE int papagaio_wasm_eval(const char *src)
 }
 
 /// Free the papagaio runtime.
-DISTURB_KEEPALIVE void papagaio_wasm_free(void)
+PAPAGAIO_KEEPALIVE void papagaio_wasm_free(void)
 {
     if (!g_papagaio_vm) return;
     vm_free(g_papagaio_vm);

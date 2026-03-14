@@ -1,11 +1,6 @@
 # Changelog
 
 ## TODO
-### now
-- rebrand everything...
-- wasm and obsidian targets for github release action.
-- .urb extension must not be checked anymore
-
 ### later
 - optimize the switch case stuff to not be just a ifelse alias, really small gain but not so much work really
 
@@ -21,6 +16,7 @@
 - arduino version with small overhead and small ram footprint... i am pretty sure i will NEVER write this for papagaio, but there was early plans for doing so... prefer the pure urb.h interpreter for arduinos.
 
 ## 2.0.1
+- COMPLETE REBRAND, disturb is now called papagaio.md... "so it's everything papagaio now? no, its always been.."
 - add host I/O abstraction (`host_io.h` + `src/host_io.c`) to support WASM builds and external host file APIs.
 - add optional `DISABLE_FFI_CALLS` build flag to disable dynamic FFI calls (`libffi`/`dlopen`) while keeping IO/import enabled.
 - add WASM runtime wrapper (`src/papagaio_wasm.c`) exposing `papagaio_wasm_init()`, `papagaio_wasm_eval()`, and `papagaio_wasm_free()`.

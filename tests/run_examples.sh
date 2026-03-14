@@ -13,20 +13,20 @@ fail=0
 
 for src in $(find examples -type f -name '*.urb' | sort); do
   echo "example: $src"
-  if "$BIN" "$src" >/tmp/disturb_example.out 2>/tmp/disturb_example.err; then
+  if "$BIN" "$src" >/tmp/papagaio_example.out 2>/tmp/papagaio_example.err; then
     ok=$((ok + 1))
     echo "example: $src ok"
   else
     fail=$((fail + 1))
     echo "example failed: $src" >&2
     echo "stdout:" >&2
-    sed -n '1,40p' /tmp/disturb_example.out >&2
+    sed -n '1,40p' /tmp/papagaio_example.out >&2
     echo "stderr:" >&2
-    sed -n '1,40p' /tmp/disturb_example.err >&2
+    sed -n '1,40p' /tmp/papagaio_example.err >&2
   fi
 done
 
-rm -f /tmp/disturb_example.out /tmp/disturb_example.err
+rm -f /tmp/papagaio_example.out /tmp/papagaio_example.err
 
 echo "examples: ok=$ok fail=$fail"
 if [ "$fail" -ne 0 ]; then

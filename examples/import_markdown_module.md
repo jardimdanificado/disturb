@@ -2,7 +2,7 @@
 
 This module is imported directly via `.md`.
 
-```disturb
+```papagaio
 return {
   tag = "md_module",
   add = (a, b){ return a + b, }

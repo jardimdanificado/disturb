@@ -18,7 +18,7 @@ set(PAPAGAIO_SOURCES
 )
 
 add_executable(papagaio ${PAPAGAIO_SOURCES})
-target_compile_definitions(papagaio PRIVATE DISTURB_ENABLE_FFI)
+target_compile_definitions(papagaio PRIVATE PAPAGAIO_ENABLE_FFI)
 
 target_include_directories(papagaio PRIVATE
   include
@@ -37,12 +37,12 @@ else()
 endif()
 
 if(NOT DISABLE_SYSTEM)
-  target_compile_definitions(papagaio PRIVATE DISTURB_ENABLE_IO)
+  target_compile_definitions(papagaio PRIVATE PAPAGAIO_ENABLE_IO)
   if(NOT DISABLE_FFI_CALLS)
-    target_compile_definitions(papagaio PRIVATE DISTURB_ENABLE_FFI_CALLS)
+    target_compile_definitions(papagaio PRIVATE PAPAGAIO_ENABLE_FFI_CALLS)
   endif()
 else()
-  target_compile_definitions(papagaio PRIVATE DISTURB_EMBEDDED)
+  target_compile_definitions(papagaio PRIVATE PAPAGAIO_EMBEDDED)
 endif()
 
 if(NOT DISABLE_SYSTEM AND NOT DISABLE_FFI_CALLS)

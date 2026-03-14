@@ -1,5 +1,5 @@
 // examples/libs/tcc.urb
-// TinyCC (libtcc) binding for Disturb via ffi.
+// TinyCC (libtcc) binding for Papagaio via ffi.
 
 return {
   _api = null,

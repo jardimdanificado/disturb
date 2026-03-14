@@ -6,7 +6,7 @@ greeting = "hello",
 count = 3,
 
 // You can also address global explicitly.
-global.title = "Disturb",
+global.title = "Papagaio",
 
 // print prints entries with type info, println prints plain values.
 print(greeting),

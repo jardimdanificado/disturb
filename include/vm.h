@@ -16,7 +16,7 @@
 #include "bytecode.h"
 
 #define PANIC(message) do {\
-        fprintf(stderr, "DISTURB ERROR:" message "\n");\
+        fprintf(stderr, "PAPAGAIO ERROR:" message "\n");\
         fflush(stderr);\
         abort();\
     } while (0)
@@ -40,13 +40,13 @@ typedef struct NativeBox {
 } NativeBox;
 
 enum {
-    DISTURB_T_NULL = 0,
-    DISTURB_T_INT,
-    DISTURB_T_FLOAT,
-    DISTURB_T_TABLE,
-    DISTURB_T_NATIVE,
-    DISTURB_T_LAMBDA,
-    DISTURB_T_VIEW
+    PAPAGAIO_T_NULL = 0,
+    PAPAGAIO_T_INT,
+    PAPAGAIO_T_FLOAT,
+    PAPAGAIO_T_TABLE,
+    PAPAGAIO_T_NATIVE,
+    PAPAGAIO_T_LAMBDA,
+    PAPAGAIO_T_VIEW
 };
 
 struct ObjEntry {
@@ -132,13 +132,13 @@ struct GcStats {
     size_t total_bytes;
 };
 
-const char *disturb_type_name(Int type);
-Int disturb_obj_type(const List *obj);
-ObjEntry *disturb_obj_key(const List *obj);
-char *disturb_bytes_data(List *obj);
-size_t disturb_bytes_len(const List *obj);
-List *disturb_table_add(List *obj, ObjEntry *entry);
-List *disturb_bytes_append(List *obj, const char *bytes, size_t len);
+const char *papagaio_type_name(Int type);
+Int papagaio_obj_type(const List *obj);
+ObjEntry *papagaio_obj_key(const List *obj);
+char *papagaio_bytes_data(List *obj);
+size_t papagaio_bytes_len(const List *obj);
+List *papagaio_table_add(List *obj, ObjEntry *entry);
+List *papagaio_bytes_append(List *obj, const char *bytes, size_t len);
 Int vm_value_len_entry(const ObjEntry *entry);
 
 ObjEntry *vm_stack_peek(List *stack, Int from_top);
@@ -194,7 +194,7 @@ int vm_exec_bytecode(VM *vm, const unsigned char *data, size_t len);
 ObjEntry *vm_make_native_entry_data(VM *vm, const char *key, NativeFn fn, void *data,
                                     void (*free_data)(void *), void (*clone_data)(void *));
 
-#ifdef DISTURB_ENABLE_FFI
+#ifdef PAPAGAIO_ENABLE_FFI
 int ffi_view_meta_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out);
 int ffi_view_meta_set(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry *value, size_t pc);
 int ffi_native_index_get(VM *vm, ObjEntry *target, ObjEntry *index, ObjEntry **out, size_t pc);
