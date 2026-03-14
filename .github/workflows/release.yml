@@ -68,7 +68,7 @@ jobs:
           sudo apt-get install -y build-essential libffi-dev
 
       - name: Setup Emscripten
-        uses: emscripten-core/setup-emscripten@v3
+        uses: mymindstorm/setup-emsdk@v14
         with:
           version: latest
 
