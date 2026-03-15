@@ -11,11 +11,11 @@ cd /path/to/papagaio
 make obsidian
 ```
 
-This produces `papagaio-obsidian/` with `papagaio.js` + `papagaio.wasm` included.
+This produces `.obsidian/plugin/papagaio-obsidian/` with `papagaio.js` + `papagaio.wasm` included.
 
-3. Install the plugin in Obsidian:
+3. Install the plugin in Obsidian (if your vault uses a custom plugin folder):
 
-- Copy the entire folder `examples/papagaio-obsidian` to your Obsidian vault’s `plugins/` directory (e.g. `~/.obsidian/plugins/papagaio-obsidian`).
+- Copy the entire folder `.obsidian/plugin/papagaio-obsidian` to your Obsidian vault’s `.obsidian/plugin/` directory (e.g. `~/.obsidian/plugin/papagaio-obsidian`).
 - Enable the plugin in Obsidian settings.
 
 4. Use the command **"Run papagaio (active note)"** to execute the current note as papagaio source.

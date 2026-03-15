@@ -9,8 +9,6 @@ tests/tmp_*.txt
 tmp/
 /papagaio.js
 /papagaio.wasm
-/papagaio-obsidian
-/examples/papagaio-obsidian/papagaio.js
-/examples/papagaio-obsidian/papagaio.wasm
+/.obsidian/plugin/papagaio-obsidian
 /examples/web/papagaio.js
 /examples/web/papagaio.wasm

@@ -46,7 +46,7 @@ jobs:
       - name: Package plugin artifact
         run: |
           mkdir -p dist
-          cp -r papagaio-obsidian dist/
+          cp -r .obsidian/plugin/papagaio-obsidian dist/
           tar -czf "dist/papagaio-v${{ inputs.version }}-obsidian.tar.gz" -C dist papagaio-obsidian
 
       - name: Upload plugin artifact

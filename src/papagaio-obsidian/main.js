@@ -83,7 +83,7 @@ module.exports = class PapagaioPlugin extends Plugin {
 
     // Vault-relative path for the plugin dir — works on both desktop and mobile
     // because adapter.read / adapter.readBinary expect vault-relative paths.
-    const pluginRelDir = `.obsidian/plugins/${this.manifest.id}`;
+    const pluginRelDir = `.obsidian/plugin/${this.manifest.id}`;
 
     // Absolute path — only valid on desktop (Electron/Node).
     const pluginDir = vaultRoot ? `${vaultRoot}/${pluginRelDir}` : '';

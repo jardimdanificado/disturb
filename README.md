@@ -55,7 +55,7 @@ make wasm
 
 This produces `papagaio.js` + `papagaio.wasm` in the repository root.
 
-To build the Obsidian plugin example (copies runtime + plugin source into `papagaio-obsidian/`):
+To build the Obsidian plugin example (copies runtime + plugin source into `.obsidian/plugin/papagaio-obsidian`):
 
 ```bash
 make obsidian

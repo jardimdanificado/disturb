@@ -68,12 +68,11 @@ clean:
 	rm -f $(OBJ) $(TARGET) papagaio.js papagaio.wasm papagaio.js papagaio.wasm
 	rm -f examples/web/papagaio.js examples/web/papagaio.wasm
 	rm -f examples/web/papagaio.js examples/web/papagaio.wasm
-	rm -f examples/papagaio-obsidian/papagaio.js examples/papagaio-obsidian/papagaio.wasm
 	rm -f examples/obsidian-plugin/papagaio.js examples/obsidian-plugin/papagaio.wasm
-	rm -rf papagaio-obsidian
+	rm -rf .obsidian/plugin/papagaio-obsidian
 
-OBSIDIAN_PLUGIN_DIR ?= papagaio-obsidian
-OBSIDIAN_PLUGIN_SRC = examples/papagaio-obsidian
+OBSIDIAN_PLUGIN_DIR ?= .obsidian/plugin/papagaio-obsidian
+OBSIDIAN_PLUGIN_SRC = src/papagaio-obsidian
 
 # WASM build target (builds papagaio.js + papagaio.wasm)
 $(WASM_TARGET): $(SRC)
